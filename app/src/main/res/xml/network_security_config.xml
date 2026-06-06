@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Certificate pinning is intentionally disabled until a maintained backup pin exists. -->
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

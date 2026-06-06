@@ -1,0 +1,24 @@
+# Gradle and Android build output
+.gradle/
+.gradle-user/
+**/build/
+dist/
+
+# Local Android SDK configuration
+local.properties
+
+# Release signing material
+release-signing.properties
+signing/
+*.jks
+*.keystore
+
+# IDE and OS files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Captures and local secrets
+*.har
+*.log

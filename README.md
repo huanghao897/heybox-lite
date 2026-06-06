@@ -1,0 +1,42 @@
+# heybox Lite
+
+面向方屏 Android 手表的小黑盒社区第三方客户端，重点适配 CD20 Max 一类小尺寸方屏设备。
+
+## 功能
+
+- 二维码登录与登录态加密保存
+- 社区信息流、帖子详情、图片与评论
+- 二级评论分批展开和收起
+- 图片点击全屏、原图查看
+- 个人资料、收藏夹与浏览历史
+- 日间/夜间主题、界面缩放与缓存清理
+- 针对小尺寸方屏的紧凑布局
+
+## 构建
+
+需要 Java 17 和 Android SDK。项目当前使用 Android API 36、AGP 8.13.2 和 Gradle 8.13。
+
+```powershell
+.\gradlew.bat assembleDebug
+```
+
+正式版本需要在本地配置签名信息后构建：
+
+```powershell
+.\gradlew.bat assembleRelease
+```
+
+签名文件、`release-signing.properties`、HAR、Cookie、构建产物和 R8
+`mapping.txt` 均被排除在版本控制之外。
+
+## 安全说明
+
+- Cookie 使用 Android Keystore 和 AES-GCM 加密保存，并迁移旧版明文数据。
+- 网络请求头、接口路径和鉴权字段统一封装；release 开启 R8 full mode 与资源压缩。
+- release 版本关闭调试、禁止明文网络流量与备份，并包含轻量签名完整性检查。
+
+这些措施用于提高基础安全性，不能替代服务端鉴权和风控。
+
+## 声明
+
+本项目是非官方客户端，仅供学习和个人使用，与小黑盒官方无关。第三方接口并非公开稳定 API，字段、签名和访问策略可能随时变化。请遵守相关服务条款，不要提交账号 Cookie、HAR 或其他敏感数据。
