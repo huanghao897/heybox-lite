@@ -11,7 +11,6 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -86,9 +85,9 @@ final class ApiClient {
         for (Map.Entry<String, String> entry : params.entrySet()) {
             if (entry.getValue() == null) continue;
             if (query.length() > 0) query.append('&');
-            query.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8.name()));
+            query.append(URLEncoder.encode(entry.getKey(), "UTF-8"));
             query.append('=');
-            query.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8.name()));
+            query.append(URLEncoder.encode(entry.getValue(), "UTF-8"));
         }
         return query.toString();
     }
@@ -97,7 +96,7 @@ final class ApiClient {
         if (stream == null) return "";
         StringBuilder result = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                new InputStreamReader(stream, "UTF-8"))) {
             char[] buffer = new char[4096];
             int count;
             while ((count = reader.read(buffer)) >= 0) result.append(buffer, 0, count);

@@ -1,6 +1,7 @@
 package com.openzen.heyboxcommunity;
 
 import android.text.Html;
+import android.os.Build;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -11,7 +12,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -110,7 +110,15 @@ final class RichContent {
 
     private static String decodeHtml(String value) {
         if (value == null || value.isEmpty()) return "";
-        return Html.fromHtml(value, Html.FROM_HTML_MODE_LEGACY).toString();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            return Html.fromHtml(value, Html.FROM_HTML_MODE_LEGACY).toString();
+        }
+        return legacyFromHtml(value);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static String legacyFromHtml(String value) {
+        return Html.fromHtml(value).toString();
     }
 
     private static String decodeTransport(String value) {
@@ -126,7 +134,7 @@ final class RichContent {
                     && !lower.contains("%7b")) break;
             try {
                 String next = URLDecoder.decode(decoded.replace("+", "%2B"),
-                        StandardCharsets.UTF_8.name());
+                        "UTF-8");
                 if (next.equals(decoded)) break;
                 decoded = next;
             } catch (Exception ignored) {

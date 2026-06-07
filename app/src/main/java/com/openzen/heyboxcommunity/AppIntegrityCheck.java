@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
+import android.os.Build;
 
 import java.security.MessageDigest;
 final class AppIntegrityCheck {
@@ -20,10 +21,8 @@ final class AppIntegrityCheck {
             return true;
         }
         try {
-            PackageInfo info = context.getPackageManager().getPackageInfo(
-                    context.getPackageName(), PackageManager.GET_SIGNING_CERTIFICATES);
-            Signature[] signatures = info.signingInfo == null
-                    ? null : info.signingInfo.getApkContentsSigners();
+            Signature[] signatures = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? currentSignatures(context) : legacySignatures(context);
             if (signatures == null || signatures.length != 1) return false;
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(signatures[0].toByteArray());
@@ -31,5 +30,18 @@ final class AppIntegrityCheck {
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    private static Signature[] currentSignatures(Context context)
+            throws PackageManager.NameNotFoundException {
+        return ModernSignatureReader.read(context);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Signature[] legacySignatures(Context context)
+            throws PackageManager.NameNotFoundException {
+        PackageInfo info = context.getPackageManager().getPackageInfo(
+                context.getPackageName(), PackageManager.GET_SIGNATURES);
+        return info.signatures;
     }
 }

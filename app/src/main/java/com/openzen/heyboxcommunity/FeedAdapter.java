@@ -1,7 +1,6 @@
 package com.openzen.heyboxcommunity;
 
 import android.content.Context;
-import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
@@ -61,7 +60,7 @@ final class FeedAdapter extends BaseAdapter {
             LinearLayout card = new LinearLayout(context);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(10), dp(9), dp(10), dp(8));
-            card.setBackground(round(cardColor, 8));
+            Compat.setBackground(card, round(cardColor, 8));
             outer.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
             LinearLayout body = new LinearLayout(context);
@@ -70,9 +69,9 @@ final class FeedAdapter extends BaseAdapter {
 
             ImageView cover = new ImageView(context);
             cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            cover.setBackground(round(darkMode ? Color.rgb(43, 46, 49)
+            Compat.setBackground(cover, round(darkMode ? Color.rgb(43, 46, 49)
                     : Color.rgb(232, 235, 238), 6));
-            cover.setClipToOutline(true);
+            Compat.clipToOutline(cover);
             body.addView(cover, new LinearLayout.LayoutParams(dp(106), dp(68)));
 
             TextView title = label(14, textColor);
@@ -135,10 +134,8 @@ final class FeedAdapter extends BaseAdapter {
     private TextView stat(int icon) {
         TextView view = label(10, mutedColor);
         view.setGravity(Gravity.CENTER);
-        Drawable drawable = context.getDrawable(icon);
+        Drawable drawable = Compat.tintedDrawable(context, icon, mutedColor);
         if (drawable != null) {
-            drawable = drawable.mutate();
-            drawable.setTintList(ColorStateList.valueOf(mutedColor));
             drawable.setBounds(0, 0, dp(14), dp(14));
             view.setCompoundDrawables(drawable, null, null, null);
             view.setCompoundDrawablePadding(dp(3));
@@ -150,7 +147,7 @@ final class FeedAdapter extends BaseAdapter {
         TextView view = new TextView(context);
         view.setTextSize(size * textScale);
         view.setTextColor(color);
-        view.setLetterSpacing(0);
+        Compat.setLetterSpacing(view, 0);
         return view;
     }
 

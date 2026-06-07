@@ -1,6 +1,5 @@
 package com.openzen.heyboxcommunity;
 
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.HashMap;
@@ -106,7 +105,7 @@ final class HeyboxSigner {
 
     private static String md5Hex(String value) throws Exception {
         byte[] bytes = MessageDigest.getInstance("MD5")
-                .digest(value.getBytes(StandardCharsets.UTF_8));
+                .digest(value.getBytes("UTF-8"));
         StringBuilder result = new StringBuilder(32);
         for (byte b : bytes) result.append(String.format(Locale.US, "%02x", b & 0xff));
         return result.toString();

@@ -2,9 +2,11 @@ package com.openzen.heyboxcommunity;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.os.Build;
 import android.provider.Settings;
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
 import android.util.Base64;
 
 import org.json.JSONObject;
@@ -14,12 +16,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.security.KeyStore;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 
 import javax.crypto.Cipher;
-import javax.crypto.KeyGenerator;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.Mac;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 
 final class SessionStore {
     private static final String USER_NAME = "user_name";
@@ -31,10 +34,13 @@ final class SessionStore {
     private static final String DARK_MODE = "dark_mode";
     private static final String ORIGINAL_IMAGES = "original_images";
     private static final String ACCENT_COLOR = "accent_color";
+    private static final String LEGACY_PREFIX = "L1:";
 
+    private final Context context;
     private final SharedPreferences prefs;
 
     SessionStore(Context context) {
+        this.context = context.getApplicationContext();
         prefs = context.getSharedPreferences(SecureStrings.preferencesName(), Context.MODE_PRIVATE);
         migratePlainCookieIfNeeded();
         if (prefs.getString(SecureStrings.deviceId(), "").isEmpty()) {
@@ -52,7 +58,14 @@ final class SessionStore {
 
     String getCookie() {
         String encrypted = prefs.getString(SecureStrings.encryptedCookieKey(), "");
-        if (!encrypted.isEmpty()) return decrypt(encrypted);
+        if (!encrypted.isEmpty()) {
+            String cookie = decrypt(encrypted);
+            if (!cookie.isEmpty() && encrypted.startsWith(LEGACY_PREFIX)
+                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                saveCookie(cookie);
+            }
+            return cookie;
+        }
         return "";
     }
 
@@ -193,16 +206,10 @@ final class SessionStore {
 
     void saveCookie(String value) {
         try {
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, key());
-            byte[] encrypted = cipher.doFinal(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            byte[] iv = cipher.getIV();
-            byte[] packed = new byte[1 + iv.length + encrypted.length];
-            packed[0] = (byte) iv.length;
-            System.arraycopy(iv, 0, packed, 1, iv.length);
-            System.arraycopy(encrypted, 0, packed, 1 + iv.length, encrypted.length);
+            String encrypted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                    ? ModernCookieCrypto.encrypt(value) : encryptLegacy(value);
             prefs.edit().putString(SecureStrings.encryptedCookieKey(),
-                    Base64.encodeToString(packed, Base64.NO_WRAP))
+                    encrypted)
                     .remove(SecureStrings.cookieKey()).apply();
         } catch (Exception ignored) {
             prefs.edit().remove(SecureStrings.cookieKey())
@@ -212,36 +219,80 @@ final class SessionStore {
 
     private String decrypt(String value) {
         try {
-            byte[] packed = Base64.decode(value, Base64.NO_WRAP);
-            int ivLength = packed[0] & 0xff;
-            byte[] iv = new byte[ivLength];
-            byte[] encrypted = new byte[packed.length - 1 - ivLength];
-            System.arraycopy(packed, 1, iv, 0, ivLength);
-            System.arraycopy(packed, 1 + ivLength, encrypted, 0, encrypted.length);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, iv));
-            return new String(cipher.doFinal(encrypted),
-                    java.nio.charset.StandardCharsets.UTF_8);
+            if (value.startsWith(LEGACY_PREFIX)) return decryptLegacy(value);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                return ModernCookieCrypto.decrypt(value);
+            }
+            return "";
         } catch (Exception ignored) {
             prefs.edit().remove(SecureStrings.encryptedCookieKey()).apply();
             return "";
         }
     }
 
-    private SecretKey key() throws Exception {
-        KeyStore store = KeyStore.getInstance("AndroidKeyStore");
-        store.load(null);
-        String alias = SecureStrings.keyAlias();
-        java.security.Key existing = store.getKey(alias, null);
-        if (existing instanceof SecretKey) return (SecretKey) existing;
-        KeyGenerator generator = KeyGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
-        generator.init(new KeyGenParameterSpec.Builder(alias,
-                KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .build());
-        return generator.generateKey();
+    private String encryptLegacy(String value) throws Exception {
+        byte[] keys = legacyKeyMaterial();
+        byte[] iv = new byte[16];
+        new SecureRandom().nextBytes(iv);
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        cipher.init(Cipher.ENCRYPT_MODE,
+                new SecretKeySpec(slice(keys, 0, 16), "AES"), new IvParameterSpec(iv));
+        byte[] encrypted = cipher.doFinal(value.getBytes("UTF-8"));
+        byte[] body = join(iv, encrypted);
+        byte[] mac = hmac(slice(keys, 16, 32), body);
+        return LEGACY_PREFIX + Base64.encodeToString(join(body, mac), Base64.NO_WRAP);
+    }
+
+    private String decryptLegacy(String value) throws Exception {
+        byte[] packed = Base64.decode(value.substring(LEGACY_PREFIX.length()), Base64.NO_WRAP);
+        if (packed.length < 49) throw new IllegalArgumentException("Invalid session");
+        byte[] body = slice(packed, 0, packed.length - 32);
+        byte[] expected = slice(packed, packed.length - 32, packed.length);
+        byte[] keys = legacyKeyMaterial();
+        if (!MessageDigest.isEqual(expected, hmac(slice(keys, 16, 32), body))) {
+            throw new SecurityException("Session integrity check failed");
+        }
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(slice(keys, 0, 16), "AES"),
+                new IvParameterSpec(slice(body, 0, 16)));
+        return new String(cipher.doFinal(slice(body, 16, body.length)), "UTF-8");
+    }
+
+    @SuppressWarnings("deprecation")
+    private byte[] legacyKeyMaterial() throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        digest.update(context.getPackageName().getBytes("UTF-8"));
+        digest.update((byte) 0x6d);
+        digest.update((byte) 0x31);
+        String androidId = Settings.Secure.getString(
+                context.getContentResolver(), Settings.Secure.ANDROID_ID);
+        if (androidId != null) digest.update(androidId.getBytes("UTF-8"));
+        PackageInfo info = context.getPackageManager().getPackageInfo(
+                context.getPackageName(), PackageManager.GET_SIGNATURES);
+        Signature[] signatures = info.signatures;
+        if (signatures != null && signatures.length > 0) {
+            digest.update(signatures[0].toByteArray());
+        }
+        return digest.digest();
+    }
+
+    private static byte[] hmac(byte[] key, byte[] value) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        return mac.doFinal(value);
+    }
+
+    private static byte[] slice(byte[] source, int start, int end) {
+        byte[] result = new byte[end - start];
+        System.arraycopy(source, start, result, 0, result.length);
+        return result;
+    }
+
+    private static byte[] join(byte[] first, byte[] second) {
+        byte[] result = new byte[first.length + second.length];
+        System.arraycopy(first, 0, result, 0, first.length);
+        System.arraycopy(second, 0, result, first.length, second.length);
+        return result;
     }
 
     void clearSession() {

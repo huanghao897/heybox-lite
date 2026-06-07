@@ -20,12 +20,8 @@ public final class ImageViewerActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(Color.BLACK);
-        getWindow().setNavigationBarColor(Color.BLACK);
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+        Compat.colorSystemBars(getWindow(), Color.BLACK);
+        getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
         url = getIntent().getStringExtra(EXTRA_URL);
 
         FrameLayout root = new FrameLayout(this);
@@ -36,13 +32,13 @@ public final class ImageViewerActivity extends Activity {
         TextView back = control("‹ 返回");
         back.setOnClickListener(view -> finish());
         FrameLayout.LayoutParams backParams =
-                new FrameLayout.LayoutParams(dp(72), dp(38), Gravity.TOP | Gravity.START);
+                new FrameLayout.LayoutParams(dp(72), dp(38), Gravity.TOP | Gravity.LEFT);
         root.addView(back, backParams);
 
         original = control("查看原图");
         original.setOnClickListener(view -> loadOriginal());
         FrameLayout.LayoutParams originalParams =
-                new FrameLayout.LayoutParams(dp(92), dp(38), Gravity.TOP | Gravity.END);
+                new FrameLayout.LayoutParams(dp(92), dp(38), Gravity.TOP | Gravity.RIGHT);
         root.addView(original, originalParams);
 
         progress = new ProgressBar(this);

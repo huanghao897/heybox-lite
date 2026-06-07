@@ -1,6 +1,6 @@
 # heybox Lite
 
-面向方屏 Android 手表的小黑盒社区第三方客户端，重点适配 CD20 Max 一类小尺寸方屏设备。
+面向方屏 Android 手表的小黑盒社区第三方客户端，重点适配 CD20 Max 一类小尺寸方屏设备。支持 Android 4.0（API 14）及以上系统。
 
 ## 功能
 
@@ -31,7 +31,8 @@
 
 ## 安全说明
 
-- Cookie 使用 Android Keystore 和 AES-GCM 加密保存，并迁移旧版明文数据。
+- Android 6.0 及以上使用 Android Keystore + AES-GCM 保存 Cookie。
+- Android 4.0–5.1 使用设备与应用签名绑定的 AES-CBC + HMAC 加密保存 Cookie，登录状态可跨重启保留；受旧系统能力限制，安全强度低于 Android 6.0 及以上。
 - 网络请求头、接口路径和鉴权字段统一封装；release 开启 R8 full mode 与资源压缩。
 - release 版本关闭调试、禁止明文网络流量与备份，并包含轻量签名完整性检查。
 

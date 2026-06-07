@@ -25,7 +25,7 @@ final class ImageLoader {
             new LruCache<String, Bitmap>(CACHE_KB) {
                 @Override
                 protected int sizeOf(String key, Bitmap value) {
-                    return value.getAllocationByteCount() / 1024;
+                    return value.getByteCount() / 1024;
                 }
             };
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(2);

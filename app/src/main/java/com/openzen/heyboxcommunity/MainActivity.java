@@ -2,7 +2,6 @@ package com.openzen.heyboxcommunity;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
@@ -26,7 +25,6 @@ import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.Switch;
-import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -87,12 +85,8 @@ public final class MainActivity extends Activity {
         }
         session = new SessionStore(this);
         applyPalette();
-        getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(BG);
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+        Compat.colorSystemBars(getWindow(), BG);
+        getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
         api = new ApiClient(session);
         buildShell();
         if (session.isLoggedIn()) {
@@ -123,12 +117,9 @@ public final class MainActivity extends Activity {
         title.setGravity(Gravity.CENTER_VERTICAL);
         bar.addView(title, new LinearLayout.LayoutParams(0, dp(38), 1));
 
-        TextClock clock = new TextClock(this);
-        clock.setFormat12Hour("HH:mm");
-        clock.setFormat24Hour("HH:mm");
-        clock.setTextColor(MUTED);
-        clock.setTextSize(sp(12));
+        TextView clock = text("", 12, MUTED);
         clock.setGravity(Gravity.CENTER);
+        updateClock(clock);
         bar.addView(clock, new LinearLayout.LayoutParams(dp(48), dp(38)));
 
         action = icon("");
@@ -146,6 +137,13 @@ public final class MainActivity extends Activity {
         addNav("社区", "feed", R.drawable.ic_home, this::showFeed);
         addNav("我的", "profile", R.drawable.ic_person, this::showProfile);
         setContentView(root);
+    }
+
+    private void updateClock(TextView clock) {
+        clock.setText(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
+        handler.postDelayed(() -> {
+            if (!isFinishing()) updateClock(clock);
+        }, 30_000);
     }
 
     private void applyPalette() {
@@ -196,7 +194,7 @@ public final class MainActivity extends Activity {
             item.setTextColor(active ? PINK : MUTED);
             item.setTypeface(Typeface.DEFAULT, active ? Typeface.BOLD : Typeface.NORMAL);
             Drawable icon = item.getCompoundDrawables()[1];
-            if (icon != null) icon.setTint(active ? PINK : MUTED);
+            Compat.tintDrawable(icon, active ? PINK : MUTED);
         }
     }
 
@@ -493,9 +491,9 @@ public final class MainActivity extends Activity {
                 if (session.noImage() || imageCount >= 12) continue;
                 ImageView image = new ImageView(this);
                 image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                image.setBackground(round(session.darkMode()
+                Compat.setBackground(image, round(session.darkMode()
                         ? Color.rgb(28, 30, 32) : Color.rgb(235, 237, 240), 7));
-                image.setClipToOutline(true);
+                Compat.clipToOutline(image);
                 LinearLayout.LayoutParams imageParams =
                         new LinearLayout.LayoutParams(-1, dp(150));
                 imageParams.topMargin = dp(8);
@@ -525,7 +523,8 @@ public final class MainActivity extends Activity {
             JSONObject group = groups.optJSONObject(i);
             if (group != null) threads.add(group);
         }
-        threads.sort((a, b) -> Integer.compare(threadLikes(b), threadLikes(a)));
+        Collections.sort(threads,
+                (a, b) -> Integer.compare(threadLikes(b), threadLikes(a)));
         int count = 0;
         for (JSONObject group : threads) {
             JSONArray comments = group == null ? null : group.optJSONArray("comment");
@@ -543,7 +542,8 @@ public final class MainActivity extends Activity {
                     if (reply != null) replies.add(reply);
                 }
             }
-            replies.sort((a, b) -> Long.compare(commentTime(a), commentTime(b)));
+            Collections.sort(replies,
+                    (a, b) -> Long.compare(commentTime(a), commentTime(b)));
             int expected = Math.max(root.optInt("child_num"),
                     group == null ? 0 : group.optInt("child_num"));
             if (!replies.isEmpty() || expected > 0) {
@@ -618,7 +618,7 @@ public final class MainActivity extends Activity {
         TextView control = text(label, 12, TEXT);
         control.setGravity(Gravity.CENTER_VERTICAL);
         control.setPadding(dp(8), 0, dp(8), 0);
-        control.setBackground(round(session.darkMode()
+        Compat.setBackground(control, round(session.darkMode()
                 ? Color.rgb(42, 45, 48) : Color.rgb(237, 239, 241), 7));
         setLeftIcon(control, icon, MUTED, 16);
         return control;
@@ -647,7 +647,8 @@ public final class MainActivity extends Activity {
                     return;
                 }
                 List<JSONObject> merged = mergeReplies(preview, replies);
-                merged.sort((a, b) -> Long.compare(commentTime(a), commentTime(b)));
+                Collections.sort(merged,
+                        (a, b) -> Long.compare(commentTime(a), commentTime(b)));
                 int total = Math.max(expected, merged.size());
                 renderReplies(target, root, merged, total,
                         shown + REPLY_PAGE_SIZE, merged.size() >= total);
@@ -731,9 +732,9 @@ public final class MainActivity extends Activity {
 
         ImageView avatar = new ImageView(this);
         avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        avatar.setBackground(round(session.darkMode()
+        Compat.setBackground(avatar, round(session.darkMode()
                 ? Color.rgb(50, 53, 56) : Color.rgb(226, 229, 232), 20));
-        avatar.setClipToOutline(true);
+        Compat.clipToOutline(avatar);
         int avatarSize = reply ? 24 : 30;
         row.addView(avatar, new LinearLayout.LayoutParams(dp(avatarSize), dp(avatarSize)));
         String avatarUrl = user == null ? "" : user.optString("avatar");
@@ -761,9 +762,9 @@ public final class MainActivity extends Activity {
         if (!session.noImage() && !commentImage.isEmpty()) {
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            image.setBackground(round(session.darkMode()
+            Compat.setBackground(image, round(session.darkMode()
                     ? Color.rgb(39, 42, 45) : Color.rgb(236, 238, 240), 6));
-            image.setClipToOutline(true);
+            Compat.clipToOutline(image);
             LinearLayout.LayoutParams imageParams =
                     new LinearLayout.LayoutParams(-1, dp(reply ? 92 : 115));
             imageParams.topMargin = dp(6);
@@ -1013,7 +1014,7 @@ public final class MainActivity extends Activity {
         images.setTextColor(TEXT);
         images.setTextSize(sp(14));
         images.setChecked(session.noImage());
-        images.setButtonTintList(ColorStateList.valueOf(PINK));
+        Compat.tint(images, PINK);
         images.setOnCheckedChangeListener((button, checked) -> {
             session.setNoImage(checked);
             feed.clear();
@@ -1025,7 +1026,7 @@ public final class MainActivity extends Activity {
         originals.setTextColor(TEXT);
         originals.setTextSize(sp(14));
         originals.setChecked(session.originalImages());
-        originals.setButtonTintList(ColorStateList.valueOf(PINK));
+        Compat.tint(originals, PINK);
         originals.setOnCheckedChangeListener((button, checked) ->
                 session.setOriginalImages(checked));
         addTop(page, originals, 2);
@@ -1035,7 +1036,7 @@ public final class MainActivity extends Activity {
         theme.setTextColor(TEXT);
         theme.setTextSize(sp(14));
         theme.setChecked(session.darkMode());
-        theme.setButtonTintList(ColorStateList.valueOf(PINK));
+        Compat.tint(theme, PINK);
         theme.setOnCheckedChangeListener((button, checked) -> {
             session.setDarkMode(checked);
             recreate();
@@ -1105,7 +1106,7 @@ public final class MainActivity extends Activity {
         input.setSingleLine(true);
         input.setSelectAllOnFocus(true);
         input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        input.setBackgroundTintList(ColorStateList.valueOf(PINK));
+        Compat.tint(input, PINK);
         row.addView(input, new LinearLayout.LayoutParams(dp(72), dp(40)));
         addTop(parent, row, 3);
         return input;
@@ -1122,7 +1123,7 @@ public final class MainActivity extends Activity {
         input.setGravity(Gravity.CENTER);
         input.setSingleLine(true);
         input.setSelectAllOnFocus(true);
-        input.setBackgroundTintList(ColorStateList.valueOf(PINK));
+        Compat.tint(input, PINK);
         row.addView(input, new LinearLayout.LayoutParams(dp(96), dp(40)));
         addTop(parent, row, 3);
         return input;
@@ -1160,6 +1161,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         stopQrPolling();
+        handler.removeCallbacksAndMessages(null);
         if (api != null) api.close();
         super.onDestroy();
     }
@@ -1168,7 +1170,7 @@ public final class MainActivity extends Activity {
         hideLoading();
         ProgressBar progress = new ProgressBar(this);
         progress.setTag("loading");
-        progress.setIndeterminateTintList(ColorStateList.valueOf(PINK));
+        Compat.tint(progress, PINK);
         content.addView(progress, new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER));
     }
 
@@ -1188,7 +1190,7 @@ public final class MainActivity extends Activity {
     private LinearLayout card() {
         LinearLayout card = vertical(PANEL);
         card.setPadding(dp(10), dp(9), dp(10), dp(9));
-        card.setBackground(round(PANEL, 8));
+        Compat.setBackground(card, round(PANEL, 8));
         return card;
     }
 
@@ -1204,7 +1206,7 @@ public final class MainActivity extends Activity {
         view.setText(value == null ? "" : value);
         view.setTextSize(sp(size));
         view.setTextColor(color);
-        view.setLetterSpacing(0);
+        Compat.setLetterSpacing(view, 0);
         return view;
     }
 
@@ -1220,7 +1222,7 @@ public final class MainActivity extends Activity {
         button.setAllCaps(false);
         button.setPadding(dp(8), 0, dp(8), 0);
         button.setGravity(Gravity.CENTER);
-        button.setBackground(round(session.darkMode()
+        Compat.setBackground(button, round(session.darkMode()
                 ? Color.rgb(49, 52, 55) : Color.rgb(230, 233, 236), 8));
         if (iconRes != 0) setLeftIcon(button, iconRes,
                 session.darkMode() ? Color.WHITE : Color.rgb(45, 48, 51), 17);
@@ -1235,19 +1237,15 @@ public final class MainActivity extends Activity {
     }
 
     private void setIcon(TextView view, int resource, int color, int size) {
-        Drawable drawable = getDrawable(resource);
+        Drawable drawable = Compat.tintedDrawable(this, resource, color);
         if (drawable == null) return;
-        drawable = drawable.mutate();
-        drawable.setTint(color);
         drawable.setBounds(0, 0, dp(size), dp(size));
         view.setCompoundDrawables(null, drawable, null, null);
     }
 
     private void setLeftIcon(TextView view, int resource, int color, int size) {
-        Drawable drawable = getDrawable(resource);
+        Drawable drawable = Compat.tintedDrawable(this, resource, color);
         if (drawable == null) return;
-        drawable = drawable.mutate();
-        drawable.setTint(color);
         drawable.setBounds(0, 0, dp(size), dp(size));
         view.setCompoundDrawables(drawable, null, null, null);
         view.setCompoundDrawablePadding(dp(4));
