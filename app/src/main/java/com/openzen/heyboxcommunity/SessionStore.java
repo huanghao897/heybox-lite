@@ -34,6 +34,13 @@ final class SessionStore {
     private static final String DARK_MODE = "dark_mode";
     private static final String ORIGINAL_IMAGES = "original_images";
     private static final String ACCENT_COLOR = "accent_color";
+    private static final String PRIMARY_COLOR = "primary_color";
+    private static final String SECONDARY_COLOR = "secondary_color";
+    private static final String BODY_TEXT_SCALE = "body_text_scale";
+    private static final String BODY_LETTER_SPACING = "body_letter_spacing";
+    private static final String BODY_PARAGRAPH_SPACING = "body_paragraph_spacing";
+    private static final String BODY_LINE_SPACING = "body_line_spacing";
+    private static final String BODY_BOLD = "body_bold";
     private static final String LEGACY_PREFIX = "L1:";
 
     private final Context context;
@@ -136,12 +143,89 @@ final class SessionStore {
         prefs.edit().putBoolean(ORIGINAL_IMAGES, value).apply();
     }
 
-    String accentColor() {
-        return prefs.getString(ACCENT_COLOR, "");
+    String primaryColor() {
+        String value = prefs.getString(PRIMARY_COLOR, "");
+        return value.isEmpty() ? prefs.getString(ACCENT_COLOR, "") : value;
     }
 
-    void setAccentColor(String value) {
-        prefs.edit().putString(ACCENT_COLOR, value).apply();
+    void setPrimaryColor(String value) {
+        prefs.edit()
+                .putString(PRIMARY_COLOR, value)
+                .remove(ACCENT_COLOR)
+                .apply();
+    }
+
+    String secondaryColor() {
+        return prefs.getString(SECONDARY_COLOR, "");
+    }
+
+    void setSecondaryColor(String value) {
+        prefs.edit().putString(SECONDARY_COLOR, value).apply();
+    }
+
+    int bodyTextScale() {
+        return prefs.getInt(BODY_TEXT_SCALE, 100);
+    }
+
+    void setBodyTextScale(int value) {
+        prefs.edit().putInt(BODY_TEXT_SCALE, value).apply();
+    }
+
+    int bodyLetterSpacing() {
+        return prefs.getInt(BODY_LETTER_SPACING, 0);
+    }
+
+    void setBodyLetterSpacing(int value) {
+        prefs.edit().putInt(BODY_LETTER_SPACING, value).apply();
+    }
+
+    int bodyParagraphSpacing() {
+        return prefs.getInt(BODY_PARAGRAPH_SPACING, 9);
+    }
+
+    void setBodyParagraphSpacing(int value) {
+        prefs.edit().putInt(BODY_PARAGRAPH_SPACING, value).apply();
+    }
+
+    int bodyLineSpacing() {
+        return prefs.getInt(BODY_LINE_SPACING, 122);
+    }
+
+    void setBodyLineSpacing(int value) {
+        prefs.edit().putInt(BODY_LINE_SPACING, value).apply();
+    }
+
+    boolean bodyBold() {
+        return prefs.getBoolean(BODY_BOLD, true);
+    }
+
+    void setBodyBold(boolean value) {
+        prefs.edit().putBoolean(BODY_BOLD, value).apply();
+    }
+
+    void setTheme(String primary, String secondary) {
+        prefs.edit()
+                .putString(PRIMARY_COLOR, primary)
+                .putString(SECONDARY_COLOR, secondary)
+                .remove(ACCENT_COLOR)
+                .apply();
+    }
+
+    void resetDisplaySettings() {
+        prefs.edit()
+                .putBoolean(DARK_MODE, true)
+                .putInt(UI_SCALE, 100)
+                .putInt(TEXT_SCALE, 100)
+                .putInt(PAGE_PADDING, 8)
+                .putString(PRIMARY_COLOR, "#2479B8")
+                .putString(SECONDARY_COLOR, "#73B8E6")
+                .remove(ACCENT_COLOR)
+                .putInt(BODY_TEXT_SCALE, 100)
+                .putInt(BODY_LETTER_SPACING, 0)
+                .putInt(BODY_PARAGRAPH_SPACING, 9)
+                .putInt(BODY_LINE_SPACING, 122)
+                .putBoolean(BODY_BOLD, true)
+                .apply();
     }
 
     Map<String, String> commonParams() {
@@ -303,7 +387,13 @@ final class SessionStore {
         int pagePadding = pagePadding();
         boolean darkMode = darkMode();
         boolean originalImages = originalImages();
-        String accentColor = accentColor();
+        String primaryColor = primaryColor();
+        String secondaryColor = secondaryColor();
+        int bodyTextScale = bodyTextScale();
+        int bodyLetterSpacing = bodyLetterSpacing();
+        int bodyParagraphSpacing = bodyParagraphSpacing();
+        int bodyLineSpacing = bodyLineSpacing();
+        boolean bodyBold = bodyBold();
         prefs.edit().clear()
                 .putString(SecureStrings.deviceId(), deviceId)
                 .putBoolean(NO_IMAGE, noImage)
@@ -312,7 +402,13 @@ final class SessionStore {
                 .putInt(PAGE_PADDING, pagePadding)
                 .putBoolean(DARK_MODE, darkMode)
                 .putBoolean(ORIGINAL_IMAGES, originalImages)
-                .putString(ACCENT_COLOR, accentColor)
+                .putString(PRIMARY_COLOR, primaryColor)
+                .putString(SECONDARY_COLOR, secondaryColor)
+                .putInt(BODY_TEXT_SCALE, bodyTextScale)
+                .putInt(BODY_LETTER_SPACING, bodyLetterSpacing)
+                .putInt(BODY_PARAGRAPH_SPACING, bodyParagraphSpacing)
+                .putInt(BODY_LINE_SPACING, bodyLineSpacing)
+                .putBoolean(BODY_BOLD, bodyBold)
                 .apply();
     }
 }

@@ -1,6 +1,7 @@
 package com.openzen.heyboxcommunity;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -11,7 +12,10 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
@@ -37,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -44,13 +49,25 @@ import java.util.Map;
 public final class MainActivity extends Activity {
     private static final int REPLY_PREVIEW_COUNT = 2;
     private static final int REPLY_PAGE_SIZE = 5;
+    private static final String[] THEME_NAMES = {
+            "默认蓝", "红色", "粉色", "紫色", "绿色", "青色",
+            "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"
+    };
+    private static final int[][] THEME_COLORS = {
+            {0xFF2479B8, 0xFF73B8E6}, {0xFFC33A3A, 0xFFEF7777},
+            {0xFFD85C91, 0xFFF0A4C1}, {0xFF7652B5, 0xFFB79ADF},
+            {0xFF278A57, 0xFF71C798}, {0xFF168B91, 0xFF6BC7CB},
+            {0xFFD36B24, 0xFFF0A064}, {0xFFC39A16, 0xFFF0CF68},
+            {0xFF5D636A, 0xFFAEB4BA}, {0xFF173F76, 0xFF5D8BC4},
+            {0xFF171717, 0xFFD0A83E}, {0xFF318B73, 0xFF88D8BF}
+    };
 
     private int BG;
     private int PANEL;
     private int TEXT;
     private int MUTED;
-    private int PINK;
-    private int CYAN;
+    private int PRIMARY;
+    private int SECONDARY;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<FeedItem> feed = new ArrayList<>();
@@ -136,6 +153,7 @@ public final class MainActivity extends Activity {
                 ? Color.rgb(20, 20, 20) : Color.rgb(232, 234, 237));
         root.addView(bottom, new LinearLayout.LayoutParams(-1, dp(42)));
         addNav("社区", "feed", R.drawable.ic_home, this::showFeed);
+        addNav("搜索", "search", R.drawable.ic_search, this::showSearch);
         addNav("我的", "profile", R.drawable.ic_person, this::showProfile);
         setContentView(root);
     }
@@ -149,25 +167,24 @@ public final class MainActivity extends Activity {
 
     private void applyPalette() {
         if (session.darkMode()) {
-            BG = Color.rgb(14, 15, 16);
-            PANEL = Color.rgb(29, 31, 33);
+            PRIMARY = parseThemeColor(session.primaryColor(), Color.rgb(36, 121, 184));
+            SECONDARY = parseThemeColor(session.secondaryColor(), Color.rgb(115, 184, 230));
+            BG = blend(Color.rgb(14, 15, 16), SECONDARY, 0.025f);
+            PANEL = blend(Color.rgb(29, 31, 33), PRIMARY, 0.075f);
             TEXT = Color.rgb(241, 243, 245);
             MUTED = Color.rgb(157, 163, 169);
-            CYAN = Color.rgb(206, 211, 216);
-            PINK = parseAccent(Color.WHITE);
         } else {
-            BG = Color.rgb(246, 247, 249);
-            PANEL = Color.WHITE;
+            PRIMARY = parseThemeColor(session.primaryColor(), Color.rgb(36, 121, 184));
+            SECONDARY = parseThemeColor(session.secondaryColor(), Color.rgb(115, 184, 230));
+            BG = blend(Color.rgb(246, 247, 249), SECONDARY, 0.025f);
+            PANEL = blend(Color.WHITE, PRIMARY, 0.035f);
             TEXT = Color.rgb(30, 32, 35);
             MUTED = Color.rgb(105, 110, 116);
-            CYAN = Color.rgb(35, 125, 178);
-            PINK = parseAccent(Color.BLACK);
         }
     }
 
-    private int parseAccent(int fallback) {
+    private int parseThemeColor(String value, int fallback) {
         try {
-            String value = session.accentColor();
             return value.isEmpty() ? fallback : Color.parseColor(value);
         } catch (Exception ignored) {
             return fallback;
@@ -192,10 +209,10 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < bottom.getChildCount(); i++) {
             TextView item = (TextView) bottom.getChildAt(i);
             boolean active = key.equals(item.getTag());
-            item.setTextColor(active ? PINK : MUTED);
+            item.setTextColor(active ? PRIMARY : MUTED);
             item.setTypeface(Typeface.DEFAULT, active ? Typeface.BOLD : Typeface.NORMAL);
             Drawable icon = item.getCompoundDrawables()[1];
-            Compat.tintDrawable(icon, active ? PINK : MUTED);
+            Compat.tintDrawable(icon, active ? PRIMARY : MUTED);
         }
     }
 
@@ -230,7 +247,7 @@ public final class MainActivity extends Activity {
         qrParams.topMargin = dp(4);
         page.addView(qr, qrParams);
 
-        TextView hint = text("请使用小黑盒 App 扫码", 12, CYAN);
+        TextView hint = text("请使用小黑盒 App 扫码", 12, SECONDARY);
         hint.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(-1, dp(34));
         hintParams.topMargin = dp(4);
@@ -254,7 +271,7 @@ public final class MainActivity extends Activity {
                 JSONObject result = body.optJSONObject("result");
                 String url = result == null ? "" : result.optString("qr_url");
                 if (url.isEmpty()) {
-                    setQrStatus("二维码获取失败", PINK);
+                    setQrStatus("二维码获取失败", PRIMARY);
                     return;
                 }
                 qrKey = Uri.parse(url).getQueryParameter("qr");
@@ -263,16 +280,16 @@ public final class MainActivity extends Activity {
                     int size = Math.round(getResources().getDisplayMetrics().widthPixels * 0.50f);
                     ImageView image = content.findViewWithTag("qr_image");
                     if (image != null) image.setImageBitmap(QrCode.create(url, size));
-                    setQrStatus("等待扫码", CYAN);
+                    setQrStatus("等待扫码", SECONDARY);
                     pollingQr = true;
                     handler.postDelayed(MainActivity.this::pollQr, 900);
                 } catch (Exception error) {
-                    setQrStatus("二维码生成失败", PINK);
+                    setQrStatus("二维码生成失败", PRIMARY);
                 }
             }
 
             @Override public void onError(String message) {
-                setQrStatus("获取失败：" + message, PINK);
+                setQrStatus("获取失败：" + message, PRIMARY);
             }
         });
     }
@@ -296,12 +313,12 @@ public final class MainActivity extends Activity {
                     showFeed();
                     return;
                 }
-                if ("ready".equals(state)) setQrStatus("已扫码，请在手机确认", PINK);
+                if ("ready".equals(state)) setQrStatus("已扫码，请在手机确认", PRIMARY);
                 else if ("cancel".equals(state)) {
                     pollingQr = false;
-                    setQrStatus("登录已取消，请重新获取", PINK);
+                    setQrStatus("登录已取消，请重新获取", PRIMARY);
                     return;
-                } else setQrStatus("等待扫码", CYAN);
+                } else setQrStatus("等待扫码", SECONDARY);
                 handler.postDelayed(MainActivity.this::pollQr, 1300);
             }
 
@@ -347,8 +364,24 @@ public final class MainActivity extends Activity {
                 ? Color.rgb(50, 50, 50) : Color.rgb(225, 228, 232)));
         feedAdapter = new FeedAdapter(this, feed, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
-                session.darkMode(), this::showDetail);
+                session.darkMode(), PRIMARY, SECONDARY, this::showDetail);
         list.setAdapter(feedAdapter);
+        final float[] pullStart = {-1f};
+        list.setOnTouchListener((view, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN
+                    && list.getFirstVisiblePosition() == 0) {
+                pullStart[0] = event.getY();
+            } else if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                boolean refresh = pullStart[0] >= 0
+                        && list.getFirstVisiblePosition() == 0
+                        && event.getY() - pullStart[0] > dp(64);
+                pullStart[0] = -1f;
+                if (refresh) loadFeed(true);
+            } else if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                pullStart[0] = -1f;
+            }
+            return false;
+        });
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override public void onScrollStateChanged(AbsListView view, int state) {}
             @Override public void onScroll(AbsListView view, int first, int visible, int total) {
@@ -362,11 +395,11 @@ public final class MainActivity extends Activity {
     private void loadFeed(boolean reset) {
         if (feedLoading) return;
         feedLoading = true;
+        final List<FeedItem> previous = reset ? new ArrayList<>(feed) : null;
         if (reset) {
             feedOffset = 0;
-            feed.clear();
-            if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
-            showLoading();
+            if (feed.isEmpty()) showLoading();
+            else showRefreshStatus("正在刷新");
         }
         Map<String, String> params = new HashMap<>();
         params.put("offset", String.valueOf(feedOffset));
@@ -377,17 +410,25 @@ public final class MainActivity extends Activity {
                 hideLoading();
                 JSONObject result = body.optJSONObject("result");
                 JSONArray links = result == null ? null : result.optJSONArray("links");
+                List<FeedItem> fresh = new ArrayList<>();
                 int added = 0;
                 if (links != null) {
                     for (int i = 0; i < links.length(); i++) {
                         JSONObject item = links.optJSONObject(i);
                         if (item != null) {
-                            feed.add(FeedItem.from(item));
+                            fresh.add(FeedItem.from(item));
                             added++;
                         }
                     }
                 }
+                if (reset && fresh.isEmpty() && previous != null && !previous.isEmpty()) {
+                    toast("没有获取到新内容，已保留原列表");
+                } else {
+                    if (reset) feed.clear();
+                    feed.addAll(fresh);
+                }
                 feedOffset += Math.max(added, 30);
+                hideRefreshStatus();
                 if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
                 if (feed.isEmpty()) showMessage("暂时没有获取到社区内容");
             }
@@ -395,10 +436,151 @@ public final class MainActivity extends Activity {
             @Override public void onError(String message) {
                 feedLoading = false;
                 hideLoading();
+                hideRefreshStatus();
+                if (reset && previous != null && feed.isEmpty()) feed.addAll(previous);
+                if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
                 if (feed.isEmpty()) showMessage("加载失败\n" + message);
-                else toast(message);
+                else toast("刷新失败，已保留原内容");
             }
         });
+    }
+
+    private void showSearch() {
+        if (!session.isLoggedIn()) {
+            showLogin();
+            return;
+        }
+        activate("search");
+        title.setText("搜索");
+        action.setVisibility(View.INVISIBLE);
+        content.removeAllViews();
+
+        LinearLayout page = vertical(BG);
+        page.setPadding(dp(7), dp(6), dp(7), dp(4));
+        LinearLayout searchBar = new LinearLayout(this);
+        searchBar.setGravity(Gravity.CENTER_VERTICAL);
+        EditText input = new EditText(this);
+        input.setHint("搜索帖子");
+        input.setHintTextColor(MUTED);
+        input.setTextColor(TEXT);
+        input.setSingleLine(true);
+        input.setTextSize(sp(13));
+        Compat.tint(input, PRIMARY);
+        searchBar.addView(input, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Button submit = button("搜索", R.drawable.ic_search);
+        LinearLayout.LayoutParams submitParams = new LinearLayout.LayoutParams(dp(82), dp(38));
+        submitParams.leftMargin = dp(5);
+        searchBar.addView(submit, submitParams);
+        page.addView(searchBar);
+
+        FrameLayout results = new FrameLayout(this);
+        page.addView(results, new LinearLayout.LayoutParams(-1, 0, 1));
+        TextView hint = text("输入关键词搜索社区帖子", 13, MUTED);
+        hint.setGravity(Gravity.CENTER);
+        results.addView(hint, match());
+
+        Runnable search = () -> {
+            String keyword = input.getText().toString().trim();
+            if (keyword.isEmpty()) {
+                toast("请输入搜索关键词");
+                return;
+            }
+            performSearch(keyword, results);
+        };
+        submit.setOnClickListener(view -> search.run());
+        input.setOnEditorActionListener((view, actionId, event) -> {
+            search.run();
+            return true;
+        });
+        content.addView(page, match());
+    }
+
+    private void performSearch(String keyword, FrameLayout results) {
+        results.removeAllViews();
+        ProgressBar progress = new ProgressBar(this);
+        Compat.tint(progress, PRIMARY);
+        results.addView(progress,
+                new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER));
+        Map<String, String> params = new HashMap<>();
+        params.put("q", keyword);
+        params.put("keyword", keyword);
+        params.put("search_type", "link");
+        params.put("page", "1");
+        params.put("limit", "30");
+        api.get(EndpointProvider.search(), params, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                if (!"search".equals(screen)) return;
+                List<FeedItem> items = new ArrayList<>();
+                collectFeedItems(body, items, new HashMap<>(), 0);
+                showSearchResults(results, items,
+                        items.isEmpty() ? "没有找到相关帖子" : "");
+            }
+
+            @Override public void onError(String message) {
+                if (!"search".equals(screen)) return;
+                results.removeAllViews();
+                TextView error = text("搜索失败\n" + message, 13, MUTED);
+                error.setGravity(Gravity.CENTER);
+                results.addView(error, match());
+            }
+        });
+    }
+
+    private void showSearchResults(FrameLayout parent, List<FeedItem> items, String emptyText) {
+        parent.removeAllViews();
+        if (items.isEmpty()) {
+            TextView empty = text(emptyText, 13, MUTED);
+            empty.setGravity(Gravity.CENTER);
+            parent.addView(empty, match());
+            return;
+        }
+        ListView list = feedList(items);
+        parent.addView(list, match());
+    }
+
+    private void collectFeedItems(Object node, List<FeedItem> output,
+                                  Map<String, Boolean> ids, int depth) {
+        if (node == null || depth > 7) return;
+        if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            for (int i = 0; i < array.length(); i++) {
+                collectFeedItems(array.opt(i), output, ids, depth + 1);
+            }
+            return;
+        }
+        if (!(node instanceof JSONObject)) return;
+        JSONObject object = (JSONObject) node;
+        String id = object.optString("linkid", object.optString("link_id"));
+        String titleValue = object.optString("title");
+        if (!id.isEmpty() && (!titleValue.isEmpty() || object.has("text")
+                || object.has("description") || object.has("content"))) {
+            if (!ids.containsKey(id)) {
+                ids.put(id, true);
+                output.add(FeedItem.from(object));
+            }
+            return;
+        }
+        Iterator<String> keys = object.keys();
+        while (keys.hasNext()) {
+            collectFeedItems(object.opt(keys.next()), output, ids, depth + 1);
+        }
+    }
+
+    private void showRefreshStatus(String value) {
+        hideRefreshStatus();
+        TextView status = text(value, 11, contrast(SECONDARY));
+        status.setTag("refresh_status");
+        status.setGravity(Gravity.CENTER);
+        Compat.setBackground(status, round(SECONDARY, 14));
+        FrameLayout.LayoutParams params =
+                new FrameLayout.LayoutParams(dp(88), dp(28), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        params.topMargin = dp(5);
+        content.addView(status, params);
+    }
+
+    private void hideRefreshStatus() {
+        View status = content.findViewWithTag("refresh_status");
+        if (status != null) content.removeView(status);
     }
 
     private void showDetail(FeedItem item) {
@@ -408,7 +590,7 @@ public final class MainActivity extends Activity {
         currentLinkId = item.id;
         bottom.setVisibility(View.GONE);
         leading.setVisibility(View.VISIBLE);
-        leading.setOnClickListener(view -> showFeed());
+        leading.setOnClickListener(view -> returnFromDetail());
         title.setText("帖子详情");
         action.setVisibility(View.INVISIBLE);
         content.removeAllViews();
@@ -460,8 +642,7 @@ public final class MainActivity extends Activity {
         page.addView(article);
 
         View section = new View(this);
-        section.setBackgroundColor(session.darkMode()
-                ? Color.rgb(22, 22, 22) : Color.rgb(225, 228, 232));
+        section.setBackgroundColor(blend(PANEL, SECONDARY, session.darkMode() ? 0.32f : 0.18f));
         addTop(page, section, 2);
         section.getLayoutParams().height = dp(6);
 
@@ -501,18 +682,19 @@ public final class MainActivity extends Activity {
                 parent.addView(image, imageParams);
                 if (session.originalImages()) ImageLoader.intoOriginal(image, block.value, 1440);
                 else ImageLoader.into(image, block.value, 1080);
-                image.setOnClickListener(view -> {
-                    Intent intent = new Intent(this, ImageViewerActivity.class);
-                    intent.putExtra(ImageViewerActivity.EXTRA_URL, block.value);
-                    startActivity(intent);
-                });
+                image.setOnClickListener(view -> openImage(image, block.value));
                 imageCount++;
             } else {
-                TextView bodyText = text(block.value, 14, TEXT);
-                bodyText.setLineSpacing(0, 1.22f);
+                TextView bodyText = text(block.value,
+                        14 * session.bodyTextScale() / 100f, TEXT);
+                bodyText.setLineSpacing(0, session.bodyLineSpacing() / 100f);
+                Compat.setLetterSpacing(bodyText, session.bodyLetterSpacing() / 200f);
+                if (session.bodyBold()) {
+                    bodyText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+                }
                 bodyText.setTextIsSelectable(true);
                 EmojiRenderer.set(bodyText, block.value);
-                addTop(parent, bodyText, 9);
+                addTop(parent, bodyText, session.bodyParagraphSpacing());
             }
         }
     }
@@ -555,8 +737,7 @@ public final class MainActivity extends Activity {
                 threadCard.addView(replySection, sectionParams);
 
                 View rail = new View(this);
-                rail.setBackgroundColor(session.darkMode()
-                        ? Color.rgb(75, 79, 83) : Color.rgb(205, 209, 213));
+                rail.setBackgroundColor(SECONDARY);
                 LinearLayout.LayoutParams railParams = new LinearLayout.LayoutParams(dp(2), -1);
                 railParams.leftMargin = dp(14);
                 railParams.rightMargin = dp(8);
@@ -616,12 +797,15 @@ public final class MainActivity extends Activity {
     }
 
     private TextView replyControl(String label, int icon) {
-        TextView control = text(label, 12, TEXT);
+        int background = blend(PANEL, SECONDARY, session.darkMode() ? 0.42f : 0.22f);
+        int foreground = readableOn(background);
+        TextView control = text(label, 12, foreground);
         control.setGravity(Gravity.CENTER_VERTICAL);
         control.setPadding(dp(8), 0, dp(8), 0);
-        Compat.setBackground(control, round(session.darkMode()
-                ? Color.rgb(42, 45, 48) : Color.rgb(237, 239, 241), 7));
-        setLeftIcon(control, icon, MUTED, 16);
+        GradientDrawable drawable = round(background, 7);
+        drawable.setStroke(dp(1), SECONDARY);
+        Compat.setBackground(control, drawable);
+        setLeftIcon(control, icon, foreground, 16);
         return control;
     }
 
@@ -756,7 +940,11 @@ public final class MainActivity extends Activity {
         String rawComment = first(comment.optString("text"), comment.optString("content"));
         String visibleComment = RichContent.plainText(rawComment);
         TextView value = text(visibleComment, 13, TEXT);
-        value.setLineSpacing(0, 1.18f);
+        value.setLineSpacing(0, reply ? 1.16f : session.bodyLineSpacing() / 100f);
+        Compat.setLetterSpacing(value, reply ? 0 : session.bodyLetterSpacing() / 200f);
+        if (!reply) {
+            value.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        }
         EmojiRenderer.set(value, visibleComment);
         addTop(block, value, 4);
         String commentImage = commentImage(comment);
@@ -772,16 +960,12 @@ public final class MainActivity extends Activity {
             block.addView(image, imageParams);
             if (session.originalImages()) ImageLoader.intoOriginal(image, commentImage, 1080);
             else ImageLoader.into(image, commentImage, 720);
-            image.setOnClickListener(view -> {
-                Intent intent = new Intent(this, ImageViewerActivity.class);
-                intent.putExtra(ImageViewerActivity.EXTRA_URL, commentImage);
-                startActivity(intent);
-            });
+            image.setOnClickListener(view -> openImage(image, commentImage));
         }
 
         if (!reply) {
             TextView likes = text(String.valueOf(commentLikes(comment)), 10, MUTED);
-            setLeftIcon(likes, R.drawable.ic_heart, MUTED, 13);
+            setLeftIcon(likes, R.drawable.ic_thumb_up, SECONDARY, 13);
             likes.setGravity(Gravity.CENTER_VERTICAL);
             LinearLayout.LayoutParams likeParams = new LinearLayout.LayoutParams(dp(44), dp(24));
             likeParams.leftMargin = dp(3);
@@ -791,8 +975,8 @@ public final class MainActivity extends Activity {
 
         if (reply) {
             View divider = new View(this);
-            divider.setBackgroundColor(session.darkMode()
-                    ? Color.rgb(45, 48, 51) : Color.rgb(226, 229, 232));
+            divider.setBackgroundColor(blend(PANEL, SECONDARY,
+                    session.darkMode() ? 0.28f : 0.16f));
             page.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
         }
     }
@@ -871,7 +1055,7 @@ public final class MainActivity extends Activity {
         if (bbs != null) {
             addTop(profile, text("关注 " + bbs.optInt("follow_num")
                     + "   粉丝 " + bbs.optInt("fan_num")
-                    + "   获赞 " + bbs.optInt("up_num"), 12, CYAN), 10);
+                    + "   获赞 " + bbs.optInt("up_num"), 12, SECONDARY), 10);
         }
         page.addView(profile);
         animateIn(profile);
@@ -979,15 +1163,11 @@ public final class MainActivity extends Activity {
                         }
                     }
                 }
-                ListView list = new ListView(MainActivity.this);
-                list.setBackgroundColor(BG);
-                list.setDivider(new ColorDrawable(Color.TRANSPARENT));
-                list.setDividerHeight(dp(2));
-                list.setAdapter(new FeedAdapter(MainActivity.this, items, session.noImage(),
-                        session.uiScale() / 100f, session.textScale() / 100f,
-                        session.darkMode(), MainActivity.this::showDetail));
-                content.addView(list, match());
-                if (items.isEmpty()) showMessage("这里暂时没有内容");
+                if (pageTitle.contains("历史")) showHistoryList(items);
+                else {
+                    content.addView(feedList(items), match());
+                    if (items.isEmpty()) showMessage("这里暂时没有内容");
+                }
             }
 
             @Override public void onError(String message) {
@@ -995,6 +1175,76 @@ public final class MainActivity extends Activity {
                 showMessage(pageTitle + "加载失败\n" + message);
             }
         });
+    }
+
+    private ListView feedList(List<FeedItem> items) {
+        ListView list = new ListView(this);
+        list.setBackgroundColor(BG);
+        list.setDivider(new ColorDrawable(Color.TRANSPARENT));
+        list.setDividerHeight(dp(2));
+        list.setAdapter(new FeedAdapter(this, items, session.noImage(),
+                session.uiScale() / 100f, session.textScale() / 100f,
+                session.darkMode(), PRIMARY, SECONDARY, this::showDetail));
+        return list;
+    }
+
+    private void showHistoryList(List<FeedItem> allItems) {
+        content.removeAllViews();
+        LinearLayout page = vertical(BG);
+        page.setPadding(dp(7), dp(5), dp(7), 0);
+        EditText search = new EditText(this);
+        search.setHint("搜索历史：标题、摘要或作者");
+        search.setHintTextColor(MUTED);
+        search.setTextColor(TEXT);
+        search.setSingleLine(true);
+        search.setTextSize(sp(12));
+        Compat.tint(search, PRIMARY);
+        page.addView(search, new LinearLayout.LayoutParams(-1, dp(40)));
+
+        FrameLayout results = new FrameLayout(this);
+        page.addView(results, new LinearLayout.LayoutParams(-1, 0, 1));
+        List<FeedItem> filtered = new ArrayList<>(allItems);
+        FeedAdapter adapter = new FeedAdapter(this, filtered, session.noImage(),
+                session.uiScale() / 100f, session.textScale() / 100f,
+                session.darkMode(), PRIMARY, SECONDARY, this::showDetail);
+        ListView list = new ListView(this);
+        list.setBackgroundColor(BG);
+        list.setDivider(new ColorDrawable(Color.TRANSPARENT));
+        list.setDividerHeight(dp(2));
+        list.setAdapter(adapter);
+        results.addView(list, match());
+
+        search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence value, int start,
+                                                    int count, int after) {}
+            @Override public void onTextChanged(CharSequence value, int start,
+                                                int before, int count) {
+                String query = value.toString().trim().toLowerCase(Locale.US);
+                filtered.clear();
+                for (FeedItem item : allItems) {
+                    String haystack = (item.title + "\n" + item.description + "\n" + item.author)
+                            .toLowerCase(Locale.US);
+                    if (query.isEmpty() || haystack.contains(query)) filtered.add(item);
+                }
+                adapter.notifyDataSetChanged();
+                results.removeAllViews();
+                if (filtered.isEmpty()) {
+                    TextView empty = text("没有找到相关历史记录", 13, MUTED);
+                    empty.setGravity(Gravity.CENTER);
+                    results.addView(empty, match());
+                } else {
+                    results.addView(list, match());
+                }
+            }
+            @Override public void afterTextChanged(Editable value) {}
+        });
+        if (allItems.isEmpty()) {
+            results.removeAllViews();
+            TextView empty = text("这里暂时没有内容", 13, MUTED);
+            empty.setGravity(Gravity.CENTER);
+            results.addView(empty, match());
+        }
+        content.addView(page, match());
     }
 
     private JSONArray findLinks(JSONObject result) {
@@ -1046,82 +1296,164 @@ public final class MainActivity extends Activity {
         LinearLayout panel = card();
 
         final boolean[] dark = {session.darkMode()};
+        final boolean[] bodyBold = {session.bodyBold()};
         addTop(panel, toggleRow("夜间模式", dark[0], value -> dark[0] = value), 0);
-        EditText uiScale = numberField(panel, "界面大小 (%)", session.uiScale());
-        EditText textScale = numberField(panel, "文字大小 (%)", session.textScale());
-        EditText padding = numberField(panel, "左右边距 (dp)", session.pagePadding());
 
-        TextView colorTitle = text("主题强调色", 13, TEXT);
-        colorTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        addTop(panel, colorTitle, 8);
+        LinearLayout livePreview = vertical(PANEL);
+        TextView previewTitle = text("显示效果预览", 14, TEXT);
+        previewTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        TextView previewBody = text("帖子正文会跟随下方设置实时变化。\n第二段用于预览段落间距。", 13, TEXT);
+        previewBody.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        TextView previewAction = text("主色按钮", 11, contrast(PRIMARY));
+        previewAction.setGravity(Gravity.CENTER);
+        Compat.setBackground(previewAction, round(PRIMARY, 7));
+        addTop(livePreview, previewTitle, 0);
+        addTop(livePreview, previewBody, 3);
+        addTop(livePreview, previewAction, 6);
+        addTop(panel, livePreview, 8);
 
-        int initial = currentAccent();
-        View preview = new View(this);
-        preview.setBackgroundColor(initial);
-        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, dp(30));
-        previewParams.topMargin = dp(6);
-        panel.addView(preview, previewParams);
-        TextView hex = text(colorHex(initial), 12, MUTED);
-        hex.setGravity(Gravity.CENTER);
-        panel.addView(hex, new LinearLayout.LayoutParams(-1, dp(26)));
+        ScaleControl uiScale = settingSlider(panel, "界面大小", "%", 70, 160,
+                session.uiScale(), value -> updateDisplayPreview(livePreview, previewTitle,
+                        previewBody, previewAction, value, -1, -1));
+        ScaleControl textScale = settingSlider(panel, "文字大小", "%", 70, 180,
+                session.textScale(), value -> updateDisplayPreview(livePreview, previewTitle,
+                        previewBody, previewAction, -1, value, -1));
+        ScaleControl padding = settingSlider(panel, "左右边距", "dp", 0, 30,
+                session.pagePadding(), value -> updateDisplayPreview(livePreview, previewTitle,
+                        previewBody, previewAction, -1, -1, value));
+        ScaleControl bodyText = settingSlider(panel, "正文字号", "%", 75, 170,
+                session.bodyTextScale(), value -> {
+                    previewBody.setTextSize(13 * value / 100f);
+                });
+        ScaleControl letterSpacing = settingSlider(panel, "字间距", "", 0, 20,
+                session.bodyLetterSpacing(), value ->
+                        Compat.setLetterSpacing(previewBody, value / 200f));
+        ScaleControl paragraphSpacing = settingSlider(panel, "段落间距", "dp", 0, 24,
+                session.bodyParagraphSpacing(), value ->
+                        previewBody.setPadding(0, dp(value), 0, 0));
+        ScaleControl lineSpacing = settingSlider(panel, "行距", "%", 100, 180,
+                session.bodyLineSpacing(), value ->
+                        previewBody.setLineSpacing(0, value / 100f));
+        addTop(panel, toggleRow("正文与一级评论稍加粗", bodyBold[0], value -> {
+            bodyBold[0] = value;
+            previewBody.setTypeface(value
+                    ? Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    : Typeface.DEFAULT);
+        }), 4);
+        updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction,
+                session.uiScale(), session.textScale(), session.pagePadding());
+        previewBody.setTextSize(13 * session.bodyTextScale() / 100f);
+        Compat.setLetterSpacing(previewBody, session.bodyLetterSpacing() / 200f);
+        previewBody.setPadding(0, dp(session.bodyParagraphSpacing()), 0, 0);
+        previewBody.setLineSpacing(0, session.bodyLineSpacing() / 100f);
 
-        SeekBar red = colorSlider(panel, "R", Color.red(initial));
-        SeekBar green = colorSlider(panel, "G", Color.green(initial));
-        SeekBar blue = colorSlider(panel, "B", Color.blue(initial));
-        SeekBar.OnSeekBarChangeListener colorListener = new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int color = Color.rgb(red.getProgress(), green.getProgress(), blue.getProgress());
-                preview.setBackgroundColor(color);
-                hex.setText(colorHex(color));
+        TextView themeTitle = text("预设颜色主题", 13, TEXT);
+        themeTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        addTop(panel, themeTitle, 12);
+        LinearLayout themeGrid = vertical(PANEL);
+        for (int rowIndex = 0; rowIndex < THEME_NAMES.length; rowIndex += 2) {
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.addView(themePreset(rowIndex), new LinearLayout.LayoutParams(0, dp(44), 1));
+            if (rowIndex + 1 < THEME_NAMES.length) {
+                LinearLayout.LayoutParams right =
+                        new LinearLayout.LayoutParams(0, dp(44), 1);
+                right.leftMargin = dp(5);
+                row.addView(themePreset(rowIndex + 1), right);
+            } else {
+                row.addView(new View(this), new LinearLayout.LayoutParams(0, dp(44), 1));
             }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
-        };
-        red.setOnSeekBarChangeListener(colorListener);
-        green.setOnSeekBarChangeListener(colorListener);
-        blue.setOnSeekBarChangeListener(colorListener);
-
-        LinearLayout swatches = new LinearLayout(this);
-        int[] presets = {
-                Color.BLACK, Color.rgb(70, 70, 70), Color.rgb(145, 145, 145),
-                Color.WHITE, Color.rgb(74, 144, 226), Color.rgb(46, 160, 110)
-        };
-        for (int color : presets) {
-            View swatch = new View(this);
-            Compat.setBackground(swatch, swatchDrawable(color));
-            swatch.setContentDescription(colorHex(color));
-            swatch.setOnClickListener(view -> {
-                red.setProgress(Color.red(color));
-                green.setProgress(Color.green(color));
-                blue.setProgress(Color.blue(color));
-            });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(30), 1);
-            params.leftMargin = dp(2);
-            params.rightMargin = dp(2);
-            swatches.addView(swatch, params);
+            addTop(themeGrid, row, rowIndex == 0 ? 4 : 5);
         }
-        addTop(panel, swatches, 8);
+        panel.addView(themeGrid);
 
         Button save = button("保存显示设置", R.drawable.ic_settings);
         save.setOnClickListener(view -> {
-            Integer ui = parseNumber(uiScale, 70, 160);
-            Integer text = parseNumber(textScale, 70, 180);
-            Integer pad = parseNumber(padding, 0, 30);
-            if (ui == null || text == null || pad == null) {
-                toast("请输入有效数值：界面 70-160，文字 70-180，边距 0-30");
+            Integer ui = parseNumber(uiScale.input, 70, 160);
+            Integer text = parseNumber(textScale.input, 70, 180);
+            Integer pad = parseNumber(padding.input, 0, 30);
+            Integer bodySize = parseNumber(bodyText.input, 75, 170);
+            Integer letters = parseNumber(letterSpacing.input, 0, 20);
+            Integer paragraphs = parseNumber(paragraphSpacing.input, 0, 24);
+            Integer lines = parseNumber(lineSpacing.input, 100, 180);
+            if (ui == null || text == null || pad == null || bodySize == null
+                    || letters == null || paragraphs == null || lines == null) {
+                toast("请检查输入数值是否在滑杆范围内");
                 return;
             }
-            int color = Color.rgb(red.getProgress(), green.getProgress(), blue.getProgress());
             session.setDarkMode(dark[0]);
             session.setUiScale(ui);
             session.setTextScale(text);
             session.setPagePadding(pad);
-            session.setAccentColor(colorHex(color));
+            session.setBodyTextScale(bodySize);
+            session.setBodyLetterSpacing(letters);
+            session.setBodyParagraphSpacing(paragraphs);
+            session.setBodyLineSpacing(lines);
+            session.setBodyBold(bodyBold[0]);
             toast("显示设置已保存");
             recreate();
         });
         addTop(panel, save, 10);
+
+        Button reset = button("恢复默认设置", R.drawable.ic_refresh);
+        reset.setOnClickListener(view -> new AlertDialog.Builder(this)
+                .setTitle("恢复默认显示设置")
+                .setMessage("主题、字体、间距和界面大小都将恢复为默认值。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("恢复", (dialog, which) -> {
+                    session.resetDisplaySettings();
+                    applyPalette();
+                    Compat.colorSystemBars(getWindow(), BG);
+                    buildShell();
+                    showDisplaySettings();
+                    toast("已恢复默认显示设置");
+                })
+                .show());
+        addTop(panel, reset, 7);
         page.addView(panel);
+    }
+
+    private View themePreset(int index) {
+        int primary = THEME_COLORS[index][0];
+        int secondary = THEME_COLORS[index][1];
+        boolean selected = currentPrimary() == primary && currentSecondary() == secondary;
+        LinearLayout item = new LinearLayout(this);
+        item.setGravity(Gravity.CENTER_VERTICAL);
+        item.setPadding(dp(7), 0, dp(7), 0);
+        int background = blend(PANEL, selected ? secondary : MUTED,
+                selected ? (session.darkMode() ? 0.34f : 0.18f) : 0.06f);
+        GradientDrawable shape = round(background, 7);
+        shape.setStroke(dp(1), selected ? primary : blend(PANEL, MUTED, 0.34f));
+        Compat.setBackground(item, shape);
+
+        LinearLayout swatches = new LinearLayout(this);
+        View first = new View(this);
+        Compat.setBackground(first, round(primary, 9));
+        swatches.addView(first, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        View second = new View(this);
+        Compat.setBackground(second, round(secondary, 9));
+        LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(dp(18), dp(18));
+        secondParams.leftMargin = -dp(5);
+        swatches.addView(second, secondParams);
+        item.addView(swatches, new LinearLayout.LayoutParams(dp(34), dp(22)));
+
+        TextView name = text(THEME_NAMES[index], 11, TEXT);
+        name.setGravity(Gravity.CENTER_VERTICAL);
+        name.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        item.addView(name, new LinearLayout.LayoutParams(0, -1, 1));
+        if (selected) {
+            TextView marker = text("✓", 13, primary);
+            marker.setGravity(Gravity.CENTER);
+            item.addView(marker, new LinearLayout.LayoutParams(dp(20), -1));
+        }
+        item.setOnClickListener(view -> {
+            session.setTheme(colorHex(primary), colorHex(secondary));
+            applyPalette();
+            Compat.colorSystemBars(getWindow(), BG);
+            buildShell();
+            showDisplaySettings();
+        });
+        return item;
     }
 
     private void showAppSettings() {
@@ -1165,6 +1497,17 @@ public final class MainActivity extends Activity {
         addTop(panel, text("版本 " + appVersion(), 13, MUTED), 6);
         addTop(panel, text("开发者：Ronan", 13, TEXT), 5);
         addTop(panel, text("支持 Android 4.0 及以上系统", 12, MUTED), 5);
+        TextView basedOn = text("基于 HeyWear 进行二次开发与方屏适配，非官方应用。", 12, TEXT);
+        basedOn.setLineSpacing(0, 1.18f);
+        addTop(panel, basedOn, 7);
+
+        TextView disclaimer = text(
+                "免责声明：本项目仅用于学习、研究与个人使用，不代表小黑盒、HeyWear 或相关官方立场。"
+                        + "本项目基于 HeyWear 进行二次开发与适配，开发者不对因使用本项目造成的账号、"
+                        + "数据、设备或其他风险承担额外责任。请在遵守相关法律法规及平台规则的前提下使用。",
+                11, MUTED);
+        disclaimer.setLineSpacing(0, 1.22f);
+        addTop(panel, disclaimer, 10);
 
         TextView updateStatus = text("可从 GitHub 检查最新版本", 12, MUTED);
         addTop(panel, updateStatus, 12);
@@ -1231,34 +1574,86 @@ public final class MainActivity extends Activity {
         return row;
     }
 
-    private SeekBar colorSlider(LinearLayout parent, String label, int value) {
+    private ScaleControl settingSlider(LinearLayout parent, String label, String unit,
+                                       int min, int max, int current, IntListener listener) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView name = text(label, 12, MUTED);
-        name.setGravity(Gravity.CENTER);
-        row.addView(name, new LinearLayout.LayoutParams(dp(24), dp(34)));
+        TextView name = text(label, 12, TEXT);
+        row.addView(name, new LinearLayout.LayoutParams(dp(74), dp(38)));
+
         SeekBar slider = new SeekBar(this);
-        slider.setMax(255);
-        slider.setProgress(value);
-        row.addView(slider, new LinearLayout.LayoutParams(0, dp(34), 1));
-        addTop(parent, row, 2);
-        return slider;
+        slider.setMax(max - min);
+        slider.setProgress(Math.max(0, Math.min(max - min, current - min)));
+        Compat.tint(slider, PRIMARY);
+        row.addView(slider, new LinearLayout.LayoutParams(0, dp(38), 1));
+
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setText(String.valueOf(current));
+        input.setTextSize(sp(11));
+        input.setTextColor(TEXT);
+        input.setGravity(Gravity.CENTER);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        Compat.tint(input, PRIMARY);
+        row.addView(input, new LinearLayout.LayoutParams(dp(48), dp(38)));
+
+        TextView suffix = text(unit, 10, MUTED);
+        suffix.setGravity(Gravity.CENTER);
+        row.addView(suffix, new LinearLayout.LayoutParams(dp(24), dp(38)));
+        addTop(parent, row, 4);
+
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress,
+                                                    boolean fromUser) {
+                int value = min + progress;
+                input.setText(String.valueOf(value));
+                input.setSelection(input.length());
+                listener.onChanged(value);
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        return new ScaleControl(input, slider);
     }
 
-    private GradientDrawable swatchDrawable(int color) {
-        GradientDrawable drawable = round(color, 5);
-        drawable.setStroke(dp(1), session.darkMode()
-                ? Color.rgb(110, 112, 115) : Color.rgb(180, 182, 185));
-        return drawable;
+    private void updateDisplayPreview(LinearLayout preview, TextView heading, TextView body,
+                                      TextView actionView, int ui, int textValue, int padding) {
+        if (ui >= 0) {
+            float scale = ui / 100f;
+            preview.setScaleX(scale);
+            preview.setScaleY(scale);
+        }
+        if (textValue >= 0) {
+            float scale = textValue / 100f;
+            heading.setTextSize(14 * scale);
+            body.setTextSize(11 * scale);
+            actionView.setTextSize(11 * scale);
+        }
+        if (padding >= 0) {
+            int value = Math.round(padding * getResources().getDisplayMetrics().density);
+            preview.setPadding(value, dp(7), value, dp(7));
+        }
     }
 
-    private int currentAccent() {
+    private int currentPrimary() {
         try {
-            String saved = session.accentColor();
+            String saved = session.primaryColor();
             return saved.isEmpty() ? (session.darkMode() ? Color.WHITE : Color.BLACK)
                     : Color.parseColor(saved);
         } catch (Exception ignored) {
             return session.darkMode() ? Color.WHITE : Color.BLACK;
+        }
+    }
+
+    private int currentSecondary() {
+        try {
+            String saved = session.secondaryColor();
+            return saved.isEmpty() ? (session.darkMode()
+                    ? Color.rgb(150, 190, 220) : Color.rgb(35, 125, 178))
+                    : Color.parseColor(saved);
+        } catch (Exception ignored) {
+            return session.darkMode() ? Color.rgb(150, 190, 220)
+                    : Color.rgb(35, 125, 178);
         }
     }
 
@@ -1267,13 +1662,47 @@ public final class MainActivity extends Activity {
                 Color.red(color), Color.green(color), Color.blue(color));
     }
 
+    private static int contrast(int color) {
+        int luminance = (Color.red(color) * 299 + Color.green(color) * 587
+                + Color.blue(color) * 114) / 1000;
+        return luminance >= 150 ? Color.BLACK : Color.WHITE;
+    }
+
+    private static int readableOn(int color) {
+        return contrast(color);
+    }
+
+    private static int blend(int base, int overlay, float amount) {
+        float value = Math.max(0f, Math.min(1f, amount));
+        float keep = 1f - value;
+        return Color.rgb(
+                Math.round(Color.red(base) * keep + Color.red(overlay) * value),
+                Math.round(Color.green(base) * keep + Color.green(overlay) * value),
+                Math.round(Color.blue(base) * keep + Color.blue(overlay) * value));
+    }
+
     @SuppressWarnings("deprecation")
     private String appVersion() {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "1.3.0";
+            return "1.4.0";
         }
+    }
+
+    private void openImage(ImageView source, String url) {
+        int[] location = new int[2];
+        source.getLocationOnScreen(location);
+        Intent intent = new Intent(this, ImageViewerActivity.class);
+        intent.putExtra(ImageViewerActivity.EXTRA_URL, url);
+        intent.putExtra(ImageViewerActivity.EXTRA_ORIGIN_X,
+                location[0] + source.getWidth() / 2);
+        intent.putExtra(ImageViewerActivity.EXTRA_ORIGIN_Y,
+                location[1] + source.getHeight() / 2);
+        intent.putExtra(ImageViewerActivity.EXTRA_ORIGIN_WIDTH, source.getWidth());
+        intent.putExtra(ImageViewerActivity.EXTRA_ORIGIN_HEIGHT, source.getHeight());
+        startActivity(intent);
+        overridePendingTransition(0, 0);
     }
 
     private void openUrl(String url) {
@@ -1288,6 +1717,20 @@ public final class MainActivity extends Activity {
         void onChanged(boolean value);
     }
 
+    private interface IntListener {
+        void onChanged(int value);
+    }
+
+    private static final class ScaleControl {
+        final EditText input;
+        final SeekBar slider;
+
+        ScaleControl(EditText input, SeekBar slider) {
+            this.input = input;
+            this.slider = slider;
+        }
+    }
+
     private void addLegacySettings(LinearLayout page) {
         TextView settingsTitle = text("设置", 15, TEXT);
         settingsTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -1298,7 +1741,7 @@ public final class MainActivity extends Activity {
         images.setTextColor(TEXT);
         images.setTextSize(sp(14));
         images.setChecked(session.noImage());
-        Compat.tint(images, PINK);
+        Compat.tint(images, PRIMARY);
         images.setOnCheckedChangeListener((button, checked) -> {
             session.setNoImage(checked);
             feed.clear();
@@ -1310,7 +1753,7 @@ public final class MainActivity extends Activity {
         originals.setTextColor(TEXT);
         originals.setTextSize(sp(14));
         originals.setChecked(session.originalImages());
-        Compat.tint(originals, PINK);
+        Compat.tint(originals, PRIMARY);
         originals.setOnCheckedChangeListener((button, checked) ->
                 session.setOriginalImages(checked));
         addTop(page, originals, 2);
@@ -1320,7 +1763,7 @@ public final class MainActivity extends Activity {
         theme.setTextColor(TEXT);
         theme.setTextSize(sp(14));
         theme.setChecked(session.darkMode());
-        Compat.tint(theme, PINK);
+        Compat.tint(theme, PRIMARY);
         theme.setOnCheckedChangeListener((button, checked) -> {
             session.setDarkMode(checked);
             recreate();
@@ -1334,8 +1777,8 @@ public final class MainActivity extends Activity {
         EditText uiScale = numberField(display, "界面大小 (%)", session.uiScale());
         EditText textScale = numberField(display, "文字大小 (%)", session.textScale());
         EditText padding = numberField(display, "左右边距 (dp)", session.pagePadding());
-        EditText accent = textField(display, "强调色", session.accentColor().isEmpty()
-                ? (session.darkMode() ? "#BCC1C6" : "#4A5056") : session.accentColor());
+        EditText accent = textField(display, "主色调", session.primaryColor().isEmpty()
+                ? (session.darkMode() ? "#FFFFFF" : "#000000") : session.primaryColor());
         Button save = button("保存显示设置", R.drawable.ic_settings);
         save.setOnClickListener(view -> {
             Integer ui = parseNumber(uiScale, 70, 160);
@@ -1349,7 +1792,7 @@ public final class MainActivity extends Activity {
             session.setUiScale(ui);
             session.setTextScale(text);
             session.setPagePadding(pad);
-            session.setAccentColor(accentValue);
+            session.setPrimaryColor(accentValue);
             toast("显示设置已保存");
             recreate();
         });
@@ -1390,7 +1833,7 @@ public final class MainActivity extends Activity {
         input.setSingleLine(true);
         input.setSelectAllOnFocus(true);
         input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        Compat.tint(input, PINK);
+        Compat.tint(input, PRIMARY);
         row.addView(input, new LinearLayout.LayoutParams(dp(72), dp(40)));
         addTop(parent, row, 3);
         return input;
@@ -1407,7 +1850,7 @@ public final class MainActivity extends Activity {
         input.setGravity(Gravity.CENTER);
         input.setSingleLine(true);
         input.setSelectAllOnFocus(true);
-        Compat.tint(input, PINK);
+        Compat.tint(input, PRIMARY);
         row.addView(input, new LinearLayout.LayoutParams(dp(96), dp(40)));
         addTop(parent, row, 3);
         return input;
@@ -1434,8 +1877,7 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if ("detail".equals(screen)) {
-            if ("saved".equals(detailReturn)) showProfile();
-            else showFeed();
+            returnFromDetail();
         }
         else if ("saved".equals(screen)) showProfile();
         else if ("display_settings".equals(screen)
@@ -1443,6 +1885,12 @@ public final class MainActivity extends Activity {
                 || "about".equals(screen)) showProfile();
         else if (!"feed".equals(screen) && session.isLoggedIn()) showFeed();
         else super.onBackPressed();
+    }
+
+    private void returnFromDetail() {
+        if ("saved".equals(detailReturn)) showProfile();
+        else if ("search".equals(detailReturn)) showSearch();
+        else showFeed();
     }
 
     @Override
@@ -1457,7 +1905,7 @@ public final class MainActivity extends Activity {
         hideLoading();
         ProgressBar progress = new ProgressBar(this);
         progress.setTag("loading");
-        Compat.tint(progress, PINK);
+        Compat.tint(progress, PRIMARY);
         content.addView(progress, new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER));
     }
 
@@ -1505,14 +1953,13 @@ public final class MainActivity extends Activity {
         Button button = new Button(this);
         button.setText(value);
         button.setTextSize(sp(12));
-        button.setTextColor(session.darkMode() ? Color.WHITE : Color.rgb(28, 30, 33));
+        int foreground = contrast(PRIMARY);
+        button.setTextColor(foreground);
         button.setAllCaps(false);
         button.setPadding(dp(8), 0, dp(8), 0);
         button.setGravity(Gravity.CENTER);
-        Compat.setBackground(button, round(session.darkMode()
-                ? Color.rgb(49, 52, 55) : Color.rgb(230, 233, 236), 8));
-        if (iconRes != 0) setLeftIcon(button, iconRes,
-                session.darkMode() ? Color.WHITE : Color.rgb(45, 48, 51), 17);
+        Compat.setBackground(button, round(PRIMARY, 8));
+        if (iconRes != 0) setLeftIcon(button, iconRes, foreground, 17);
         return button;
     }
 

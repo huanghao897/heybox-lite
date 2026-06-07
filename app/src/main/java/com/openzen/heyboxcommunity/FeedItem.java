@@ -10,10 +10,12 @@ final class FeedItem {
     final String author;
     final String image;
     final int comments;
-    final int likes;
+    int likes;
+    final boolean article;
+    boolean liked;
 
     private FeedItem(String id, String title, String description, String author,
-                     String image, int comments, int likes) {
+                     String image, int comments, int likes, boolean article, boolean liked) {
         this.id = id;
         this.title = title;
         this.description = description;
@@ -21,6 +23,8 @@ final class FeedItem {
         this.image = image;
         this.comments = comments;
         this.likes = likes;
+        this.article = article;
+        this.liked = liked;
     }
 
     static FeedItem from(JSONObject json) {
@@ -44,8 +48,19 @@ final class FeedItem {
                 json.optInt("comment_num", json.optInt("comment_count")),
                 json.optInt("link_award_num",
                         json.optInt("like_num",
-                                json.optInt("award_num", json.optInt("up"))))
+                                json.optInt("award_num", json.optInt("up")))),
+                isArticle(json),
+                json.optBoolean("is_award", json.optBoolean("liked",
+                        json.optBoolean("is_liked", json.optInt("has_award") == 1)))
         );
+    }
+
+    private static boolean isArticle(JSONObject json) {
+        if (json.has("use_concept_type")) return json.optInt("use_concept_type", 1) == 0;
+        if (json.optBoolean("is_article", false)) return true;
+        String type = json.optString("link_type",
+                json.optString("content_type", json.optString("type")));
+        return "article".equalsIgnoreCase(type) || "文章".equals(type);
     }
 
     private static String first(JSONArray array) {

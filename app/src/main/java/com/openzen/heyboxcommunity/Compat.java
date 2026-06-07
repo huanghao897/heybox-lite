@@ -10,6 +10,7 @@ import android.view.Window;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.ProgressBar;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 final class Compat {
@@ -79,6 +80,17 @@ final class Compat {
     static void tint(ProgressBar progress, int color) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             progress.setIndeterminateTintList(ColorStateList.valueOf(color));
+        }
+    }
+
+    static void tint(SeekBar seekBar, int color) {
+        if (seekBar.getProgressDrawable() != null) {
+            seekBar.getProgressDrawable().mutate()
+                    .setColorFilter(color, PorterDuff.Mode.SRC_IN);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN
+                && seekBar.getThumb() != null) {
+            seekBar.getThumb().mutate().setColorFilter(color, PorterDuff.Mode.SRC_IN);
         }
     }
 }
