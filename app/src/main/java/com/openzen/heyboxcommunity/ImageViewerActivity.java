@@ -23,7 +23,6 @@ public final class ImageViewerActivity extends Activity {
     private ProgressBar progress;
     private TextView original;
     private String url;
-    private float closedScale = 0.25f;
     private boolean closing;
 
     @Override protected void onCreate(Bundle state) {
@@ -50,32 +49,22 @@ public final class ImageViewerActivity extends Activity {
         root.addView(original, originalParams);
 
         progress = new ProgressBar(this);
-        root.addView(progress, new FrameLayout.LayoutParams(dp(42), dp(42), Gravity.CENTER));
+        Compat.tint(progress, Color.argb(210, 235, 238, 241));
+        root.addView(progress, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
         setContentView(root);
         prepareEnterAnimation();
         loadPreview();
     }
 
     private void prepareEnterAnimation() {
-        int width = Math.max(1, getIntent().getIntExtra(EXTRA_ORIGIN_WIDTH, dp(72)));
-        int height = Math.max(1, getIntent().getIntExtra(EXTRA_ORIGIN_HEIGHT, dp(72)));
-        int screenWidth = Math.max(1, getResources().getDisplayMetrics().widthPixels);
-        int screenHeight = Math.max(1, getResources().getDisplayMetrics().heightPixels);
-        closedScale = Math.max(0.16f,
-                Math.min(0.72f, Math.min(width / (float) screenWidth,
-                        height / (float) screenHeight)));
-        int originX = getIntent().getIntExtra(EXTRA_ORIGIN_X, screenWidth / 2);
-        int originY = getIntent().getIntExtra(EXTRA_ORIGIN_Y, screenHeight / 2);
-        image.setPivotX(originX);
-        image.setPivotY(originY);
-        image.setScaleX(closedScale);
-        image.setScaleY(closedScale);
-        image.setAlpha(0.35f);
+        image.setScaleX(0.96f);
+        image.setScaleY(0.96f);
+        image.setAlpha(0f);
         root.setAlpha(0f);
         root.post(() -> {
-            root.animate().alpha(1f).setDuration(180).start();
+            root.animate().alpha(1f).setDuration(140).start();
             image.animate().scaleX(1f).scaleY(1f).alpha(1f)
-                    .setDuration(260)
+                    .setDuration(190)
                     .setInterpolator(new DecelerateInterpolator())
                     .start();
         });
@@ -84,21 +73,34 @@ public final class ImageViewerActivity extends Activity {
     private void loadPreview() {
         progress.setVisibility(View.VISIBLE);
         ImageLoader.load(url, 1600, bitmap -> {
+            image.animate().cancel();
+            image.setAlpha(0f);
+            image.setScaleX(0.985f);
+            image.setScaleY(0.985f);
             image.setImageBitmap(bitmap);
             image.post(image::fitImage);
-            progress.setVisibility(View.GONE);
+            progress.animate().alpha(0f).setDuration(90).start();
+            image.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                    .setDuration(160)
+                    .setInterpolator(new DecelerateInterpolator())
+                    .start();
+            progress.postDelayed(() -> progress.setVisibility(View.GONE), 100);
         });
     }
 
     private void loadOriginal() {
         original.setEnabled(false);
         original.setText("加载中");
+        progress.setAlpha(1f);
         progress.setVisibility(View.VISIBLE);
         ImageLoader.loadOriginal(url, 2400, bitmap -> {
+            image.animate().cancel();
+            image.setAlpha(0.72f);
             image.setImageBitmap(bitmap);
             image.post(image::fitImage);
             progress.setVisibility(View.GONE);
             original.setText("已是原图");
+            image.animate().alpha(1f).setDuration(130).start();
         });
         image.postDelayed(() -> {
             if (progress.getVisibility() == View.VISIBLE) {
@@ -122,18 +124,18 @@ public final class ImageViewerActivity extends Activity {
     private void closeViewer() {
         if (closing) return;
         closing = true;
-        image.animate().scaleX(closedScale).scaleY(closedScale).alpha(0.15f)
-                .setDuration(210)
+        image.animate().scaleX(0.985f).scaleY(0.985f).alpha(0f)
+                .setDuration(140)
                 .setInterpolator(new DecelerateInterpolator())
                 .start();
-        root.animate().alpha(0f).setDuration(220)
+        root.animate().alpha(0f).setDuration(150)
                 .start();
         root.postDelayed(() -> {
             if (!isFinishing()) {
-                    finish();
-                    overridePendingTransition(0, 0);
+                finish();
+                overridePendingTransition(0, 0);
             }
-        }, 225);
+        }, 155);
     }
 
     @Override public void onBackPressed() {
