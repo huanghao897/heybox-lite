@@ -46,7 +46,7 @@ final class ImageLoader {
         EXECUTOR.execute(() -> {
             Bitmap bitmap = download(url, targetPx);
             if (bitmap != null) MAIN.post(() -> {
-                if (url.equals(view.getTag())) view.setImageBitmap(bitmap);
+                if (url.equals(view.getTag())) showLoaded(view, bitmap);
             });
         });
     }
@@ -68,9 +68,23 @@ final class ImageLoader {
         EXECUTOR.execute(() -> {
             Bitmap bitmap = download(url, targetPx);
             if (bitmap != null) MAIN.post(() -> {
-                if (url.equals(view.getTag())) view.setImageBitmap(bitmap);
+                if (url.equals(view.getTag())) showLoaded(view, bitmap);
             });
         });
+    }
+
+    private static void showLoaded(ImageView view, Bitmap bitmap) {
+        view.animate().cancel();
+        view.setAlpha(0f);
+        view.setScaleX(0.985f);
+        view.setScaleY(0.985f);
+        view.setImageBitmap(bitmap);
+        view.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(180)
+                .start();
     }
 
     static void load(String sourceUrl, int targetPx, Callback callback) {

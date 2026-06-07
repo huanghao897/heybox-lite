@@ -31,19 +31,25 @@ final class FeedAdapter extends BaseAdapter {
     private final int textColor;
     private final int mutedColor;
     private final int cardColor;
+    private final int primaryColor;
+    private final int secondaryColor;
 
     FeedAdapter(Context context, List<FeedItem> items, boolean noImage,
-                float uiScale, float textScale, boolean darkMode, Listener listener) {
+                float uiScale, float textScale, boolean darkMode,
+                int primaryColor, int secondaryColor, Listener listener) {
         this.context = context;
         this.items = items;
         this.noImage = noImage;
         this.uiScale = uiScale;
         this.textScale = textScale;
         this.darkMode = darkMode;
+        this.primaryColor = primaryColor;
+        this.secondaryColor = secondaryColor;
         this.listener = listener;
         textColor = darkMode ? Color.rgb(241, 243, 245) : Color.rgb(28, 30, 33);
         mutedColor = darkMode ? Color.rgb(157, 163, 169) : Color.rgb(101, 107, 113);
-        cardColor = darkMode ? Color.rgb(29, 31, 33) : Color.WHITE;
+        cardColor = blend(darkMode ? Color.rgb(29, 31, 33) : Color.WHITE,
+                primaryColor, darkMode ? 0.07f : 0.035f);
     }
 
     @Override public int getCount() { return items.size(); }
@@ -60,7 +66,7 @@ final class FeedAdapter extends BaseAdapter {
             LinearLayout card = new LinearLayout(context);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(10), dp(9), dp(10), dp(8));
-            Compat.setBackground(card, round(cardColor, 8));
+            Compat.setBackground(card, cardBackground());
             outer.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
             LinearLayout body = new LinearLayout(context);
@@ -74,13 +80,30 @@ final class FeedAdapter extends BaseAdapter {
             Compat.clipToOutline(cover);
             body.addView(cover, new LinearLayout.LayoutParams(dp(106), dp(68)));
 
+            LinearLayout copy = new LinearLayout(context);
+            copy.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, dp(68), 1);
+            copyParams.leftMargin = dp(9);
+            body.addView(copy, copyParams);
+
+            LinearLayout titleLine = new LinearLayout(context);
+            titleLine.setGravity(Gravity.CENTER_VERTICAL);
+            copy.addView(titleLine, new LinearLayout.LayoutParams(-1, -1));
+
+            TextView badge = label(9, contrast(secondaryColor));
+            badge.setText("文");
+            badge.setGravity(Gravity.CENTER);
+            badge.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            Compat.setBackground(badge, round(secondaryColor, 4));
+            LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(20), dp(18));
+            badgeParams.rightMargin = dp(4);
+            titleLine.addView(badge, badgeParams);
+
             TextView title = label(14, textColor);
             title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             title.setMaxLines(3);
             title.setLineSpacing(0, 1.08f);
-            LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, dp(68), 1);
-            titleParams.leftMargin = dp(9);
-            body.addView(title, titleParams);
+            titleLine.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
             TextView description = label(11, darkMode
                     ? Color.rgb(194, 198, 202) : Color.rgb(69, 74, 79));
@@ -97,12 +120,12 @@ final class FeedAdapter extends BaseAdapter {
             TextView author = label(10, mutedColor);
             author.setSingleLine(true);
             meta.addView(author, new LinearLayout.LayoutParams(0, -2, 1));
-            TextView likes = stat(R.drawable.ic_heart);
+            TextView likes = stat(R.drawable.ic_thumb_up);
             meta.addView(likes, new LinearLayout.LayoutParams(dp(48), dp(24)));
             TextView comments = stat(R.drawable.ic_comment);
             meta.addView(comments, new LinearLayout.LayoutParams(dp(48), dp(24)));
 
-            holder = new Holder(card, title, description, author, likes, comments, cover);
+            holder = new Holder(card, badge, title, description, author, likes, comments, cover);
             outer.setTag(holder);
             reusable = outer;
             reusable.setAlpha(0f);
@@ -117,10 +140,14 @@ final class FeedAdapter extends BaseAdapter {
         String title = RichContent.plainText(item.title);
         String description = RichContent.plainText(item.description);
         EmojiRenderer.set(holder.title, title.isEmpty() ? "无标题内容" : title);
+        holder.badge.setVisibility(item.article ? View.VISIBLE : View.GONE);
         EmojiRenderer.set(holder.description, description);
         holder.description.setVisibility(description.isEmpty() ? View.GONE : View.VISIBLE);
         holder.author.setText(item.author.isEmpty() ? "小黑盒社区" : item.author);
         holder.likes.setText(String.valueOf(item.likes));
+        setStatIcon(holder.likes, R.drawable.ic_thumb_up,
+                item.liked ? primaryColor : mutedColor, item.liked ? 16 : 14);
+        holder.likes.setTextColor(item.liked ? primaryColor : mutedColor);
         holder.comments.setText(String.valueOf(item.comments));
         boolean showImage = !noImage && !item.image.isEmpty();
         holder.cover.setVisibility(showImage ? View.VISIBLE : View.GONE);
@@ -134,13 +161,17 @@ final class FeedAdapter extends BaseAdapter {
     private TextView stat(int icon) {
         TextView view = label(10, mutedColor);
         view.setGravity(Gravity.CENTER);
-        Drawable drawable = Compat.tintedDrawable(context, icon, mutedColor);
+        setStatIcon(view, icon, mutedColor, 14);
+        return view;
+    }
+
+    private void setStatIcon(TextView view, int icon, int color, int size) {
+        Drawable drawable = Compat.tintedDrawable(context, icon, color);
         if (drawable != null) {
-            drawable.setBounds(0, 0, dp(14), dp(14));
+            drawable.setBounds(0, 0, dp(size), dp(size));
             view.setCompoundDrawables(drawable, null, null, null);
             view.setCompoundDrawablePadding(dp(3));
         }
-        return view;
     }
 
     private TextView label(float size, int color) {
@@ -158,12 +189,31 @@ final class FeedAdapter extends BaseAdapter {
         return drawable;
     }
 
+    private GradientDrawable cardBackground() {
+        return round(cardColor, 8);
+    }
+
+    private static int contrast(int color) {
+        int luminance = (Color.red(color) * 299 + Color.green(color) * 587
+                + Color.blue(color) * 114) / 1000;
+        return luminance >= 150 ? Color.BLACK : Color.WHITE;
+    }
+
+    private static int blend(int base, int overlay, float amount) {
+        float keep = 1f - amount;
+        return Color.rgb(
+                Math.round(Color.red(base) * keep + Color.red(overlay) * amount),
+                Math.round(Color.green(base) * keep + Color.green(overlay) * amount),
+                Math.round(Color.blue(base) * keep + Color.blue(overlay) * amount));
+    }
+
     private int dp(int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density * uiScale);
     }
 
     private static final class Holder {
         final LinearLayout card;
+        final TextView badge;
         final TextView title;
         final TextView description;
         final TextView author;
@@ -171,9 +221,10 @@ final class FeedAdapter extends BaseAdapter {
         final TextView comments;
         final ImageView cover;
 
-        Holder(LinearLayout card, TextView title, TextView description, TextView author, TextView likes,
-               TextView comments, ImageView cover) {
+        Holder(LinearLayout card, TextView badge, TextView title, TextView description,
+               TextView author, TextView likes, TextView comments, ImageView cover) {
             this.card = card;
+            this.badge = badge;
             this.title = title;
             this.description = description;
             this.author = author;
