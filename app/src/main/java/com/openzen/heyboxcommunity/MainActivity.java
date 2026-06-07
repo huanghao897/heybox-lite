@@ -114,6 +114,29 @@ public final class MainActivity extends Activity {
             showFeed();
         }
         else showLogin();
+        if (session.autoUpdateCheck()) {
+            new Handler(Looper.getMainLooper()).postDelayed(this::checkUpdateOnLaunch, 650);
+        }
+    }
+
+    private void checkUpdateOnLaunch() {
+        UpdateChecker.check(appVersion(), new UpdateChecker.Callback() {
+            @Override public void onResult(UpdateChecker.Result result) {
+                if (!result.updateAvailable || isFinishing()) return;
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("发现新版本 " + result.version)
+                        .setMessage("heybox Lite 有新版本可用，是否前往下载？")
+                        .setNegativeButton("稍后", null)
+                        .setPositiveButton("下载", (dialog, which) -> openUrl(
+                                result.downloadUrl.isEmpty()
+                                        ? result.releaseUrl : result.downloadUrl))
+                        .show();
+            }
+
+            @Override public void onError(String message) {
+                // 启动检查失败时保持安静，避免网络不稳定影响正常使用。
+            }
+        });
     }
 
     private void buildShell() {
@@ -473,6 +496,8 @@ public final class MainActivity extends Activity {
         searchBar.addView(submit, submitParams);
         page.addView(searchBar);
 
+        LinearLayout recent = vertical(BG);
+        page.addView(recent);
         FrameLayout results = new FrameLayout(this);
         page.addView(results, new LinearLayout.LayoutParams(-1, 0, 1));
         TextView hint = text("输入关键词搜索社区帖子", 13, MUTED);
@@ -485,6 +510,8 @@ public final class MainActivity extends Activity {
                 toast("请输入搜索关键词");
                 return;
             }
+            session.addSearchHistory(keyword);
+            recent.setVisibility(View.GONE);
             performSearch(keyword, results);
         };
         submit.setOnClickListener(view -> search.run());
@@ -492,7 +519,48 @@ public final class MainActivity extends Activity {
             search.run();
             return true;
         });
+        renderSearchHistory(recent, input, results);
         content.addView(page, match());
+    }
+
+    private void renderSearchHistory(LinearLayout parent, EditText input, FrameLayout results) {
+        parent.removeAllViews();
+        List<String> history = session.searchHistory();
+        if (history.isEmpty()) return;
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView label = text("最近搜索", 11, MUTED);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        header.addView(label, new LinearLayout.LayoutParams(0, dp(30), 1));
+        TextView clear = text("清空", 10, SECONDARY);
+        clear.setGravity(Gravity.CENTER);
+        clear.setOnClickListener(view -> {
+            session.clearSearchHistory();
+            parent.removeAllViews();
+        });
+        header.addView(clear, new LinearLayout.LayoutParams(dp(48), dp(30)));
+        parent.addView(header);
+
+        LinearLayout rows = vertical(BG);
+        int visibleCount = Math.min(4, history.size());
+        for (int i = 0; i < visibleCount; i++) {
+            String value = history.get(i);
+            TextView item = text(value, 12, TEXT);
+            item.setGravity(Gravity.CENTER_VERTICAL);
+            item.setPadding(dp(9), 0, dp(9), 0);
+            Compat.setBackground(item, round(blend(PANEL, SECONDARY,
+                    session.darkMode() ? 0.16f : 0.09f), 7));
+            item.setOnClickListener(view -> {
+                input.setText(value);
+                input.setSelection(input.length());
+                session.addSearchHistory(value);
+                parent.setVisibility(View.GONE);
+                performSearch(value, results);
+            });
+            addTop(rows, item, 4);
+            item.getLayoutParams().height = dp(34);
+        }
+        parent.addView(rows);
     }
 
     private void performSearch(String keyword, FrameLayout results) {
@@ -1086,17 +1154,44 @@ public final class MainActivity extends Activity {
         heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         addTop(page, heading, 12);
 
-        Button display = button("显示设置", R.drawable.ic_settings);
-        display.setOnClickListener(view -> showDisplaySettings());
-        addTop(page, display, 7);
+        Button settings = button("设置中心", R.drawable.ic_settings);
+        settings.setOnClickListener(view -> showSettingsHome());
+        addTop(page, settings, 7);
+    }
 
-        Button app = button("应用设置", R.drawable.ic_settings);
-        app.setOnClickListener(view -> showAppSettings());
-        addTop(page, app, 6);
+    private void showSettingsHome() {
+        LinearLayout page = settingsPage("settings_home", "设置中心", this::showProfile);
+        LinearLayout panel = card();
+        addSettingEntry(panel, "显示与主题", "主题、字号、间距与界面预览",
+                R.drawable.ic_settings, this::showDisplaySettings);
+        addSettingEntry(panel, "启动与更新", "开屏动画、开屏文字与自动更新",
+                R.drawable.ic_refresh, this::showStartupSettings);
+        addSettingEntry(panel, "内容与网络", "图片加载、缓存与登录状态",
+                R.drawable.ic_home, this::showAppSettings);
+        addSettingEntry(panel, "关于 heybox Lite", "版本、项目说明与免责声明",
+                R.drawable.ic_info, this::showAbout);
+        page.addView(panel);
+    }
 
-        Button about = button("关于 heybox Lite", R.drawable.ic_info);
-        about.setOnClickListener(view -> showAbout());
-        addTop(page, about, 6);
+    private void addSettingEntry(LinearLayout parent, String name, String description,
+                                 int icon, Runnable action) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(7), dp(5), dp(7), dp(5));
+        TextView marker = icon("");
+        setIcon(marker, icon, SECONDARY, 18);
+        row.addView(marker, new LinearLayout.LayoutParams(dp(34), dp(42)));
+        LinearLayout copy = vertical(Color.TRANSPARENT);
+        TextView titleView = text(name, 13, TEXT);
+        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        copy.addView(titleView);
+        copy.addView(text(description, 10, MUTED));
+        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView arrow = text("›", 20, MUTED);
+        arrow.setGravity(Gravity.CENTER);
+        row.addView(arrow, new LinearLayout.LayoutParams(dp(24), dp(42)));
+        row.setOnClickListener(view -> action.run());
+        addTop(parent, row, parent.getChildCount() == 0 ? 0 : 4);
     }
 
     private void showFavorites() {
@@ -1158,7 +1253,7 @@ public final class MainActivity extends Activity {
                     for (int i = 0; i < links.length(); i++) {
                         JSONObject item = links.optJSONObject(i);
                         if (item != null) {
-                            JSONObject value = unwrapSavedItem(item);
+                            JSONObject value = savedFeedValue(item);
                             if (value != null) items.add(FeedItem.from(value));
                         }
                     }
@@ -1273,12 +1368,118 @@ public final class MainActivity extends Activity {
         return current;
     }
 
+    private JSONObject savedFeedValue(JSONObject wrapper) {
+        JSONObject value = unwrapSavedItem(wrapper);
+        if (value == null) return null;
+        try {
+            JSONObject merged = new JSONObject(value.toString());
+            copyFirstInt(wrapper, merged, "link_award_num",
+                    "link_award_num", "like_num", "award_num", "award_count",
+                    "like_count", "up_num", "up");
+            copyFirstInt(wrapper, merged, "comment_num",
+                    "comment_num", "comment_count", "reply_num", "reply_count",
+                    "comments");
+            if (merged.optJSONObject("user") == null) {
+                JSONObject user = findObject(wrapper, 0, "user", "author", "account");
+                if (user != null) merged.put("user", user);
+                else {
+                    String author = findString(wrapper, 0, "author_name", "username",
+                            "nickname", "author");
+                    if (!author.isEmpty()) {
+                        JSONObject fallbackUser = new JSONObject();
+                        fallbackUser.put("username", author);
+                        merged.put("user", fallbackUser);
+                    }
+                }
+            }
+            return merged;
+        } catch (Exception ignored) {
+            return value;
+        }
+    }
+
+    private void copyFirstInt(JSONObject source, JSONObject target, String targetKey,
+                              String... keys) {
+        if (target.optInt(targetKey, 0) > 0) return;
+        int value = findInt(source, keys, 0);
+        if (value > 0) {
+            try {
+                target.put(targetKey, value);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private int findInt(JSONObject source, String[] keys, int depth) {
+        if (source == null || depth > 4) return 0;
+        for (String key : keys) {
+            if (source.has(key)) {
+                int value = source.optInt(key, 0);
+                if (value > 0) return value;
+            }
+        }
+        Iterator<String> names = source.keys();
+        while (names.hasNext()) {
+            Object value = source.opt(names.next());
+            if (value instanceof JSONObject) {
+                int found = findInt((JSONObject) value, keys, depth + 1);
+                if (found > 0) return found;
+            } else if (value instanceof JSONArray) {
+                JSONArray array = (JSONArray) value;
+                for (int i = 0; i < array.length(); i++) {
+                    JSONObject item = array.optJSONObject(i);
+                    int found = findInt(item, keys, depth + 1);
+                    if (found > 0) return found;
+                }
+            }
+        }
+        return 0;
+    }
+
+    private JSONObject findObject(JSONObject source, int depth, String... keys) {
+        if (source == null || depth > 4) return null;
+        for (String key : keys) {
+            JSONObject value = source.optJSONObject(key);
+            if (value != null) return value;
+        }
+        Iterator<String> names = source.keys();
+        while (names.hasNext()) {
+            Object child = source.opt(names.next());
+            if (child instanceof JSONObject) {
+                JSONObject found = findObject((JSONObject) child, depth + 1, keys);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private String findString(JSONObject source, int depth, String... keys) {
+        if (source == null || depth > 4) return "";
+        for (String key : keys) {
+            String value = source.optString(key);
+            if (!value.isEmpty() && !value.startsWith("{")) return value;
+        }
+        Iterator<String> names = source.keys();
+        while (names.hasNext()) {
+            Object child = source.opt(names.next());
+            if (child instanceof JSONObject) {
+                String found = findString((JSONObject) child, depth + 1, keys);
+                if (!found.isEmpty()) return found;
+            }
+        }
+        return "";
+    }
+
     private LinearLayout settingsPage(String key, String pageTitle) {
+        return settingsPage(key, pageTitle, this::showSettingsHome);
+    }
+
+    private LinearLayout settingsPage(String key, String pageTitle, Runnable back) {
         stopQrPolling();
         screen = key;
         bottom.setVisibility(View.GONE);
         leading.setVisibility(View.VISIBLE);
-        leading.setOnClickListener(view -> showProfile());
+        leading.setOnClickListener(view -> back.run());
         title.setText(pageTitle);
         action.setVisibility(View.INVISIBLE);
         content.removeAllViews();
@@ -1298,6 +1499,10 @@ public final class MainActivity extends Activity {
         final boolean[] dark = {session.darkMode()};
         final boolean[] bodyBold = {session.bodyBold()};
         addTop(panel, toggleRow("夜间模式", dark[0], value -> dark[0] = value), 0);
+
+        Button fullPreview = button("查看界面预览", R.drawable.ic_search);
+        fullPreview.setOnClickListener(view -> showDisplayPreview());
+        addTop(panel, fullPreview, 6);
 
         LinearLayout livePreview = vertical(PANEL);
         TextView previewTitle = text("显示效果预览", 14, TEXT);
@@ -1390,8 +1595,11 @@ public final class MainActivity extends Activity {
             session.setBodyParagraphSpacing(paragraphs);
             session.setBodyLineSpacing(lines);
             session.setBodyBold(bodyBold[0]);
+            applyPalette();
+            Compat.colorSystemBars(getWindow(), BG);
+            buildShell();
+            showDisplaySettings();
             toast("显示设置已保存");
-            recreate();
         });
         addTop(panel, save, 10);
 
@@ -1411,6 +1619,70 @@ public final class MainActivity extends Activity {
                 .show());
         addTop(panel, reset, 7);
         page.addView(panel);
+    }
+
+    private void showDisplayPreview() {
+        LinearLayout page = settingsPage("display_preview", "界面预览",
+                this::showDisplaySettings);
+
+        TextView hint = text("预览使用当前已保存的显示参数", 10, MUTED);
+        hint.setGravity(Gravity.CENTER);
+        page.addView(hint, new LinearLayout.LayoutParams(-1, dp(28)));
+
+        LinearLayout feedCard = card();
+        TextView articleBadge = text("文章", 9, contrast(SECONDARY));
+        articleBadge.setGravity(Gravity.CENTER);
+        Compat.setBackground(articleBadge, round(SECONDARY, 4));
+        feedCard.addView(articleBadge, new LinearLayout.LayoutParams(dp(42), dp(20)));
+        TextView previewTitle = text("方屏上的社区，也可以清晰又从容", 15, TEXT);
+        previewTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        addTop(feedCard, previewTitle, 6);
+        TextView summary = text("这是一条帖子列表摘要，用来观察整体字号、卡片间距和主题颜色。", 11, MUTED);
+        summary.setLineSpacing(0, 1.12f);
+        addTop(feedCard, summary, 5);
+        TextView stats = text("Ronan   👍 128   评论 36", 10, SECONDARY);
+        addTop(feedCard, stats, 7);
+        page.addView(feedCard);
+
+        LinearLayout detail = card();
+        TextView detailTitle = text("帖子正文预览", 16, TEXT);
+        detailTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        detail.addView(detailTitle);
+        TextView body = text(
+                "这是正文第一段，用于预览文字大小、字间距与行距。\n\n"
+                        + "这是正文第二段。调整设置后保存，再回到这里就能查看最终效果。",
+                14 * session.bodyTextScale() / 100f, TEXT);
+        body.setLineSpacing(0, session.bodyLineSpacing() / 100f);
+        Compat.setLetterSpacing(body, session.bodyLetterSpacing() / 200f);
+        body.setTypeface(session.bodyBold()
+                ? Typeface.create("sans-serif-medium", Typeface.NORMAL) : Typeface.DEFAULT);
+        addTop(detail, body, session.bodyParagraphSpacing());
+        addTop(page, detail, 7);
+
+        LinearLayout comments = card();
+        TextView commentTitle = text("评论层级预览", 14, TEXT);
+        commentTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        comments.addView(commentTitle);
+        TextView first = text("一级评论会稍微加粗，方便快速浏览主要观点。", 13, TEXT);
+        first.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        first.setLineSpacing(0, session.bodyLineSpacing() / 100f);
+        addTop(comments, first, 7);
+
+        LinearLayout reply = new LinearLayout(this);
+        View rail = new View(this);
+        rail.setBackgroundColor(SECONDARY);
+        LinearLayout.LayoutParams railParams = new LinearLayout.LayoutParams(dp(2), -1);
+        railParams.rightMargin = dp(8);
+        reply.addView(rail, railParams);
+        TextView second = text("二级评论使用稍轻的字重，并通过主题色竖线建立层级。", 12, MUTED);
+        second.setLineSpacing(0, 1.16f);
+        reply.addView(second, new LinearLayout.LayoutParams(0, -2, 1));
+        addTop(comments, reply, 7);
+        addTop(page, comments, 7);
+
+        Button backToSettings = button("返回继续调整", R.drawable.ic_arrow_back);
+        backToSettings.setOnClickListener(view -> showDisplaySettings());
+        addTop(page, backToSettings, 9);
     }
 
     private View themePreset(int index) {
@@ -1486,6 +1758,91 @@ public final class MainActivity extends Activity {
         });
         addTop(panel, login, 7);
         page.addView(panel);
+    }
+
+    private void showStartupSettings() {
+        LinearLayout page = settingsPage("startup_settings", "启动与更新");
+        LinearLayout panel = card();
+        final boolean[] autoUpdate = {session.autoUpdateCheck()};
+        final boolean[] splashEnabled = {session.splashEnabled()};
+        addTop(panel, toggleRow("进入软件时检查更新", autoUpdate[0],
+                value -> autoUpdate[0] = value), 0);
+        addTop(panel, toggleRow("显示开屏动画", splashEnabled[0],
+                value -> splashEnabled[0] = value), 4);
+
+        EditText splashText = textField(panel, "开屏文字", session.splashText());
+        ScaleControl duration = settingSlider(panel, "开屏时长", "ms", 500, 2600,
+                session.splashDuration(), value -> {});
+
+        Button preview = button("预览开屏动画", R.drawable.ic_search);
+        preview.setOnClickListener(view ->
+                showSplashPreview(splashText.getText().toString().trim(),
+                        parseNumber(duration.input, 500, 2600)));
+        addTop(panel, preview, 8);
+
+        Button save = button("保存启动设置", R.drawable.ic_settings);
+        save.setOnClickListener(view -> {
+            Integer durationValue = parseNumber(duration.input, 500, 2600);
+            if (durationValue == null) {
+                toast("开屏时长请输入 500-2600");
+                return;
+            }
+            session.setAutoUpdateCheck(autoUpdate[0]);
+            session.setSplashEnabled(splashEnabled[0]);
+            session.setSplashText(splashText.getText().toString());
+            session.setSplashDuration(durationValue);
+            toast("启动设置已保存");
+        });
+        addTop(panel, save, 7);
+        page.addView(panel);
+    }
+
+    private void showSplashPreview(String value, Integer duration) {
+        final String textValue = value == null || value.isEmpty()
+                ? SessionStore.DEFAULT_SPLASH_TEXT : value;
+        final int durationValue = duration == null ? session.splashDuration() : duration;
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setTag("splash_preview");
+        overlay.setBackgroundColor(session.darkMode()
+                ? Color.rgb(14, 15, 16) : Color.rgb(246, 247, 249));
+        ImageView mark = new ImageView(this);
+        mark.setImageResource(R.drawable.splash_logo);
+        mark.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        FrameLayout.LayoutParams markParams =
+                new FrameLayout.LayoutParams(dp(96), dp(96), Gravity.CENTER);
+        markParams.bottomMargin = dp(54);
+        overlay.addView(mark, markParams);
+        TextView message = text("", 14, TEXT);
+        message.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
+        message.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams messageParams =
+                new FrameLayout.LayoutParams(-1, dp(52), Gravity.CENTER);
+        messageParams.topMargin = dp(58);
+        messageParams.leftMargin = dp(18);
+        messageParams.rightMargin = dp(18);
+        overlay.addView(message, messageParams);
+        TextView close = text("点击任意位置退出预览", 10, MUTED);
+        close.setGravity(Gravity.CENTER);
+        overlay.addView(close, new FrameLayout.LayoutParams(
+                -1, dp(34), Gravity.BOTTOM));
+        overlay.setOnClickListener(view -> content.removeView(overlay));
+        content.addView(overlay, match());
+
+        final int[] frame = {0};
+        Runnable animation = new Runnable() {
+            @Override public void run() {
+                if (overlay.getParent() == null) return;
+                int count = Math.min(frame[0], textValue.length());
+                message.setText(textValue.substring(0, count)
+                        + (count < textValue.length() ? "_" : ""));
+                frame[0]++;
+                if (count < textValue.length()) {
+                    message.postDelayed(this,
+                            Math.max(28, durationValue / Math.max(1, textValue.length() + 4)));
+                }
+            }
+        };
+        animation.run();
     }
 
     private void showAbout() {
@@ -1686,7 +2043,7 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "1.4.0";
+            return "1.55";
         }
     }
 
@@ -1880,9 +2237,12 @@ public final class MainActivity extends Activity {
             returnFromDetail();
         }
         else if ("saved".equals(screen)) showProfile();
+        else if ("display_preview".equals(screen)) showDisplaySettings();
         else if ("display_settings".equals(screen)
+                || "startup_settings".equals(screen)
                 || "app_settings".equals(screen)
-                || "about".equals(screen)) showProfile();
+                || "about".equals(screen)) showSettingsHome();
+        else if ("settings_home".equals(screen)) showProfile();
         else if (!"feed".equals(screen) && session.isLoggedIn()) showFeed();
         else super.onBackPressed();
     }

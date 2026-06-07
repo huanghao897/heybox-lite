@@ -39,16 +39,25 @@ final class FeedItem {
         if (title.isEmpty()) title = json.optString("content");
         String description = json.optString("description");
         if (description.isEmpty()) description = json.optString("text");
+        String author = user == null ? "" : user.optString("username",
+                user.optString("nickname", user.optString("name")));
+        if (author.isEmpty()) {
+            author = first(json.optString("author_name"), json.optString("username"),
+                    json.optString("nickname"), json.optString("author"));
+        }
         return new FeedItem(
                 json.optString("linkid", json.optString("link_id")),
                 title,
                 description,
-                user == null ? "" : user.optString("username"),
+                author,
                 image,
-                json.optInt("comment_num", json.optInt("comment_count")),
+                firstInt(json, "comment_num", "comment_count", "reply_num",
+                        "reply_count", "comments"),
                 json.optInt("link_award_num",
                         json.optInt("like_num",
-                                json.optInt("award_num", json.optInt("up")))),
+                                json.optInt("award_num",
+                                        json.optInt("award_count",
+                                                json.optInt("up_num", json.optInt("up")))))),
                 isArticle(json),
                 json.optBoolean("is_award", json.optBoolean("liked",
                         json.optBoolean("is_liked", json.optInt("has_award") == 1)))
@@ -65,5 +74,19 @@ final class FeedItem {
 
     private static String first(JSONArray array) {
         return array == null || array.length() == 0 ? "" : array.optString(0);
+    }
+
+    private static String first(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isEmpty()) return value;
+        }
+        return "";
+    }
+
+    private static int firstInt(JSONObject json, String... keys) {
+        for (String key : keys) {
+            if (json.has(key)) return json.optInt(key, 0);
+        }
+        return 0;
     }
 }

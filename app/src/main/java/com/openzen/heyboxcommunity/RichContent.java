@@ -28,6 +28,8 @@ final class RichContent {
 
     private static final Pattern IMAGE = Pattern.compile(
             "(?is)<img\\b[^>]*?(?:data-original|data-src|src)\\s*=\\s*(['\"])(.*?)\\1[^>]*>");
+    private static final Pattern JSON_IMAGE = Pattern.compile(
+            "(?is)\"(?:url|src|original)\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
 
     private RichContent() {}
 
@@ -35,21 +37,7 @@ final class RichContent {
         List<Block> blocks = new ArrayList<>();
         Set<String> imageUrls = new HashSet<>();
         source = decodeTransport(source);
-        try {
-            JSONArray content = new JSONArray(source);
-            for (int i = 0; i < content.length(); i++) {
-                JSONObject item = content.optJSONObject(i);
-                if (item == null) continue;
-                String type = item.optString("type");
-                if ("img".equals(type) || "image".equals(type)) {
-                    addImage(blocks, imageUrls,
-                            first(item.optString("url"), item.optString("src"), item.optString("text")));
-                } else {
-                    addHtml(blocks, imageUrls,
-                            first(item.optString("text"), item.optString("content")));
-                }
-            }
-        } catch (Exception ignored) {
+        if (!addStructured(blocks, imageUrls, source)) {
             addHtml(blocks, imageUrls, source);
         }
 
@@ -66,6 +54,162 @@ final class RichContent {
             }
         }
         return blocks;
+    }
+
+    private static boolean addStructured(List<Block> blocks, Set<String> imageUrls,
+                                         String source) {
+        String value = source == null ? "" : source.trim();
+        if (value.isEmpty()) return true;
+        int arrayStart = value.indexOf('[');
+        int arrayEnd = value.lastIndexOf(']');
+        if (arrayStart > 0 && arrayEnd > arrayStart) {
+            String prefix = value.substring(0, arrayStart).trim();
+            try {
+                JSONArray array = new JSONArray(value.substring(arrayStart, arrayEnd + 1));
+                addReadableFragment(blocks, imageUrls, prefix);
+                addArray(blocks, imageUrls, array);
+                String suffix = value.substring(arrayEnd + 1).trim();
+                addReadableFragment(blocks, imageUrls, suffix);
+                return true;
+            } catch (Exception ignored) {
+            }
+        }
+        try {
+            addArray(blocks, imageUrls, new JSONArray(value));
+            return true;
+        } catch (Exception ignored) {
+        }
+        return addObjectStream(blocks, imageUrls, value);
+    }
+
+    private static void addArray(List<Block> blocks, Set<String> imageUrls, JSONArray content) {
+        for (int i = 0; i < content.length(); i++) {
+            Object raw = content.opt(i);
+            if (raw instanceof JSONObject) {
+                addObject(blocks, imageUrls, (JSONObject) raw);
+            } else if (raw instanceof String) {
+                addHtml(blocks, imageUrls, (String) raw);
+            }
+        }
+    }
+
+    private static void addObject(List<Block> blocks, Set<String> imageUrls, JSONObject item) {
+        String type = item.optString("type");
+        if ("img".equalsIgnoreCase(type) || "image".equalsIgnoreCase(type)) {
+            addImage(blocks, imageUrls,
+                    first(item.optString("url"), item.optString("src"),
+                            item.optString("original"), item.optString("text")));
+        } else {
+            addHtml(blocks, imageUrls,
+                    first(item.optString("text"), item.optString("content"),
+                            item.optString("html")));
+        }
+    }
+
+    private static boolean addObjectStream(List<Block> blocks, Set<String> imageUrls,
+                                           String source) {
+        boolean found = false;
+        int start = -1;
+        int depth = 0;
+        boolean quoted = false;
+        boolean escaped = false;
+        int lastEnd = 0;
+        for (int i = 0; i < source.length(); i++) {
+            char current = source.charAt(i);
+            if (quoted) {
+                if (escaped) escaped = false;
+                else if (current == '\\') escaped = true;
+                else if (current == '"') quoted = false;
+                continue;
+            }
+            if (current == '"') {
+                quoted = true;
+            } else if (current == '{') {
+                if (depth == 0) start = i;
+                depth++;
+            } else if (current == '}' && depth > 0) {
+                depth--;
+                if (depth == 0 && start >= 0) {
+                    try {
+                        JSONObject object = new JSONObject(source.substring(start, i + 1));
+                        if (!found) {
+                            String prefix = source.substring(0, start).trim();
+                            addReadableFragment(blocks, imageUrls, prefix);
+                        }
+                        addObject(blocks, imageUrls, object);
+                        found = true;
+                        lastEnd = i + 1;
+                    } catch (Exception ignored) {
+                    }
+                    start = -1;
+                }
+            }
+        }
+        if (found) {
+            String suffix = source.substring(lastEnd).trim();
+            addReadableFragment(blocks, imageUrls, suffix);
+            addLooseImages(blocks, imageUrls, source);
+            return true;
+        }
+        if (looksStructured(source)) {
+            addReadableFragment(blocks, imageUrls, source);
+            addLooseImages(blocks, imageUrls, source);
+            return true;
+        }
+        return false;
+    }
+
+    private static void addReadableFragment(List<Block> blocks, Set<String> imageUrls,
+                                            String source) {
+        if (source == null) return;
+        String value = source.trim();
+        if (value.isEmpty()) return;
+        int marker = structuredMarker(value);
+        if (marker > 0) {
+            addHtml(blocks, imageUrls, value.substring(0, marker));
+        } else if (marker < 0) {
+            addHtml(blocks, imageUrls, value);
+        }
+    }
+
+    private static int structuredMarker(String value) {
+        int marker = -1;
+        String[] candidates = {
+                "\",\"type\"", "\"type\":", "\"url\":", "\"height\":",
+                "\"width\":", "},{", "[{"
+        };
+        for (String candidate : candidates) {
+            int index = value.indexOf(candidate);
+            if (index >= 0 && (marker < 0 || index < marker)) marker = index;
+        }
+        int object = value.indexOf('{');
+        if (object >= 0 && (marker < 0 || object < marker)) marker = object;
+        int array = value.indexOf('[');
+        if (array >= 0 && (marker < 0 || array < marker)) marker = array;
+        return marker;
+    }
+
+    private static void addLooseImages(List<Block> blocks, Set<String> imageUrls,
+                                       String source) {
+        Matcher matcher = JSON_IMAGE.matcher(source);
+        while (matcher.find()) {
+            addImage(blocks, imageUrls, decodeJsonString(matcher.group(1)));
+        }
+    }
+
+    private static String decodeJsonString(String value) {
+        try {
+            return new JSONArray("[\"" + value + "\"]").optString(0);
+        } catch (Exception ignored) {
+            return value;
+        }
+    }
+
+    private static boolean looksStructured(String value) {
+        if (value == null) return false;
+        String clean = value.trim();
+        return clean.startsWith("{") || clean.startsWith("[")
+                || clean.contains("\",\"type\"") || clean.contains("\"url\":");
     }
 
     static String plainText(String source) {
