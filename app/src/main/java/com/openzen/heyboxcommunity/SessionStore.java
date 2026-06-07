@@ -10,6 +10,7 @@ import android.provider.Settings;
 import android.util.Base64;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -41,6 +42,12 @@ final class SessionStore {
     private static final String BODY_PARAGRAPH_SPACING = "body_paragraph_spacing";
     private static final String BODY_LINE_SPACING = "body_line_spacing";
     private static final String BODY_BOLD = "body_bold";
+    private static final String AUTO_UPDATE_CHECK = "auto_update_check";
+    private static final String SPLASH_ENABLED = "splash_enabled";
+    private static final String SPLASH_TEXT = "splash_text";
+    private static final String SPLASH_DURATION = "splash_duration";
+    private static final String SEARCH_HISTORY = "search_history";
+    static final String DEFAULT_SPLASH_TEXT = "方寸之间，看见热爱";
     private static final String LEGACY_PREFIX = "L1:";
 
     private final Context context;
@@ -201,6 +208,72 @@ final class SessionStore {
 
     void setBodyBold(boolean value) {
         prefs.edit().putBoolean(BODY_BOLD, value).apply();
+    }
+
+    boolean autoUpdateCheck() {
+        return prefs.getBoolean(AUTO_UPDATE_CHECK, true);
+    }
+
+    void setAutoUpdateCheck(boolean value) {
+        prefs.edit().putBoolean(AUTO_UPDATE_CHECK, value).apply();
+    }
+
+    boolean splashEnabled() {
+        return prefs.getBoolean(SPLASH_ENABLED, true);
+    }
+
+    void setSplashEnabled(boolean value) {
+        prefs.edit().putBoolean(SPLASH_ENABLED, value).apply();
+    }
+
+    String splashText() {
+        String value = prefs.getString(SPLASH_TEXT, DEFAULT_SPLASH_TEXT);
+        return value == null || value.trim().isEmpty() ? DEFAULT_SPLASH_TEXT : value.trim();
+    }
+
+    void setSplashText(String value) {
+        String clean = value == null ? "" : value.trim();
+        prefs.edit().putString(SPLASH_TEXT,
+                clean.isEmpty() ? DEFAULT_SPLASH_TEXT : clean).apply();
+    }
+
+    int splashDuration() {
+        return prefs.getInt(SPLASH_DURATION, 1100);
+    }
+
+    void setSplashDuration(int value) {
+        prefs.edit().putInt(SPLASH_DURATION, value).apply();
+    }
+
+    List<String> searchHistory() {
+        List<String> values = new java.util.ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(prefs.getString(SEARCH_HISTORY, "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                String value = array.optString(i).trim();
+                if (!value.isEmpty()) values.add(value);
+            }
+        } catch (Exception ignored) {
+        }
+        return values;
+    }
+
+    void addSearchHistory(String value) {
+        String clean = value == null ? "" : value.trim();
+        if (clean.isEmpty()) return;
+        List<String> values = searchHistory();
+        for (int i = values.size() - 1; i >= 0; i--) {
+            if (clean.equalsIgnoreCase(values.get(i))) values.remove(i);
+        }
+        values.add(0, clean);
+        while (values.size() > 8) values.remove(values.size() - 1);
+        JSONArray array = new JSONArray();
+        for (String item : values) array.put(item);
+        prefs.edit().putString(SEARCH_HISTORY, array.toString()).apply();
+    }
+
+    void clearSearchHistory() {
+        prefs.edit().remove(SEARCH_HISTORY).apply();
     }
 
     void setTheme(String primary, String secondary) {
@@ -394,6 +467,11 @@ final class SessionStore {
         int bodyParagraphSpacing = bodyParagraphSpacing();
         int bodyLineSpacing = bodyLineSpacing();
         boolean bodyBold = bodyBold();
+        boolean autoUpdateCheck = autoUpdateCheck();
+        boolean splashEnabled = splashEnabled();
+        String splashText = splashText();
+        int splashDuration = splashDuration();
+        String searchHistory = prefs.getString(SEARCH_HISTORY, "[]");
         prefs.edit().clear()
                 .putString(SecureStrings.deviceId(), deviceId)
                 .putBoolean(NO_IMAGE, noImage)
@@ -409,6 +487,11 @@ final class SessionStore {
                 .putInt(BODY_PARAGRAPH_SPACING, bodyParagraphSpacing)
                 .putInt(BODY_LINE_SPACING, bodyLineSpacing)
                 .putBoolean(BODY_BOLD, bodyBold)
+                .putBoolean(AUTO_UPDATE_CHECK, autoUpdateCheck)
+                .putBoolean(SPLASH_ENABLED, splashEnabled)
+                .putString(SPLASH_TEXT, splashText)
+                .putInt(SPLASH_DURATION, splashDuration)
+                .putString(SEARCH_HISTORY, searchHistory)
                 .apply();
     }
 }

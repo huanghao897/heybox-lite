@@ -1,5 +1,5 @@
 <resources>
-    <color name="launcher_background">#111214</color>
+    <color name="launcher_background">#FFFFFF</color>
     <color name="ink">#F1F1F1</color>
     <color name="surface">#000000</color>
     <color name="panel">#262626</color>
