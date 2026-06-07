@@ -3,7 +3,7 @@
     <color name="ink">#F1F1F1</color>
     <color name="surface">#000000</color>
     <color name="panel">#262626</color>
-    <color name="accent">#FB8799</color>
+    <color name="accent">#FFFFFF</color>
     <color name="cyan">#66CCFF</color>
     <color name="white">#FFFFFF</color>
 </resources>

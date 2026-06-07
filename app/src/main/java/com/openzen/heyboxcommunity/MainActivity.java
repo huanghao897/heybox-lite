@@ -23,6 +23,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
+import android.widget.SeekBar;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -153,14 +154,14 @@ public final class MainActivity extends Activity {
             TEXT = Color.rgb(241, 243, 245);
             MUTED = Color.rgb(157, 163, 169);
             CYAN = Color.rgb(206, 211, 216);
-            PINK = parseAccent(Color.rgb(188, 193, 198));
+            PINK = parseAccent(Color.WHITE);
         } else {
             BG = Color.rgb(246, 247, 249);
             PANEL = Color.WHITE;
             TEXT = Color.rgb(30, 32, 35);
             MUTED = Color.rgb(105, 110, 116);
             CYAN = Color.rgb(35, 125, 178);
-            PINK = parseAccent(Color.rgb(74, 80, 86));
+            PINK = parseAccent(Color.BLACK);
         }
     }
 
@@ -892,8 +893,26 @@ public final class MainActivity extends Activity {
         shortcuts.addView(history, historyParams);
         addTop(page, shortcuts, 8);
 
-        addSettings(page);
+        addSettingsMenu(page);
         content.addView(scroll, match());
+    }
+
+    private void addSettingsMenu(LinearLayout page) {
+        TextView heading = text("设置", 15, TEXT);
+        heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        addTop(page, heading, 12);
+
+        Button display = button("显示设置", R.drawable.ic_settings);
+        display.setOnClickListener(view -> showDisplaySettings());
+        addTop(page, display, 7);
+
+        Button app = button("应用设置", R.drawable.ic_settings);
+        app.setOnClickListener(view -> showAppSettings());
+        addTop(page, app, 6);
+
+        Button about = button("关于 heybox Lite", R.drawable.ic_info);
+        about.setOnClickListener(view -> showAbout());
+        addTop(page, about, 6);
     }
 
     private void showFavorites() {
@@ -1004,7 +1023,272 @@ public final class MainActivity extends Activity {
         return current;
     }
 
-    private void addSettings(LinearLayout page) {
+    private LinearLayout settingsPage(String key, String pageTitle) {
+        stopQrPolling();
+        screen = key;
+        bottom.setVisibility(View.GONE);
+        leading.setVisibility(View.VISIBLE);
+        leading.setOnClickListener(view -> showProfile());
+        title.setText(pageTitle);
+        action.setVisibility(View.INVISIBLE);
+        content.removeAllViews();
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout page = vertical(BG);
+        page.setPadding(dp(8), dp(8), dp(8), dp(14));
+        scroll.addView(page);
+        content.addView(scroll, match());
+        return page;
+    }
+
+    private void showDisplaySettings() {
+        LinearLayout page = settingsPage("display_settings", "显示设置");
+        LinearLayout panel = card();
+
+        final boolean[] dark = {session.darkMode()};
+        addTop(panel, toggleRow("夜间模式", dark[0], value -> dark[0] = value), 0);
+        EditText uiScale = numberField(panel, "界面大小 (%)", session.uiScale());
+        EditText textScale = numberField(panel, "文字大小 (%)", session.textScale());
+        EditText padding = numberField(panel, "左右边距 (dp)", session.pagePadding());
+
+        TextView colorTitle = text("主题强调色", 13, TEXT);
+        colorTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        addTop(panel, colorTitle, 8);
+
+        int initial = currentAccent();
+        View preview = new View(this);
+        preview.setBackgroundColor(initial);
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, dp(30));
+        previewParams.topMargin = dp(6);
+        panel.addView(preview, previewParams);
+        TextView hex = text(colorHex(initial), 12, MUTED);
+        hex.setGravity(Gravity.CENTER);
+        panel.addView(hex, new LinearLayout.LayoutParams(-1, dp(26)));
+
+        SeekBar red = colorSlider(panel, "R", Color.red(initial));
+        SeekBar green = colorSlider(panel, "G", Color.green(initial));
+        SeekBar blue = colorSlider(panel, "B", Color.blue(initial));
+        SeekBar.OnSeekBarChangeListener colorListener = new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int color = Color.rgb(red.getProgress(), green.getProgress(), blue.getProgress());
+                preview.setBackgroundColor(color);
+                hex.setText(colorHex(color));
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        };
+        red.setOnSeekBarChangeListener(colorListener);
+        green.setOnSeekBarChangeListener(colorListener);
+        blue.setOnSeekBarChangeListener(colorListener);
+
+        LinearLayout swatches = new LinearLayout(this);
+        int[] presets = {
+                Color.BLACK, Color.rgb(70, 70, 70), Color.rgb(145, 145, 145),
+                Color.WHITE, Color.rgb(74, 144, 226), Color.rgb(46, 160, 110)
+        };
+        for (int color : presets) {
+            View swatch = new View(this);
+            Compat.setBackground(swatch, swatchDrawable(color));
+            swatch.setContentDescription(colorHex(color));
+            swatch.setOnClickListener(view -> {
+                red.setProgress(Color.red(color));
+                green.setProgress(Color.green(color));
+                blue.setProgress(Color.blue(color));
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(30), 1);
+            params.leftMargin = dp(2);
+            params.rightMargin = dp(2);
+            swatches.addView(swatch, params);
+        }
+        addTop(panel, swatches, 8);
+
+        Button save = button("保存显示设置", R.drawable.ic_settings);
+        save.setOnClickListener(view -> {
+            Integer ui = parseNumber(uiScale, 70, 160);
+            Integer text = parseNumber(textScale, 70, 180);
+            Integer pad = parseNumber(padding, 0, 30);
+            if (ui == null || text == null || pad == null) {
+                toast("请输入有效数值：界面 70-160，文字 70-180，边距 0-30");
+                return;
+            }
+            int color = Color.rgb(red.getProgress(), green.getProgress(), blue.getProgress());
+            session.setDarkMode(dark[0]);
+            session.setUiScale(ui);
+            session.setTextScale(text);
+            session.setPagePadding(pad);
+            session.setAccentColor(colorHex(color));
+            toast("显示设置已保存");
+            recreate();
+        });
+        addTop(panel, save, 10);
+        page.addView(panel);
+    }
+
+    private void showAppSettings() {
+        LinearLayout page = settingsPage("app_settings", "应用设置");
+        LinearLayout panel = card();
+        addTop(panel, toggleRow("无图模式", session.noImage(), value -> {
+            session.setNoImage(value);
+            feed.clear();
+        }), 0);
+        addTop(panel, toggleRow("正文图片显示原图", session.originalImages(),
+                session::setOriginalImages), 4);
+
+        Button clearCache = button("清除图片缓存", R.drawable.ic_trash);
+        clearCache.setOnClickListener(view -> {
+            int before = ImageLoader.cacheSizeKb();
+            ImageLoader.clear();
+            toast("已清除图片缓存 " + Math.max(1, before) + " KB");
+        });
+        addTop(panel, clearCache, 10);
+
+        Button login = button(session.isLoggedIn() ? "退出登录" : "二维码登录",
+                R.drawable.ic_logout);
+        login.setOnClickListener(view -> {
+            if (session.isLoggedIn()) {
+                session.clearSession();
+                feed.clear();
+                toast("已退出登录");
+            }
+            showLogin();
+        });
+        addTop(panel, login, 7);
+        page.addView(panel);
+    }
+
+    private void showAbout() {
+        LinearLayout page = settingsPage("about", "关于");
+        LinearLayout panel = card();
+        TextView appName = text("heybox Lite", 20, TEXT);
+        appName.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        panel.addView(appName);
+        addTop(panel, text("版本 " + appVersion(), 13, MUTED), 6);
+        addTop(panel, text("开发者：Ronan", 13, TEXT), 5);
+        addTop(panel, text("支持 Android 4.0 及以上系统", 12, MUTED), 5);
+
+        TextView updateStatus = text("可从 GitHub 检查最新版本", 12, MUTED);
+        addTop(panel, updateStatus, 12);
+        Button update = button("检查更新", R.drawable.ic_refresh);
+        update.setOnClickListener(view -> {
+            update.setEnabled(false);
+            update.setText("正在检查...");
+            UpdateChecker.check(appVersion(), new UpdateChecker.Callback() {
+                @Override public void onResult(UpdateChecker.Result result) {
+                    update.setEnabled(true);
+                    if (result.updateAvailable) {
+                        updateStatus.setText("发现新版本 " + result.version);
+                        update.setText("前往下载 " + result.version);
+                        update.setOnClickListener(button -> openUrl(
+                                result.downloadUrl.isEmpty() ? result.releaseUrl : result.downloadUrl));
+                    } else {
+                        updateStatus.setText("当前已是最新版本");
+                        update.setText("重新检查");
+                    }
+                }
+
+                @Override public void onError(String message) {
+                    update.setEnabled(true);
+                    update.setText("重新检查");
+                    updateStatus.setText("检查失败：" + message);
+                }
+            });
+        });
+        addTop(panel, update, 8);
+
+        Button repository = button("打开 GitHub 项目", R.drawable.ic_info);
+        repository.setOnClickListener(view ->
+                openUrl("https://github.com/huanghao897/heybox-lite"));
+        addTop(panel, repository, 7);
+        page.addView(panel);
+    }
+
+    private LinearLayout toggleRow(String label, boolean initial, ToggleListener listener) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = text(label, 13, TEXT);
+        row.addView(title, new LinearLayout.LayoutParams(0, dp(40), 1));
+        TextView state = text("", 11, TEXT);
+        state.setGravity(Gravity.CENTER);
+        row.addView(state, new LinearLayout.LayoutParams(dp(48), dp(28)));
+        final boolean[] value = {initial};
+        Runnable render = () -> {
+            state.setText(value[0] ? "开" : "关");
+            int foreground = value[0]
+                    ? (session.darkMode() ? Color.BLACK : Color.WHITE)
+                    : (session.darkMode() ? Color.WHITE : Color.BLACK);
+            int background = value[0]
+                    ? (session.darkMode() ? Color.WHITE : Color.BLACK)
+                    : (session.darkMode() ? Color.rgb(55, 57, 60) : Color.rgb(220, 222, 225));
+            state.setTextColor(foreground);
+            Compat.setBackground(state, round(background, 14));
+        };
+        render.run();
+        row.setOnClickListener(view -> {
+            value[0] = !value[0];
+            render.run();
+            listener.onChanged(value[0]);
+        });
+        return row;
+    }
+
+    private SeekBar colorSlider(LinearLayout parent, String label, int value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = text(label, 12, MUTED);
+        name.setGravity(Gravity.CENTER);
+        row.addView(name, new LinearLayout.LayoutParams(dp(24), dp(34)));
+        SeekBar slider = new SeekBar(this);
+        slider.setMax(255);
+        slider.setProgress(value);
+        row.addView(slider, new LinearLayout.LayoutParams(0, dp(34), 1));
+        addTop(parent, row, 2);
+        return slider;
+    }
+
+    private GradientDrawable swatchDrawable(int color) {
+        GradientDrawable drawable = round(color, 5);
+        drawable.setStroke(dp(1), session.darkMode()
+                ? Color.rgb(110, 112, 115) : Color.rgb(180, 182, 185));
+        return drawable;
+    }
+
+    private int currentAccent() {
+        try {
+            String saved = session.accentColor();
+            return saved.isEmpty() ? (session.darkMode() ? Color.WHITE : Color.BLACK)
+                    : Color.parseColor(saved);
+        } catch (Exception ignored) {
+            return session.darkMode() ? Color.WHITE : Color.BLACK;
+        }
+    }
+
+    private static String colorHex(int color) {
+        return String.format(Locale.US, "#%02X%02X%02X",
+                Color.red(color), Color.green(color), Color.blue(color));
+    }
+
+    @SuppressWarnings("deprecation")
+    private String appVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+            return "1.3.0";
+        }
+    }
+
+    private void openUrl(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Exception ignored) {
+            toast("无法打开链接");
+        }
+    }
+
+    private interface ToggleListener {
+        void onChanged(boolean value);
+    }
+
+    private void addLegacySettings(LinearLayout page) {
         TextView settingsTitle = text("设置", 15, TEXT);
         settingsTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         addTop(page, settingsTitle, 12);
@@ -1154,6 +1438,9 @@ public final class MainActivity extends Activity {
             else showFeed();
         }
         else if ("saved".equals(screen)) showProfile();
+        else if ("display_settings".equals(screen)
+                || "app_settings".equals(screen)
+                || "about".equals(screen)) showProfile();
         else if (!"feed".equals(screen) && session.isLoggedIn()) showFeed();
         else super.onBackPressed();
     }
