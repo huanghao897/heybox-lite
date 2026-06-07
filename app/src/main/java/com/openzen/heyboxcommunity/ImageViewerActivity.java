@@ -34,6 +34,7 @@ public final class ImageViewerActivity extends Activity {
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.argb(222, 27, 29, 32));
         image = new ZoomImageView(this);
+        image.setOnBlankClickListener(this::closeViewer);
         root.addView(image, new FrameLayout.LayoutParams(-1, -1));
 
         TextView back = control("‹ 返回");
