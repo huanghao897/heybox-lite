@@ -46,7 +46,7 @@ final class ImageLoader {
 
     static void into(ImageView view, String sourceUrl, int targetPx, IntoCallback callback) {
         String url = thumbnailUrl(sourceUrl, targetPx);
-        loadInto(view, originalUrl(sourceUrl), url, targetPx, true, callback);
+        loadInto(view, url, url, targetPx, true, callback);
     }
 
     static void intoOriginal(ImageView view, String sourceUrl, int targetPx) {
@@ -172,6 +172,8 @@ final class ImageLoader {
             connection.setReadTimeout(12000);
             connection.setUseCaches(true);
             HeaderProvider.applyPublic(connection);
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) return null;
             byte[] bytes;
             try (InputStream input = new BufferedInputStream(connection.getInputStream());
                  ByteArrayOutputStream output = new ByteArrayOutputStream(48 * 1024)) {

@@ -27,7 +27,6 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -48,6 +47,10 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class MainActivity extends Activity {
+    private interface SavedListFallback {
+        boolean onFallback(String reason);
+    }
+
     private static final int REPLY_PREVIEW_COUNT = 2;
     private static final int REPLY_PAGE_SIZE = 5;
     private static final String[] THEME_NAMES = {
@@ -62,6 +65,14 @@ public final class MainActivity extends Activity {
             {0xFF5D636A, 0xFFAEB4BA}, {0xFF173F76, 0xFF5D8BC4},
             {0xFF171717, 0xFFD0A83E}, {0xFF318B73, 0xFF88D8BF}
     };
+    private static final String TITLE_FAVORITES = "\u6211\u7684\u6536\u85cf";
+    private static final String MSG_OFFLINE_CACHE = "\u5df2\u663e\u793a\u79bb\u7ebf\u7f13\u5b58";
+    private static final String MSG_EMPTY_CONTENT = "\u8fd9\u91cc\u6682\u65f6\u6ca1\u6709\u5185\u5bb9";
+    private static final String MSG_FAVORITES_UNAVAILABLE =
+            "\u6211\u7684\u6536\u85cf\u6682\u4e0d\u53ef\u7528\n"
+                    + "\u5c0f\u9ed1\u76d2\u63a5\u53e3\u672a\u8fd4\u56de\u53ef\u8bbf\u95ee\u7684\u6536\u85cf\u5939\uff0c"
+                    + "\u8fd9\u901a\u5e38\u662f\u8d26\u53f7\u6743\u9650\u6216\u5f53\u524d\u7f51\u9875\u63a5\u53e3\u9650\u5236\u3002\n"
+                    + "\u5df2\u4fdd\u7559\u73b0\u6709\u7f13\u5b58\uff0c\u53ef\u7a0d\u540e\u518d\u8bd5\u3002";
 
     private int BG;
     private int PANEL;
@@ -71,6 +82,11 @@ public final class MainActivity extends Activity {
     private int SECONDARY;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable qrPollTask = new Runnable() {
+        @Override public void run() {
+            pollQr();
+        }
+    };
     private final List<FeedItem> feed = new ArrayList<>();
     private SessionStore session;
     private ApiClient api;
@@ -357,7 +373,7 @@ public final class MainActivity extends Activity {
                     if (image != null) image.setImageBitmap(QrCode.create(url, size));
                     setQrStatus("等待扫码", SECONDARY);
                     pollingQr = true;
-                    handler.postDelayed(MainActivity.this::pollQr, 900);
+                    handler.postDelayed(qrPollTask, 900);
                 } catch (Exception error) {
                     setQrStatus("二维码生成失败", PRIMARY);
                 }
@@ -394,13 +410,13 @@ public final class MainActivity extends Activity {
                     setQrStatus("登录已取消，请重新获取", PRIMARY);
                     return;
                 } else setQrStatus("等待扫码", SECONDARY);
-                handler.postDelayed(MainActivity.this::pollQr, 1300);
+                handler.postDelayed(qrPollTask, 1300);
             }
 
             @Override public void onError(String message) {
                 if (!pollingQr) return;
                 setQrStatus("网络波动，正在重试", MUTED);
-                handler.postDelayed(MainActivity.this::pollQr, 2200);
+                handler.postDelayed(qrPollTask, 2200);
             }
         });
     }
@@ -415,7 +431,7 @@ public final class MainActivity extends Activity {
 
     private void stopQrPolling() {
         pollingQr = false;
-        handler.removeCallbacksAndMessages(null);
+        handler.removeCallbacks(qrPollTask);
     }
 
     private void showFeed() {
@@ -519,6 +535,7 @@ public final class MainActivity extends Activity {
         updateFeedFooter();
         final int requestSerial = ++feedRequestSerial;
         if (reset) feedResetSerial = requestSerial;
+        final int previousOffset = feedOffset;
         final List<FeedItem> previous = reset ? new ArrayList<>(feed) : null;
         if (reset) {
             feedOffset = 0;
@@ -549,6 +566,7 @@ public final class MainActivity extends Activity {
                     }
                 }
                 if (reset && fresh.isEmpty() && previous != null && !previous.isEmpty()) {
+                    feedOffset = Math.max(previousOffset, feed.size());
                     toast("没有获取到新内容，已保留原列表");
                 } else if (!reset && returned == 0) {
                     feedNoMore = true;
@@ -575,6 +593,7 @@ public final class MainActivity extends Activity {
                 setFeedRefreshBusy(false);
                 localCache.log((reset ? "feed refresh failed: " : "feed load more failed: ") + message);
                 if (reset && previous != null && feed.isEmpty()) feed.addAll(previous);
+                if (reset && !feed.isEmpty()) feedOffset = Math.max(previousOffset, feed.size());
                 if (reset && feed.isEmpty()) {
                     List<FeedItem> cached = filterItems(localCache.feedItems());
                     if (!cached.isEmpty()) {
@@ -704,8 +723,8 @@ public final class MainActivity extends Activity {
         results.setTag(searchBar);
         results.removeAllViews();
         setSearchBarVisible(searchBar, true);
-        ProgressBar progress = new ProgressBar(this);
-        Compat.tint(progress, PRIMARY);
+        LoadingSpinnerView progress = new LoadingSpinnerView(this);
+        progress.setColor(PRIMARY);
         results.addView(progress,
                 new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER));
         Map<String, String> params = new HashMap<>();
@@ -1646,39 +1665,197 @@ public final class MainActivity extends Activity {
 
     private void showFavorites() {
         showLoading();
+        api.get(EndpointProvider.favoriteTabs(), Collections.emptyMap(), new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                localCache.log("favorite tabs loaded: " + favoriteTabSummary(body));
+                showFavoriteContents("tab ok");
+            }
+
+            @Override public void onError(String message) {
+                localCache.log("favorite tabs failed, trying content: " + message);
+                showFavoriteContents(message);
+            }
+        });
+    }
+
+    private void showFavoriteContents(String reason) {
+        Map<String, String> params = favoriteParams("");
+        params.put("limit", "30");
+        showSavedList(TITLE_FAVORITES, EndpointProvider.favoriteLinks(), params, false,
+                fallbackReason -> {
+                    showFavoriteFoldersFallback(reason + "; " + fallbackReason);
+                    return true;
+                });
+    }
+
+    private void showFavoriteFoldersFallback(String reason) {
+        localCache.log("favorite content fallback to folders: " + reason);
+        showLoading();
         Map<String, String> folderParams = new HashMap<>();
-        folderParams.put(SecureStrings.userid(), session.userId());
         folderParams.put("enable_new_style_collect", "1");
         folderParams.put("x_os_type", "Windows");
         folderParams.put("device_info", "Edge");
         api.get(EndpointProvider.favoriteFolders(), folderParams, new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
-                JSONObject result = body.optJSONObject("result");
-                JSONArray folders = result == null ? null : result.optJSONArray("folders");
-                if (folders == null) folders = body.optJSONArray("folders");
-                JSONObject firstFolder = folders == null ? null : folders.optJSONObject(0);
-                if (firstFolder == null) {
-                    hideLoading();
-                    showMessage("收藏夹里暂时没有内容");
+                JSONObject folder = firstFavoriteFolder(findFavoriteFolders(body));
+                String folderId = favoriteFolderId(folder);
+                if (folder == null) {
+                    localCache.log("favorite folders missing: " + favoriteFolderSummary(body));
+                    showFavoritesUnavailable(body, "");
+                    return;
+                } else if (folderId.isEmpty()) {
+                    localCache.log("favorite folder id missing: " + folder);
+                    showFavoritesUnavailable(body, "");
                     return;
                 }
-                Map<String, String> params = new HashMap<>();
-                params.put("folder_id", firstFolder.optString("id",
-                        firstFolder.optString("folder_id")));
-                params.put("enable_new_style_collect", "1");
-                params.put("dw", "604");
-                params.put("no_more", "false");
-                showSavedList("我的收藏", EndpointProvider.favoriteLinks(), params);
+                showSavedList(TITLE_FAVORITES, EndpointProvider.favoriteLinks(),
+                        favoriteParams(folderId), false, null);
             }
 
             @Override public void onError(String message) {
-                hideLoading();
-                toast("收藏夹加载失败：" + message);
+                localCache.log("favorite folders failed: " + message);
+                showFavoritesUnavailable(null, message);
             }
         });
     }
 
-    private void showSavedList(String pageTitle, String path, Map<String, String> params) {
+    private String favoriteTabSummary(JSONObject body) {
+        if (body == null) return "no body";
+        JSONObject result = body.optJSONObject("result");
+        JSONArray tabs = result == null ? null : result.optJSONArray("tab_list");
+        return "status=" + body.optString("status")
+                + ", tabs=" + (tabs == null ? -1 : tabs.length())
+                + ", msg=" + first(body.optString("msg"), body.optString("message"));
+    }
+
+    private void showFavoritesUnavailable(JSONObject body, String message) {
+        hideLoading();
+        prepareSavedPage(TITLE_FAVORITES);
+        String cacheKey = savedCacheKey(TITLE_FAVORITES, EndpointProvider.favoriteLinks());
+        List<FeedItem> cached = filterItems(localCache.savedList(cacheKey));
+        if (!cached.isEmpty()) {
+            toast(MSG_OFFLINE_CACHE);
+            renderSavedItems(TITLE_FAVORITES, cached);
+            return;
+        }
+        if (message != null && !message.isEmpty()) {
+            localCache.log("favorite unavailable reason: " + message);
+        }
+        if (body != null) {
+            localCache.log("favorite unavailable body: " + favoriteFolderSummary(body));
+        }
+        showMessage(MSG_FAVORITES_UNAVAILABLE);
+    }
+
+    private String favoriteFolderSummary(JSONObject body) {
+        if (body == null) return "no body";
+        JSONObject result = body.optJSONObject("result");
+        JSONObject source = result == null ? body : result;
+        JSONArray folders = source.optJSONArray("folders");
+        int folderCount = folders == null ? -1 : folders.length();
+        return "status=" + body.optString("status")
+                + ", msg=" + first(body.optString("msg"), body.optString("message"))
+                + ", folders=" + folderCount
+                + ", favour_post_num=" + source.optInt("favour_post_num",
+                source.optInt("favor_post_num", source.optInt("favorite_post_num", -1)));
+    }
+
+    private Map<String, String> favoriteParams(String folderId) {
+        Map<String, String> params = new HashMap<>();
+        if (folderId != null && !folderId.isEmpty()) {
+            params.put("folder_id", folderId);
+            params.put("folderid", folderId);
+            params.put("fav_folder_id", folderId);
+            params.put("collect_folder_id", folderId);
+        }
+        params.put("enable_new_style_collect", "1");
+        params.put("dw", "604");
+        params.put("no_more", "false");
+        return params;
+    }
+
+    private JSONArray findFavoriteFolders(JSONObject body) {
+        JSONObject result = body == null ? null : body.optJSONObject("result");
+        JSONArray folders = findFavoriteFolderArray(result, 0);
+        return folders == null ? findFavoriteFolderArray(body, 0) : folders;
+    }
+
+    private JSONArray findFavoriteFolderArray(Object node, int depth) {
+        if (node == null || depth > 5) return null;
+        if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            return looksLikeFolderArray(array) ? array : null;
+        }
+        if (!(node instanceof JSONObject)) return null;
+        JSONObject object = (JSONObject) node;
+        String[] keys = {"folders", "folder_list", "fav_folders", "favorite_folders",
+                "collect_folders", "collections", "list", "items", "data"};
+        for (String key : keys) {
+            JSONArray array = object.optJSONArray(key);
+            if (array != null && looksLikeFolderArray(array)) return array;
+        }
+        Iterator<String> names = object.keys();
+        while (names.hasNext()) {
+            Object child = object.opt(names.next());
+            JSONArray found = findFavoriteFolderArray(child, depth + 1);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private boolean looksLikeFolderArray(JSONArray array) {
+        if (array == null || array.length() == 0) return false;
+        int limit = Math.min(6, array.length());
+        for (int i = 0; i < limit; i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) continue;
+            JSONObject folder = unwrapFavoriteFolder(item);
+            if (!favoriteFolderId(folder).isEmpty()) return true;
+            if (folder == null) continue;
+            if (!first(folder.optString("folder_name"), folder.optString("name"),
+                    folder.optString("title")).isEmpty()) return true;
+        }
+        return false;
+    }
+
+    private JSONObject firstFavoriteFolder(JSONArray folders) {
+        if (folders == null) return null;
+        JSONObject fallback = null;
+        for (int i = 0; i < folders.length(); i++) {
+            JSONObject folder = unwrapFavoriteFolder(folders.optJSONObject(i));
+            if (folder == null) continue;
+            if (fallback == null) fallback = folder;
+            if (!favoriteFolderId(folder).isEmpty()) return folder;
+        }
+        return fallback;
+    }
+
+    private JSONObject unwrapFavoriteFolder(JSONObject item) {
+        JSONObject current = item;
+        for (int depth = 0; depth < 4 && current != null; depth++) {
+            if (!favoriteFolderId(current).isEmpty()) return current;
+            JSONObject next = current.optJSONObject("folder");
+            if (next == null) next = current.optJSONObject("folder_info");
+            if (next == null) next = current.optJSONObject("fav_folder");
+            if (next == null) next = current.optJSONObject("collect_folder");
+            if (next == null) next = current.optJSONObject("collection");
+            if (next == null) next = current.optJSONObject("data");
+            if (next == null) next = current.optJSONObject("item");
+            if (next == current) break;
+            current = next;
+        }
+        return current;
+    }
+
+    private String favoriteFolderId(JSONObject folder) {
+        if (folder == null) return "";
+        return first(folder.optString("folder_id"), folder.optString("folderid"),
+                folder.optString("fav_folder_id"), folder.optString("collect_folder_id"),
+                folder.optString("collection_id"), folder.optString("id"),
+                folder.optString("fid"));
+    }
+
+    private void prepareSavedPage(String pageTitle) {
         stopQrPolling();
         ensureEmojiCatalog(() -> {});
         screen = "saved";
@@ -1688,10 +1865,19 @@ public final class MainActivity extends Activity {
         title.setText(pageTitle);
         action.setVisibility(View.INVISIBLE);
         content.removeAllViews();
+    }
+
+    private void showSavedList(String pageTitle, String path, Map<String, String> params) {
+        showSavedList(pageTitle, path, params, true, null);
+    }
+
+    private void showSavedList(String pageTitle, String path, Map<String, String> params,
+                               boolean includeUserId, SavedListFallback fallback) {
+        prepareSavedPage(pageTitle);
         showLoading();
-        params.put("offset", "0");
-        params.put("limit", "20");
-        params.put(SecureStrings.userid(), session.userId());
+        if (!params.containsKey("offset")) params.put("offset", "0");
+        if (!params.containsKey("limit")) params.put("limit", "20");
+        if (includeUserId) params.put(SecureStrings.userid(), session.userId());
         params.put("x_os_type", "Windows");
         params.put("device_info", "Edge");
         final String cacheKey = savedCacheKey(pageTitle, path);
@@ -1710,13 +1896,22 @@ public final class MainActivity extends Activity {
                         }
                     }
                 }
-                localCache.saveSavedList(cacheKey, items);
-                items = filterItems(items);
-                if (pageTitle.contains("历史")) showHistoryList(items);
-                else {
-                    content.addView(feedList(items), match());
-                    if (items.isEmpty()) showMessage("这里暂时没有内容");
+                if (items.isEmpty()) {
+                    collectFeedItems(body, items, new HashMap<>(), 0);
                 }
+                items = filterItems(items);
+                if (items.isEmpty()) {
+                    List<FeedItem> cached = filterItems(localCache.savedList(cacheKey));
+                    if (!cached.isEmpty()) {
+                        toast(MSG_OFFLINE_CACHE);
+                        renderSavedItems(pageTitle, cached);
+                        return;
+                    }
+                    if (fallback != null && fallback.onFallback("empty result")) return;
+                } else {
+                    localCache.saveSavedList(cacheKey, items);
+                }
+                renderSavedItems(pageTitle, items);
             }
 
             @Override public void onError(String message) {
@@ -1724,11 +1919,11 @@ public final class MainActivity extends Activity {
                 localCache.log(pageTitle + " failed: " + message);
                 List<FeedItem> cached = filterItems(localCache.savedList(cacheKey));
                 if (!cached.isEmpty()) {
-                    toast("已显示离线缓存");
-                    if (pageTitle.contains("历史")) showHistoryList(cached);
-                    else content.addView(feedList(cached), match());
+                    toast(MSG_OFFLINE_CACHE);
+                    renderSavedItems(pageTitle, cached);
                     return;
                 }
+                if (fallback != null && fallback.onFallback(message)) return;
                 showMessage(pageTitle + "加载失败\n" + message);
             }
         });
@@ -1736,6 +1931,19 @@ public final class MainActivity extends Activity {
 
     private String savedCacheKey(String pageTitle, String path) {
         return pageTitle + "_" + path;
+    }
+
+    private void renderSavedItems(String pageTitle, List<FeedItem> items) {
+        if (isHistoryPage(pageTitle)) showHistoryList(items);
+        else {
+            content.addView(feedList(items), match());
+            if (items.isEmpty()) showMessage(MSG_EMPTY_CONTENT);
+        }
+    }
+
+    private boolean isHistoryPage(String pageTitle) {
+        return pageTitle != null
+                && (pageTitle.contains("历史") || pageTitle.contains("鍘嗗彶"));
     }
 
     private ListView feedList(List<FeedItem> items) {
@@ -1793,6 +2001,12 @@ public final class MainActivity extends Activity {
                                            int visibleItemCount, int totalItemCount) {}
         });
         results.addView(list, match());
+        TextView emptyView = text(allItems.isEmpty()
+                ? "这里暂时没有内容" : "没有找到相关历史记录", 13, MUTED);
+        emptyView.setGravity(Gravity.CENTER);
+        results.addView(emptyView, match());
+        emptyView.setVisibility(allItems.isEmpty() ? View.VISIBLE : View.GONE);
+        list.setVisibility(allItems.isEmpty() ? View.GONE : View.VISIBLE);
 
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence value, int start,
@@ -1807,24 +2021,18 @@ public final class MainActivity extends Activity {
                     if (query.isEmpty() || haystack.contains(query)) filtered.add(item);
                 }
                 adapter.notifyDataSetChanged();
-                results.removeAllViews();
+                emptyView.setText("没有找到相关历史记录");
                 if (filtered.isEmpty()) {
                     setSearchBarVisible(search, true);
-                    TextView empty = text("没有找到相关历史记录", 13, MUTED);
-                    empty.setGravity(Gravity.CENTER);
-                    results.addView(empty, match());
+                    emptyView.setVisibility(View.VISIBLE);
+                    list.setVisibility(View.GONE);
                 } else {
-                    results.addView(list, match());
+                    emptyView.setVisibility(View.GONE);
+                    list.setVisibility(View.VISIBLE);
                 }
             }
             @Override public void afterTextChanged(Editable value) {}
         });
-        if (allItems.isEmpty()) {
-            results.removeAllViews();
-            TextView empty = text("这里暂时没有内容", 13, MUTED);
-            empty.setGravity(Gravity.CENTER);
-            results.addView(empty, match());
-        }
         content.addView(page, match());
     }
 
@@ -1837,7 +2045,45 @@ public final class MainActivity extends Activity {
         if (links == null) links = result.optJSONArray("visits");
         if (links == null) links = result.optJSONArray("history");
         if (links == null) links = result.optJSONArray("data");
+        if (links == null) links = result.optJSONArray("items");
+        if (links == null) links = result.optJSONArray("rows");
+        if (links == null) links = result.optJSONArray("records");
+        if (links == null) links = result.optJSONArray("favorites");
+        if (links == null) links = result.optJSONArray("collects");
+        if (links == null) links = result.optJSONArray("link_list");
+        if (links == null) links = result.optJSONArray("links_list");
+        if (links == null) links = findNestedLinkArray(result, 0);
         return links;
+    }
+
+    private JSONArray findNestedLinkArray(Object node, int depth) {
+        if (node == null || depth > 5) return null;
+        if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            return looksLikeLinkArray(array) ? array : null;
+        }
+        if (!(node instanceof JSONObject)) return null;
+        JSONObject object = (JSONObject) node;
+        Iterator<String> names = object.keys();
+        while (names.hasNext()) {
+            JSONArray found = findNestedLinkArray(object.opt(names.next()), depth + 1);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private boolean looksLikeLinkArray(JSONArray array) {
+        if (array == null || array.length() == 0) return false;
+        int limit = Math.min(8, array.length());
+        for (int i = 0; i < limit; i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) continue;
+            JSONObject value = savedFeedValue(item);
+            if (value == null) continue;
+            String id = value.optString("linkid", value.optString("link_id"));
+            if (!id.isEmpty()) return true;
+        }
+        return false;
     }
 
     private JSONObject unwrapSavedItem(JSONObject item) {
@@ -1847,8 +2093,15 @@ public final class MainActivity extends Activity {
                     current.optString("link_id")).isEmpty()) return current;
             JSONObject next = current.optJSONObject("link");
             if (next == null) next = current.optJSONObject("link_info");
+            if (next == null) next = current.optJSONObject("link_detail");
             if (next == null) next = current.optJSONObject("moment");
             if (next == null) next = current.optJSONObject("post");
+            if (next == null) next = current.optJSONObject("favorite");
+            if (next == null) next = current.optJSONObject("fav");
+            if (next == null) next = current.optJSONObject("record");
+            if (next == null) next = current.optJSONObject("target");
+            if (next == null) next = current.optJSONObject("source");
+            if (next == null) next = current.optJSONObject("obj");
             if (next == null) next = current.optJSONObject("content");
             if (next == null) next = current.optJSONObject("data");
             if (next == null) next = current.optJSONObject("item");
@@ -2946,9 +3199,9 @@ public final class MainActivity extends Activity {
 
     private void showLoading() {
         hideLoading();
-        ProgressBar progress = new ProgressBar(this);
+        LoadingSpinnerView progress = new LoadingSpinnerView(this);
         progress.setTag("loading");
-        Compat.tint(progress, PRIMARY);
+        progress.setColor(PRIMARY);
         content.addView(progress, new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER));
     }
 

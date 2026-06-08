@@ -41,6 +41,7 @@ final class EmojiStore {
 
     static void whenReady(Runnable ready) {
         if (catalogLoaded) ready.run();
+        else if (!loading) ready.run();
         else READY.add(ready);
     }
 
@@ -63,6 +64,7 @@ final class EmojiStore {
 
             @Override public void onError(String message) {
                 loading = false;
+                notifyReady();
             }
         });
     }

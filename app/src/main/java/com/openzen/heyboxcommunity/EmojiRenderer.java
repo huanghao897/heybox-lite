@@ -4,6 +4,7 @@ import android.graphics.Bitmap;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.style.ImageSpan;
+import android.util.LruCache;
 import android.widget.TextView;
 
 import java.lang.ref.WeakReference;
@@ -19,24 +20,27 @@ import java.util.regex.Pattern;
 final class EmojiRenderer {
     private static final Pattern TOKEN = Pattern.compile(
             "\\[[^\\]\\s]{1,48}\\]|(?<![A-Za-z0-9_./-])(?:cube|heygirl)_[^\\s\\[\\]<>\"']{1,48}");
-    private static final Map<String, Bitmap> BITMAPS = new HashMap<>();
+    private static final int CACHE_KB = 2 * 1024;
+    private static final LruCache<String, Bitmap> BITMAPS =
+            new LruCache<String, Bitmap>(CACHE_KB) {
+                @Override
+                protected int sizeOf(String key, Bitmap value) {
+                    return value == null ? 0 : Math.max(1, value.getByteCount() / 1024);
+                }
+            };
     private static final Set<String> LOADING = new HashSet<>();
     private static final Map<String, List<Waiter>> WAITERS = new HashMap<>();
 
     private EmojiRenderer() {}
 
     static void clear() {
-        BITMAPS.clear();
+        BITMAPS.evictAll();
         LOADING.clear();
         WAITERS.clear();
     }
 
     static int cacheSizeKb() {
-        int bytes = 0;
-        for (Bitmap bitmap : BITMAPS.values()) {
-            if (bitmap != null) bytes += bitmap.getByteCount();
-        }
-        return Math.max(0, bytes / 1024);
+        return BITMAPS.size();
     }
 
     static void set(TextView view, String source) {
@@ -116,6 +120,10 @@ final class EmojiRenderer {
             waiters = new ArrayList<>();
             WAITERS.put(cacheKey, waiters);
         }
+        for (int i = waiters.size() - 1; i >= 0; i--) {
+            if (waiters.get(i).view.get() == null) waiters.remove(i);
+        }
+        if (waiters.size() >= 24) waiters.remove(0);
         waiters.add(new Waiter(view, source, darkMode));
     }
 

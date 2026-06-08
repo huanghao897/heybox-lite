@@ -13,6 +13,7 @@ import java.io.FileOutputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
@@ -192,7 +193,13 @@ final class LocalCache {
         File[] files = dir.listFiles();
         if (files == null || files.length <= keep) return;
         List<File> sorted = new ArrayList<>(Arrays.asList(files));
-        sorted.sort(Comparator.comparingLong(File::lastModified));
+        Collections.sort(sorted, new Comparator<File>() {
+            @Override public int compare(File left, File right) {
+                long diff = left.lastModified() - right.lastModified();
+                if (diff == 0L) return 0;
+                return diff < 0L ? -1 : 1;
+            }
+        });
         for (int i = 0; i < sorted.size() - keep; i++) {
             sorted.get(i).delete();
         }

@@ -152,7 +152,12 @@ final class FeedAdapter extends BaseAdapter {
         holder.comments.setText(String.valueOf(item.comments));
         boolean showImage = !noImage && !item.image.isEmpty();
         holder.cover.setVisibility(showImage ? View.VISIBLE : View.GONE);
-        if (showImage) ImageLoader.into(holder.cover, item.image, 320);
+        if (showImage) {
+            ImageLoader.into(holder.cover, item.image, 320);
+        } else {
+            ImageLoader.cancel(holder.cover);
+            holder.cover.setImageDrawable(null);
+        }
         View.OnClickListener open = view -> listener.onOpen(item);
         reusable.setOnClickListener(open);
         holder.card.setOnClickListener(open);

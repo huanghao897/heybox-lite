@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -76,7 +77,7 @@ final class UpdateChecker {
                 for (int i = 0; i < assets.length(); i++) {
                     JSONObject asset = assets.optJSONObject(i);
                     if (asset == null) continue;
-                    String name = asset.optString("name").toLowerCase();
+                    String name = asset.optString("name").toLowerCase(Locale.US);
                     if (name.endsWith(".apk")) {
                         downloadUrl = asset.optString("browser_download_url");
                         break;
@@ -92,8 +93,9 @@ final class UpdateChecker {
         } catch (Exception error) {
             String message = error.getMessage() == null
                     ? error.getClass().getSimpleName() : error.getMessage();
-            if (message.toLowerCase().contains("ssl")
-                    || message.toLowerCase().contains("handshake")) {
+            String lowerMessage = message.toLowerCase(Locale.US);
+            if (lowerMessage.contains("ssl")
+                    || lowerMessage.contains("handshake")) {
                 message = "当前系统 TLS 过旧或网络不兼容，请打开发布页检查：" + BuildConfig.UPDATE_FALLBACK_URL;
             }
             final String finalMessage = message;
