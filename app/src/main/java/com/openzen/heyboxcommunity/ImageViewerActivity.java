@@ -2,11 +2,13 @@ package com.openzen.heyboxcommunity;
 
 import android.app.Activity;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -24,11 +26,14 @@ public final class ImageViewerActivity extends Activity {
     private TextView original;
     private String url;
     private boolean closing;
+    private boolean destroyed;
+    private SessionStore session;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         Compat.colorSystemBars(getWindow(), Color.rgb(26, 28, 31));
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
+        session = new SessionStore(this);
         url = getIntent().getStringExtra(EXTRA_URL);
 
         root = new FrameLayout(this);
@@ -37,17 +42,27 @@ public final class ImageViewerActivity extends Activity {
         image.setOnBlankClickListener(this::closeViewer);
         root.addView(image, new FrameLayout.LayoutParams(-1, -1));
 
+        LinearLayout controls = new LinearLayout(this);
+        controls.setGravity(Gravity.CENTER);
+        controls.setPadding(dp(8), 0, dp(8), 0);
+
         TextView back = control("‹ 返回");
         back.setOnClickListener(view -> closeViewer());
-        FrameLayout.LayoutParams backParams =
-                new FrameLayout.LayoutParams(dp(72), dp(38), Gravity.TOP | Gravity.LEFT);
-        root.addView(back, backParams);
+        controls.addView(back, new LinearLayout.LayoutParams(dp(82), dp(38)));
 
         original = control("查看原图");
         original.setOnClickListener(view -> loadOriginal());
-        FrameLayout.LayoutParams originalParams =
-                new FrameLayout.LayoutParams(dp(92), dp(38), Gravity.TOP | Gravity.RIGHT);
-        root.addView(original, originalParams);
+        if (session.originalImages()) {
+            LinearLayout.LayoutParams originalParams =
+                    new LinearLayout.LayoutParams(dp(96), dp(38));
+            originalParams.leftMargin = dp(8);
+            controls.addView(original, originalParams);
+        }
+        FrameLayout.LayoutParams controlsParams =
+                new FrameLayout.LayoutParams(-2, dp(46),
+                        Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        controlsParams.bottomMargin = dp(12);
+        root.addView(controls, controlsParams);
 
         progress = new ProgressBar(this);
         Compat.tint(progress, Color.argb(210, 235, 238, 241));
@@ -73,7 +88,8 @@ public final class ImageViewerActivity extends Activity {
 
     private void loadPreview() {
         progress.setVisibility(View.VISIBLE);
-        ImageLoader.load(url, 1600, bitmap -> {
+        ImageLoader.load(url, previewTarget(), bitmap -> {
+            if (destroyed || isFinishing()) return;
             image.animate().cancel();
             image.setAlpha(0f);
             image.setScaleX(0.985f);
@@ -95,6 +111,7 @@ public final class ImageViewerActivity extends Activity {
         progress.setAlpha(1f);
         progress.setVisibility(View.VISIBLE);
         ImageLoader.loadOriginal(url, 2400, bitmap -> {
+            if (destroyed || isFinishing()) return;
             image.animate().cancel();
             image.setAlpha(0.72f);
             image.setImageBitmap(bitmap);
@@ -104,6 +121,7 @@ public final class ImageViewerActivity extends Activity {
             image.animate().alpha(1f).setDuration(130).start();
         });
         image.postDelayed(() -> {
+            if (destroyed || isFinishing()) return;
             if (progress.getVisibility() == View.VISIBLE) {
                 original.setEnabled(true);
                 original.setText("重试原图");
@@ -118,7 +136,10 @@ public final class ImageViewerActivity extends Activity {
         view.setTextColor(Color.WHITE);
         view.setTextSize(13);
         view.setGravity(Gravity.CENTER);
-        view.setBackgroundColor(Color.argb(155, 44, 47, 51));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.argb(142, 42, 45, 49));
+        background.setCornerRadius(dp(19));
+        Compat.setBackground(view, background);
         return view;
     }
 
@@ -141,6 +162,20 @@ public final class ImageViewerActivity extends Activity {
 
     @Override public void onBackPressed() {
         closeViewer();
+    }
+
+    @Override protected void onDestroy() {
+        destroyed = true;
+        if (image != null) {
+            ImageLoader.cancel(image);
+        }
+        super.onDestroy();
+    }
+
+    private int previewTarget() {
+        int width = getResources().getDisplayMetrics().widthPixels;
+        int height = getResources().getDisplayMetrics().heightPixels;
+        return Math.max(720, Math.min(1800, Math.max(width, height)));
     }
 
     private int dp(int value) {

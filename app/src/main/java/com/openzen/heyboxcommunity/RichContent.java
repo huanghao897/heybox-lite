@@ -28,6 +28,10 @@ final class RichContent {
 
     private static final Pattern IMAGE = Pattern.compile(
             "(?is)<img\\b[^>]*?(?:data-original|data-src|src)\\s*=\\s*(['\"])(.*?)\\1[^>]*>");
+    private static final Pattern INLINE_EMOJI = Pattern.compile(
+            "(?is)<a\\b([^>]*(?:icon-url|icon-dark-url)\\s*=\\s*(['\"]).*?\\2[^>]*)>(.*?)</a>");
+    private static final Pattern ATTRIBUTE = Pattern.compile(
+            "(?is)(icon-url|icon-dark-url)\\s*=\\s*(['\"])(.*?)\\2");
     private static final Pattern JSON_IMAGE = Pattern.compile(
             "(?is)\"(?:url|src|original)\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
 
@@ -166,7 +170,8 @@ final class RichContent {
         if (value.isEmpty()) return;
         int marker = structuredMarker(value);
         if (marker > 0) {
-            addHtml(blocks, imageUrls, value.substring(0, marker));
+            String readable = value.substring(0, marker);
+            if (hasReadableText(readable)) addHtml(blocks, imageUrls, readable);
         } else if (marker < 0) {
             addHtml(blocks, imageUrls, value);
         }
@@ -184,9 +189,12 @@ final class RichContent {
         }
         int object = value.indexOf('{');
         if (object >= 0 && (marker < 0 || object < marker)) marker = object;
-        int array = value.indexOf('[');
-        if (array >= 0 && (marker < 0 || array < marker)) marker = array;
         return marker;
+    }
+
+    private static boolean hasReadableText(String value) {
+        return value != null && value.replaceAll("[\\s\"',:;{}\\[\\]<>/\\\\]+", "")
+                .length() > 0;
     }
 
     private static void addLooseImages(List<Block> blocks, Set<String> imageUrls,
@@ -225,6 +233,7 @@ final class RichContent {
 
     private static void addHtml(List<Block> blocks, Set<String> imageUrls, String html) {
         if (html == null || html.isEmpty()) return;
+        html = normalizeInlineEmojis(html);
         Matcher matcher = IMAGE.matcher(html);
         int start = 0;
         while (matcher.find()) {
@@ -233,6 +242,30 @@ final class RichContent {
             start = matcher.end();
         }
         addText(blocks, html.substring(start));
+    }
+
+    private static String normalizeInlineEmojis(String html) {
+        Matcher matcher = INLINE_EMOJI.matcher(html);
+        StringBuffer output = new StringBuffer();
+        while (matcher.find()) {
+            String attrs = matcher.group(1);
+            String label = decodeHtml(matcher.group(3)).trim();
+            if (label.isEmpty()) label = "表情";
+            String token = "[" + label.replaceAll("[\\[\\]\\s]+", "") + "]";
+            String light = "";
+            String dark = "";
+            Matcher attr = ATTRIBUTE.matcher(attrs);
+            while (attr.find()) {
+                String name = attr.group(1).toLowerCase(Locale.ROOT);
+                String url = decodeHtml(attr.group(3)).replace("\\/", "/");
+                if ("icon-dark-url".equals(name)) dark = url;
+                else light = url;
+            }
+            EmojiStore.register(token, light, dark);
+            matcher.appendReplacement(output, Matcher.quoteReplacement(token));
+        }
+        matcher.appendTail(output);
+        return output.toString();
     }
 
     private static void addText(List<Block> blocks, String html) {
@@ -271,6 +304,7 @@ final class RichContent {
                 .replace("\\u003c", "<")
                 .replace("\\u003e", ">")
                 .replace("\\u0026", "&")
+                .replace("\\\"", "\"")
                 .replace("\\/", "/");
         for (int i = 0; i < 2; i++) {
             String lower = decoded.toLowerCase(Locale.ROOT);

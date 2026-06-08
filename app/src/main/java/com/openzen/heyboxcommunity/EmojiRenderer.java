@@ -14,7 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 final class EmojiRenderer {
-    private static final Pattern TOKEN = Pattern.compile("\\[[^\\]\\s]+_[^\\]]+\\]");
+    private static final Pattern TOKEN = Pattern.compile("\\[[^\\]\\s]{1,48}\\]");
     private static final Map<String, Bitmap> BITMAPS = new HashMap<>();
     private static final Set<String> LOADING = new HashSet<>();
 
@@ -26,22 +26,27 @@ final class EmojiRenderer {
     }
 
     static void set(TextView view, String source) {
+        set(view, source, false);
+    }
+
+    static void set(TextView view, String source, boolean darkMode) {
         String value = source == null ? "" : source;
         view.setTag(value);
-        render(view, value);
+        render(view, value, darkMode);
         if (!EmojiStore.isLoaded() && TOKEN.matcher(value).find()) {
             EmojiStore.whenReady(() -> {
-                if (value.equals(view.getTag())) render(view, value);
+                if (value.equals(view.getTag())) render(view, value, darkMode);
             });
         }
     }
 
-    private static void render(TextView view, String source) {
+    private static void render(TextView view, String source, boolean darkMode) {
         SpannableString styled = new SpannableString(source);
         Matcher matcher = TOKEN.matcher(source);
         while (matcher.find()) {
             String code = matcher.group();
-            Bitmap bitmap = BITMAPS.get(code);
+            String cacheKey = (darkMode ? "d:" : "l:") + code;
+            Bitmap bitmap = BITMAPS.get(cacheKey);
             if (bitmap != null) {
                 int height = Math.max(18, Math.round(view.getTextSize() * 1.25f));
                 int width = Math.max(18, Math.round(bitmap.getWidth() * height
@@ -54,13 +59,13 @@ final class EmojiRenderer {
                         matcher.start(), matcher.end(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
                 continue;
             }
-            String url = EmojiStore.url(code);
-            if (url.isEmpty() || !LOADING.add(code)) continue;
+            String url = EmojiStore.url(code, darkMode);
+            if (url.isEmpty() || !LOADING.add(cacheKey)) continue;
             ImageLoader.loadOriginal(url, 96, loaded -> {
-                BITMAPS.put(code, loaded);
-                LOADING.remove(code);
+                BITMAPS.put(cacheKey, loaded);
+                LOADING.remove(cacheKey);
                 Object tag = view.getTag();
-                if (source.equals(tag)) render(view, source);
+                if (source.equals(tag)) render(view, source, darkMode);
             });
         }
         view.setText(styled);
