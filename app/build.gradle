@@ -16,8 +16,8 @@ android {
         applicationId "com.openzen.heyboxcommunity"
         minSdk 14
         targetSdk 35
-        versionCode 156
-        versionName "1.56"
+        versionCode 157
+        versionName "1.57"
         buildConfigField "String", "RELEASE_CERT_SHA256",
                 "\"7b163883d570408505d820174fb9565471efde8d863508fd390e4f4eb1645eb8\""
         buildConfigField "String", "UPDATE_API_URL",

@@ -165,7 +165,7 @@ final class EmojiStore {
             String value = URLS.get(variant);
             if (value != null) return value;
         }
-        return null;
+        return OfficialEmojiFallback.url(clean);
     }
 
     private static void putVariants(String code, String lightUrl, String darkUrl) {
