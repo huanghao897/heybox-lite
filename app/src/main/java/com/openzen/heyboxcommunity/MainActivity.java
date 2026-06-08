@@ -51,6 +51,10 @@ public final class MainActivity extends Activity {
         boolean onFallback(String reason);
     }
 
+    private interface WriteRequest {
+        void start(ApiClient.Callback callback);
+    }
+
     private static final int REPLY_PREVIEW_COUNT = 2;
     private static final int REPLY_PAGE_SIZE = 5;
     private static final String[] THEME_NAMES = {
@@ -90,6 +94,7 @@ public final class MainActivity extends Activity {
     private final List<FeedItem> feed = new ArrayList<>();
     private SessionStore session;
     private ApiClient api;
+    private WriteTokenProvider writeTokenProvider;
     private FrameLayout content;
     private LinearLayout bottom;
     private TextView title;
@@ -117,6 +122,9 @@ public final class MainActivity extends Activity {
     private int feedFirstTop;
     private String detailReturn = "feed";
     private String currentLinkId = "";
+    private String currentLinkHsrc = "";
+    private String currentAuthCode = "";
+    private FeedItem currentDetailItem;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -138,6 +146,7 @@ public final class MainActivity extends Activity {
         Compat.colorSystemBars(getWindow(), BG);
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
         api = new ApiClient(session);
+        writeTokenProvider = new WriteTokenProvider(this, session, api);
         buildShell();
         if (session.isLoggedIn()) {
             EmojiStore.load(api, () -> {
@@ -475,7 +484,7 @@ public final class MainActivity extends Activity {
         list.addFooterView(feedFooter, null, false);
         feedAdapter = new FeedAdapter(this, feed, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
-                session.darkMode(), PRIMARY, SECONDARY, this::showDetail);
+                session.darkMode(), PRIMARY, SECONDARY, this::showDetail, this::toggleFeedLike);
         list.setAdapter(feedAdapter);
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override public void onScrollStateChanged(AbsListView view, int state) {}
@@ -928,9 +937,12 @@ public final class MainActivity extends Activity {
         stopQrPolling();
         ensureEmojiCatalog(() -> {});
         if ("feed".equals(screen)) saveFeedScroll();
-        detailReturn = screen;
+        if (!"detail".equals(screen)) detailReturn = screen;
         screen = "detail";
         currentLinkId = item.id;
+        currentLinkHsrc = item.hsrc;
+        currentAuthCode = "";
+        currentDetailItem = item;
         bottom.setVisibility(View.GONE);
         leading.setVisibility(View.VISIBLE);
         leading.setOnClickListener(view -> returnFromDetail());
@@ -969,6 +981,11 @@ public final class MainActivity extends Activity {
     private void renderDetail(JSONObject body, FeedItem fallback) {
         JSONObject result = body.optJSONObject("result");
         JSONObject link = result == null ? null : result.optJSONObject("link");
+        currentLinkHsrc = first(hsrc(link), fallback == null ? "" : fallback.hsrc, currentLinkHsrc);
+        String authCode = link == null ? "" : link.optString("auth_code");
+        if (authCode.isEmpty() && result != null) authCode = result.optString("auth_code");
+        if (authCode.isEmpty()) authCode = body.optString("auth_code");
+        if (!authCode.isEmpty()) currentAuthCode = authCode;
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(BG);
         LinearLayout page = vertical(BG);
@@ -980,7 +997,7 @@ public final class MainActivity extends Activity {
         article.setPadding(dp(2), dp(4), dp(2), dp(12));
         JSONObject user = link == null ? null : link.optJSONObject("user");
         String author = user == null ? fallback.author : user.optString("username", fallback.author);
-        addAuthorHeader(article, user, author);
+        addAuthorHeader(article, link, user, author);
         String heading = link == null ? fallback.title : link.optString("title", fallback.title);
         TextView headline = text(heading, 18, TEXT);
         headline.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -988,6 +1005,7 @@ public final class MainActivity extends Activity {
         addTop(article, headline, 14);
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
         addRichContent(article, link, fallback.description, fallbackImages);
+        addDetailActions(article, fallback, link);
         page.addView(article);
 
         View section = new View(this);
@@ -1015,7 +1033,366 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void addAuthorHeader(LinearLayout article, JSONObject user, String fallbackAuthor) {
+    private void addDetailActions(LinearLayout article, FeedItem item, JSONObject link) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView like = actionPill("", R.drawable.ic_thumb_up);
+        boolean liked = linkLiked(link, item);
+        int likes = linkLikes(link, item);
+        item.liked = liked;
+        item.likes = likes;
+        updateFeedLike(item.id, liked, likes);
+        updateLinkLikeView(like, liked, likes);
+        like.setOnClickListener(view -> toggleLinkLike(item, like));
+        row.addView(like, new LinearLayout.LayoutParams(0, dp(36), 1));
+
+        TextView favorite = actionPill("", R.drawable.ic_bookmark);
+        boolean favored = linkFavored(link);
+        updateFavoriteView(favorite, favored);
+        LinearLayout.LayoutParams favoriteParams = new LinearLayout.LayoutParams(0, dp(36), 1);
+        favoriteParams.leftMargin = dp(6);
+        row.addView(favorite, favoriteParams);
+        favorite.setOnClickListener(view -> toggleFavorite(item, favorite));
+
+        TextView comment = actionPill("评论", R.drawable.ic_comment);
+        LinearLayout.LayoutParams commentParams = new LinearLayout.LayoutParams(0, dp(36), 1);
+        commentParams.leftMargin = dp(6);
+        row.addView(comment, commentParams);
+        comment.setOnClickListener(view -> showCommentDialog(null));
+
+        addTop(article, row, 10);
+    }
+
+    private TextView actionPill(String label, int icon) {
+        TextView view = text(label, 12, TEXT);
+        view.setGravity(Gravity.CENTER);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setPadding(dp(7), 0, dp(7), 0);
+        updatePill(view, blend(PANEL, SECONDARY, session.darkMode() ? 0.20f : 0.10f),
+                TEXT, icon);
+        return view;
+    }
+
+    private void updateLinkLikeView(TextView view, boolean liked, int likes) {
+        int bg = liked ? activeActionBackground(PRIMARY)
+                : blend(PANEL, SECONDARY, session.darkMode() ? 0.20f : 0.10f);
+        int fg = liked ? contrast(bg) : TEXT;
+        view.setText(String.valueOf(Math.max(0, likes)));
+        updatePill(view, bg, fg, R.drawable.ic_thumb_up);
+    }
+
+    private void updateFavoriteView(TextView view, boolean favored) {
+        view.setTag(Boolean.valueOf(favored));
+        int bg = favored ? blend(PANEL, SECONDARY, session.darkMode() ? 0.48f : 0.22f)
+                : blend(PANEL, SECONDARY, session.darkMode() ? 0.20f : 0.10f);
+        int fg = favored ? SECONDARY : TEXT;
+        view.setText(favored ? "已收藏" : "收藏");
+        updatePill(view, bg, fg, R.drawable.ic_bookmark);
+    }
+
+    private void updatePill(TextView view, int bg, int fg, int icon) {
+        view.setTextColor(fg);
+        GradientDrawable drawable = round(bg, 10);
+        drawable.setStroke(dp(1), blend(bg, fg, 0.20f));
+        Compat.setBackground(view, drawable);
+        setLeftIcon(view, icon, fg, 15);
+    }
+
+    private boolean linkLiked(JSONObject link, FeedItem fallback) {
+        if (link == null) return fallback.liked;
+        if (truthy(link, "is_award_link", "is_award", "liked", "is_liked", "has_award")) {
+            return true;
+        }
+        return truthy(link, "award_state", "like_state");
+    }
+
+    private int linkLikes(JSONObject link, FeedItem fallback) {
+        if (link == null) return fallback.likes;
+        return firstInt(link, fallback.likes, "link_award_num", "like_num", "award_num",
+                "award_count", "like_count", "liked_num", "total_award_num", "up_num", "up");
+    }
+
+    private boolean linkFavored(JSONObject link) {
+        if (link == null) return false;
+        return truthy(link, "is_favour", "is_favor", "is_fav", "favored",
+                "has_favour", "has_favor");
+    }
+
+    private boolean truthy(JSONObject source, String... keys) {
+        if (source == null) return false;
+        for (String key : keys) {
+            if (!source.has(key)) continue;
+            Object value = source.opt(key);
+            if (value instanceof Boolean) return (Boolean) value;
+            if (value instanceof Number) return ((Number) value).intValue() == 1;
+            String text = String.valueOf(value).trim();
+            if ("1".equals(text) || "true".equalsIgnoreCase(text)
+                    || "yes".equalsIgnoreCase(text)) return true;
+            if ("0".equals(text) || "2".equals(text) || "false".equalsIgnoreCase(text)
+                    || "no".equalsIgnoreCase(text)) return false;
+        }
+        return false;
+    }
+
+    private String hsrc(JSONObject link) {
+        if (link == null) return "";
+        String value = first(link.optString("h_src"), link.optString("hsrc"));
+        if (!value.isEmpty()) return value;
+        String shareUrl = link.optString("share_url");
+        if (shareUrl.isEmpty()) return "";
+        try {
+            value = Uri.parse(shareUrl).getQueryParameter("h_src");
+            return value == null ? "" : value;
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private int firstInt(JSONObject source, int fallback, String... keys) {
+        if (source == null) return fallback;
+        for (String key : keys) {
+            if (source.has(key)) return source.optInt(key, fallback);
+        }
+        return fallback;
+    }
+
+    private void toggleLinkLike(FeedItem item, TextView view) {
+        if (item == null || item.id.isEmpty()) return;
+        boolean beforeLiked = item.liked;
+        int beforeLikes = Math.max(0, item.likes);
+        boolean nextLiked = !beforeLiked;
+        int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
+        item.liked = nextLiked;
+        item.likes = nextLikes;
+        updateLinkLikeView(view, nextLiked, nextLikes);
+        updateFeedLike(item.id, nextLiked, nextLikes);
+
+        postLinkLike(item, nextLiked, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                updateFeedLike(item.id, nextLiked, nextLikes);
+            }
+
+            @Override public void onError(String message) {
+                item.liked = beforeLiked;
+                item.likes = beforeLikes;
+                updateLinkLikeView(view, beforeLiked, beforeLikes);
+                updateFeedLike(item.id, beforeLiked, beforeLikes);
+                toast("点赞失败：" + message);
+            }
+        });
+    }
+
+    private void toggleFeedLike(FeedItem item) {
+        if (item == null || item.id.isEmpty()) return;
+        boolean beforeLiked = item.liked;
+        int beforeLikes = Math.max(0, item.likes);
+        boolean nextLiked = !beforeLiked;
+        int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
+        item.liked = nextLiked;
+        item.likes = nextLikes;
+        updateFeedLike(item.id, nextLiked, nextLikes);
+
+        postLinkLike(item, nextLiked, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                updateFeedLike(item.id, nextLiked, nextLikes);
+            }
+
+            @Override public void onError(String message) {
+                item.liked = beforeLiked;
+                item.likes = beforeLikes;
+                updateFeedLike(item.id, beforeLiked, beforeLikes);
+                toast("点赞失败：" + message);
+            }
+        });
+    }
+
+    private void toggleFavorite(FeedItem item, TextView view) {
+        if (item == null || item.id.isEmpty()) return;
+        Object tag = view.getTag();
+        boolean favored = tag instanceof Boolean && (Boolean) tag;
+        boolean nextFavored = !favored;
+        updateFavoriteView(view, nextFavored);
+        view.setEnabled(false);
+        postFavorite(item, nextFavored, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                view.setEnabled(true);
+                toast(nextFavored ? "已收藏" : "已取消收藏");
+            }
+
+            @Override public void onError(String message) {
+                view.setEnabled(true);
+                updateFavoriteView(view, favored);
+                toast("收藏操作失败：" + message);
+            }
+        });
+    }
+
+    private void postLinkLike(FeedItem item, boolean nextLiked, ApiClient.Callback callback) {
+        WriteRequest award = cb -> api.postForm(EndpointProvider.awardLink(),
+                Collections.emptyMap(), awardBody(item.id, nextLiked), cb);
+        WriteRequest awardWithHsrc = cb -> api.postForm(EndpointProvider.awardLink(),
+                queryHsrc(item), awardBody(item.id, nextLiked), cb);
+        runWriteFallback(new WriteRequest[]{award, awardWithHsrc}, callback);
+    }
+
+    private void postFavorite(FeedItem item, boolean nextFavored, ApiClient.Callback callback) {
+        WriteRequest official = cb -> api.postForm(EndpointProvider.favourLink(),
+                Collections.emptyMap(), favouriteBody(item.id, nextFavored ? "1" : "2", false), cb);
+        WriteRequest withFolder = cb -> api.postForm(EndpointProvider.favourLink(),
+                Collections.emptyMap(), favouriteBody(item.id, nextFavored ? "1" : "2", true), cb);
+        WriteRequest compact = cb -> api.postForm(EndpointProvider.favourLink(),
+                queryHsrc(item), favouriteBody(item.id, nextFavored ? "1" : "2", false), cb);
+        WriteRequest withNewsId = cb -> api.postForm(EndpointProvider.favourLink(),
+                queryHsrc(item), favouriteBody(item.id, nextFavored ? "1" : "2", true, true), cb);
+        WriteRequest noHsrc = cb -> api.postForm(EndpointProvider.favourLink(),
+                Collections.emptyMap(), favouriteBody(item.id, nextFavored ? "1" : "2", true), cb);
+        runWriteFallback(new WriteRequest[]{official, withFolder, compact, withNewsId, noHsrc}, callback);
+    }
+
+    private Map<String, String> awardBody(String linkId, boolean liked) {
+        Map<String, String> body = new HashMap<>();
+        body.put("link_id", linkId);
+        body.put("award_type", liked ? "1" : "0");
+        return body;
+    }
+
+    private Map<String, String> linkIdBody(String linkId) {
+        Map<String, String> body = new HashMap<>();
+        body.put("link_id", linkId);
+        return body;
+    }
+
+    private Map<String, String> favouriteBody(String linkId, String type, boolean includeFolder) {
+        return favouriteBody(linkId, type, includeFolder, false);
+    }
+
+    private Map<String, String> favouriteBody(String linkId, String type, boolean includeFolder,
+                                              boolean includeNewsId) {
+        Map<String, String> body = linkIdBody(linkId);
+        body.put("favour_type", type);
+        if (!session.userId().isEmpty()) body.put(SecureStrings.userid(), session.userId());
+        if (includeNewsId) body.put("newsid", linkId);
+        if (includeFolder) body.put("folder_id", "");
+        return body;
+    }
+
+    private Map<String, String> queryHsrc(FeedItem item) {
+        Map<String, String> query = new HashMap<>();
+        String value = item == null ? "" : item.hsrc;
+        if (value.isEmpty() && item != null && item.id.equals(currentLinkId)) {
+            value = currentLinkHsrc;
+        }
+        if (value.isEmpty() && item == null) value = currentLinkHsrc;
+        if (!value.isEmpty()) query.put("h_src", value);
+        return query;
+    }
+
+    private Map<String, String> commentCreateQuery() {
+        Map<String, String> query = queryHsrc(currentDetailItem);
+        if (!currentAuthCode.isEmpty()) query.put("auth_code", currentAuthCode);
+        return query;
+    }
+
+    private void runWriteFallback(WriteRequest[] requests, ApiClient.Callback callback) {
+        if (localCache != null) {
+            localCache.log("write cookie keys: " + session.authCookieKeysForLog());
+        }
+        runWriteFallback(requests, 0, "", "", false, callback);
+    }
+
+    private void runWriteFallback(WriteRequest[] requests, int index, String lastError,
+                                  String importantError, boolean tokenRetried,
+                                  ApiClient.Callback callback) {
+        if (index >= requests.length) {
+            String message = !importantError.isEmpty() ? importantError : lastError;
+            callback.onError(message == null || message.isEmpty()
+                    ? "\u63a5\u53e3\u672a\u8fd4\u56de\u53ef\u7528\u7ed3\u679c" : message);
+            return;
+        }
+        requests[index].start(new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                callback.onSuccess(body);
+            }
+
+            @Override public void onError(String message) {
+                if (localCache != null) {
+                    localCache.log("write fallback " + index + " failed: " + message);
+                }
+                if (isTokenWriteError(message)) {
+                    if (!tokenRetried && writeTokenProvider != null) {
+                        if (localCache != null) localCache.log("write auth failed, refreshing token");
+                        writeTokenProvider.refresh(new WriteTokenProvider.Callback() {
+                            @Override public void onReady() {
+                                runWriteFallback(requests, 0, "", "", true, callback);
+                            }
+
+                            @Override public void onError(String tokenMessage) {
+                                if (localCache != null) {
+                                    localCache.log("write token refresh failed: " + tokenMessage);
+                                }
+                                callback.onError(message + "\n" + tokenMessage);
+                            }
+                        });
+                        return;
+                    }
+                    callback.onError(message);
+                    return;
+                }
+                if (isLoginWriteError(message)) {
+                    callback.onError(message);
+                    return;
+                }
+                String nextImportant = importantError;
+                if (nextImportant == null || nextImportant.isEmpty()) {
+                    nextImportant = isParameterWriteError(message) ? message : "";
+                }
+                runWriteFallback(requests, index + 1, message, nextImportant,
+                        tokenRetried, callback);
+            }
+        });
+    }
+
+    private boolean isTokenWriteError(String message) {
+        if (message == null) return false;
+        String lower = message.toLowerCase(java.util.Locale.US);
+        return lower.contains("lack_token")
+                || lower.contains("x_xhh_tokenid")
+                || lower.contains("tokenid")
+                || lower.contains("token")
+                || message.contains("\u4ee4\u724c");
+    }
+
+    private boolean isLoginWriteError(String message) {
+        if (message == null) return false;
+        String lower = message.toLowerCase(java.util.Locale.US);
+        return lower.contains("login")
+                || lower.contains("relogin")
+                || message.contains("\u767b\u5f55")
+                || message.contains("\u91cd\u65b0\u767b\u5f55");
+    }
+
+    private boolean isParameterWriteError(String message) {
+        if (message == null) return false;
+        return message.contains("验证参数") || message.contains("参数")
+                || message.contains("param") || message.contains("sign");
+    }
+
+    private void updateFeedLike(String linkId, boolean liked, int likes) {
+        if (linkId == null || linkId.isEmpty()) return;
+        for (FeedItem candidate : feed) {
+            if (linkId.equals(candidate.id)) {
+                candidate.liked = liked;
+                candidate.likes = likes;
+                break;
+            }
+        }
+        localCache.saveFeed(feed);
+        if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
+    }
+
+    private void addAuthorHeader(LinearLayout article, JSONObject link, JSONObject user,
+                                 String fallbackAuthor) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
@@ -1064,14 +1441,181 @@ public final class MainActivity extends Activity {
         copyParams.leftMargin = dp(9);
         row.addView(copy, copyParams);
 
-        int followBg = session.darkMode() ? blend(PANEL, TEXT, 0.16f) : TEXT;
-        TextView follow = text("+ 关注", 11, contrast(followBg));
+        int followBg = session.darkMode() ? blend(PANEL, TEXT, 0.12f)
+                : blend(PANEL, TEXT, 0.06f);
+        TextView follow = text("+ 关注", 11, TEXT);
         follow.setGravity(Gravity.CENTER);
         follow.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         Compat.setBackground(follow, round(followBg, 5));
+        String targetUserId = authorUserId(link, user);
+        updateFollowView(follow, isFollowing(link, user));
         row.addView(follow, new LinearLayout.LayoutParams(dp(62), dp(30)));
-        follow.setOnClickListener(view -> toast("暂不支持关注"));
+        follow.setOnClickListener(view -> toggleFollow(follow, link, user, targetUserId));
         article.addView(row);
+    }
+
+    private void updateFollowView(TextView follow, boolean following) {
+        follow.setTag(Boolean.valueOf(following));
+        int bg = following ? activeFollowBackground()
+                : blend(PANEL, TEXT, session.darkMode() ? 0.12f : 0.06f);
+        int fg = following ? contrast(bg) : TEXT;
+        follow.setText(following ? "已关注" : "+ 关注");
+        follow.setTextColor(fg);
+        GradientDrawable drawable = round(bg, 7);
+        drawable.setStroke(dp(1), following
+                ? blend(bg, fg, 0.26f)
+                : blend(bg, SECONDARY, session.darkMode() ? 0.32f : 0.18f));
+        Compat.setBackground(follow, drawable);
+    }
+
+    private int activeFollowBackground() {
+        return session.darkMode() ? blend(SECONDARY, Color.WHITE, 0.10f) : SECONDARY;
+    }
+
+    private int activeActionBackground(int accent) {
+        return session.darkMode() ? blend(accent, Color.WHITE, 0.10f) : accent;
+    }
+
+    private void toggleFollow(TextView follow, JSONObject link, JSONObject user,
+                              String targetUserId) {
+        if (targetUserId == null || targetUserId.isEmpty()) {
+            toast("没有获取到用户 ID");
+            return;
+        }
+        if (targetUserId.equals(session.userId())) {
+            toast("不能关注自己");
+            return;
+        }
+        Object tag = follow.getTag();
+        boolean before = tag instanceof Boolean && (Boolean) tag;
+        int beforeStatus = followStatus(link, user);
+        boolean next = !before;
+        updateFollowView(follow, next);
+        follow.setClickable(false);
+        follow.setAlpha(0.92f);
+        postFollow(targetUserId, next, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                applyFollowState(link, user, nextFollowStatus(beforeStatus, next));
+                follow.setClickable(true);
+                follow.setAlpha(1f);
+                updateFollowView(follow, next);
+                toast(next ? "已关注" : "已取消关注");
+            }
+
+            @Override public void onError(String message) {
+                follow.setClickable(true);
+                follow.setAlpha(1f);
+                updateFollowView(follow, before);
+                toast("关注操作失败：" + message);
+            }
+        });
+    }
+
+    private void postFollow(String targetUserId, boolean next, ApiClient.Callback callback) {
+        String path = next ? EndpointProvider.followUser() : EndpointProvider.unfollowUser();
+        WriteRequest official = cb -> api.postForm(path, Collections.emptyMap(),
+                userBody(targetUserId, false, false), cb);
+        WriteRequest compact = cb -> api.postForm(path, Collections.emptyMap(),
+                userBody(targetUserId, true, false), cb);
+        WriteRequest withHsrc = cb -> api.postForm(path, queryHsrc(currentDetailItem),
+                userBody(targetUserId, false, false), cb);
+        WriteRequest withState = cb -> api.postForm(path, Collections.emptyMap(),
+                userBody(targetUserId, false, next), cb);
+        runWriteFallback(new WriteRequest[]{official, compact, withHsrc, withState}, callback);
+    }
+
+    private Map<String, String> userBody(String value, boolean compact, boolean includeState) {
+        Map<String, String> body = new HashMap<>();
+        body.put("following_id", value);
+        if (!compact && currentLinkId != null && !currentLinkId.isEmpty()) {
+            body.put("link_id", currentLinkId);
+        }
+        if (includeState) body.put("follows", "1");
+        return body;
+    }
+
+    private boolean isFollowing(JSONObject link, JSONObject user) {
+        int status = followStatus(link, user);
+        if (status >= 0) return status == 1 || status == 3;
+        return truthy(link, "is_follow", "is_following", "followed")
+                || truthy(user, "is_follow", "is_following", "followed");
+    }
+
+    private int followStatus(JSONObject link, JSONObject user) {
+        int linkStatus = followStatusValue(link);
+        if (linkStatus >= 0) return linkStatus;
+        return followStatusValue(user);
+    }
+
+    private int followStatusValue(JSONObject source) {
+        if (source == null) return -1;
+        String[] keys = {"follow_status", "follow_state", "follow_state_v2",
+                "is_follow", "is_following", "followed"};
+        for (String key : keys) {
+            if (!source.has(key)) continue;
+            Object value = source.opt(key);
+            if (value instanceof Boolean) return (Boolean) value ? 1 : 0;
+            if (value instanceof Number) return ((Number) value).intValue();
+            String text = String.valueOf(value).trim();
+            if (text.isEmpty()) continue;
+            if ("true".equalsIgnoreCase(text) || "followed".equalsIgnoreCase(text)
+                    || "following".equalsIgnoreCase(text)) return 1;
+            if ("mutual".equalsIgnoreCase(text)) return 3;
+            if ("false".equalsIgnoreCase(text) || "none".equalsIgnoreCase(text)
+                    || "unfollowed".equalsIgnoreCase(text)) return 0;
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException ignored) {
+                // Some API variants return labels; keep looking for a numeric field.
+            }
+        }
+        return -1;
+    }
+
+    private int nextFollowStatus(int beforeStatus, boolean following) {
+        if (following) return beforeStatus == 2 ? 3 : 1;
+        return beforeStatus == 3 ? 2 : 0;
+    }
+
+    private void applyFollowState(JSONObject link, JSONObject user, int status) {
+        boolean following = status == 1 || status == 3;
+        putFollowState(link, status, following);
+        putFollowState(user, status, following);
+    }
+
+    private void putFollowState(JSONObject target, int status, boolean following) {
+        if (target == null) return;
+        try {
+            target.put("follow_status", status);
+            target.put("follow_state", status);
+            target.put("is_follow", following ? 1 : 0);
+            target.put("is_following", following);
+            target.put("followed", following);
+        } catch (Exception ignored) {
+            // This only updates the already loaded detail JSON for the current screen.
+        }
+    }
+
+    private String authorUserId(JSONObject link, JSONObject user) {
+        return first(link == null ? "" : link.optString(SecureStrings.userid()),
+                link == null ? "" : link.optString(SecureStrings.userId()),
+                link == null ? "" : link.optString(SecureStrings.heyboxId()),
+                link == null ? "" : link.optString("heyboxid"),
+                link == null ? "" : link.optString("uid"),
+                link == null ? "" : link.optString("account_id"),
+                link == null ? "" : link.optString("id"),
+                userId(user));
+    }
+
+    private String userId(JSONObject user) {
+        if (user == null) return "";
+        return first(user.optString(SecureStrings.userid()),
+                user.optString(SecureStrings.userId()),
+                user.optString(SecureStrings.heyboxId()),
+                user.optString("heyboxid"),
+                user.optString("uid"),
+                user.optString("account_id"),
+                user.optString("id"));
     }
 
     private int userLevel(JSONObject user) {
@@ -1441,6 +1985,171 @@ public final class MainActivity extends Activity {
                 comment.optInt("award_num", comment.optInt("up")));
     }
 
+    private boolean commentLiked(JSONObject comment) {
+        if (comment == null) return false;
+        return truthy(comment, "is_support", "supported", "is_award", "liked",
+                "has_support");
+    }
+
+    private void updateCommentLikeView(TextView view, boolean liked, int likes) {
+        int bg = liked ? activeActionBackground(PRIMARY) : Color.TRANSPARENT;
+        int color = liked ? contrast(bg) : MUTED;
+        view.setText(String.valueOf(Math.max(0, likes)));
+        view.setTextColor(color);
+        view.setPadding(dp(4), 0, dp(4), 0);
+        GradientDrawable drawable = round(bg, 8);
+        drawable.setStroke(dp(1), liked ? blend(bg, color, 0.24f) : Color.TRANSPARENT);
+        Compat.setBackground(view, drawable);
+        setLeftIcon(view, R.drawable.ic_thumb_up, color, liked ? 14 : 13);
+    }
+
+    private void toggleCommentLike(JSONObject comment, TextView view) {
+        String id = commentId(comment);
+        if (id.isEmpty()) {
+            toast("没有获取到评论 ID");
+            return;
+        }
+        boolean beforeLiked = commentLiked(comment);
+        int beforeLikes = commentLikes(comment);
+        boolean nextLiked = !beforeLiked;
+        int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
+        setCommentLikeState(comment, nextLiked, nextLikes);
+        updateCommentLikeView(view, nextLiked, nextLikes);
+        view.setEnabled(false);
+        postCommentLike(id, nextLiked, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                view.setEnabled(true);
+            }
+
+            @Override public void onError(String message) {
+                view.setEnabled(true);
+                setCommentLikeState(comment, beforeLiked, beforeLikes);
+                updateCommentLikeView(view, beforeLiked, beforeLikes);
+                toast("评论点赞失败：" + message);
+            }
+        });
+    }
+
+    private void setCommentLikeState(JSONObject comment, boolean liked, int likes) {
+        try {
+            comment.put("is_support", liked ? 1 : 2);
+            comment.put("comment_award_num", Math.max(0, likes));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private Map<String, String> commentSupportBody(String id, boolean liked) {
+        Map<String, String> body = new HashMap<>();
+        body.put("comment_id", id);
+        body.put("support_type", liked ? "1" : "2");
+        return body;
+    }
+
+    private void postCommentLike(String id, boolean liked, ApiClient.Callback callback) {
+        WriteRequest official = cb -> api.postForm(EndpointProvider.supportComment(),
+                Collections.emptyMap(), commentSupportBody(id, liked), cb);
+        WriteRequest withHsrc = cb -> api.postForm(EndpointProvider.supportComment(),
+                queryHsrc(currentDetailItem), commentSupportBody(id, liked), cb);
+        WriteRequest hsrcInBody = cb -> api.postForm(EndpointProvider.supportComment(),
+                Collections.emptyMap(), commentSupportBody(id, liked, currentLinkHsrc), cb);
+        runWriteFallback(new WriteRequest[]{official, withHsrc, hsrcInBody}, callback);
+    }
+
+    private Map<String, String> commentSupportBody(String id, boolean liked, String hsrc) {
+        Map<String, String> body = commentSupportBody(id, liked);
+        if (hsrc != null && !hsrc.isEmpty()) body.put("h_src", hsrc);
+        return body;
+    }
+
+    private void showCommentDialog(JSONObject replyTo) {
+        if (currentLinkId == null || currentLinkId.isEmpty()) {
+            toast("没有打开的帖子");
+            return;
+        }
+        EditText input = new EditText(this);
+        input.setTextColor(TEXT);
+        input.setHintTextColor(MUTED);
+        input.setTextSize(sp(14));
+        input.setMinLines(3);
+        input.setMaxLines(5);
+        input.setGravity(Gravity.TOP | Gravity.START);
+        input.setHint(replyTo == null ? "写下你的评论" : "回复评论");
+        Compat.tint(input, PRIMARY);
+        int pad = dp(12);
+        input.setPadding(pad, dp(8), pad, dp(8));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(replyTo == null ? "发表评论" : "回复评论")
+                .setView(input)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("发送", null)
+                .create();
+        dialog.setOnShowListener(value -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view -> {
+                    String text = input.getText().toString().trim();
+                    if (text.isEmpty()) {
+                        toast("评论不能为空");
+                        return;
+                    }
+                    sendComment(text, replyTo, dialog);
+                }));
+        dialog.show();
+    }
+
+    private void sendComment(String value, JSONObject replyTo, AlertDialog dialog) {
+        String replyId = replyTo == null ? "-1" : commentId(replyTo);
+        String rootId = replyTo == null ? "-1" : commentRootId(replyTo);
+        if (dialog != null) dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+        postCreateComment(value, rootId, replyId, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                if (dialog != null && dialog.isShowing()) dialog.dismiss();
+                toast("评论已发送");
+                if (currentDetailItem != null) showDetail(currentDetailItem);
+            }
+
+            @Override public void onError(String message) {
+                if (dialog != null && dialog.isShowing()) {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+                }
+                toast("评论发送失败：" + message);
+            }
+        });
+    }
+
+    private void postCreateComment(String value, String rootId, String replyId,
+                                   ApiClient.Callback callback) {
+        WriteRequest official = cb -> api.postForm(EndpointProvider.createComment(),
+                Collections.emptyMap(), commentCreateBody(value, rootId, replyId, false), cb);
+        WriteRequest withAuth = cb -> api.postForm(EndpointProvider.createComment(),
+                commentCreateQuery(), commentCreateBody(value, rootId, replyId, false), cb);
+        WriteRequest withHsrc = cb -> api.postForm(EndpointProvider.createComment(),
+                queryHsrc(currentDetailItem), commentCreateBody(value, rootId, replyId, false), cb);
+        WriteRequest compat = cb -> api.postForm(EndpointProvider.createComment(),
+                commentCreateQuery(), commentCreateBody(value, rootId, replyId, true), cb);
+        WriteRequest compatNoHsrc = cb -> api.postForm(EndpointProvider.createComment(),
+                Collections.emptyMap(), commentCreateBody(value, rootId, replyId, true), cb);
+        runWriteFallback(new WriteRequest[]{official, withAuth, withHsrc, compat, compatNoHsrc}, callback);
+    }
+
+    private Map<String, String> commentCreateBody(String value, String rootId, String replyId,
+                                                  boolean compat) {
+        Map<String, String> body = new HashMap<>();
+        body.put("link_id", currentLinkId);
+        body.put("text", value);
+        body.put("root_id", rootId == null ? "" : rootId);
+        body.put("reply_id", replyId == null ? "" : replyId);
+        body.put("is_cy", "0");
+        if (compat) {
+            body.put("recommend_state", "0");
+            body.put("linkid", currentLinkId);
+            body.put("content", value);
+            body.put("comment", value);
+            body.put("root_comment_id", rootId == null ? "" : rootId);
+            body.put("reply_comment_id", replyId == null ? "" : replyId);
+        }
+        return body;
+    }
+
     private long commentTime(JSONObject comment) {
         return comment.optLong("create_at", comment.optLong("create_time"));
     }
@@ -1448,6 +2157,13 @@ public final class MainActivity extends Activity {
     private String commentId(JSONObject comment) {
         return first(comment.optString("commentid"),
                 first(comment.optString("comment_id"), comment.optString("id")));
+    }
+
+    private String commentRootId(JSONObject comment) {
+        String root = first(comment.optString("root_id"),
+                comment.optString("root_comment_id"),
+                comment.optString("rootid"));
+        return root.isEmpty() ? commentId(comment) : root;
     }
 
     private void addComment(LinearLayout page, JSONObject comment, boolean reply) {
@@ -1501,8 +2217,9 @@ public final class MainActivity extends Activity {
 
         if (!reply) {
             TextView likes = text(String.valueOf(commentLikes(comment)), 10, MUTED);
-            setLeftIcon(likes, R.drawable.ic_thumb_up, SECONDARY, 13);
+            updateCommentLikeView(likes, commentLiked(comment), commentLikes(comment));
             likes.setGravity(Gravity.CENTER_VERTICAL);
+            likes.setOnClickListener(view -> toggleCommentLike(comment, likes));
             LinearLayout.LayoutParams likeParams = new LinearLayout.LayoutParams(dp(44), dp(24));
             likeParams.leftMargin = dp(3);
             row.addView(likes, likeParams);
@@ -1953,7 +2670,7 @@ public final class MainActivity extends Activity {
         list.setDividerHeight(dp(2));
         list.setAdapter(new FeedAdapter(this, items, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
-                session.darkMode(), PRIMARY, SECONDARY, this::showDetail));
+                session.darkMode(), PRIMARY, SECONDARY, this::showDetail, this::toggleFeedLike));
         return list;
     }
 
@@ -1986,7 +2703,7 @@ public final class MainActivity extends Activity {
         List<FeedItem> filtered = new ArrayList<>(allItems);
         FeedAdapter adapter = new FeedAdapter(this, filtered, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
-                session.darkMode(), PRIMARY, SECONDARY, this::showDetail);
+                session.darkMode(), PRIMARY, SECONDARY, this::showDetail, this::toggleFeedLike);
         ListView list = new ListView(this);
         list.setBackgroundColor(BG);
         list.setDivider(new ColorDrawable(Color.TRANSPARENT));
@@ -2881,7 +3598,7 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "1.59";
+            return "1.70";
         }
     }
 
@@ -3193,6 +3910,7 @@ public final class MainActivity extends Activity {
         stopQrPolling();
         ImageLoader.cancelTree(content);
         handler.removeCallbacksAndMessages(null);
+        if (writeTokenProvider != null) writeTokenProvider.close();
         if (api != null) api.close();
         super.onDestroy();
     }

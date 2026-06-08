@@ -15,6 +15,15 @@ final class SecureStrings {
     static String encryptedCookieKey() {
         return decode(48, 60, 60, 56, 58, 54, 12, 54, 61, 48, 33, 42, 35, 39, 54, 55);
     }
+    static String xXhhTokenId() {
+        return decode(43, 12, 43, 59, 59, 12, 39, 60, 56, 54, 61, 58, 55);
+    }
+    static String userPkey() { return decode(38, 32, 54, 33, 12, 35, 56, 54, 42); }
+    static String userHeyboxId() {
+        return decode(38, 32, 54, 33, 12, 59, 54, 42, 49, 60, 43, 12, 58, 55);
+    }
+    static String xPkey() { return decode(43, 12, 35, 56, 54, 42); }
+    static String xHeyboxId() { return decode(43, 12, 59, 54, 42, 49, 60, 43, 12, 58, 55); }
     static String preferencesName() {
         return decode(59, 54, 42, 49, 60, 43, 12, 32, 54, 32, 32, 58, 60, 61);
     }

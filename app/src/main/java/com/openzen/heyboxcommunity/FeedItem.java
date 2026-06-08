@@ -3,8 +3,11 @@ package com.openzen.heyboxcommunity;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.net.URLDecoder;
+
 final class FeedItem {
     final String id;
+    final String hsrc;
     final String title;
     final String description;
     final String author;
@@ -15,8 +18,10 @@ final class FeedItem {
     boolean liked;
 
     private FeedItem(String id, String title, String description, String author,
-                     String image, int comments, int likes, boolean article, boolean liked) {
+                     String image, int comments, int likes, boolean article, boolean liked,
+                     String hsrc) {
         this.id = id;
+        this.hsrc = hsrc;
         this.title = title;
         this.description = description;
         this.author = author;
@@ -60,7 +65,8 @@ final class FeedItem {
                                                 json.optInt("up_num", json.optInt("up")))))),
                 isArticle(json),
                 json.optBoolean("is_award", json.optBoolean("liked",
-                        json.optBoolean("is_liked", json.optInt("has_award") == 1)))
+                        json.optBoolean("is_liked", json.optInt("has_award") == 1))),
+                hsrc(json)
         );
     }
 
@@ -68,6 +74,7 @@ final class FeedItem {
         JSONObject json = new JSONObject();
         try {
             json.put("linkid", id);
+            json.put("h_src", hsrc);
             json.put("title", title);
             json.put("description", description);
             json.put("image", image);
@@ -89,6 +96,22 @@ final class FeedItem {
         String type = json.optString("link_type",
                 json.optString("content_type", json.optString("type")));
         return "article".equalsIgnoreCase(type) || "文章".equals(type);
+    }
+
+    private static String hsrc(JSONObject json) {
+        String value = json.optString("h_src", json.optString("hsrc"));
+        if (!value.isEmpty()) return value;
+        String shareUrl = json.optString("share_url");
+        int index = shareUrl.indexOf("h_src=");
+        if (index < 0) return "";
+        int start = index + "h_src=".length();
+        int end = shareUrl.indexOf('&', start);
+        value = shareUrl.substring(start, end < 0 ? shareUrl.length() : end);
+        try {
+            return URLDecoder.decode(value, "UTF-8");
+        } catch (Exception ignored) {
+            return value;
+        }
     }
 
     private static String first(JSONArray array) {

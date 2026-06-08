@@ -1,7 +1,5 @@
 package com.openzen.heyboxcommunity;
 
-import android.os.Build;
-
 import java.net.HttpURLConnection;
 
 final class HeaderProvider {
@@ -14,20 +12,16 @@ final class HeaderProvider {
     }
 
     static void applyPublic(HttpURLConnection connection) {
-        connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("Referer", EndpointProvider.baseUrl().replace("api.", "www.") + "/");
+        String webBase = EndpointProvider.baseUrl().replace("api.", "www.");
+        connection.setRequestProperty("Accept", "application/json, text/plain, */*");
+        connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9");
+        connection.setRequestProperty("Origin", webBase);
+        connection.setRequestProperty("Referer", webBase + "/");
         connection.setRequestProperty("User-Agent", userAgent());
     }
 
     private static String userAgent() {
-        String release = safe(Build.VERSION.RELEASE, "10");
-        String model = safe(Build.MODEL, "Android");
-        return "Mozilla/5.0 (Linux; Android " + release + "; " + model
-                + ") AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36";
-    }
-
-    private static String safe(String value, String fallback) {
-        if (value == null || value.isEmpty()) return fallback;
-        return value.replace(";", "").replace("(", "").replace(")", "");
+        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0";
     }
 }
