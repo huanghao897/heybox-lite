@@ -50,6 +50,7 @@ final class FeedAdapter extends BaseAdapter {
         mutedColor = darkMode ? Color.rgb(157, 163, 169) : Color.rgb(101, 107, 113);
         cardColor = blend(darkMode ? Color.rgb(29, 31, 33) : Color.WHITE,
                 primaryColor, darkMode ? 0.07f : 0.035f);
+        if (!EmojiStore.isLoaded()) EmojiStore.whenReady(this::notifyDataSetChanged);
     }
 
     @Override public int getCount() { return items.size(); }
@@ -139,9 +140,9 @@ final class FeedAdapter extends BaseAdapter {
         FeedItem item = getItem(position);
         String title = RichContent.plainText(item.title);
         String description = RichContent.plainText(item.description);
-        EmojiRenderer.set(holder.title, title.isEmpty() ? "无标题内容" : title);
+        EmojiRenderer.set(holder.title, title.isEmpty() ? "无标题内容" : title, darkMode);
         holder.badge.setVisibility(item.article ? View.VISIBLE : View.GONE);
-        EmojiRenderer.set(holder.description, description);
+        EmojiRenderer.set(holder.description, description, darkMode);
         holder.description.setVisibility(description.isEmpty() ? View.GONE : View.VISIBLE);
         holder.author.setText(item.author.isEmpty() ? "小黑盒社区" : item.author);
         holder.likes.setText(String.valueOf(item.likes));

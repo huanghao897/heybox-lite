@@ -32,16 +32,19 @@ public final class SplashActivity extends Activity {
         int secondary = parseColor(session.secondaryColor(), Color.rgb(115, 184, 230));
         int background = session.darkMode() ? Color.rgb(14, 15, 16) : Color.rgb(246, 247, 249);
         int foreground = session.darkMode() ? Color.WHITE : Color.rgb(24, 26, 28);
+        boolean dark = session.darkMode();
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(background);
-        ImageView mark = new ImageView(this);
-        mark.setImageResource(R.drawable.splash_logo);
-        mark.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        FrameLayout.LayoutParams markParams =
-                new FrameLayout.LayoutParams(dp(96), dp(96), Gravity.CENTER);
-        markParams.bottomMargin = dp(54);
-        root.addView(mark, markParams);
+        if (!dark) {
+            ImageView mark = new ImageView(this);
+            mark.setImageResource(R.drawable.splash_logo);
+            mark.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            FrameLayout.LayoutParams markParams =
+                    new FrameLayout.LayoutParams(dp(96), dp(96), Gravity.CENTER);
+            markParams.bottomMargin = dp(54);
+            root.addView(mark, markParams);
+        }
 
         message = new TextView(this);
         message.setTextColor(foreground);
@@ -50,7 +53,7 @@ public final class SplashActivity extends Activity {
         message.setGravity(Gravity.CENTER);
         FrameLayout.LayoutParams textParams =
                 new FrameLayout.LayoutParams(-1, dp(48), Gravity.CENTER);
-        textParams.topMargin = dp(58);
+        textParams.topMargin = dp(dark ? 0 : 58);
         textParams.leftMargin = dp(18);
         textParams.rightMargin = dp(18);
         root.addView(message, textParams);
@@ -59,7 +62,7 @@ public final class SplashActivity extends Activity {
         line.setBackgroundColor(secondary);
         FrameLayout.LayoutParams lineParams =
                 new FrameLayout.LayoutParams(dp(58), dp(2), Gravity.CENTER);
-        lineParams.topMargin = dp(104);
+        lineParams.topMargin = dp(dark ? 46 : 104);
         root.addView(line, lineParams);
         setContentView(root);
         Compat.colorSystemBars(getWindow(), background);

@@ -46,10 +46,10 @@ final class UpdateChecker {
     private static void request(String currentVersion, Callback callback) {
         HttpURLConnection connection = null;
         try {
-            URL url = new URL("https://api.github.com/repos/huanghao897/heybox-lite/releases/latest");
+            URL url = new URL(BuildConfig.UPDATE_API_URL);
             connection = (HttpURLConnection) url.openConnection();
-            connection.setConnectTimeout(12000);
-            connection.setReadTimeout(15000);
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(5000);
             connection.setRequestProperty("Accept", "application/vnd.github+json");
             connection.setRequestProperty("User-Agent", "heybox-Lite/" + currentVersion);
             int status = connection.getResponseCode();
@@ -78,11 +78,19 @@ final class UpdateChecker {
             }
             Result result = new Result(compare(latest, normalize(currentVersion)) > 0,
                     latest, releaseUrl, downloadUrl);
+            if (result.updateAvailable && downloadUrl.isEmpty()) {
+                throw new IllegalStateException("未找到匹配的 APK 资源，可打开发布页手动下载");
+            }
             MAIN.post(() -> callback.onResult(result));
         } catch (Exception error) {
             String message = error.getMessage() == null
                     ? error.getClass().getSimpleName() : error.getMessage();
-            MAIN.post(() -> callback.onError(message));
+            if (message.toLowerCase().contains("ssl")
+                    || message.toLowerCase().contains("handshake")) {
+                message = "当前系统 TLS 过旧或网络不兼容，请打开发布页检查：" + BuildConfig.UPDATE_FALLBACK_URL;
+            }
+            final String finalMessage = message;
+            MAIN.post(() -> callback.onError(finalMessage));
         } finally {
             if (connection != null) connection.disconnect();
         }

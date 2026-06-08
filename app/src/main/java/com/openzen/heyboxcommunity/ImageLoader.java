@@ -5,6 +5,8 @@ import android.graphics.BitmapFactory;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.LruCache;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ImageView;
 
 import java.io.BufferedInputStream;
@@ -21,6 +23,9 @@ final class ImageLoader {
     }
 
     private static final int CACHE_KB = 8 * 1024;
+    private static final int MAX_DECODE_BYTES = 10 * 1024 * 1024;
+    private static final int MAX_BITMAP_PIXELS = 5_000_000;
+    private static final int MAX_BITMAP_SIDE = 2400;
     private static final LruCache<String, Bitmap> CACHE =
             new LruCache<String, Bitmap>(CACHE_KB) {
                 @Override
@@ -33,42 +38,32 @@ final class ImageLoader {
 
     static void into(ImageView view, String sourceUrl, int targetPx) {
         String url = thumbnailUrl(sourceUrl, targetPx);
-        view.setTag(url);
-        view.setImageDrawable(null);
-        if (url.isEmpty()) return;
-
-        Bitmap cached = CACHE.get(url);
-        if (cached != null) {
-            view.setImageBitmap(cached);
-            return;
-        }
-
-        EXECUTOR.execute(() -> {
-            Bitmap bitmap = download(url, targetPx);
-            if (bitmap != null) MAIN.post(() -> {
-                if (url.equals(view.getTag())) showLoaded(view, bitmap);
-            });
-        });
+        loadInto(view, originalUrl(sourceUrl), url, targetPx, true);
     }
 
     static void intoOriginal(ImageView view, String sourceUrl, int targetPx) {
         String url = originalUrl(sourceUrl);
-        loadInto(view, url, targetPx);
+        loadInto(view, url, url, Math.min(targetPx, MAX_BITMAP_SIDE), false);
     }
 
-    private static void loadInto(ImageView view, String url, int targetPx) {
+    private static void loadInto(ImageView view, String cacheKey, String url,
+                                 int targetPx, boolean clearBefore) {
         view.setTag(url);
-        view.setImageDrawable(null);
         if (url.isEmpty()) return;
         Bitmap cached = CACHE.get(url);
+        if (cached == null) cached = CACHE.get(cacheKey);
         if (cached != null) {
             view.setImageBitmap(cached);
             return;
         }
+        if (clearBefore) view.setImageDrawable(null);
         EXECUTOR.execute(() -> {
-            Bitmap bitmap = download(url, targetPx);
+            Bitmap bitmap = download(url, safeTarget(targetPx));
             if (bitmap != null) MAIN.post(() -> {
-                if (url.equals(view.getTag())) showLoaded(view, bitmap);
+                if (url.equals(view.getTag())) {
+                    if (!cacheKey.isEmpty()) CACHE.put(cacheKey, bitmap);
+                    showLoaded(view, bitmap);
+                }
             });
         });
     }
@@ -96,7 +91,7 @@ final class ImageLoader {
             return;
         }
         EXECUTOR.execute(() -> {
-            Bitmap bitmap = download(url, targetPx);
+            Bitmap bitmap = download(url, safeTarget(targetPx));
             if (bitmap != null) MAIN.post(() -> callback.onLoaded(bitmap));
         });
     }
@@ -110,9 +105,22 @@ final class ImageLoader {
             return;
         }
         EXECUTOR.execute(() -> {
-            Bitmap bitmap = download(url, targetPx);
+            Bitmap bitmap = download(url, safeTarget(Math.min(targetPx, MAX_BITMAP_SIDE)));
             if (bitmap != null) MAIN.post(() -> callback.onLoaded(bitmap));
         });
+    }
+
+    static void cancel(ImageView view) {
+        if (view != null) view.setTag(null);
+    }
+
+    static void cancelTree(View view) {
+        if (view == null) return;
+        if (view instanceof ImageView) cancel((ImageView) view);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) cancelTree(group.getChildAt(i));
+        }
     }
 
     static void clear() {
@@ -139,7 +147,10 @@ final class ImageLoader {
                  ByteArrayOutputStream output = new ByteArrayOutputStream(48 * 1024)) {
                 byte[] buffer = new byte[8192];
                 int count;
-                while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
+                while ((count = input.read(buffer)) >= 0) {
+                    if (output.size() + count > MAX_DECODE_BYTES) return null;
+                    output.write(buffer, 0, count);
+                }
                 bytes = output.toByteArray();
             }
 
@@ -149,9 +160,14 @@ final class ImageLoader {
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inPreferredConfig = Bitmap.Config.ARGB_8888;
             options.inSampleSize = sampleSize(bounds, targetPx);
+            options.inPurgeable = true;
+            options.inInputShareable = true;
             Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
             if (bitmap != null) CACHE.put(url, bitmap);
             return bitmap;
+        } catch (OutOfMemoryError error) {
+            CACHE.evictAll();
+            return null;
         } catch (Exception ignored) {
             return null;
         } finally {
@@ -161,13 +177,23 @@ final class ImageLoader {
 
     private static int sampleSize(BitmapFactory.Options bounds, int target) {
         int sample = 1;
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return sample;
+        target = safeTarget(target);
         while (bounds.outWidth / sample > target * 2) {
             sample *= 2;
         }
-        while ((long) (bounds.outWidth / sample) * (bounds.outHeight / sample) > 12_000_000L) {
+        while (bounds.outHeight / sample > MAX_BITMAP_SIDE * 2) {
+            sample *= 2;
+        }
+        while ((long) (bounds.outWidth / sample) * (bounds.outHeight / sample) > MAX_BITMAP_PIXELS) {
             sample *= 2;
         }
         return sample;
+    }
+
+    private static int safeTarget(int target) {
+        if (target <= 0) return 720;
+        return Math.max(96, Math.min(target, MAX_BITMAP_SIDE));
     }
 
     private static String thumbnailUrl(String source, int targetPx) {
@@ -182,6 +208,6 @@ final class ImageLoader {
         int query = source.indexOf('?');
         String value = (query >= 0 ? source.substring(0, query) : source).replace("\\/", "/");
         if (value.regionMatches(true, 0, "http:", 0, 5)) value = "https:" + value.substring(5);
-        return value;
+        return value.startsWith("https://") ? value : "";
     }
 }

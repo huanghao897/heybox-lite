@@ -26,29 +26,34 @@ final class ApiClient {
     private final SessionStore session;
     private final ExecutorService executor = Executors.newFixedThreadPool(3);
     private final Handler main = new Handler(Looper.getMainLooper());
+    private volatile boolean closed;
 
     ApiClient(SessionStore session) {
         this.session = session;
     }
 
     void get(String path, Map<String, String> extra, Callback callback) {
+        if (closed) return;
         executor.execute(() -> request(path, extra, callback));
     }
 
     void close() {
+        closed = true;
+        main.removeCallbacksAndMessages(null);
         executor.shutdownNow();
     }
 
     private void request(String path, Map<String, String> extra, Callback callback) {
         HttpURLConnection connection = null;
         try {
+            if (closed || Thread.currentThread().isInterrupted()) return;
             Map<String, String> params = new HashMap<>(session.commonParams());
             params.putAll(extra);
             params.putAll(HeyboxSigner.sign(path));
             URL url = new URL(endpoint() + path + "?" + encode(params));
             connection = (HttpURLConnection) url.openConnection();
-            connection.setConnectTimeout(12000);
-            connection.setReadTimeout(18000);
+            connection.setConnectTimeout(7000);
+            connection.setReadTimeout(12000);
             HeaderProvider.apply(connection, session);
 
             int status = connection.getResponseCode();
@@ -70,14 +75,27 @@ final class ApiClient {
             failed |= apiStatus instanceof String && "failed".equalsIgnoreCase((String) apiStatus);
             if (failed) throw new IllegalStateException(
                     first(json.optString("msg"), json.optString("message"), "接口返回失败"));
-            main.post(() -> callback.onSuccess(json));
+            postSuccess(callback, json);
         } catch (Exception error) {
+            if (closed) return;
             String message = error.getMessage() == null
                     ? error.getClass().getSimpleName() : error.getMessage();
-            main.post(() -> callback.onError(message));
+            postError(callback, message);
         } finally {
             if (connection != null) connection.disconnect();
         }
+    }
+
+    private void postSuccess(Callback callback, JSONObject json) {
+        main.post(() -> {
+            if (!closed) callback.onSuccess(json);
+        });
+    }
+
+    private void postError(Callback callback, String message) {
+        main.post(() -> {
+            if (!closed) callback.onError(message);
+        });
     }
 
     private static String encode(Map<String, String> params) throws Exception {

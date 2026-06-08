@@ -115,7 +115,7 @@ public final class MainActivity extends Activity {
         }
         else showLogin();
         if (session.autoUpdateCheck()) {
-            new Handler(Looper.getMainLooper()).postDelayed(this::checkUpdateOnLaunch, 650);
+            handler.postDelayed(this::checkUpdateOnLaunch, 650);
         }
     }
 
@@ -473,6 +473,7 @@ public final class MainActivity extends Activity {
             showLogin();
             return;
         }
+        ensureEmojiCatalog(() -> {});
         activate("search");
         title.setText("搜索");
         action.setVisibility(View.INVISIBLE);
@@ -499,6 +500,7 @@ public final class MainActivity extends Activity {
         LinearLayout recent = vertical(BG);
         page.addView(recent);
         FrameLayout results = new FrameLayout(this);
+        results.setTag(searchBar);
         page.addView(results, new LinearLayout.LayoutParams(-1, 0, 1));
         TextView hint = text("输入关键词搜索社区帖子", 13, MUTED);
         hint.setGravity(Gravity.CENTER);
@@ -512,7 +514,7 @@ public final class MainActivity extends Activity {
             }
             session.addSearchHistory(keyword);
             recent.setVisibility(View.GONE);
-            performSearch(keyword, results);
+            performSearch(keyword, results, searchBar);
         };
         submit.setOnClickListener(view -> search.run());
         input.setOnEditorActionListener((view, actionId, event) -> {
@@ -555,7 +557,7 @@ public final class MainActivity extends Activity {
                 input.setSelection(input.length());
                 session.addSearchHistory(value);
                 parent.setVisibility(View.GONE);
-                performSearch(value, results);
+                performSearch(value, results, (View) results.getTag());
             });
             addTop(rows, item, 4);
             item.getLayoutParams().height = dp(34);
@@ -563,8 +565,10 @@ public final class MainActivity extends Activity {
         parent.addView(rows);
     }
 
-    private void performSearch(String keyword, FrameLayout results) {
+    private void performSearch(String keyword, FrameLayout results, View searchBar) {
+        results.setTag(searchBar);
         results.removeAllViews();
+        setSearchBarVisible(searchBar, true);
         ProgressBar progress = new ProgressBar(this);
         Compat.tint(progress, PRIMARY);
         results.addView(progress,
@@ -580,12 +584,13 @@ public final class MainActivity extends Activity {
                 if (!"search".equals(screen)) return;
                 List<FeedItem> items = new ArrayList<>();
                 collectFeedItems(body, items, new HashMap<>(), 0);
-                showSearchResults(results, items,
+                showSearchResults(results, items, searchBar,
                         items.isEmpty() ? "没有找到相关帖子" : "");
             }
 
             @Override public void onError(String message) {
                 if (!"search".equals(screen)) return;
+                setSearchBarVisible(searchBar, true);
                 results.removeAllViews();
                 TextView error = text("搜索失败\n" + message, 13, MUTED);
                 error.setGravity(Gravity.CENTER);
@@ -594,16 +599,50 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void showSearchResults(FrameLayout parent, List<FeedItem> items, String emptyText) {
+    private void showSearchResults(FrameLayout parent, List<FeedItem> items, View searchBar,
+                                   String emptyText) {
         parent.removeAllViews();
         if (items.isEmpty()) {
+            setSearchBarVisible(searchBar, true);
             TextView empty = text(emptyText, 13, MUTED);
             empty.setGravity(Gravity.CENTER);
             parent.addView(empty, match());
             return;
         }
         ListView list = feedList(items);
+        list.setOnScrollListener(new AbsListView.OnScrollListener() {
+            @Override public void onScrollStateChanged(AbsListView view, int scrollState) {}
+
+            @Override public void onScroll(AbsListView view, int firstVisibleItem,
+                                           int visibleItemCount, int totalItemCount) {
+                View first = view.getChildAt(0);
+                boolean nearTop = firstVisibleItem == 0
+                        && (first == null || first.getTop() >= -dp(10));
+                setSearchBarVisible(searchBar, nearTop);
+            }
+        });
         parent.addView(list, match());
+    }
+
+    private void setSearchBarVisible(View searchBar, boolean visible) {
+        if (searchBar == null) return;
+        Object state = searchBar.getTag();
+        if (state instanceof Boolean && ((Boolean) state) == visible) return;
+        searchBar.setTag(visible);
+        searchBar.animate().cancel();
+        if (visible) {
+            searchBar.setVisibility(View.VISIBLE);
+            searchBar.setEnabled(true);
+            searchBar.animate().alpha(1f).translationY(0f).setDuration(150).start();
+        } else {
+            searchBar.setEnabled(false);
+            searchBar.animate().alpha(0f).translationY(-dp(12)).setDuration(150)
+                    .start();
+            handler.postDelayed(() -> {
+                Object current = searchBar.getTag();
+                if (Boolean.FALSE.equals(current)) searchBar.setVisibility(View.INVISIBLE);
+            }, 155);
+        }
     }
 
     private void collectFeedItems(Object node, List<FeedItem> output,
@@ -653,6 +692,7 @@ public final class MainActivity extends Activity {
 
     private void showDetail(FeedItem item) {
         stopQrPolling();
+        ensureEmojiCatalog(() -> {});
         detailReturn = screen;
         screen = "detail";
         currentLinkId = item.id;
@@ -748,8 +788,7 @@ public final class MainActivity extends Activity {
                         new LinearLayout.LayoutParams(-1, dp(150));
                 imageParams.topMargin = dp(8);
                 parent.addView(image, imageParams);
-                if (session.originalImages()) ImageLoader.intoOriginal(image, block.value, 1440);
-                else ImageLoader.into(image, block.value, 1080);
+                ImageLoader.into(image, block.value, 1080);
                 image.setOnClickListener(view -> openImage(image, block.value));
                 imageCount++;
             } else {
@@ -761,7 +800,7 @@ public final class MainActivity extends Activity {
                     bodyText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
                 }
                 bodyText.setTextIsSelectable(true);
-                EmojiRenderer.set(bodyText, block.value);
+                EmojiRenderer.set(bodyText, block.value, session.darkMode());
                 addTop(parent, bodyText, session.bodyParagraphSpacing());
             }
         }
@@ -1013,7 +1052,7 @@ public final class MainActivity extends Activity {
         if (!reply) {
             value.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         }
-        EmojiRenderer.set(value, visibleComment);
+        EmojiRenderer.set(value, visibleComment, session.darkMode());
         addTop(block, value, 4);
         String commentImage = commentImage(comment);
         if (!session.noImage() && !commentImage.isEmpty()) {
@@ -1026,8 +1065,7 @@ public final class MainActivity extends Activity {
                     new LinearLayout.LayoutParams(-1, dp(reply ? 92 : 115));
             imageParams.topMargin = dp(6);
             block.addView(image, imageParams);
-            if (session.originalImages()) ImageLoader.intoOriginal(image, commentImage, 1080);
-            else ImageLoader.into(image, commentImage, 720);
+            ImageLoader.into(image, commentImage, 720);
             image.setOnClickListener(view -> openImage(image, commentImage));
         }
 
@@ -1230,6 +1268,7 @@ public final class MainActivity extends Activity {
 
     private void showSavedList(String pageTitle, String path, Map<String, String> params) {
         stopQrPolling();
+        ensureEmojiCatalog(() -> {});
         screen = "saved";
         bottom.setVisibility(View.GONE);
         leading.setVisibility(View.VISIBLE);
@@ -1281,6 +1320,11 @@ public final class MainActivity extends Activity {
                 session.uiScale() / 100f, session.textScale() / 100f,
                 session.darkMode(), PRIMARY, SECONDARY, this::showDetail));
         return list;
+    }
+
+    private void ensureEmojiCatalog(Runnable ready) {
+        if (api == null) return;
+        EmojiStore.load(api, ready);
     }
 
     private void showHistoryList(List<FeedItem> allItems) {
@@ -1346,6 +1390,7 @@ public final class MainActivity extends Activity {
         if (result == null) return null;
         JSONArray links = result.optJSONArray("links");
         if (links == null) links = result.optJSONArray("list");
+        if (links == null) links = result.optJSONArray("moments");
         if (links == null) links = result.optJSONArray("history_visit");
         if (links == null) links = result.optJSONArray("visits");
         if (links == null) links = result.optJSONArray("history");
@@ -1359,6 +1404,9 @@ public final class MainActivity extends Activity {
             if (!current.optString("linkid",
                     current.optString("link_id")).isEmpty()) return current;
             JSONObject next = current.optJSONObject("link");
+            if (next == null) next = current.optJSONObject("link_info");
+            if (next == null) next = current.optJSONObject("moment");
+            if (next == null) next = current.optJSONObject("post");
             if (next == null) next = current.optJSONObject("content");
             if (next == null) next = current.optJSONObject("data");
             if (next == null) next = current.optJSONObject("item");
@@ -1375,10 +1423,11 @@ public final class MainActivity extends Activity {
             JSONObject merged = new JSONObject(value.toString());
             copyFirstInt(wrapper, merged, "link_award_num",
                     "link_award_num", "like_num", "award_num", "award_count",
-                    "like_count", "up_num", "up");
+                    "like_count", "liked_num", "praise_num", "praise_count",
+                    "total_award_num", "award", "awards", "up_num", "up");
             copyFirstInt(wrapper, merged, "comment_num",
                     "comment_num", "comment_count", "reply_num", "reply_count",
-                    "comments");
+                    "comments_count", "total_comment_num", "comment", "comments");
             if (merged.optJSONObject("user") == null) {
                 JSONObject user = findObject(wrapper, 0, "user", "author", "account");
                 if (user != null) merged.put("user", user);
@@ -1735,7 +1784,7 @@ public final class MainActivity extends Activity {
             session.setNoImage(value);
             feed.clear();
         }), 0);
-        addTop(panel, toggleRow("正文图片显示原图", session.originalImages(),
+        addTop(panel, toggleRow("图片查看器允许查看原图", session.originalImages(),
                 session::setOriginalImages), 4);
 
         Button clearCache = button("清除图片缓存", R.drawable.ic_trash);
@@ -1803,21 +1852,23 @@ public final class MainActivity extends Activity {
         final int durationValue = duration == null ? session.splashDuration() : duration;
         FrameLayout overlay = new FrameLayout(this);
         overlay.setTag("splash_preview");
-        overlay.setBackgroundColor(session.darkMode()
-                ? Color.rgb(14, 15, 16) : Color.rgb(246, 247, 249));
-        ImageView mark = new ImageView(this);
-        mark.setImageResource(R.drawable.splash_logo);
-        mark.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        FrameLayout.LayoutParams markParams =
-                new FrameLayout.LayoutParams(dp(96), dp(96), Gravity.CENTER);
-        markParams.bottomMargin = dp(54);
-        overlay.addView(mark, markParams);
+        boolean dark = session.darkMode();
+        overlay.setBackgroundColor(dark ? Color.rgb(14, 15, 16) : Color.rgb(246, 247, 249));
+        if (!dark) {
+            ImageView mark = new ImageView(this);
+            mark.setImageResource(R.drawable.splash_logo);
+            mark.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            FrameLayout.LayoutParams markParams =
+                    new FrameLayout.LayoutParams(dp(96), dp(96), Gravity.CENTER);
+            markParams.bottomMargin = dp(54);
+            overlay.addView(mark, markParams);
+        }
         TextView message = text("", 14, TEXT);
         message.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
         message.setGravity(Gravity.CENTER);
         FrameLayout.LayoutParams messageParams =
                 new FrameLayout.LayoutParams(-1, dp(52), Gravity.CENTER);
-        messageParams.topMargin = dp(58);
+        messageParams.topMargin = dp(dark ? 0 : 58);
         messageParams.leftMargin = dp(18);
         messageParams.rightMargin = dp(18);
         overlay.addView(message, messageParams);
@@ -1874,6 +1925,7 @@ public final class MainActivity extends Activity {
             update.setText("正在检查...");
             UpdateChecker.check(appVersion(), new UpdateChecker.Callback() {
                 @Override public void onResult(UpdateChecker.Result result) {
+                    if (isFinishing()) return;
                     update.setEnabled(true);
                     if (result.updateAvailable) {
                         updateStatus.setText("发现新版本 " + result.version);
@@ -1887,6 +1939,7 @@ public final class MainActivity extends Activity {
                 }
 
                 @Override public void onError(String message) {
+                    if (isFinishing()) return;
                     update.setEnabled(true);
                     update.setText("重新检查");
                     updateStatus.setText("检查失败：" + message);
@@ -2043,7 +2096,7 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "1.55";
+            return "1.56";
         }
     }
 
@@ -2256,6 +2309,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         stopQrPolling();
+        ImageLoader.cancelTree(content);
         handler.removeCallbacksAndMessages(null);
         if (api != null) api.close();
         super.onDestroy();
