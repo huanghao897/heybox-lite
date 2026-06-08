@@ -75,15 +75,25 @@ final class RichContent {
         }
 
         boolean articleMode = source.optInt("use_concept_type", -1) == 0;
+        ParseResult bestReadable = null;
+        int bestScore = Integer.MIN_VALUE;
         for (String key : DETAIL_BODY_KEYS) {
             ParseResult candidate = parseDetailBody(source.opt(key), articleMode);
             if (hasReadableBody(candidate)) {
-                addFallbackImagesIfNeeded(candidate, fallbackImages);
-                return candidate.blocks;
+                int score = bodyScore(candidate, key, articleMode);
+                if (score > bestScore) {
+                    bestReadable = candidate;
+                    bestScore = score;
+                }
+                continue;
             }
             if (result.blocks.isEmpty() && candidate != null && !candidate.blocks.isEmpty()) {
                 result = candidate;
             }
+        }
+        if (bestReadable != null) {
+            addFallbackImagesIfNeeded(bestReadable, fallbackImages);
+            return bestReadable.blocks;
         }
 
         ParseResult fallbackText = new ParseResult();
@@ -93,12 +103,41 @@ final class RichContent {
         }
         if (readableLength(fallbackText.blocks) > 0) {
             mergeBlocks(fallbackText, result);
-            addFallbackImages(fallbackText.blocks, fallbackText.imageUrls, fallbackImages);
+            addFallbackImagesIfNeeded(fallbackText, fallbackImages);
             return fallbackText.blocks;
         }
 
-        addFallbackImages(result.blocks, result.imageUrls, fallbackImages);
+        addFallbackImagesIfNeeded(result, fallbackImages);
         return result.blocks;
+    }
+
+    private static int bodyScore(ParseResult result, String key, boolean articleMode) {
+        int score = Math.min(readableLength(result.blocks), 8000);
+        score += result.blocks.size() * 30;
+        score += textCount(result.blocks) * 120;
+        score += imageCount(result.blocks) * 2500;
+        String name = key == null ? "" : key.toLowerCase(Locale.ROOT);
+        if (name.contains("rich") || name.contains("attr")
+                || name.contains("html") || name.contains("body")
+                || name.contains("article") || name.contains("list")
+                || name.contains("content_v2")) {
+            score += 900;
+        }
+        if (articleMode && "text".equals(name) && imageCount(result.blocks) > 0) {
+            score += 700;
+        }
+        if (imageCount(result.blocks) == 0 && ("text".equals(name)
+                || "description".equals(name) || "summary".equals(name))) {
+            score -= 500;
+        }
+        return score;
+    }
+
+    private static int textCount(List<Block> blocks) {
+        if (blocks == null) return 0;
+        int count = 0;
+        for (Block block : blocks) if (!block.image) count++;
+        return count;
     }
 
     private static ParseResult parseDetailBody(Object value, boolean articleMode) {

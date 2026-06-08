@@ -26,6 +26,10 @@ final class ImageLoader {
         void onComplete(boolean success);
     }
 
+    interface IntoBitmapCallback {
+        void onComplete(boolean success, Bitmap bitmap);
+    }
+
     private static final int CACHE_KB = 8 * 1024;
     private static final int MAX_DECODE_BYTES = 10 * 1024 * 1024;
     private static final int MAX_BITMAP_PIXELS = 5_000_000;
@@ -46,6 +50,13 @@ final class ImageLoader {
 
     static void into(ImageView view, String sourceUrl, int targetPx, IntoCallback callback) {
         String url = thumbnailUrl(sourceUrl, targetPx);
+        loadInto(view, url, url, targetPx, true,
+                callback == null ? null : (success, bitmap) -> callback.onComplete(success));
+    }
+
+    static void intoMeasured(ImageView view, String sourceUrl, int targetPx,
+                             IntoBitmapCallback callback) {
+        String url = thumbnailUrl(sourceUrl, targetPx);
         loadInto(view, url, url, targetPx, true, callback);
     }
 
@@ -55,15 +66,16 @@ final class ImageLoader {
     }
 
     private static void loadInto(ImageView view, String cacheKey, String url,
-                                 int targetPx, boolean clearBefore, IntoCallback callback) {
+                                 int targetPx, boolean clearBefore, IntoBitmapCallback callback) {
         Object current = view.getTag();
         if (url.equals(current) && view.getDrawable() != null) {
-            if (callback != null) callback.onComplete(true);
+            Bitmap cached = CACHE.get(url);
+            if (callback != null) callback.onComplete(true, cached);
             return;
         }
         view.setTag(url);
         if (url.isEmpty()) {
-            if (callback != null) callback.onComplete(false);
+            if (callback != null) callback.onComplete(false, null);
             return;
         }
         Bitmap cached = CACHE.get(url);
@@ -74,7 +86,7 @@ final class ImageLoader {
             view.setAlpha(1f);
             view.setScaleX(1f);
             view.setScaleY(1f);
-            if (callback != null) callback.onComplete(true);
+            if (callback != null) callback.onComplete(true, cached);
             return;
         }
         if (clearBefore && view.getDrawable() == null) view.setImageDrawable(null);
@@ -86,7 +98,7 @@ final class ImageLoader {
                         if (!cacheKey.isEmpty()) CACHE.put(cacheKey, bitmap);
                         showLoaded(view, bitmap);
                     }
-                    if (callback != null) callback.onComplete(bitmap != null);
+                    if (callback != null) callback.onComplete(bitmap != null, bitmap);
                 }
             });
         });

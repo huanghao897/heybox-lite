@@ -3,6 +3,7 @@ package com.openzen.heyboxcommunity;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
@@ -1706,8 +1707,9 @@ public final class MainActivity extends Activity {
         View.OnClickListener open = view -> openImage(image, url);
         frame.setOnClickListener(open);
         image.setOnClickListener(open);
-        ImageLoader.into(image, url, targetPx, success -> {
+        ImageLoader.intoMeasured(image, url, targetPx, (success, bitmap) -> {
             spinner.setVisibility(View.GONE);
+            if (success && bitmap != null) adjustImageBlockHeight(frame, bitmap, heightDp);
             if (!success && image.getDrawable() == null) {
                 TextView failed = text("图片加载失败", 11, MUTED);
                 failed.setGravity(Gravity.CENTER);
@@ -1715,6 +1717,26 @@ public final class MainActivity extends Activity {
             }
         });
         return frame;
+    }
+
+    private void adjustImageBlockHeight(FrameLayout frame, Bitmap bitmap, int fallbackHeightDp) {
+        if (frame == null || bitmap == null || bitmap.getWidth() <= 0 || bitmap.getHeight() <= 0) {
+            return;
+        }
+        int width = frame.getWidth();
+        if (width <= 0) {
+            frame.post(() -> adjustImageBlockHeight(frame, bitmap, fallbackHeightDp));
+            return;
+        }
+        int min = dp(Math.max(92, fallbackHeightDp - 36));
+        int max = dp(fallbackHeightDp >= 140 ? 360 : 220);
+        int desired = Math.round(width * (bitmap.getHeight() / (float) bitmap.getWidth()));
+        int height = Math.max(min, Math.min(max, desired));
+        ViewGroup.LayoutParams params = frame.getLayoutParams();
+        if (params != null && Math.abs(params.height - height) > dp(2)) {
+            params.height = height;
+            frame.setLayoutParams(params);
+        }
     }
 
     private List<String> articleParagraphs(String source) {
@@ -1726,6 +1748,7 @@ public final class MainActivity extends Activity {
         if (value.isEmpty()) return paragraphs;
         value = consumeLeadingArticleLabel(paragraphs, value);
         if (value.isEmpty()) return paragraphs;
+        value = normalizeArticleBreaks(value);
         if (value.contains("\n")) {
             String[] parts = value.split("\\n+");
             for (String part : parts) {
@@ -1752,6 +1775,29 @@ public final class MainActivity extends Activity {
         String tail = current.toString().trim();
         if (!tail.isEmpty()) paragraphs.add(tail);
         return paragraphs;
+    }
+
+    private String normalizeArticleBreaks(String value) {
+        String output = value;
+        output = output.replaceAll(
+                "([\\u3002\\uff01\\uff1f!?])\\s*(?=([\\uff08(][0-9\\u4e00-\\u9fff]{1,3}[\\uff09)]))",
+                "$1\n");
+        output = output.replaceAll(
+                "\\s+(?=([\\uff08(][0-9\\u4e00-\\u9fff]{1,3}[\\uff09)]))",
+                "\n");
+        output = output.replaceAll(
+                "([^\\n])\\s+(?=([\\u4e00-\\u9fff]{1,4}\\u3001))",
+                "$1\n");
+        output = output.replaceAll(
+                "([^\\n])\\s+(?=([0-9]{1,2}[.\\uff0e][^0-9]))",
+                "$1\n");
+        output = output.replaceAll(
+                "([\\u4e00-\\u9fffA-Za-z])(?=([0-9]{1,2}[.\\uff0e][\\u4e00-\\u9fff]))",
+                "$1\n");
+        output = output.replaceAll(
+                "([\\u3002\\uff01\\uff1f!?])(?=([0-9]{1,2}[.\\uff0e][\\u4e00-\\u9fff]))",
+                "$1\n");
+        return output;
     }
 
     private String consumeLeadingArticleLabel(List<String> paragraphs, String value) {
