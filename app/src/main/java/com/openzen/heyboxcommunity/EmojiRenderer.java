@@ -25,6 +25,14 @@ final class EmojiRenderer {
         LOADING.clear();
     }
 
+    static int cacheSizeKb() {
+        int bytes = 0;
+        for (Bitmap bitmap : BITMAPS.values()) {
+            if (bitmap != null) bytes += bitmap.getByteCount();
+        }
+        return Math.max(0, bytes / 1024);
+    }
+
     static void set(TextView view, String source) {
         set(view, source, false);
     }

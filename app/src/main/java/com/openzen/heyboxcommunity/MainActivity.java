@@ -79,11 +79,16 @@ public final class MainActivity extends Activity {
     private TextView leading;
     private TextView action;
     private FeedAdapter feedAdapter;
+    private ListView feedListView;
+    private View feedRefreshHeader;
+    private TextView feedRefreshText;
     private String screen = "feed";
     private String qrKey;
     private boolean pollingQr;
     private boolean feedLoading;
     private int feedOffset;
+    private int feedFirstVisible;
+    private int feedFirstTop;
     private String detailReturn = "feed";
     private String currentLinkId = "";
 
@@ -380,28 +385,49 @@ public final class MainActivity extends Activity {
         content.removeAllViews();
 
         ListView list = new ListView(this);
+        feedListView = list;
         list.setBackgroundColor(BG);
         list.setDivider(new ColorDrawable(Color.TRANSPARENT));
         list.setDividerHeight(dp(2));
         list.setSelector(new ColorDrawable(session.darkMode()
                 ? Color.rgb(50, 50, 50) : Color.rgb(225, 228, 232)));
+        feedRefreshHeader = createFeedRefreshHeader();
+        list.addHeaderView(feedRefreshHeader, null, false);
         feedAdapter = new FeedAdapter(this, feed, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
                 session.darkMode(), PRIMARY, SECONDARY, this::showDetail);
         list.setAdapter(feedAdapter);
         final float[] pullStart = {-1f};
+        final boolean[] pulling = {false};
         list.setOnTouchListener((view, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN
-                    && list.getFirstVisiblePosition() == 0) {
+                    && atFeedTop(list)) {
                 pullStart[0] = event.getY();
+                pulling[0] = false;
+            } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE && pullStart[0] >= 0) {
+                float distance = event.getY() - pullStart[0];
+                if (distance > dp(6) && atFeedTop(list)) {
+                    pulling[0] = true;
+                    int height = Math.min(dp(74), Math.round(distance * 0.48f));
+                    setFeedRefreshHeader(height,
+                            height >= dp(48) ? "松开刷新" : "下拉刷新");
+                    return true;
+                }
             } else if (event.getActionMasked() == MotionEvent.ACTION_UP) {
-                boolean refresh = pullStart[0] >= 0
-                        && list.getFirstVisiblePosition() == 0
-                        && event.getY() - pullStart[0] > dp(64);
+                boolean refresh = pulling[0] && refreshHeaderHeight() >= dp(48);
                 pullStart[0] = -1f;
-                if (refresh) loadFeed(true);
+                pulling[0] = false;
+                if (refresh) {
+                    setFeedRefreshHeader(dp(46), "正在刷新");
+                    loadFeed(true);
+                } else {
+                    setFeedRefreshHeader(0, "下拉刷新");
+                }
+                return refresh;
             } else if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
                 pullStart[0] = -1f;
+                pulling[0] = false;
+                setFeedRefreshHeader(0, "下拉刷新");
             }
             return false;
         });
@@ -412,6 +438,7 @@ public final class MainActivity extends Activity {
             }
         });
         content.addView(list, match());
+        restoreFeedScroll();
         if (feed.isEmpty()) loadFeed(true);
     }
 
@@ -674,6 +701,10 @@ public final class MainActivity extends Activity {
     }
 
     private void showRefreshStatus(String value) {
+        if (feedRefreshHeader != null && "feed".equals(screen)) {
+            setFeedRefreshHeader(dp(46), value);
+            return;
+        }
         hideRefreshStatus();
         TextView status = text(value, 11, contrast(SECONDARY));
         status.setTag("refresh_status");
@@ -686,13 +717,65 @@ public final class MainActivity extends Activity {
     }
 
     private void hideRefreshStatus() {
+        if (feedRefreshHeader != null && "feed".equals(screen)) {
+            setFeedRefreshHeader(0, "下拉刷新");
+        }
         View status = content.findViewWithTag("refresh_status");
         if (status != null) content.removeView(status);
+    }
+
+    private View createFeedRefreshHeader() {
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER);
+        header.setBackgroundColor(BG);
+        feedRefreshText = text("下拉刷新", 11, MUTED);
+        feedRefreshText.setGravity(Gravity.CENTER);
+        Compat.setBackground(feedRefreshText,
+                round(blend(PANEL, SECONDARY, session.darkMode() ? 0.22f : 0.12f), 18));
+        header.addView(feedRefreshText, new LinearLayout.LayoutParams(dp(96), dp(32)));
+        header.setLayoutParams(new AbsListView.LayoutParams(-1, 0));
+        return header;
+    }
+
+    private boolean atFeedTop(ListView list) {
+        if (list.getFirstVisiblePosition() > 0) return false;
+        View first = list.getChildAt(0);
+        return first == null || first.getTop() >= 0;
+    }
+
+    private int refreshHeaderHeight() {
+        ViewGroup.LayoutParams params = feedRefreshHeader == null ? null
+                : feedRefreshHeader.getLayoutParams();
+        return params == null ? 0 : params.height;
+    }
+
+    private void setFeedRefreshHeader(int height, String label) {
+        if (feedRefreshHeader == null) return;
+        ViewGroup.LayoutParams params = feedRefreshHeader.getLayoutParams();
+        if (params == null) params = new AbsListView.LayoutParams(-1, height);
+        params.height = Math.max(0, height);
+        feedRefreshHeader.setLayoutParams(params);
+        if (feedRefreshText != null) feedRefreshText.setText(label);
+    }
+
+    private void saveFeedScroll() {
+        if (feedListView == null) return;
+        feedFirstVisible = Math.max(0, feedListView.getFirstVisiblePosition() - 1);
+        View first = feedListView.getChildAt(0);
+        feedFirstTop = first == null ? 0 : first.getTop();
+    }
+
+    private void restoreFeedScroll() {
+        if (feedListView == null || feed.isEmpty()) return;
+        final int position = Math.max(0, Math.min(feedFirstVisible, feed.size() - 1));
+        final int top = feedFirstTop;
+        feedListView.post(() -> feedListView.setSelectionFromTop(position + 1, top));
     }
 
     private void showDetail(FeedItem item) {
         stopQrPolling();
         ensureEmojiCatalog(() -> {});
+        if ("feed".equals(screen)) saveFeedScroll();
         detailReturn = screen;
         screen = "detail";
         currentLinkId = item.id;
@@ -1787,13 +1870,26 @@ public final class MainActivity extends Activity {
         addTop(panel, toggleRow("图片查看器允许查看原图", session.originalImages(),
                 session::setOriginalImages), 4);
 
-        Button clearCache = button("清除图片缓存", R.drawable.ic_trash);
+        Button clearTempCache = button("清除临时缓存 " + formatCacheMb(tempCacheBytes()),
+                R.drawable.ic_trash);
+        clearTempCache.setOnClickListener(view -> {
+            long before = tempCacheBytes();
+            clearTempCacheFiles(getCacheDir());
+            EmojiRenderer.clear();
+            clearTempCache.setText("清除临时缓存 " + formatCacheMb(tempCacheBytes()));
+            toast("已清除临时缓存 " + formatCacheMb(before));
+        });
+        addTop(panel, clearTempCache, 10);
+
+        Button clearCache = button("清除图片缓存 " + formatCacheMb(ImageLoader.cacheSizeKb() * 1024L),
+                R.drawable.ic_trash);
         clearCache.setOnClickListener(view -> {
             int before = ImageLoader.cacheSizeKb();
             ImageLoader.clear();
-            toast("已清除图片缓存 " + Math.max(1, before) + " KB");
+            clearCache.setText("清除图片缓存 " + formatCacheMb(ImageLoader.cacheSizeKb() * 1024L));
+            toast("已清除图片缓存 " + formatCacheMb(before * 1024L));
         });
-        addTop(panel, clearCache, 10);
+        addTop(panel, clearCache, 7);
 
         Button login = button(session.isLoggedIn() ? "退出登录" : "二维码登录",
                 R.drawable.ic_logout);
@@ -2096,7 +2192,7 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "1.56";
+            return "1.57";
         }
     }
 
@@ -2264,6 +2360,42 @@ public final class MainActivity extends Activity {
         row.addView(input, new LinearLayout.LayoutParams(dp(96), dp(40)));
         addTop(parent, row, 3);
         return input;
+    }
+
+    private long tempCacheBytes() {
+        return dirSize(getCacheDir()) + EmojiRenderer.cacheSizeKb() * 1024L;
+    }
+
+    private long dirSize(java.io.File file) {
+        if (file == null || !file.exists()) return 0L;
+        if (file.isFile()) return Math.max(0L, file.length());
+        java.io.File[] children = file.listFiles();
+        if (children == null) return 0L;
+        long total = 0L;
+        for (java.io.File child : children) total += dirSize(child);
+        return total;
+    }
+
+    private void clearTempCacheFiles(java.io.File dir) {
+        if (dir == null || !dir.isDirectory()) return;
+        java.io.File[] children = dir.listFiles();
+        if (children == null) return;
+        for (java.io.File child : children) deleteFileTree(child);
+    }
+
+    private void deleteFileTree(java.io.File file) {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            java.io.File[] children = file.listFiles();
+            if (children != null) {
+                for (java.io.File child : children) deleteFileTree(child);
+            }
+        }
+        file.delete();
+    }
+
+    private String formatCacheMb(long bytes) {
+        return String.format(Locale.US, "%.1f MB", Math.max(0L, bytes) / 1048576f);
     }
 
     private boolean validColor(String value) {
