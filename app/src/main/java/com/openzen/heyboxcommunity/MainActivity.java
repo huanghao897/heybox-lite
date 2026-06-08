@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
@@ -758,7 +759,7 @@ public final class MainActivity extends Activity {
         bottom.setVisibility(View.GONE);
         leading.setVisibility(View.VISIBLE);
         leading.setOnClickListener(view -> returnFromDetail());
-        title.setText("帖子详情");
+        title.setText("正文");
         action.setVisibility(View.INVISIBLE);
         content.removeAllViews();
         showLoading();
@@ -788,20 +789,20 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(BG);
         LinearLayout page = vertical(BG);
-        int pagePadding = dp(session.pagePadding());
-        page.setPadding(pagePadding, dp(4), pagePadding, dp(16));
+        int pagePadding = Math.max(dp(10), dp(session.pagePadding()));
+        page.setPadding(pagePadding, dp(8), pagePadding, dp(18));
         scroll.addView(page);
 
         LinearLayout article = vertical(BG);
-        article.setPadding(dp(4), dp(6), dp(4), dp(10));
-        String heading = link == null ? fallback.title : link.optString("title", fallback.title);
-        TextView headline = text(heading, 17, TEXT);
-        headline.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        article.addView(headline);
+        article.setPadding(dp(2), dp(4), dp(2), dp(12));
         JSONObject user = link == null ? null : link.optJSONObject("user");
         String author = user == null ? fallback.author : user.optString("username", fallback.author);
-        addTop(article, text(author + "  " + formatTime(
-                link == null ? 0 : link.optLong("create_at")), 11, MUTED), 6);
+        addAuthorHeader(article, user, author);
+        String heading = link == null ? fallback.title : link.optString("title", fallback.title);
+        TextView headline = text(heading, 18, TEXT);
+        headline.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        headline.setLineSpacing(dp(1), 1.04f);
+        addTop(article, headline, 14);
         String value = link == null ? fallback.description
                 : first(link.optString("text"), link.optString("description"));
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
@@ -809,13 +810,13 @@ public final class MainActivity extends Activity {
         page.addView(article);
 
         View section = new View(this);
-        section.setBackgroundColor(blend(PANEL, SECONDARY, session.darkMode() ? 0.32f : 0.18f));
-        addTop(page, section, 2);
-        section.getLayoutParams().height = dp(6);
+        section.setBackgroundColor(blend(PANEL, SECONDARY, session.darkMode() ? 0.20f : 0.12f));
+        addTop(page, section, 10);
+        section.getLayoutParams().height = dp(1);
 
         TextView commentTitle = text("评论", 14, TEXT);
         commentTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        commentTitle.setPadding(dp(4), dp(8), dp(4), dp(5));
+        commentTitle.setPadding(dp(2), dp(10), dp(2), dp(5));
         page.addView(commentTitle);
         LinearLayout comments = vertical(BG);
         page.addView(comments);
@@ -828,6 +829,72 @@ public final class MainActivity extends Activity {
         content.addView(scroll, match());
     }
 
+    private void addAuthorHeader(LinearLayout article, JSONObject user, String fallbackAuthor) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView avatar = new ImageView(this);
+        avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        Compat.setBackground(avatar, round(session.darkMode()
+                ? Color.rgb(50, 53, 56) : Color.rgb(226, 229, 232), 18));
+        Compat.clipToOutline(avatar);
+        row.addView(avatar, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        String avatarUrl = user == null ? "" : user.optString("avatar",
+                user.optString("avartar"));
+        if (!session.noImage() && !avatarUrl.isEmpty()) ImageLoader.into(avatar, avatarUrl, 96);
+
+        LinearLayout copy = vertical(Color.TRANSPARENT);
+        LinearLayout nameRow = new LinearLayout(this);
+        nameRow.setGravity(Gravity.CENTER_VERTICAL);
+        String nameValue = user == null ? fallbackAuthor
+                : first(user.optString("username"), user.optString("nickname"),
+                user.optString("name"), fallbackAuthor);
+        TextView name = text(nameValue.isEmpty() ? "小黑盒用户" : nameValue, 13, TEXT);
+        name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        name.setMaxWidth(dp(118));
+        nameRow.addView(name, new LinearLayout.LayoutParams(-2, -2));
+        int level = userLevel(user);
+        if (level > 0) {
+            TextView badge = text("Lv." + level, 8, Color.WHITE);
+            badge.setGravity(Gravity.CENTER);
+            badge.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            Compat.setBackground(badge, round(Color.rgb(210, 72, 218), 3));
+            LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(32), dp(15));
+            badgeParams.leftMargin = dp(5);
+            nameRow.addView(badge, badgeParams);
+        }
+        copy.addView(nameRow);
+
+        String signature = user == null ? "" : first(user.optString("signature"),
+                user.optString("desc"));
+        if (!signature.isEmpty()) {
+            TextView desc = text(signature, 10, MUTED);
+            desc.setSingleLine(true);
+            addTop(copy, desc, 1);
+        }
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1);
+        copyParams.leftMargin = dp(9);
+        row.addView(copy, copyParams);
+
+        int followBg = session.darkMode() ? blend(PANEL, TEXT, 0.16f) : TEXT;
+        TextView follow = text("+ 关注", 11, contrast(followBg));
+        follow.setGravity(Gravity.CENTER);
+        follow.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        Compat.setBackground(follow, round(followBg, 5));
+        row.addView(follow, new LinearLayout.LayoutParams(dp(62), dp(30)));
+        follow.setOnClickListener(view -> toast("暂不支持关注"));
+        article.addView(row);
+    }
+
+    private int userLevel(JSONObject user) {
+        if (user == null) return 0;
+        JSONObject levelInfo = user.optJSONObject("level_info");
+        if (levelInfo != null) return levelInfo.optInt("level", 0);
+        return user.optInt("level", 0);
+    }
+
     private void addRichContent(LinearLayout parent, String source, JSONArray fallbackImages) {
         List<RichContent.Block> blocks = RichContent.parse(source, fallbackImages);
         if (blocks.isEmpty()) {
@@ -835,6 +902,7 @@ public final class MainActivity extends Activity {
             return;
         }
         int imageCount = 0;
+        boolean bodyStarted = false;
         for (RichContent.Block block : blocks) {
             if (block.image) {
                 if (session.noImage() || imageCount >= 12) continue;
@@ -851,18 +919,95 @@ public final class MainActivity extends Activity {
                 image.setOnClickListener(view -> openImage(image, block.value));
                 imageCount++;
             } else {
-                TextView bodyText = text(block.value,
-                        14 * session.bodyTextScale() / 100f, TEXT);
-                bodyText.setLineSpacing(0, session.bodyLineSpacing() / 100f);
-                Compat.setLetterSpacing(bodyText, session.bodyLetterSpacing() / 200f);
-                if (session.bodyBold()) {
-                    bodyText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-                }
-                bodyText.setTextIsSelectable(true);
-                EmojiRenderer.set(bodyText, block.value, session.darkMode());
-                addTop(parent, bodyText, session.bodyParagraphSpacing());
+                bodyStarted = addBodyParagraphs(parent, block.value, bodyStarted);
             }
         }
+    }
+
+    private boolean addBodyParagraphs(LinearLayout parent, String source, boolean bodyStarted) {
+        List<String> paragraphs = articleParagraphs(source);
+        for (String paragraph : paragraphs) {
+            TextView bodyText = text(paragraph,
+                    15 * session.bodyTextScale() / 100f, TEXT);
+            float lineScale = Math.max(1.10f, session.bodyLineSpacing() / 100f);
+            bodyText.setLineSpacing(dp(3), lineScale);
+            Compat.setLetterSpacing(bodyText, session.bodyLetterSpacing() / 200f);
+            bodyText.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+            bodyText.setTextIsSelectable(true);
+            EmojiRenderer.set(bodyText, paragraph, session.darkMode());
+            addTop(parent, bodyText, bodyStarted
+                    ? Math.max(dp(0), session.bodyParagraphSpacing() + 9) : 14);
+            bodyStarted = true;
+        }
+        return bodyStarted;
+    }
+
+    private List<String> articleParagraphs(String source) {
+        List<String> paragraphs = new ArrayList<>();
+        String value = source == null ? "" : source
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .trim();
+        if (value.isEmpty()) return paragraphs;
+        value = consumeLeadingArticleLabel(paragraphs, value);
+        if (value.isEmpty()) return paragraphs;
+        if (value.contains("\n")) {
+            String[] parts = value.split("\\n+");
+            for (String part : parts) {
+                String clean = part.trim();
+                if (!clean.isEmpty()) paragraphs.add(clean);
+            }
+            return paragraphs;
+        }
+
+        StringBuilder current = new StringBuilder();
+        int visible = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            current.append(ch);
+            if (!Character.isWhitespace(ch)) visible++;
+            if ((isSentenceEnd(ch) && visible >= 28)
+                    || (isSoftBreak(ch) && visible >= 68)) {
+                String paragraph = current.toString().trim();
+                if (!paragraph.isEmpty()) paragraphs.add(paragraph);
+                current.setLength(0);
+                visible = 0;
+            }
+        }
+        String tail = current.toString().trim();
+        if (!tail.isEmpty()) paragraphs.add(tail);
+        return paragraphs;
+    }
+
+    private String consumeLeadingArticleLabel(List<String> paragraphs, String value) {
+        String[] labels = {"提示词：", "提示词:", "提示词", "Prompt:", "Prompt"};
+        for (String label : labels) {
+            if (value.equals(label)) {
+                paragraphs.add(displayLabel(label));
+                return "";
+            }
+            if (value.startsWith(label + " ") || value.startsWith(label + "\n")
+                    || (label.endsWith(":") || label.endsWith("：")) && value.startsWith(label)) {
+                paragraphs.add(displayLabel(label));
+                return value.substring(label.length()).trim();
+            }
+        }
+        return value;
+    }
+
+    private String displayLabel(String label) {
+        if (label.startsWith("提示词")) return "提示词";
+        if (label.startsWith("Prompt")) return "Prompt";
+        return label;
+    }
+
+    private boolean isSentenceEnd(char ch) {
+        return ch == '。' || ch == '！' || ch == '？'
+                || ch == '!' || ch == '?';
+    }
+
+    private boolean isSoftBreak(char ch) {
+        return ch == '；' || ch == ';';
     }
 
     private int addComments(LinearLayout page, JSONArray groups) {
@@ -2186,7 +2331,7 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "1.57";
+            return "1.58";
         }
     }
 
