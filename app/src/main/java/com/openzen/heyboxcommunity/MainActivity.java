@@ -390,15 +390,6 @@ public final class MainActivity extends Activity {
         action.setOnClickListener(view -> loadFeed(true));
         content.removeAllViews();
 
-        LinearLayout page = vertical(BG);
-        page.setPadding(dp(7), dp(5), dp(7), 0);
-        LinearLayout refreshRow = new LinearLayout(this);
-        refreshRow.setGravity(Gravity.CENTER);
-        feedRefreshButton = button("刷新", R.drawable.ic_refresh);
-        feedRefreshButton.setOnClickListener(view -> loadFeed(true));
-        refreshRow.addView(feedRefreshButton, new LinearLayout.LayoutParams(dp(96), dp(32)));
-        page.addView(refreshRow, new LinearLayout.LayoutParams(-1, dp(38)));
-
         ListView list = new ListView(this);
         feedListView = list;
         list.setBackgroundColor(BG);
@@ -407,6 +398,7 @@ public final class MainActivity extends Activity {
         list.setOverScrollMode(View.OVER_SCROLL_NEVER);
         list.setSelector(new ColorDrawable(session.darkMode()
                 ? Color.rgb(50, 50, 50) : Color.rgb(225, 228, 232)));
+        list.addHeaderView(createFeedRefreshHeader(), null, false);
         feedAdapter = new FeedAdapter(this, feed, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
                 session.darkMode(), PRIMARY, SECONDARY, this::showDetail);
@@ -417,8 +409,7 @@ public final class MainActivity extends Activity {
                 if (total > 0 && first + visible >= total - 2) loadFeed(false);
             }
         });
-        page.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
-        content.addView(page, match());
+        content.addView(list, match());
         restoreFeedScroll();
         if (feed.isEmpty()) loadFeed(true);
     }
@@ -746,6 +737,18 @@ public final class MainActivity extends Activity {
         feedRefreshButton.setText(busy ? "刷新中" : "刷新");
     }
 
+    private View createFeedRefreshHeader() {
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER);
+        header.setPadding(dp(7), dp(5), dp(7), dp(1));
+        header.setBackgroundColor(BG);
+        feedRefreshButton = button("刷新", R.drawable.ic_refresh);
+        feedRefreshButton.setOnClickListener(view -> loadFeed(true));
+        header.addView(feedRefreshButton, new LinearLayout.LayoutParams(dp(96), dp(32)));
+        header.setLayoutParams(new AbsListView.LayoutParams(-1, dp(38)));
+        return header;
+    }
+
     private void saveFeedScroll() {
         if (feedListView == null) return;
         feedFirstVisible = Math.max(0, feedListView.getFirstVisiblePosition());
@@ -755,7 +758,7 @@ public final class MainActivity extends Activity {
 
     private void restoreFeedScroll() {
         if (feedListView == null || feed.isEmpty()) return;
-        final int position = Math.max(0, Math.min(feedFirstVisible, feed.size() - 1));
+        final int position = Math.max(0, Math.min(feedFirstVisible, feed.size()));
         final int top = feedFirstTop;
         feedListView.post(() -> feedListView.setSelectionFromTop(position, top));
     }

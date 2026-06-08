@@ -155,9 +155,11 @@ final class EmojiStore {
     }
 
     private static String lookup(String code, boolean darkMode) {
+        String clean = normalizeCode(code);
+        String fallback = OfficialEmojiFallback.url(clean);
+        if (fallback != null && isOfficialToken(clean)) return fallback;
         String direct = directLookup(code, darkMode);
         if (direct != null) return direct;
-        String clean = normalizeCode(code);
         String[] variants = variants(clean);
         for (String variant : variants) {
             String value = darkMode ? DARK_URLS.get(variant) : URLS.get(variant);
@@ -167,7 +169,13 @@ final class EmojiStore {
             String value = URLS.get(variant);
             if (value != null) return value;
         }
-        return OfficialEmojiFallback.url(clean);
+        return fallback;
+    }
+
+    private static boolean isOfficialToken(String clean) {
+        if (clean == null) return false;
+        return clean.startsWith("cube_") || clean.startsWith("heygirl_")
+                || OfficialEmojiFallback.url(clean) != null;
     }
 
     private static String directLookup(String code, boolean darkMode) {
