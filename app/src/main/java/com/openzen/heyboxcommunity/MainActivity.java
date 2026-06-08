@@ -9,6 +9,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -80,6 +81,10 @@ public final class MainActivity extends Activity {
     private TextView action;
     private FeedAdapter feedAdapter;
     private ListView feedListView;
+    private ListView cachedFeedListView;
+    private TextView feedFooter;
+    private ScrollView detailScroll;
+    private LocalCache localCache;
     private final Map<View, Integer> searchBarHeights = new HashMap<>();
     private final Map<View, Boolean> searchBarStates = new HashMap<>();
     private String screen = "feed";
@@ -87,6 +92,8 @@ public final class MainActivity extends Activity {
     private boolean pollingQr;
     private boolean feedLoadingMore;
     private boolean feedRefreshing;
+    private boolean feedNoMore;
+    private boolean feedLoadMoreFailed;
     private int feedOffset;
     private int feedRequestSerial;
     private int feedResetSerial;
@@ -110,6 +117,7 @@ public final class MainActivity extends Activity {
             return;
         }
         session = new SessionStore(this);
+        localCache = new LocalCache(this);
         applyPalette();
         Compat.colorSystemBars(getWindow(), BG);
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
@@ -131,6 +139,10 @@ public final class MainActivity extends Activity {
         UpdateChecker.check(appVersion(), new UpdateChecker.Callback() {
             @Override public void onResult(UpdateChecker.Result result) {
                 if (!result.updateAvailable || isFinishing()) return;
+                if (result.title != null || result.notes != null) {
+                    showUpdateDialog(result);
+                    return;
+                }
                 new AlertDialog.Builder(MainActivity.this)
                         .setTitle("发现新版本 " + result.version)
                         .setMessage("heybox Lite 有新版本可用，是否前往下载？")
@@ -145,6 +157,35 @@ public final class MainActivity extends Activity {
                 // 启动检查失败时保持安静，避免网络不稳定影响正常使用。
             }
         });
+    }
+
+    private void showUpdateDialog(UpdateChecker.Result result) {
+        String releaseTitle = TextUtils.isEmpty(result.title) ? "" : result.title.trim();
+        String notes = TextUtils.isEmpty(result.notes)
+                ? "暂无更新内容说明。"
+                : limitUpdateNotes(result.notes.trim());
+        StringBuilder message = new StringBuilder();
+        message.append("当前版本：").append(appVersion()).append('\n');
+        message.append("最新版本：").append(result.version);
+        if (!TextUtils.isEmpty(releaseTitle)) {
+            message.append('\n').append("发布标题：").append(releaseTitle);
+        }
+        message.append("\n\n更新内容：\n").append(notes);
+
+        String target = TextUtils.isEmpty(result.downloadUrl)
+                ? result.releaseUrl : result.downloadUrl;
+        new AlertDialog.Builder(this)
+                .setTitle("发现新版本 " + result.version)
+                .setMessage(message.toString())
+                .setNegativeButton("稍后", null)
+                .setPositiveButton("下载", (dialog, which) -> openUpdateUrl(target))
+                .show();
+    }
+
+    private String limitUpdateNotes(String notes) {
+        int max = 1800;
+        if (notes.length() <= max) return notes;
+        return notes.substring(0, max) + "\n\n内容较长，完整更新日志请打开 GitHub 发布页查看。";
     }
 
     private void buildShell() {
@@ -389,15 +430,33 @@ public final class MainActivity extends Activity {
         action.setVisibility(View.VISIBLE);
         action.setOnClickListener(view -> loadFeed(true));
         content.removeAllViews();
+        if (cachedFeedListView != null && feedListView == cachedFeedListView
+                && cachedFeedListView.getParent() == null) {
+            content.addView(cachedFeedListView, match());
+            restoreFeedScroll();
+            updateFeedFooter();
+            return;
+        }
+        if (feed.isEmpty()) {
+            List<FeedItem> cached = filterItems(localCache.feedItems());
+            if (!cached.isEmpty()) {
+                feed.addAll(cached);
+                feedOffset = feed.size();
+                localCache.log("feed restored from offline cache: " + feed.size());
+            }
+        }
 
         ListView list = new ListView(this);
         feedListView = list;
+        cachedFeedListView = list;
         list.setBackgroundColor(BG);
         list.setDivider(new ColorDrawable(Color.TRANSPARENT));
         list.setDividerHeight(dp(2));
         list.setOverScrollMode(View.OVER_SCROLL_NEVER);
         list.setSelector(new ColorDrawable(session.darkMode()
                 ? Color.rgb(50, 50, 50) : Color.rgb(225, 228, 232)));
+        feedFooter = feedFooterView();
+        list.addFooterView(feedFooter, null, false);
         feedAdapter = new FeedAdapter(this, feed, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
                 session.darkMode(), PRIMARY, SECONDARY, this::showDetail);
@@ -405,22 +464,59 @@ public final class MainActivity extends Activity {
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override public void onScrollStateChanged(AbsListView view, int state) {}
             @Override public void onScroll(AbsListView view, int first, int visible, int total) {
-                if (total > 0 && first + visible >= total - 2) loadFeed(false);
+                if (total > 0 && first + visible >= total - 2
+                        && !feedNoMore && !feedLoadMoreFailed) loadFeed(false);
             }
         });
+        updateFeedFooter();
         content.addView(list, match());
         restoreFeedScroll();
         if (feed.isEmpty()) loadFeed(true);
+    }
+
+    private TextView feedFooterView() {
+        TextView footer = text("", 12, MUTED);
+        footer.setGravity(Gravity.CENTER);
+        footer.setPadding(dp(8), dp(10), dp(8), dp(16));
+        footer.setOnClickListener(view -> {
+            if (feedLoadMoreFailed) loadFeed(false);
+        });
+        return footer;
+    }
+
+    private void updateFeedFooter() {
+        if (feedFooter == null) return;
+        feedFooter.setVisibility(feed.isEmpty() && !feedLoadingMore
+                && !feedLoadMoreFailed && !feedNoMore ? View.GONE : View.VISIBLE);
+        feedFooter.setEnabled(feedLoadMoreFailed);
+        if (feedLoadingMore) {
+            feedFooter.setText("正在加载更多...");
+            feedFooter.setTextColor(MUTED);
+        } else if (feedLoadMoreFailed) {
+            feedFooter.setText("加载失败，点按重试");
+            feedFooter.setTextColor(SECONDARY);
+        } else if (feedNoMore) {
+            feedFooter.setText("没有更多了");
+            feedFooter.setTextColor(MUTED);
+        } else {
+            feedFooter.setText("上滑加载更多");
+            feedFooter.setTextColor(MUTED);
+        }
     }
 
     private boolean loadFeed(boolean reset) {
         if (reset) {
             if (feedRefreshing) return false;
             feedRefreshing = true;
+            feedNoMore = false;
+            feedLoadMoreFailed = false;
         } else {
+            if (feedNoMore) return false;
             if (feedRefreshing || feedLoadingMore) return false;
             feedLoadingMore = true;
+            feedLoadMoreFailed = false;
         }
+        updateFeedFooter();
         final int requestSerial = ++feedRequestSerial;
         if (reset) feedResetSerial = requestSerial;
         final List<FeedItem> previous = reset ? new ArrayList<>(feed) : null;
@@ -441,24 +537,32 @@ public final class MainActivity extends Activity {
                 JSONObject result = body.optJSONObject("result");
                 JSONArray links = result == null ? null : result.optJSONArray("links");
                 List<FeedItem> fresh = new ArrayList<>();
-                int added = 0;
+                int returned = 0;
                 if (links != null) {
                     for (int i = 0; i < links.length(); i++) {
                         JSONObject item = links.optJSONObject(i);
                         if (item != null) {
-                            fresh.add(FeedItem.from(item));
-                            added++;
+                            FeedItem parsed = FeedItem.from(item);
+                            if (!isBlocked(parsed)) fresh.add(parsed);
+                            returned++;
                         }
                     }
                 }
                 if (reset && fresh.isEmpty() && previous != null && !previous.isEmpty()) {
                     toast("没有获取到新内容，已保留原列表");
+                } else if (!reset && returned == 0) {
+                    feedNoMore = true;
                 } else {
                     if (reset) feed.clear();
-                    feed.addAll(fresh);
+                    appendUnique(feed, fresh);
+                    localCache.saveFeed(feed);
                 }
-                feedOffset += Math.max(added, 30);
+                if (!reset && returned > 0 && fresh.isEmpty()) {
+                    toast("本页内容已被关键词过滤");
+                }
+                if (returned > 0) feedOffset += Math.max(returned, 30);
                 setFeedRefreshBusy(false);
+                updateFeedFooter();
                 if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
                 if (feed.isEmpty()) showMessage("暂时没有获取到社区内容");
             }
@@ -469,7 +573,18 @@ public final class MainActivity extends Activity {
                 if (!reset && requestSerial < feedResetSerial) return;
                 hideLoading();
                 setFeedRefreshBusy(false);
+                localCache.log((reset ? "feed refresh failed: " : "feed load more failed: ") + message);
                 if (reset && previous != null && feed.isEmpty()) feed.addAll(previous);
+                if (reset && feed.isEmpty()) {
+                    List<FeedItem> cached = filterItems(localCache.feedItems());
+                    if (!cached.isEmpty()) {
+                        feed.addAll(cached);
+                        toast("已显示离线缓存");
+                    }
+                } else if (!reset) {
+                    feedLoadMoreFailed = true;
+                }
+                updateFeedFooter();
                 if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
                 if (feed.isEmpty()) showMessage("加载失败\n" + message);
                 else toast("刷新失败，已保留原内容");
@@ -604,12 +719,14 @@ public final class MainActivity extends Activity {
                 if (!"search".equals(screen)) return;
                 List<FeedItem> items = new ArrayList<>();
                 collectFeedItems(body, items, new HashMap<>(), 0);
+                items = filterItems(items);
                 showSearchResults(results, items, searchBar,
                         items.isEmpty() ? "没有找到相关帖子" : "");
             }
 
             @Override public void onError(String message) {
                 if (!"search".equals(screen)) return;
+                localCache.log("search failed: " + message);
                 setSearchBarVisible(searchBar, true);
                 results.removeAllViews();
                 TextView error = text("搜索失败\n" + message, 13, MUTED);
@@ -729,6 +846,37 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void appendUnique(List<FeedItem> target, List<FeedItem> incoming) {
+        Map<String, Boolean> ids = new HashMap<>();
+        for (FeedItem item : target) ids.put(item.id, true);
+        for (FeedItem item : incoming) {
+            if (item == null || ids.containsKey(item.id)) continue;
+            target.add(item);
+            ids.put(item.id, true);
+        }
+    }
+
+    private List<FeedItem> filterItems(List<FeedItem> items) {
+        List<FeedItem> filtered = new ArrayList<>();
+        if (items == null) return filtered;
+        for (FeedItem item : items) {
+            if (!isBlocked(item)) filtered.add(item);
+        }
+        return filtered;
+    }
+
+    private boolean isBlocked(FeedItem item) {
+        if (item == null) return false;
+        List<String> keywords = session.blockKeywordList();
+        if (keywords.isEmpty()) return false;
+        String haystack = (item.title + "\n" + item.description + "\n" + item.author)
+                .toLowerCase(Locale.US);
+        for (String keyword : keywords) {
+            if (!keyword.isEmpty() && haystack.contains(keyword)) return true;
+        }
+        return false;
+    }
+
     private void setFeedRefreshBusy(boolean busy) {
         if (!"feed".equals(screen) || action == null) return;
         action.setEnabled(!busy);
@@ -749,7 +897,15 @@ public final class MainActivity extends Activity {
         feedListView.post(() -> feedListView.setSelectionFromTop(position, top));
     }
 
+    private void invalidateFeedView() {
+        cachedFeedListView = null;
+        feedListView = null;
+        feedAdapter = null;
+        feedFooter = null;
+    }
+
     private void showDetail(FeedItem item) {
+        saveCurrentDetailProgress();
         stopQrPolling();
         ensureEmojiCatalog(() -> {});
         if ("feed".equals(screen)) saveFeedScroll();
@@ -773,11 +929,19 @@ public final class MainActivity extends Activity {
         api.get(EndpointProvider.linkTree(), params, new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
                 hideLoading();
+                localCache.saveDetail(item.id, body);
                 renderDetail(body, item);
             }
 
             @Override public void onError(String message) {
                 hideLoading();
+                localCache.log("detail failed " + item.id + ": " + message);
+                JSONObject cached = localCache.detail(item.id);
+                if (cached != null) {
+                    toast("已显示离线缓存");
+                    renderDetail(cached, item);
+                    return;
+                }
                 showMessage("详情加载失败\n" + message);
             }
         });
@@ -825,6 +989,11 @@ public final class MainActivity extends Activity {
             comments.addView(empty);
         }
         content.addView(scroll, match());
+        detailScroll = scroll;
+        int savedScroll = localCache.scroll(currentLinkId);
+        if (savedScroll > 0) {
+            scroll.postDelayed(() -> scroll.scrollTo(0, savedScroll), 80);
+        }
     }
 
     private void addAuthorHeader(LinearLayout article, JSONObject user, String fallbackAuthor) {
@@ -924,17 +1093,11 @@ public final class MainActivity extends Activity {
         for (RichContent.Block block : blocks) {
             if (block.image) {
                 if (session.noImage() || imageCount >= 12) continue;
-                ImageView image = new ImageView(this);
-                image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                Compat.setBackground(image, round(session.darkMode()
-                        ? Color.rgb(28, 30, 32) : Color.rgb(235, 237, 240), 7));
-                Compat.clipToOutline(image);
+                View image = postImageBlock(block.value, 1080, 150);
                 LinearLayout.LayoutParams imageParams =
                         new LinearLayout.LayoutParams(-1, dp(150));
                 imageParams.topMargin = dp(8);
                 parent.addView(image, imageParams);
-                ImageLoader.into(image, block.value, 1080);
-                image.setOnClickListener(view -> openImage(image, block.value));
                 imageCount++;
             } else {
                 bodyStarted = addBodyParagraphs(parent, block.value, bodyStarted);
@@ -958,6 +1121,37 @@ public final class MainActivity extends Activity {
             bodyStarted = true;
         }
         return bodyStarted;
+    }
+
+    private View postImageBlock(String url, int targetPx, int heightDp) {
+        FrameLayout frame = new FrameLayout(this);
+        int placeholder = session.darkMode()
+                ? Color.rgb(28, 30, 32) : Color.rgb(235, 237, 240);
+        Compat.setBackground(frame, round(placeholder, 7));
+        Compat.clipToOutline(frame);
+
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        frame.addView(image, match());
+
+        LoadingSpinnerView spinner = new LoadingSpinnerView(this);
+        spinner.setColor(blend(TEXT, SECONDARY, 0.35f));
+        FrameLayout.LayoutParams spinnerParams =
+                new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER);
+        frame.addView(spinner, spinnerParams);
+
+        View.OnClickListener open = view -> openImage(image, url);
+        frame.setOnClickListener(open);
+        image.setOnClickListener(open);
+        ImageLoader.into(image, url, targetPx, success -> {
+            spinner.setVisibility(View.GONE);
+            if (!success && image.getDrawable() == null) {
+                TextView failed = text("图片加载失败", 11, MUTED);
+                failed.setGravity(Gravity.CENTER);
+                frame.addView(failed, match());
+            }
+        });
+        return frame;
     }
 
     private List<String> articleParagraphs(String source) {
@@ -1279,17 +1473,11 @@ public final class MainActivity extends Activity {
         addTop(block, value, 4);
         String commentImage = commentImage(comment);
         if (!session.noImage() && !commentImage.isEmpty()) {
-            ImageView image = new ImageView(this);
-            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            Compat.setBackground(image, round(session.darkMode()
-                    ? Color.rgb(39, 42, 45) : Color.rgb(236, 238, 240), 6));
-            Compat.clipToOutline(image);
+            View image = postImageBlock(commentImage, 720, reply ? 92 : 115);
             LinearLayout.LayoutParams imageParams =
                     new LinearLayout.LayoutParams(-1, dp(reply ? 92 : 115));
             imageParams.topMargin = dp(6);
             block.addView(image, imageParams);
-            ImageLoader.into(image, commentImage, 720);
-            image.setOnClickListener(view -> openImage(image, commentImage));
         }
 
         if (!reply) {
@@ -1506,6 +1694,7 @@ public final class MainActivity extends Activity {
         params.put(SecureStrings.userid(), session.userId());
         params.put("x_os_type", "Windows");
         params.put("device_info", "Edge");
+        final String cacheKey = savedCacheKey(pageTitle, path);
         api.get(path, params, new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
                 hideLoading();
@@ -1521,6 +1710,8 @@ public final class MainActivity extends Activity {
                         }
                     }
                 }
+                localCache.saveSavedList(cacheKey, items);
+                items = filterItems(items);
                 if (pageTitle.contains("历史")) showHistoryList(items);
                 else {
                     content.addView(feedList(items), match());
@@ -1530,9 +1721,21 @@ public final class MainActivity extends Activity {
 
             @Override public void onError(String message) {
                 hideLoading();
+                localCache.log(pageTitle + " failed: " + message);
+                List<FeedItem> cached = filterItems(localCache.savedList(cacheKey));
+                if (!cached.isEmpty()) {
+                    toast("已显示离线缓存");
+                    if (pageTitle.contains("历史")) showHistoryList(cached);
+                    else content.addView(feedList(cached), match());
+                    return;
+                }
                 showMessage(pageTitle + "加载失败\n" + message);
             }
         });
+    }
+
+    private String savedCacheKey(String pageTitle, String path) {
+        return pageTitle + "_" + path;
     }
 
     private ListView feedList(List<FeedItem> items) {
@@ -2023,9 +2226,32 @@ public final class MainActivity extends Activity {
         addTop(panel, toggleRow("无图模式", session.noImage(), value -> {
             session.setNoImage(value);
             feed.clear();
+            invalidateFeedView();
         }), 0);
         addTop(panel, toggleRow("图片查看器允许查看原图", session.originalImages(),
                 session::setOriginalImages), 4);
+
+        EditText blockKeywords = textField(panel, "屏蔽关键词", session.blockKeywords());
+        blockKeywords.setSingleLine(false);
+        blockKeywords.setMinLines(2);
+        blockKeywords.setGravity(Gravity.CENTER_VERTICAL);
+        Button saveFilter = button("保存内容过滤", R.drawable.ic_settings);
+        saveFilter.setOnClickListener(view -> {
+            session.setBlockKeywords(blockKeywords.getText().toString());
+            feed.clear();
+            feedOffset = 0;
+            invalidateFeedView();
+            toast("内容过滤已保存");
+        });
+        addTop(panel, saveFilter, 7);
+
+        TextView offlineInfo = text("离线缓存 " + formatCacheMb(localCache.offlineBytes())
+                + " / 已缓存帖子 " + localCache.detailCount(), 11, MUTED);
+        addTop(panel, offlineInfo, 8);
+
+        Button diagnostics = button("导出诊断信息", R.drawable.ic_info);
+        diagnostics.setOnClickListener(view -> exportDiagnostics());
+        addTop(panel, diagnostics, 7);
 
         Button clearTempCache = button("清除临时缓存 " + formatCacheMb(tempCacheBytes()),
                 R.drawable.ic_trash);
@@ -2054,6 +2280,7 @@ public final class MainActivity extends Activity {
             if (session.isLoggedIn()) {
                 session.clearSession();
                 feed.clear();
+                invalidateFeedView();
                 toast("已退出登录");
             }
             showLogin();
@@ -2190,9 +2417,10 @@ public final class MainActivity extends Activity {
                     if (isFinishing()) return;
                     update.setEnabled(true);
                     if (result.updateAvailable) {
+                        showUpdateDialog(result);
                         updateStatus.setText("发现新版本 " + result.version);
                         update.setText("前往下载 " + result.version);
-                        update.setOnClickListener(button -> openUrl(
+                        update.setOnClickListener(button -> openUpdateUrl(
                                 result.downloadUrl.isEmpty() ? result.releaseUrl : result.downloadUrl));
                     } else {
                         updateStatus.setText("当前已是最新版本");
@@ -2427,6 +2655,53 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void openUpdateUrl(String url) {
+        if (TextUtils.isEmpty(url)) {
+            toast("没有可用下载链接");
+            return;
+        }
+        openUrl(url);
+    }
+
+    private void exportDiagnostics() {
+        String diagnostics = buildDiagnostics();
+        java.io.File file = localCache.writeDiagnostics(diagnostics);
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_SUBJECT, "heybox Lite diagnostics");
+        share.putExtra(Intent.EXTRA_TEXT, diagnostics + "\n\nFile: " + file.getAbsolutePath());
+        try {
+            startActivity(Intent.createChooser(share, "导出诊断信息"));
+        } catch (Exception ignored) {
+            toast("诊断信息已保存：" + file.getAbsolutePath());
+        }
+    }
+
+    private String buildDiagnostics() {
+        StringBuilder out = new StringBuilder();
+        out.append("heybox Lite diagnostics\n");
+        out.append("version: ").append(appVersion()).append('\n');
+        out.append("android: ").append(Build.VERSION.RELEASE)
+                .append(" api ").append(Build.VERSION.SDK_INT).append('\n');
+        out.append("device: ").append(Build.MANUFACTURER).append(' ')
+                .append(Build.MODEL).append('\n');
+        out.append("screen: ").append(screen).append('\n');
+        out.append("loggedIn: ").append(session.isLoggedIn()).append('\n');
+        out.append("feedCount: ").append(feed.size()).append('\n');
+        out.append("feedOffset: ").append(feedOffset).append('\n');
+        out.append("feedNoMore: ").append(feedNoMore).append('\n');
+        out.append("offlineFeedSavedAt: ").append(localCache.feedSavedAt()).append('\n');
+        out.append("offlineBytes: ").append(localCache.offlineBytes()).append('\n');
+        out.append("cachedDetails: ").append(localCache.detailCount()).append('\n');
+        out.append("imageMemoryCacheKb: ").append(ImageLoader.cacheSizeKb()).append('\n');
+        out.append("emojiMemoryCacheKb: ").append(EmojiRenderer.cacheSizeKb()).append('\n');
+        out.append("noImage: ").append(session.noImage()).append('\n');
+        out.append("darkMode: ").append(session.darkMode()).append('\n');
+        out.append("keywords: ").append(session.blockKeywords()).append('\n');
+        out.append("\nrecent events:\n").append(localCache.recentLog());
+        return out.toString();
+    }
+
     private interface ToggleListener {
         void onChanged(boolean value);
     }
@@ -2641,13 +2916,27 @@ public final class MainActivity extends Activity {
     }
 
     private void returnFromDetail() {
+        saveCurrentDetailProgress();
         if ("saved".equals(detailReturn)) showProfile();
         else if ("search".equals(detailReturn)) showSearch();
         else showFeed();
     }
 
+    private void saveCurrentDetailProgress() {
+        if (!"detail".equals(screen) || detailScroll == null || currentLinkId.isEmpty()
+                || localCache == null) return;
+        localCache.saveScroll(currentLinkId, detailScroll.getScrollY());
+    }
+
+    @Override
+    protected void onPause() {
+        saveCurrentDetailProgress();
+        super.onPause();
+    }
+
     @Override
     protected void onDestroy() {
+        saveCurrentDetailProgress();
         stopQrPolling();
         ImageLoader.cancelTree(content);
         handler.removeCallbacksAndMessages(null);

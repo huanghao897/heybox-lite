@@ -47,6 +47,7 @@ final class SessionStore {
     private static final String SPLASH_TEXT = "splash_text";
     private static final String SPLASH_DURATION = "splash_duration";
     private static final String SEARCH_HISTORY = "search_history";
+    private static final String BLOCK_KEYWORDS = "block_keywords";
     static final String DEFAULT_SPLASH_TEXT = "方寸之间，看见热爱";
     private static final String LEGACY_PREFIX = "L1:";
 
@@ -276,6 +277,26 @@ final class SessionStore {
         prefs.edit().remove(SEARCH_HISTORY).apply();
     }
 
+    String blockKeywords() {
+        return prefs.getString(BLOCK_KEYWORDS, "");
+    }
+
+    void setBlockKeywords(String value) {
+        prefs.edit().putString(BLOCK_KEYWORDS, value == null ? "" : value.trim()).apply();
+    }
+
+    List<String> blockKeywordList() {
+        List<String> values = new java.util.ArrayList<>();
+        String raw = blockKeywords();
+        if (raw.isEmpty()) return values;
+        String[] parts = raw.split("[,，;；\\n\\r]+");
+        for (String part : parts) {
+            String clean = part.trim().toLowerCase(java.util.Locale.US);
+            if (!clean.isEmpty()) values.add(clean);
+        }
+        return values;
+    }
+
     void setTheme(String primary, String secondary) {
         prefs.edit()
                 .putString(PRIMARY_COLOR, primary)
@@ -472,6 +493,7 @@ final class SessionStore {
         String splashText = splashText();
         int splashDuration = splashDuration();
         String searchHistory = prefs.getString(SEARCH_HISTORY, "[]");
+        String blockKeywords = blockKeywords();
         prefs.edit().clear()
                 .putString(SecureStrings.deviceId(), deviceId)
                 .putBoolean(NO_IMAGE, noImage)
@@ -492,6 +514,7 @@ final class SessionStore {
                 .putString(SPLASH_TEXT, splashText)
                 .putInt(SPLASH_DURATION, splashDuration)
                 .putString(SEARCH_HISTORY, searchHistory)
+                .putString(BLOCK_KEYWORDS, blockKeywords)
                 .apply();
     }
 }

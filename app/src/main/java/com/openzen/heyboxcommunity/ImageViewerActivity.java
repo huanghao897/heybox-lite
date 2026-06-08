@@ -9,7 +9,6 @@ import android.view.View;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -22,7 +21,7 @@ public final class ImageViewerActivity extends Activity {
 
     private FrameLayout root;
     private ZoomImageView image;
-    private ProgressBar progress;
+    private LoadingSpinnerView progress;
     private TextView original;
     private String url;
     private boolean closing;
@@ -64,8 +63,8 @@ public final class ImageViewerActivity extends Activity {
         controlsParams.bottomMargin = dp(12);
         root.addView(controls, controlsParams);
 
-        progress = new ProgressBar(this);
-        Compat.tint(progress, Color.argb(210, 235, 238, 241));
+        progress = new LoadingSpinnerView(this);
+        progress.setColor(Color.argb(210, 235, 238, 241));
         root.addView(progress, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
         setContentView(root);
         prepareEnterAnimation();

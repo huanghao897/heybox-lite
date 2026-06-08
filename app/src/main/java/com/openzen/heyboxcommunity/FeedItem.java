@@ -64,6 +64,25 @@ final class FeedItem {
         );
     }
 
+    JSONObject toJson() {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("linkid", id);
+            json.put("title", title);
+            json.put("description", description);
+            json.put("image", image);
+            json.put("comment_num", comments);
+            json.put("link_award_num", likes);
+            json.put("use_concept_type", article ? 0 : 1);
+            json.put("is_liked", liked);
+            JSONObject user = new JSONObject();
+            user.put("username", author);
+            json.put("user", user);
+        } catch (Exception ignored) {
+        }
+        return json;
+    }
+
     private static boolean isArticle(JSONObject json) {
         if (json.has("use_concept_type")) return json.optInt("use_concept_type", 1) == 0;
         if (json.optBoolean("is_article", false)) return true;

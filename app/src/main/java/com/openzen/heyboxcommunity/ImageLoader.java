@@ -22,6 +22,10 @@ final class ImageLoader {
         void onLoaded(Bitmap bitmap);
     }
 
+    interface IntoCallback {
+        void onComplete(boolean success);
+    }
+
     private static final int CACHE_KB = 8 * 1024;
     private static final int MAX_DECODE_BYTES = 10 * 1024 * 1024;
     private static final int MAX_BITMAP_PIXELS = 5_000_000;
@@ -37,32 +41,52 @@ final class ImageLoader {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     static void into(ImageView view, String sourceUrl, int targetPx) {
+        into(view, sourceUrl, targetPx, null);
+    }
+
+    static void into(ImageView view, String sourceUrl, int targetPx, IntoCallback callback) {
         String url = thumbnailUrl(sourceUrl, targetPx);
-        loadInto(view, originalUrl(sourceUrl), url, targetPx, true);
+        loadInto(view, originalUrl(sourceUrl), url, targetPx, true, callback);
     }
 
     static void intoOriginal(ImageView view, String sourceUrl, int targetPx) {
         String url = originalUrl(sourceUrl);
-        loadInto(view, url, url, Math.min(targetPx, MAX_BITMAP_SIDE), false);
+        loadInto(view, url, url, Math.min(targetPx, MAX_BITMAP_SIDE), false, null);
     }
 
     private static void loadInto(ImageView view, String cacheKey, String url,
-                                 int targetPx, boolean clearBefore) {
+                                 int targetPx, boolean clearBefore, IntoCallback callback) {
+        Object current = view.getTag();
+        if (url.equals(current) && view.getDrawable() != null) {
+            if (callback != null) callback.onComplete(true);
+            return;
+        }
         view.setTag(url);
-        if (url.isEmpty()) return;
+        if (url.isEmpty()) {
+            if (callback != null) callback.onComplete(false);
+            return;
+        }
         Bitmap cached = CACHE.get(url);
         if (cached == null) cached = CACHE.get(cacheKey);
         if (cached != null) {
+            CACHE.put(url, cached);
             view.setImageBitmap(cached);
+            view.setAlpha(1f);
+            view.setScaleX(1f);
+            view.setScaleY(1f);
+            if (callback != null) callback.onComplete(true);
             return;
         }
-        if (clearBefore) view.setImageDrawable(null);
+        if (clearBefore && view.getDrawable() == null) view.setImageDrawable(null);
         EXECUTOR.execute(() -> {
             Bitmap bitmap = download(url, safeTarget(targetPx));
-            if (bitmap != null) MAIN.post(() -> {
+            MAIN.post(() -> {
                 if (url.equals(view.getTag())) {
-                    if (!cacheKey.isEmpty()) CACHE.put(cacheKey, bitmap);
-                    showLoaded(view, bitmap);
+                    if (bitmap != null) {
+                        if (!cacheKey.isEmpty()) CACHE.put(cacheKey, bitmap);
+                        showLoaded(view, bitmap);
+                    }
+                    if (callback != null) callback.onComplete(bitmap != null);
                 }
             });
         });
