@@ -29,9 +29,10 @@ final class RichContent {
     private static final Pattern IMAGE = Pattern.compile(
             "(?is)<img\\b[^>]*?(?:data-original|data-src|src)\\s*=\\s*(['\"])(.*?)\\1[^>]*>");
     private static final Pattern INLINE_EMOJI = Pattern.compile(
-            "(?is)<a\\b([^>]*(?:icon-url|icon-dark-url)\\s*=\\s*(['\"]).*?\\2[^>]*)>(.*?)</a>");
+            "(?is)<a\\b([^>]*(?:icon[-_]?url|icon[-_]?dark[-_]?url)[^>]*)>(.*?)</a>");
+    private static final Pattern INLINE_IMAGE_EMOJI = Pattern.compile("(?is)<img\\b([^>]*)>");
     private static final Pattern ATTRIBUTE = Pattern.compile(
-            "(?is)(icon-url|icon-dark-url)\\s*=\\s*(['\"])(.*?)\\2");
+            "(?is)([a-z0-9_-]+)\\s*=\\s*(['\"])(.*?)\\2");
     private static final Pattern JSON_IMAGE = Pattern.compile(
             "(?is)\"(?:url|src|original)\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
 
@@ -41,6 +42,7 @@ final class RichContent {
         List<Block> blocks = new ArrayList<>();
         Set<String> imageUrls = new HashSet<>();
         source = decodeTransport(source);
+        source = normalizeInlineEmojis(source);
         if (!addStructured(blocks, imageUrls, source)) {
             addHtml(blocks, imageUrls, source);
         }
@@ -245,27 +247,114 @@ final class RichContent {
     }
 
     private static String normalizeInlineEmojis(String html) {
+        html = decodeAttributeEntities(html);
         Matcher matcher = INLINE_EMOJI.matcher(html);
         StringBuffer output = new StringBuffer();
         while (matcher.find()) {
             String attrs = matcher.group(1);
-            String label = decodeHtml(matcher.group(3)).trim();
+            String label = decodeHtml(matcher.group(2)).trim();
             if (label.isEmpty()) label = "表情";
-            String token = "[" + label.replaceAll("[\\[\\]\\s]+", "") + "]";
-            String light = "";
-            String dark = "";
-            Matcher attr = ATTRIBUTE.matcher(attrs);
-            while (attr.find()) {
-                String name = attr.group(1).toLowerCase(Locale.ROOT);
-                String url = decodeHtml(attr.group(3)).replace("\\/", "/");
-                if ("icon-dark-url".equals(name)) dark = url;
-                else light = url;
+            EmojiUrls urls = extractEmojiUrls(attrs);
+            if (urls.hasUrl()) {
+                String token = token(label);
+                EmojiStore.register(token, urls.light, urls.dark);
+                matcher.appendReplacement(output, Matcher.quoteReplacement(token));
             }
-            EmojiStore.register(token, light, dark);
+        }
+        matcher.appendTail(output);
+        return normalizeInlineImageEmojis(output.toString());
+    }
+
+    private static String normalizeInlineImageEmojis(String html) {
+        Matcher matcher = INLINE_IMAGE_EMOJI.matcher(html);
+        StringBuffer output = new StringBuffer();
+        while (matcher.find()) {
+            String attrs = matcher.group(1);
+            EmojiUrls urls = extractEmojiUrls(attrs);
+            String label = first(attribute(attrs, "alt"), attribute(attrs, "data-name"),
+                    attribute(attrs, "title"), attribute(attrs, "name"));
+            String light = first(urls.light, attribute(attrs, "src"),
+                    attribute(attrs, "data-src"), attribute(attrs, "data-original"));
+            if (!looksEmojiUrl(light) && !looksEmojiUrl(urls.dark)
+                    && !attrs.toLowerCase(Locale.ROOT).contains("emoji")) {
+                continue;
+            }
+            if (label.isEmpty()) label = "表情";
+            String token = token(decodeHtml(label));
+            EmojiStore.register(token, light, urls.dark);
             matcher.appendReplacement(output, Matcher.quoteReplacement(token));
         }
         matcher.appendTail(output);
         return output.toString();
+    }
+
+    private static EmojiUrls extractEmojiUrls(String attrs) {
+        String light = "";
+        String dark = "";
+        Matcher attr = ATTRIBUTE.matcher(attrs);
+        while (attr.find()) {
+            String name = attr.group(1).toLowerCase(Locale.ROOT).replace('_', '-');
+            String url = decodeHtml(attr.group(3)).replace("\\/", "/");
+            if (name.contains("dark") && name.contains("url")) {
+                dark = url;
+            } else if ((name.contains("icon") && name.contains("url"))
+                    || "src".equals(name) || "data-src".equals(name)
+                    || "data-original".equals(name)) {
+                light = url;
+            }
+        }
+        return new EmojiUrls(light, dark);
+    }
+
+    private static String attribute(String attrs, String expected) {
+        Matcher attr = ATTRIBUTE.matcher(attrs);
+        String target = expected.toLowerCase(Locale.ROOT);
+        while (attr.find()) {
+            String name = attr.group(1).toLowerCase(Locale.ROOT).replace('_', '-');
+            if (target.equals(name)) return decodeHtml(attr.group(3)).replace("\\/", "/");
+        }
+        return "";
+    }
+
+    private static String token(String label) {
+        String clean = label == null ? "" : label.replaceAll("[\\[\\]\\s]+", "");
+        return "[" + (clean.isEmpty() ? "表情" : clean) + "]";
+    }
+
+    private static boolean looksEmojiUrl(String url) {
+        if (url == null) return false;
+        String value = url.toLowerCase(Locale.ROOT);
+        return value.contains("/emoji/") || value.contains("emoji")
+                || value.contains("icon-url");
+    }
+
+    private static String decodeAttributeEntities(String value) {
+        if (value == null) return "";
+        String decoded = value;
+        for (int i = 0; i < 2; i++) {
+            String next = decoded
+                    .replace("&lt;", "<")
+                    .replace("&LT;", "<")
+                    .replace("&#60;", "<")
+                    .replace("&#x3c;", "<")
+                    .replace("&#X3C;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&GT;", ">")
+                    .replace("&#62;", ">")
+                    .replace("&#x3e;", ">")
+                    .replace("&#X3E;", ">")
+                    .replace("&quot;", "\"")
+                    .replace("&#34;", "\"")
+                    .replace("&#x22;", "\"")
+                    .replace("&#X22;", "\"")
+                    .replace("&apos;", "'")
+                    .replace("&#39;", "'")
+                    .replace("&amp;", "&")
+                    .replace("&AMP;", "&");
+            if (next.equals(decoded)) break;
+            decoded = next;
+        }
+        return decoded;
     }
 
     private static void addText(List<Block> blocks, String html) {
@@ -302,7 +391,9 @@ final class RichContent {
         if (value == null || value.isEmpty()) return "";
         String decoded = value
                 .replace("\\u003c", "<")
+                .replace("\\u003C", "<")
                 .replace("\\u003e", ">")
+                .replace("\\u003E", ">")
                 .replace("\\u0026", "&")
                 .replace("\\\"", "\"")
                 .replace("\\/", "/");
@@ -327,5 +418,19 @@ final class RichContent {
             if (value != null && !value.isEmpty()) return value;
         }
         return "";
+    }
+
+    private static final class EmojiUrls {
+        final String light;
+        final String dark;
+
+        EmojiUrls(String light, String dark) {
+            this.light = light == null ? "" : light;
+            this.dark = dark == null ? "" : dark;
+        }
+
+        boolean hasUrl() {
+            return !light.isEmpty() || !dark.isEmpty();
+        }
     }
 }

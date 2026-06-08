@@ -15,7 +15,6 @@ import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
@@ -80,13 +79,17 @@ public final class MainActivity extends Activity {
     private TextView action;
     private FeedAdapter feedAdapter;
     private ListView feedListView;
-    private View feedRefreshHeader;
-    private TextView feedRefreshText;
+    private Button feedRefreshButton;
+    private final Map<View, Integer> searchBarHeights = new HashMap<>();
+    private final Map<View, Boolean> searchBarStates = new HashMap<>();
     private String screen = "feed";
     private String qrKey;
     private boolean pollingQr;
-    private boolean feedLoading;
+    private boolean feedLoadingMore;
+    private boolean feedRefreshing;
     private int feedOffset;
+    private int feedRequestSerial;
+    private int feedResetSerial;
     private int feedFirstVisible;
     private int feedFirstTop;
     private String detailReturn = "feed";
@@ -234,13 +237,16 @@ public final class MainActivity extends Activity {
         screen = key;
         bottom.setVisibility(View.VISIBLE);
         leading.setVisibility(View.INVISIBLE);
+        int activeColor = TEXT;
+        int inactiveColor = MUTED;
         for (int i = 0; i < bottom.getChildCount(); i++) {
             TextView item = (TextView) bottom.getChildAt(i);
             boolean active = key.equals(item.getTag());
-            item.setTextColor(active ? PRIMARY : MUTED);
+            item.setAlpha(active ? 1f : 0.62f);
+            item.setTextColor(active ? activeColor : inactiveColor);
             item.setTypeface(Typeface.DEFAULT, active ? Typeface.BOLD : Typeface.NORMAL);
             Drawable icon = item.getCompoundDrawables()[1];
-            Compat.tintDrawable(icon, active ? PRIMARY : MUTED);
+            Compat.tintDrawable(icon, active ? activeColor : inactiveColor);
         }
     }
 
@@ -380,83 +386,67 @@ public final class MainActivity extends Activity {
         title.setText("社区");
         action.setText("");
         setIcon(action, R.drawable.ic_refresh, TEXT, 19);
-        action.setVisibility(View.VISIBLE);
+        action.setVisibility(View.INVISIBLE);
         action.setOnClickListener(view -> loadFeed(true));
         content.removeAllViews();
+
+        LinearLayout page = vertical(BG);
+        page.setPadding(dp(7), dp(5), dp(7), 0);
+        LinearLayout refreshRow = new LinearLayout(this);
+        refreshRow.setGravity(Gravity.CENTER);
+        feedRefreshButton = button("刷新", R.drawable.ic_refresh);
+        feedRefreshButton.setOnClickListener(view -> loadFeed(true));
+        refreshRow.addView(feedRefreshButton, new LinearLayout.LayoutParams(dp(96), dp(32)));
+        page.addView(refreshRow, new LinearLayout.LayoutParams(-1, dp(38)));
 
         ListView list = new ListView(this);
         feedListView = list;
         list.setBackgroundColor(BG);
         list.setDivider(new ColorDrawable(Color.TRANSPARENT));
         list.setDividerHeight(dp(2));
+        list.setOverScrollMode(View.OVER_SCROLL_NEVER);
         list.setSelector(new ColorDrawable(session.darkMode()
                 ? Color.rgb(50, 50, 50) : Color.rgb(225, 228, 232)));
-        feedRefreshHeader = createFeedRefreshHeader();
-        list.addHeaderView(feedRefreshHeader, null, false);
         feedAdapter = new FeedAdapter(this, feed, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
                 session.darkMode(), PRIMARY, SECONDARY, this::showDetail);
         list.setAdapter(feedAdapter);
-        final float[] pullStart = {-1f};
-        final boolean[] pulling = {false};
-        list.setOnTouchListener((view, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN
-                    && atFeedTop(list)) {
-                pullStart[0] = event.getY();
-                pulling[0] = false;
-            } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE && pullStart[0] >= 0) {
-                float distance = event.getY() - pullStart[0];
-                if (distance > dp(6) && atFeedTop(list)) {
-                    pulling[0] = true;
-                    int height = Math.min(dp(74), Math.round(distance * 0.48f));
-                    setFeedRefreshHeader(height,
-                            height >= dp(48) ? "松开刷新" : "下拉刷新");
-                    return true;
-                }
-            } else if (event.getActionMasked() == MotionEvent.ACTION_UP) {
-                boolean refresh = pulling[0] && refreshHeaderHeight() >= dp(48);
-                pullStart[0] = -1f;
-                pulling[0] = false;
-                if (refresh) {
-                    setFeedRefreshHeader(dp(46), "正在刷新");
-                    loadFeed(true);
-                } else {
-                    setFeedRefreshHeader(0, "下拉刷新");
-                }
-                return refresh;
-            } else if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-                pullStart[0] = -1f;
-                pulling[0] = false;
-                setFeedRefreshHeader(0, "下拉刷新");
-            }
-            return false;
-        });
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override public void onScrollStateChanged(AbsListView view, int state) {}
             @Override public void onScroll(AbsListView view, int first, int visible, int total) {
                 if (total > 0 && first + visible >= total - 2) loadFeed(false);
             }
         });
-        content.addView(list, match());
+        page.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
+        content.addView(page, match());
         restoreFeedScroll();
         if (feed.isEmpty()) loadFeed(true);
     }
 
-    private void loadFeed(boolean reset) {
-        if (feedLoading) return;
-        feedLoading = true;
+    private boolean loadFeed(boolean reset) {
+        if (reset) {
+            if (feedRefreshing) return false;
+            feedRefreshing = true;
+        } else {
+            if (feedRefreshing || feedLoadingMore) return false;
+            feedLoadingMore = true;
+        }
+        final int requestSerial = ++feedRequestSerial;
+        if (reset) feedResetSerial = requestSerial;
         final List<FeedItem> previous = reset ? new ArrayList<>(feed) : null;
         if (reset) {
             feedOffset = 0;
+            setFeedRefreshBusy(true);
             if (feed.isEmpty()) showLoading();
-            else showRefreshStatus("正在刷新");
         }
         Map<String, String> params = new HashMap<>();
         params.put("offset", String.valueOf(feedOffset));
         params.put("pull", reset ? "1" : "0");
         api.get(EndpointProvider.feeds(), params, new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
-                feedLoading = false;
+                if (reset) feedRefreshing = false;
+                else feedLoadingMore = false;
+                if (!reset && requestSerial < feedResetSerial) return;
                 hideLoading();
                 JSONObject result = body.optJSONObject("result");
                 JSONArray links = result == null ? null : result.optJSONArray("links");
@@ -478,21 +468,24 @@ public final class MainActivity extends Activity {
                     feed.addAll(fresh);
                 }
                 feedOffset += Math.max(added, 30);
-                hideRefreshStatus();
+                setFeedRefreshBusy(false);
                 if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
                 if (feed.isEmpty()) showMessage("暂时没有获取到社区内容");
             }
 
             @Override public void onError(String message) {
-                feedLoading = false;
+                if (reset) feedRefreshing = false;
+                else feedLoadingMore = false;
+                if (!reset && requestSerial < feedResetSerial) return;
                 hideLoading();
-                hideRefreshStatus();
+                setFeedRefreshBusy(false);
                 if (reset && previous != null && feed.isEmpty()) feed.addAll(previous);
                 if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
                 if (feed.isEmpty()) showMessage("加载失败\n" + message);
                 else toast("刷新失败，已保留原内容");
             }
         });
+        return true;
     }
 
     private void showSearch() {
@@ -506,8 +499,8 @@ public final class MainActivity extends Activity {
         action.setVisibility(View.INVISIBLE);
         content.removeAllViews();
 
-        LinearLayout page = vertical(BG);
-        page.setPadding(dp(7), dp(6), dp(7), dp(4));
+        FrameLayout page = new FrameLayout(this);
+        page.setBackgroundColor(BG);
         LinearLayout searchBar = new LinearLayout(this);
         searchBar.setGravity(Gravity.CENTER_VERTICAL);
         EditText input = new EditText(this);
@@ -522,16 +515,26 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams submitParams = new LinearLayout.LayoutParams(dp(82), dp(38));
         submitParams.leftMargin = dp(5);
         searchBar.addView(submit, submitParams);
-        page.addView(searchBar);
 
         LinearLayout recent = vertical(BG);
-        page.addView(recent);
         FrameLayout results = new FrameLayout(this);
         results.setTag(searchBar);
-        page.addView(results, new LinearLayout.LayoutParams(-1, 0, 1));
+        page.addView(results, match());
         TextView hint = text("输入关键词搜索社区帖子", 13, MUTED);
         hint.setGravity(Gravity.CENTER);
         results.addView(hint, match());
+        FrameLayout.LayoutParams recentParams = new FrameLayout.LayoutParams(-1, -2);
+        recentParams.leftMargin = dp(7);
+        recentParams.rightMargin = dp(7);
+        recentParams.topMargin = dp(54);
+        page.addView(recent, recentParams);
+        FrameLayout.LayoutParams searchParams =
+                new FrameLayout.LayoutParams(-1, dp(42), Gravity.TOP);
+        searchParams.leftMargin = dp(7);
+        searchParams.rightMargin = dp(7);
+        searchParams.topMargin = dp(6);
+        page.addView(searchBar, searchParams);
+        prepareSearchBar(searchBar, dp(42));
 
         Runnable search = () -> {
             String keyword = input.getText().toString().trim();
@@ -638,37 +641,73 @@ public final class MainActivity extends Activity {
         }
         ListView list = feedList(items);
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
-            @Override public void onScrollStateChanged(AbsListView view, int scrollState) {}
+            @Override public void onScrollStateChanged(AbsListView view, int scrollState) {
+                setSearchBarVisible(searchBar, scrollState == SCROLL_STATE_IDLE);
+            }
 
             @Override public void onScroll(AbsListView view, int firstVisibleItem,
-                                           int visibleItemCount, int totalItemCount) {
-                View first = view.getChildAt(0);
-                boolean nearTop = firstVisibleItem == 0
-                        && (first == null || first.getTop() >= -dp(10));
-                setSearchBarVisible(searchBar, nearTop);
-            }
+                                           int visibleItemCount, int totalItemCount) {}
         });
         parent.addView(list, match());
     }
 
     private void setSearchBarVisible(View searchBar, boolean visible) {
         if (searchBar == null) return;
-        Object state = searchBar.getTag();
-        if (state instanceof Boolean && ((Boolean) state) == visible) return;
-        searchBar.setTag(visible);
+        Boolean state = searchBarStates.get(searchBar);
+        if (state != null && state == visible) return;
+        searchBarStates.put(searchBar, visible);
         searchBar.animate().cancel();
         if (visible) {
             searchBar.setVisibility(View.VISIBLE);
             searchBar.setEnabled(true);
-            searchBar.animate().alpha(1f).translationY(0f).setDuration(150).start();
+            setChildrenEnabled(searchBar, true);
+            searchBar.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(120)
+                    .start();
         } else {
+            clearFocusTree(searchBar);
             searchBar.setEnabled(false);
-            searchBar.animate().alpha(0f).translationY(-dp(12)).setDuration(150)
+            setChildrenEnabled(searchBar, false);
+            searchBar.animate()
+                    .alpha(0f)
+                    .translationY(-dp(12))
+                    .setDuration(110)
                     .start();
             handler.postDelayed(() -> {
-                Object current = searchBar.getTag();
-                if (Boolean.FALSE.equals(current)) searchBar.setVisibility(View.INVISIBLE);
-            }, 155);
+                Boolean current = searchBarStates.get(searchBar);
+                if (current != null && !current) searchBar.setVisibility(View.GONE);
+            }, 120);
+        }
+    }
+
+    private void prepareSearchBar(View searchBar, int height) {
+        searchBarHeights.put(searchBar, height);
+        searchBarStates.put(searchBar, true);
+        searchBar.setVisibility(View.VISIBLE);
+        searchBar.setAlpha(1f);
+        searchBar.setTranslationY(0f);
+    }
+
+    private void clearFocusTree(View view) {
+        view.clearFocus();
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                clearFocusTree(group.getChildAt(i));
+            }
+        }
+    }
+
+    private void setChildrenEnabled(View view, boolean enabled) {
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                child.setEnabled(enabled);
+                setChildrenEnabled(child, enabled);
+            }
         }
     }
 
@@ -700,67 +739,16 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void showRefreshStatus(String value) {
-        if (feedRefreshHeader != null && "feed".equals(screen)) {
-            setFeedRefreshHeader(dp(46), value);
-            return;
-        }
-        hideRefreshStatus();
-        TextView status = text(value, 11, contrast(SECONDARY));
-        status.setTag("refresh_status");
-        status.setGravity(Gravity.CENTER);
-        Compat.setBackground(status, round(SECONDARY, 14));
-        FrameLayout.LayoutParams params =
-                new FrameLayout.LayoutParams(dp(88), dp(28), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        params.topMargin = dp(5);
-        content.addView(status, params);
-    }
-
-    private void hideRefreshStatus() {
-        if (feedRefreshHeader != null && "feed".equals(screen)) {
-            setFeedRefreshHeader(0, "下拉刷新");
-        }
-        View status = content.findViewWithTag("refresh_status");
-        if (status != null) content.removeView(status);
-    }
-
-    private View createFeedRefreshHeader() {
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER);
-        header.setBackgroundColor(BG);
-        feedRefreshText = text("下拉刷新", 11, MUTED);
-        feedRefreshText.setGravity(Gravity.CENTER);
-        Compat.setBackground(feedRefreshText,
-                round(blend(PANEL, SECONDARY, session.darkMode() ? 0.22f : 0.12f), 18));
-        header.addView(feedRefreshText, new LinearLayout.LayoutParams(dp(96), dp(32)));
-        header.setLayoutParams(new AbsListView.LayoutParams(-1, 0));
-        return header;
-    }
-
-    private boolean atFeedTop(ListView list) {
-        if (list.getFirstVisiblePosition() > 0) return false;
-        View first = list.getChildAt(0);
-        return first == null || first.getTop() >= 0;
-    }
-
-    private int refreshHeaderHeight() {
-        ViewGroup.LayoutParams params = feedRefreshHeader == null ? null
-                : feedRefreshHeader.getLayoutParams();
-        return params == null ? 0 : params.height;
-    }
-
-    private void setFeedRefreshHeader(int height, String label) {
-        if (feedRefreshHeader == null) return;
-        ViewGroup.LayoutParams params = feedRefreshHeader.getLayoutParams();
-        if (params == null) params = new AbsListView.LayoutParams(-1, height);
-        params.height = Math.max(0, height);
-        feedRefreshHeader.setLayoutParams(params);
-        if (feedRefreshText != null) feedRefreshText.setText(label);
+    private void setFeedRefreshBusy(boolean busy) {
+        if (feedRefreshButton == null) return;
+        feedRefreshButton.setEnabled(!busy);
+        feedRefreshButton.setAlpha(busy ? 0.72f : 1f);
+        feedRefreshButton.setText(busy ? "刷新中" : "刷新");
     }
 
     private void saveFeedScroll() {
         if (feedListView == null) return;
-        feedFirstVisible = Math.max(0, feedListView.getFirstVisiblePosition() - 1);
+        feedFirstVisible = Math.max(0, feedListView.getFirstVisiblePosition());
         View first = feedListView.getChildAt(0);
         feedFirstTop = first == null ? 0 : first.getTop();
     }
@@ -769,7 +757,7 @@ public final class MainActivity extends Activity {
         if (feedListView == null || feed.isEmpty()) return;
         final int position = Math.max(0, Math.min(feedFirstVisible, feed.size() - 1));
         final int top = feedFirstTop;
-        feedListView.post(() -> feedListView.setSelectionFromTop(position + 1, top));
+        feedListView.post(() -> feedListView.setSelectionFromTop(position, top));
     }
 
     private void showDetail(FeedItem item) {
@@ -1127,7 +1115,8 @@ public final class MainActivity extends Activity {
         TextView metaView = text(meta, reply ? 10 : 11, reply ? MUTED : TEXT);
         if (!reply) metaView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         block.addView(metaView);
-        String rawComment = first(comment.optString("text"), comment.optString("content"));
+        String rawComment = first(comment.optString("text"), comment.optString("content"),
+                comment.optString("html"), comment.optString("description"));
         String visibleComment = RichContent.plainText(rawComment);
         TextView value = text(visibleComment, 13, TEXT);
         value.setLineSpacing(0, reply ? 1.16f : session.bodyLineSpacing() / 100f);
@@ -1311,8 +1300,9 @@ public final class MainActivity extends Activity {
         TextView arrow = text("›", 20, MUTED);
         arrow.setGravity(Gravity.CENTER);
         row.addView(arrow, new LinearLayout.LayoutParams(dp(24), dp(42)));
-        row.setOnClickListener(view -> action.run());
+        row.setOnClickListener(view -> runWithPressFeedback(view, action));
         addTop(parent, row, parent.getChildCount() == 0 ? 0 : 4);
+        animateIn(row);
     }
 
     private void showFavorites() {
@@ -1412,8 +1402,8 @@ public final class MainActivity extends Activity {
 
     private void showHistoryList(List<FeedItem> allItems) {
         content.removeAllViews();
-        LinearLayout page = vertical(BG);
-        page.setPadding(dp(7), dp(5), dp(7), 0);
+        FrameLayout page = new FrameLayout(this);
+        page.setBackgroundColor(BG);
         EditText search = new EditText(this);
         search.setHint("搜索历史：标题、摘要或作者");
         search.setHintTextColor(MUTED);
@@ -1421,10 +1411,16 @@ public final class MainActivity extends Activity {
         search.setSingleLine(true);
         search.setTextSize(sp(12));
         Compat.tint(search, PRIMARY);
-        page.addView(search, new LinearLayout.LayoutParams(-1, dp(40)));
 
         FrameLayout results = new FrameLayout(this);
-        page.addView(results, new LinearLayout.LayoutParams(-1, 0, 1));
+        page.addView(results, match());
+        FrameLayout.LayoutParams searchParams =
+                new FrameLayout.LayoutParams(-1, dp(40), Gravity.TOP);
+        searchParams.leftMargin = dp(7);
+        searchParams.rightMargin = dp(7);
+        searchParams.topMargin = dp(5);
+        page.addView(search, searchParams);
+        prepareSearchBar(search, dp(40));
         List<FeedItem> filtered = new ArrayList<>(allItems);
         FeedAdapter adapter = new FeedAdapter(this, filtered, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
@@ -1434,6 +1430,14 @@ public final class MainActivity extends Activity {
         list.setDivider(new ColorDrawable(Color.TRANSPARENT));
         list.setDividerHeight(dp(2));
         list.setAdapter(adapter);
+        list.setOnScrollListener(new AbsListView.OnScrollListener() {
+            @Override public void onScrollStateChanged(AbsListView view, int scrollState) {
+                setSearchBarVisible(search, scrollState == SCROLL_STATE_IDLE);
+            }
+
+            @Override public void onScroll(AbsListView view, int firstVisibleItem,
+                                           int visibleItemCount, int totalItemCount) {}
+        });
         results.addView(list, match());
 
         search.addTextChangedListener(new TextWatcher() {
@@ -1451,6 +1455,7 @@ public final class MainActivity extends Activity {
                 adapter.notifyDataSetChanged();
                 results.removeAllViews();
                 if (filtered.isEmpty()) {
+                    setSearchBarVisible(search, true);
                     TextView empty = text("没有找到相关历史记录", 13, MUTED);
                     empty.setGravity(Gravity.CENTER);
                     results.addView(empty, match());
@@ -1621,6 +1626,7 @@ public final class MainActivity extends Activity {
         page.setPadding(dp(8), dp(8), dp(8), dp(14));
         scroll.addView(page);
         content.addView(scroll, match());
+        animateIn(scroll);
         return page;
     }
 
@@ -2538,6 +2544,19 @@ public final class MainActivity extends Activity {
                 .setInterpolator(new DecelerateInterpolator()).start();
     }
 
+    private void runWithPressFeedback(View view, Runnable action) {
+        if (action == null) return;
+        view.setEnabled(false);
+        view.animate().cancel();
+        view.animate().scaleX(0.98f).scaleY(0.98f).setDuration(65).start();
+        handler.postDelayed(() -> {
+            view.animate().scaleX(1f).scaleY(1f).setDuration(90)
+                    .setInterpolator(new DecelerateInterpolator()).start();
+            view.setEnabled(true);
+            if (!isFinishing()) action.run();
+        }, 75);
+    }
+
     private LinearLayout vertical(int color) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -2575,7 +2594,10 @@ public final class MainActivity extends Activity {
                 .format(new Date(seconds * 1000L));
     }
 
-    private static String first(String first, String second) {
-        return first == null || first.isEmpty() ? (second == null ? "" : second) : first;
+    private static String first(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isEmpty()) return value;
+        }
+        return "";
     }
 }

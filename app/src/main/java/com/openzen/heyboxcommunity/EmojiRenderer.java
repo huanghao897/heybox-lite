@@ -6,8 +6,11 @@ import android.text.SpannableString;
 import android.text.style.ImageSpan;
 import android.widget.TextView;
 
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -17,12 +20,14 @@ final class EmojiRenderer {
     private static final Pattern TOKEN = Pattern.compile("\\[[^\\]\\s]{1,48}\\]");
     private static final Map<String, Bitmap> BITMAPS = new HashMap<>();
     private static final Set<String> LOADING = new HashSet<>();
+    private static final Map<String, List<Waiter>> WAITERS = new HashMap<>();
 
     private EmojiRenderer() {}
 
     static void clear() {
         BITMAPS.clear();
         LOADING.clear();
+        WAITERS.clear();
     }
 
     static int cacheSizeKb() {
@@ -68,14 +73,49 @@ final class EmojiRenderer {
                 continue;
             }
             String url = EmojiStore.url(code, darkMode);
-            if (url.isEmpty() || !LOADING.add(cacheKey)) continue;
-            ImageLoader.loadOriginal(url, 96, loaded -> {
-                BITMAPS.put(cacheKey, loaded);
-                LOADING.remove(cacheKey);
-                Object tag = view.getTag();
-                if (source.equals(tag)) render(view, source, darkMode);
-            });
+            if (url.isEmpty()) continue;
+            waitFor(cacheKey, view, source, darkMode);
+            if (LOADING.add(cacheKey)) {
+                ImageLoader.loadOriginal(url, 96, loaded -> {
+                    if (loaded != null) BITMAPS.put(cacheKey, loaded);
+                    LOADING.remove(cacheKey);
+                    notifyWaiters(cacheKey, loaded != null);
+                });
+            }
         }
         view.setText(styled);
+    }
+
+    private static void waitFor(String cacheKey, TextView view, String source,
+                                boolean darkMode) {
+        List<Waiter> waiters = WAITERS.get(cacheKey);
+        if (waiters == null) {
+            waiters = new ArrayList<>();
+            WAITERS.put(cacheKey, waiters);
+        }
+        waiters.add(new Waiter(view, source, darkMode));
+    }
+
+    private static void notifyWaiters(String cacheKey, boolean loaded) {
+        List<Waiter> waiters = WAITERS.remove(cacheKey);
+        if (waiters == null || !loaded) return;
+        for (Waiter waiter : waiters) {
+            TextView view = waiter.view.get();
+            if (view == null) continue;
+            Object tag = view.getTag();
+            if (waiter.source.equals(tag)) render(view, waiter.source, waiter.darkMode);
+        }
+    }
+
+    private static final class Waiter {
+        final WeakReference<TextView> view;
+        final String source;
+        final boolean darkMode;
+
+        Waiter(TextView view, String source, boolean darkMode) {
+            this.view = new WeakReference<>(view);
+            this.source = source;
+            this.darkMode = darkMode;
+        }
     }
 }

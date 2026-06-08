@@ -84,7 +84,10 @@ final class ImageLoader {
 
     static void load(String sourceUrl, int targetPx, Callback callback) {
         String url = thumbnailUrl(sourceUrl, targetPx);
-        if (url.isEmpty()) return;
+        if (url.isEmpty()) {
+            MAIN.post(() -> callback.onLoaded(null));
+            return;
+        }
         Bitmap cached = CACHE.get(url);
         if (cached != null) {
             MAIN.post(() -> callback.onLoaded(cached));
@@ -92,13 +95,16 @@ final class ImageLoader {
         }
         EXECUTOR.execute(() -> {
             Bitmap bitmap = download(url, safeTarget(targetPx));
-            if (bitmap != null) MAIN.post(() -> callback.onLoaded(bitmap));
+            MAIN.post(() -> callback.onLoaded(bitmap));
         });
     }
 
     static void loadOriginal(String sourceUrl, int targetPx, Callback callback) {
         String url = originalUrl(sourceUrl);
-        if (url.isEmpty()) return;
+        if (url.isEmpty()) {
+            MAIN.post(() -> callback.onLoaded(null));
+            return;
+        }
         Bitmap cached = CACHE.get(url);
         if (cached != null) {
             MAIN.post(() -> callback.onLoaded(cached));
@@ -106,7 +112,7 @@ final class ImageLoader {
         }
         EXECUTOR.execute(() -> {
             Bitmap bitmap = download(url, safeTarget(Math.min(targetPx, MAX_BITMAP_SIDE)));
-            if (bitmap != null) MAIN.post(() -> callback.onLoaded(bitmap));
+            MAIN.post(() -> callback.onLoaded(bitmap));
         });
     }
 
@@ -207,6 +213,7 @@ final class ImageLoader {
         if (source == null || source.isEmpty()) return "";
         int query = source.indexOf('?');
         String value = (query >= 0 ? source.substring(0, query) : source).replace("\\/", "/");
+        if (value.startsWith("//")) value = "https:" + value;
         if (value.regionMatches(true, 0, "http:", 0, 5)) value = "https:" + value.substring(5);
         return value.startsWith("https://") ? value : "";
     }
