@@ -803,10 +803,8 @@ public final class MainActivity extends Activity {
         headline.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         headline.setLineSpacing(dp(1), 1.04f);
         addTop(article, headline, 14);
-        String value = link == null ? fallback.description
-                : first(link.optString("text"), link.optString("description"));
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
-        addRichContent(article, value, fallbackImages);
+        addRichContent(article, link, fallback.description, fallbackImages);
         page.addView(article);
 
         View section = new View(this);
@@ -896,7 +894,27 @@ public final class MainActivity extends Activity {
     }
 
     private void addRichContent(LinearLayout parent, String source, JSONArray fallbackImages) {
-        List<RichContent.Block> blocks = RichContent.parse(source, fallbackImages);
+        addRichContent(parent, RichContent.parse(source, fallbackImages));
+    }
+
+    private void addRichContent(LinearLayout parent, JSONObject link, String fallback,
+                                JSONArray fallbackImages) {
+        List<RichContent.Block> blocks = link == null
+                ? RichContent.parse(fallback, fallbackImages)
+                : RichContent.parse(link, fallbackImages);
+        if (!RichContent.hasReadableText(blocks) && fallback != null && !fallback.isEmpty()) {
+            List<RichContent.Block> fallbackBlocks = RichContent.parse(fallback, null);
+            if (RichContent.hasReadableText(fallbackBlocks)) {
+                fallbackBlocks.addAll(blocks);
+                blocks = fallbackBlocks;
+            } else if (blocks.isEmpty()) {
+                blocks = RichContent.parse(fallback, fallbackImages);
+            }
+        }
+        addRichContent(parent, blocks);
+    }
+
+    private void addRichContent(LinearLayout parent, List<RichContent.Block> blocks) {
         if (blocks.isEmpty()) {
             addTop(parent, text("正文为空", 13, MUTED), 9);
             return;
@@ -2152,6 +2170,15 @@ public final class MainActivity extends Activity {
         disclaimer.setLineSpacing(0, 1.22f);
         addTop(panel, disclaimer, 10);
 
+        TextView feedbackTitle = text("Bug 反馈群", 13, TEXT);
+        feedbackTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        addTop(panel, feedbackTitle, 12);
+        addTop(panel, text("QQ群：781941517", 12, TEXT), 5);
+        addTop(panel, text("遇到问题可以扫码进群反馈。", 11, MUTED), 3);
+        Button feedbackQr = button("查看反馈群二维码", R.drawable.ic_info);
+        feedbackQr.setOnClickListener(view -> showFeedbackGroupQr());
+        addTop(panel, feedbackQr, 8);
+
         TextView updateStatus = text("可从 GitHub 检查最新版本", 12, MUTED);
         addTop(panel, updateStatus, 12);
         Button update = button("检查更新", R.drawable.ic_refresh);
@@ -2188,6 +2215,48 @@ public final class MainActivity extends Activity {
                 openUrl("https://github.com/huanghao897/heybox-lite"));
         addTop(panel, repository, 7);
         page.addView(panel);
+    }
+
+    private void showFeedbackGroupQr() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(14), dp(12), dp(14), dp(12));
+        Compat.setBackground(box, round(Color.WHITE, 12));
+
+        TextView title = text("Bug 反馈群", 16, Color.rgb(28, 28, 28));
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setGravity(Gravity.CENTER);
+        box.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView group = text("QQ群：781941517", 12, Color.rgb(84, 84, 84));
+        group.setGravity(Gravity.CENTER);
+        addTop(box, group, 5);
+
+        ImageView qr = new ImageView(this);
+        qr.setImageResource(R.drawable.qq_feedback_group_qr);
+        qr.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        qr.setAdjustViewBounds(true);
+        qr.setPadding(dp(4), dp(4), dp(4), dp(4));
+        int size = Math.min(
+                Math.min(getResources().getDisplayMetrics().widthPixels - dp(56),
+                        getResources().getDisplayMetrics().heightPixels - dp(170)),
+                dp(300));
+        size = Math.max(dp(150), size);
+        LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(size, size);
+        qrParams.gravity = Gravity.CENTER_HORIZONTAL;
+        qrParams.topMargin = dp(10);
+        box.addView(qr, qrParams);
+
+        TextView hint = text("点击空白处关闭", 11, Color.rgb(120, 120, 120));
+        hint.setGravity(Gravity.CENTER);
+        addTop(box, hint, 8);
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(box).create();
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
     }
 
     private LinearLayout toggleRow(String label, boolean initial, ToggleListener listener) {
@@ -2331,7 +2400,7 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "1.58";
+            return "1.59";
         }
     }
 

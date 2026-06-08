@@ -34,32 +34,224 @@ final class RichContent {
     private static final Pattern ATTRIBUTE = Pattern.compile(
             "(?is)([a-z0-9_-]+)\\s*=\\s*(['\"])(.*?)\\2");
     private static final Pattern JSON_IMAGE = Pattern.compile(
-            "(?is)\"(?:url|src|original)\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
+            "(?is)\"(?:url|src|original|origin_url|original_url|image|image_url|img|img_url|pic|pic_url|cover|cover_url)\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
+    private static final String[] DETAIL_BODY_KEYS = {
+            "text", "article_text", "articleText",
+            "article_content", "articleContent", "content_v2", "contentV2",
+            "content_list", "contentList", "rich_text", "richText",
+            "content_html", "contentHtml", "body", "body_text", "bodyText",
+            "raw_content", "rawContent", "raw_html", "rawHtml",
+            "content_attrs", "contentAttrs", "content_attr", "contentAttr",
+            "hb_rich_texts", "hbRichTexts", "rich_texts", "richTexts",
+            "article_rich_texts", "articleRichTexts"
+    };
+    private static final String[] DETAIL_TEXT_FALLBACK_KEYS = {
+            "description", "summary", "intro", "content"
+    };
+    private static final String[] CHILD_KEYS = {
+            "ops", "blocks", "children", "child", "items", "list", "nodes",
+            "paragraphs", "spans", "elements", "attrs", "models", "model",
+            "content", "contents", "data", "content_attrs", "contentAttrs",
+            "content_attr", "contentAttr", "raw_content", "rawContent"
+    };
+    private static final String[] TEXT_KEYS = {
+            "text", "content", "html", "value", "caption",
+            "title", "desc", "description"
+    };
+    private static final String[] IMAGE_KEYS = {
+            "url", "src", "original", "origin", "origin_url", "original_url",
+            "image", "image_url", "img", "img_url", "pic", "pic_url",
+            "cover", "cover_url", "thumb", "thumbnail", "large", "large_url",
+            "images", "pictures"
+    };
 
     private RichContent() {}
+
+    static List<Block> parse(JSONObject source, JSONArray fallbackImages) {
+        ParseResult result = new ParseResult();
+        if (source == null) {
+            addFallbackImages(result.blocks, result.imageUrls, fallbackImages);
+            return result.blocks;
+        }
+
+        boolean articleMode = source.optInt("use_concept_type", -1) == 0;
+        for (String key : DETAIL_BODY_KEYS) {
+            ParseResult candidate = parseDetailBody(source.opt(key), articleMode);
+            if (hasReadableBody(candidate)) {
+                addFallbackImagesIfNeeded(candidate, fallbackImages);
+                return candidate.blocks;
+            }
+            if (result.blocks.isEmpty() && candidate != null && !candidate.blocks.isEmpty()) {
+                result = candidate;
+            }
+        }
+
+        ParseResult fallbackText = new ParseResult();
+        for (String key : DETAIL_TEXT_FALLBACK_KEYS) {
+            addAny(fallbackText.blocks, fallbackText.imageUrls, source.opt(key));
+            if (readableLength(fallbackText.blocks) > 0) break;
+        }
+        if (readableLength(fallbackText.blocks) > 0) {
+            mergeBlocks(fallbackText, result);
+            addFallbackImages(fallbackText.blocks, fallbackText.imageUrls, fallbackImages);
+            return fallbackText.blocks;
+        }
+
+        addFallbackImages(result.blocks, result.imageUrls, fallbackImages);
+        return result.blocks;
+    }
+
+    private static ParseResult parseDetailBody(Object value, boolean articleMode) {
+        ParseResult result = new ParseResult();
+        if (value == null || value == JSONObject.NULL) return result;
+        if (value instanceof String) {
+            String raw = (String) value;
+            String jsonText = decodeJsonTransport(raw).trim();
+            if (jsonText.isEmpty()) return result;
+            try {
+                addDetailArray(result, new JSONArray(jsonText), articleMode);
+                return result;
+            } catch (Exception ignored) {
+            }
+            try {
+                addDetailObject(result, new JSONObject(jsonText), articleMode);
+                return result;
+            } catch (Exception ignored) {
+            }
+            if (addStructured(result.blocks, result.imageUrls, jsonText)
+                    && !result.blocks.isEmpty()) {
+                return result;
+            }
+            String text = decodeTransport(raw).trim();
+            if (text.isEmpty()) return result;
+            if (addStructured(result.blocks, result.imageUrls, text)
+                    && !result.blocks.isEmpty()) {
+                return result;
+            }
+            addArticleHtml(result.blocks, result.imageUrls, text);
+            return result;
+        }
+        if (value instanceof JSONArray) {
+            addDetailArray(result, (JSONArray) value, articleMode);
+        } else if (value instanceof JSONObject) {
+            addDetailObject(result, (JSONObject) value, articleMode);
+        }
+        return result;
+    }
+
+    private static void addDetailArray(ParseResult result, JSONArray array,
+                                       boolean articleMode) {
+        for (int i = 0; i < array.length(); i++) {
+            Object raw = array.opt(i);
+            if (raw instanceof JSONObject) {
+                addDetailObject(result, (JSONObject) raw, articleMode);
+            } else if (raw instanceof JSONArray) {
+                addDetailArray(result, (JSONArray) raw, articleMode);
+            } else if (raw instanceof String) {
+                addArticleHtml(result.blocks, result.imageUrls, (String) raw);
+            }
+        }
+    }
+
+    private static void addDetailObject(ParseResult result, JSONObject item,
+                                        boolean articleMode) {
+        String type = item.optString("type").toLowerCase(Locale.ROOT);
+        if (isImageType(type) || type.contains("video")) {
+            addImage(result.blocks, result.imageUrls, detailImage(item));
+            return;
+        }
+        String text = firstText(item);
+        if (!text.isEmpty()) {
+            addArticleHtml(result.blocks, result.imageUrls, text);
+        }
+        if (articleMode && "html".equals(type)) return;
+        Object insert = item.opt("insert");
+        if (insert != null) addInsert(result.blocks, result.imageUrls, insert);
+        for (String key : CHILD_KEYS) {
+            if (item.opt(key) instanceof String) continue;
+            Object child = item.opt(key);
+            if (child instanceof JSONObject) {
+                addDetailObject(result, (JSONObject) child, articleMode);
+            } else if (child instanceof JSONArray) {
+                addDetailArray(result, (JSONArray) child, articleMode);
+            }
+        }
+    }
+
+    private static boolean hasReadableBody(ParseResult result) {
+        return result != null && hasReadableText(result.blocks);
+    }
+
+    static boolean hasReadableText(List<Block> blocks) {
+        return readableLength(blocks) >= 4;
+    }
+
+    private static void addFallbackImagesIfNeeded(ParseResult result,
+                                                  JSONArray fallbackImages) {
+        if (imageCount(result.blocks) == 0) {
+            addFallbackImages(result.blocks, result.imageUrls, fallbackImages);
+        }
+    }
+
+    private static void mergeBlocks(ParseResult target, ParseResult extra) {
+        if (extra == null) return;
+        for (Block block : extra.blocks) {
+            if (block.image) addImage(target.blocks, target.imageUrls, block.value);
+            else addTextBlock(target, block.value);
+        }
+    }
+
+    private static void addTextBlock(ParseResult result, String value) {
+        if (value == null || value.trim().isEmpty()) return;
+        for (Block block : result.blocks) {
+            if (!block.image && value.equals(block.value)) return;
+        }
+        result.blocks.add(new Block(false, value));
+    }
+
+    private static int imageCount(List<Block> blocks) {
+        if (blocks == null) return 0;
+        int count = 0;
+        for (Block block : blocks) if (block.image) count++;
+        return count;
+    }
+
+    private static int readableLength(List<Block> blocks) {
+        if (blocks == null) return 0;
+        int length = 0;
+        for (Block block : blocks) {
+            if (!block.image) length += block.value.replaceAll("\\s+", "").length();
+        }
+        return length;
+    }
 
     static List<Block> parse(String source, JSONArray fallbackImages) {
         List<Block> blocks = new ArrayList<>();
         Set<String> imageUrls = new HashSet<>();
-        source = decodeTransport(source);
-        source = normalizeInlineEmojis(source);
-        if (!addStructured(blocks, imageUrls, source)) {
-            addHtml(blocks, imageUrls, source);
-        }
-
-        if (fallbackImages != null) {
-            for (int i = 0; i < fallbackImages.length(); i++) {
-                Object value = fallbackImages.opt(i);
-                if (value instanceof JSONObject) {
-                    JSONObject image = (JSONObject) value;
-                    addImage(blocks, imageUrls,
-                            first(image.optString("url"), image.optString("src"), image.optString("original")));
-                } else {
-                    addImage(blocks, imageUrls, fallbackImages.optString(i));
-                }
+        String jsonSource = decodeJsonTransport(source);
+        if (!addStructured(blocks, imageUrls, jsonSource)) {
+            source = decodeTransport(source);
+            source = normalizeInlineEmojis(source);
+            if (!addStructured(blocks, imageUrls, source)) {
+                addHtml(blocks, imageUrls, source);
             }
         }
+
+        addFallbackImages(blocks, imageUrls, fallbackImages);
         return blocks;
+    }
+
+    private static void addFallbackImages(List<Block> blocks, Set<String> imageUrls,
+                                          JSONArray fallbackImages) {
+        if (fallbackImages == null) return;
+        for (int i = 0; i < fallbackImages.length(); i++) {
+            Object value = fallbackImages.opt(i);
+            if (value instanceof JSONObject) {
+                addImage(blocks, imageUrls, firstImage((JSONObject) value));
+            } else {
+                addImage(blocks, imageUrls, fallbackImages.optString(i));
+            }
+        }
     }
 
     private static boolean addStructured(List<Block> blocks, Set<String> imageUrls,
@@ -90,26 +282,109 @@ final class RichContent {
 
     private static void addArray(List<Block> blocks, Set<String> imageUrls, JSONArray content) {
         for (int i = 0; i < content.length(); i++) {
-            Object raw = content.opt(i);
-            if (raw instanceof JSONObject) {
-                addObject(blocks, imageUrls, (JSONObject) raw);
-            } else if (raw instanceof String) {
-                addHtml(blocks, imageUrls, (String) raw);
-            }
+            addAny(blocks, imageUrls, content.opt(i));
         }
     }
 
     private static void addObject(List<Block> blocks, Set<String> imageUrls, JSONObject item) {
-        String type = item.optString("type");
-        if ("img".equalsIgnoreCase(type) || "image".equalsIgnoreCase(type)) {
-            addImage(blocks, imageUrls,
-                    first(item.optString("url"), item.optString("src"),
-                            item.optString("original"), item.optString("text")));
-        } else {
-            addHtml(blocks, imageUrls,
-                    first(item.optString("text"), item.optString("content"),
-                            item.optString("html")));
+        Object insert = item.opt("insert");
+        if (insert != null) {
+            addInsert(blocks, imageUrls, insert);
         }
+
+        String type = item.optString("type").toLowerCase(Locale.ROOT);
+        String image = firstImage(item);
+        if (!image.isEmpty() && (isImageType(type) || !hasReadableContent(item))) {
+            addImage(blocks, imageUrls, image);
+        }
+
+        if (!isImageType(type)) {
+            String text = firstText(item);
+            if (!text.isEmpty()) addHtml(blocks, imageUrls, text);
+        }
+
+        for (String key : CHILD_KEYS) {
+            if ("content".equals(key) && item.opt(key) instanceof String) continue;
+            addAny(blocks, imageUrls, item.opt(key));
+        }
+    }
+
+    private static void addAny(List<Block> blocks, Set<String> imageUrls, Object raw) {
+        if (raw == null || raw == JSONObject.NULL) return;
+        if (raw instanceof JSONObject) {
+            addObject(blocks, imageUrls, (JSONObject) raw);
+        } else if (raw instanceof JSONArray) {
+            addArray(blocks, imageUrls, (JSONArray) raw);
+        } else if (raw instanceof String) {
+            String value = decodeTransport((String) raw);
+            value = normalizeInlineEmojis(value);
+            if (!addStructured(blocks, imageUrls, value)) {
+                addHtml(blocks, imageUrls, value);
+            }
+        }
+    }
+
+    private static void addInsert(List<Block> blocks, Set<String> imageUrls, Object insert) {
+        if (insert instanceof String) {
+            addHtml(blocks, imageUrls, (String) insert);
+        } else if (insert instanceof JSONObject) {
+            JSONObject object = (JSONObject) insert;
+            String image = firstImage(object);
+            if (!image.isEmpty()) {
+                addImage(blocks, imageUrls, image);
+            } else {
+                addObject(blocks, imageUrls, object);
+            }
+        } else if (insert instanceof JSONArray) {
+            addArray(blocks, imageUrls, (JSONArray) insert);
+        }
+    }
+
+    private static boolean isImageType(String type) {
+        return type.contains("img") || type.contains("image")
+                || type.contains("picture") || type.contains("photo");
+    }
+
+    private static boolean hasReadableContent(JSONObject item) {
+        String text = firstText(item);
+        return text != null && text.replaceAll("\\s+", "").length() > 0;
+    }
+
+    private static String firstText(JSONObject item) {
+        for (String key : TEXT_KEYS) {
+            Object value = item.opt(key);
+            if (value instanceof String && !((String) value).isEmpty()) return (String) value;
+        }
+        return "";
+    }
+
+    private static String firstImage(JSONObject item) {
+        for (String key : IMAGE_KEYS) {
+            Object value = item.opt(key);
+            String found = imageValue(value);
+            if (!found.isEmpty()) return found;
+        }
+        return "";
+    }
+
+    private static String detailImage(JSONObject item) {
+        String image = firstImage(item);
+        if (!image.isEmpty()) return image;
+        return first(item.optString("url"), item.optString("src"),
+                item.optString("original"), item.optString("text"));
+    }
+
+    private static String imageValue(Object value) {
+        if (value instanceof String) return (String) value;
+        if (value instanceof JSONObject) return firstImage((JSONObject) value);
+        if (value instanceof JSONArray) {
+            JSONArray array = (JSONArray) value;
+            for (int i = 0; i < array.length(); i++) {
+                String found = imageValue(array.opt(i));
+                if (!found.isEmpty()) return found;
+            }
+        }
+        return "";
     }
 
     private static boolean addObjectStream(List<Block> blocks, Set<String> imageUrls,
@@ -138,10 +413,8 @@ final class RichContent {
                 if (depth == 0 && start >= 0) {
                     try {
                         JSONObject object = new JSONObject(source.substring(start, i + 1));
-                        if (!found) {
-                            String prefix = source.substring(0, start).trim();
-                            addReadableFragment(blocks, imageUrls, prefix);
-                        }
+                        String fragment = source.substring(lastEnd, start).trim();
+                        addReadableFragment(blocks, imageUrls, fragment);
                         addObject(blocks, imageUrls, object);
                         found = true;
                         lastEnd = i + 1;
@@ -168,7 +441,7 @@ final class RichContent {
     private static void addReadableFragment(List<Block> blocks, Set<String> imageUrls,
                                             String source) {
         if (source == null) return;
-        String value = source.trim();
+        String value = stripStructuredNoise(source).trim();
         if (value.isEmpty()) return;
         int marker = structuredMarker(value);
         if (marker > 0) {
@@ -234,16 +507,31 @@ final class RichContent {
     }
 
     private static void addHtml(List<Block> blocks, Set<String> imageUrls, String html) {
+        addArticleHtml(blocks, imageUrls, html);
+    }
+
+    private static void addArticleHtml(List<Block> blocks, Set<String> imageUrls,
+                                       String html) {
         if (html == null || html.isEmpty()) return;
         html = normalizeInlineEmojis(html);
         Matcher matcher = IMAGE.matcher(html);
         int start = 0;
         while (matcher.find()) {
-            addText(blocks, html.substring(start, matcher.start()));
+            addArticleText(blocks, html.substring(start, matcher.start()));
             addImage(blocks, imageUrls, decodeHtml(matcher.group(2)));
             start = matcher.end();
         }
-        addText(blocks, html.substring(start));
+        addArticleText(blocks, html.substring(start));
+    }
+
+    private static void addArticleText(List<Block> blocks, String html) {
+        if (html == null || html.isEmpty()) return;
+        String value = html
+                .replaceAll("(?is)<br\\s*/?>", "\n")
+                .replaceAll("(?is)<li\\b[^>]*>", "\n- ")
+                .replaceAll("(?is)</(?:p|div|section|article|h[1-6]|blockquote|li|ul|ol|figure|figcaption)>", "\n")
+                .replaceAll("(?is)<(?:p|div|section|article|h[1-6]|blockquote|ul|ol|figure|figcaption)\\b[^>]*>", "\n");
+        addText(blocks, value);
     }
 
     private static String normalizeInlineEmojis(String html) {
@@ -363,7 +651,56 @@ final class RichContent {
                 .replaceAll("[ \\t]+\\n", "\n")
                 .replaceAll("\\n{3,}", "\n\n")
                 .trim();
-        if (!value.isEmpty()) blocks.add(new Block(false, value));
+        value = stripStructuredNoise(value);
+        if (isStructuredNoise(value)) return;
+        if (value.isEmpty()) return;
+        for (Block block : blocks) {
+            if (!block.image && value.equals(block.value)) return;
+        }
+        blocks.add(new Block(false, value));
+    }
+
+    private static String stripStructuredNoise(String source) {
+        String value = source == null ? "" : source.trim();
+        if (value.isEmpty()) return "";
+        int marker = noiseMarker(value);
+        if (marker == 0) return "";
+        if (marker > 0) {
+            value = value.substring(0, marker).trim();
+            value = value.replaceAll("[\\s,，;；:：\"'“”]+$", "").trim();
+        }
+        return value;
+    }
+
+    private static int noiseMarker(String value) {
+        int marker = -1;
+        String[] candidates = {
+                "\",\"type\"", "\"type\":", "\"url\":", "\"height\":",
+                "\"width\":", "{\"height\"", "{\"width\"", "{\"url\"",
+                "{\"type\"", "},{", "[{", "imageMogr2/", "imageMogr/"
+        };
+        for (String candidate : candidates) {
+            int index = value.indexOf(candidate);
+            if (index >= 0 && (marker < 0 || index < marker)) marker = index;
+        }
+        return marker;
+    }
+
+    private static boolean isStructuredNoise(String value) {
+        if (value == null) return true;
+        String clean = value.trim();
+        if (clean.isEmpty()) return true;
+        String compact = clean.replaceAll("\\s+", "");
+        return compact.length() <= 1
+                || compact.startsWith("{") || compact.startsWith("[")
+                || compact.startsWith("},") || compact.startsWith("\",")
+                || compact.startsWith("imageMogr") || compact.startsWith("?imageMogr")
+                || compact.contains("\"type\":\"img\"")
+                || compact.contains("\"url\":\"")
+                || compact.contains("\"height\":\"")
+                || compact.contains("\"width\":\"")
+                || (compact.startsWith("https://") && compact.contains("imgheybox")
+                && compact.contains("/thumb."));
     }
 
     private static void addImage(List<Block> blocks, Set<String> imageUrls, String url) {
@@ -413,6 +750,31 @@ final class RichContent {
         return decoded;
     }
 
+    private static String decodeJsonTransport(String value) {
+        if (value == null || value.isEmpty()) return "";
+        String decoded = value
+                .replace("\\u003c", "<")
+                .replace("\\u003C", "<")
+                .replace("\\u003e", ">")
+                .replace("\\u003E", ">")
+                .replace("\\u0026", "&")
+                .replace("\\/", "/");
+        for (int i = 0; i < 2; i++) {
+            String lower = decoded.toLowerCase(Locale.ROOT);
+            if (!lower.contains("%3c") && !lower.contains("%5b")
+                    && !lower.contains("%7b")) break;
+            try {
+                String next = URLDecoder.decode(decoded.replace("+", "%2B"),
+                        "UTF-8");
+                if (next.equals(decoded)) break;
+                decoded = next;
+            } catch (Exception ignored) {
+                break;
+            }
+        }
+        return decoded;
+    }
+
     private static String first(String... values) {
         for (String value : values) {
             if (value != null && !value.isEmpty()) return value;
@@ -432,5 +794,10 @@ final class RichContent {
         boolean hasUrl() {
             return !light.isEmpty() || !dark.isEmpty();
         }
+    }
+
+    private static final class ParseResult {
+        final List<Block> blocks = new ArrayList<>();
+        final Set<String> imageUrls = new HashSet<>();
     }
 }
