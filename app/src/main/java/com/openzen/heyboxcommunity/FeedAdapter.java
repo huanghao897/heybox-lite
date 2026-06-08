@@ -21,9 +21,14 @@ final class FeedAdapter extends BaseAdapter {
         void onOpen(FeedItem item);
     }
 
+    interface LikeListener {
+        void onLike(FeedItem item);
+    }
+
     private final Context context;
     private final List<FeedItem> items;
     private final Listener listener;
+    private final LikeListener likeListener;
     private final boolean noImage;
     private final float uiScale;
     private final float textScale;
@@ -37,6 +42,14 @@ final class FeedAdapter extends BaseAdapter {
     FeedAdapter(Context context, List<FeedItem> items, boolean noImage,
                 float uiScale, float textScale, boolean darkMode,
                 int primaryColor, int secondaryColor, Listener listener) {
+        this(context, items, noImage, uiScale, textScale, darkMode,
+                primaryColor, secondaryColor, listener, null);
+    }
+
+    FeedAdapter(Context context, List<FeedItem> items, boolean noImage,
+                float uiScale, float textScale, boolean darkMode,
+                int primaryColor, int secondaryColor, Listener listener,
+                LikeListener likeListener) {
         this.context = context;
         this.items = items;
         this.noImage = noImage;
@@ -46,6 +59,7 @@ final class FeedAdapter extends BaseAdapter {
         this.primaryColor = primaryColor;
         this.secondaryColor = secondaryColor;
         this.listener = listener;
+        this.likeListener = likeListener;
         textColor = darkMode ? Color.rgb(241, 243, 245) : Color.rgb(28, 30, 33);
         mutedColor = darkMode ? Color.rgb(157, 163, 169) : Color.rgb(101, 107, 113);
         cardColor = blend(darkMode ? Color.rgb(29, 31, 33) : Color.WHITE,
@@ -145,25 +159,50 @@ final class FeedAdapter extends BaseAdapter {
         EmojiRenderer.set(holder.description, description, darkMode);
         holder.description.setVisibility(description.isEmpty() ? View.GONE : View.VISIBLE);
         holder.author.setText(item.author.isEmpty() ? "小黑盒社区" : item.author);
-        holder.likes.setText(String.valueOf(item.likes));
-        setStatIcon(holder.likes, R.drawable.ic_thumb_up,
-                item.liked ? primaryColor : mutedColor, item.liked ? 16 : 14);
-        holder.likes.setTextColor(item.liked ? primaryColor : mutedColor);
-        holder.comments.setText(String.valueOf(item.comments));
+        updateStatView(holder.likes, item.likes, item.liked, R.drawable.ic_thumb_up);
+        updateStatView(holder.comments, item.comments, false, R.drawable.ic_comment);
         boolean showImage = !noImage && !item.image.isEmpty();
         holder.cover.setVisibility(showImage ? View.VISIBLE : View.GONE);
-        if (showImage) ImageLoader.into(holder.cover, item.image, 320);
+        if (showImage) {
+            ImageLoader.into(holder.cover, item.image, 320);
+        } else {
+            ImageLoader.cancel(holder.cover);
+            holder.cover.setImageDrawable(null);
+        }
         View.OnClickListener open = view -> listener.onOpen(item);
         reusable.setOnClickListener(open);
         holder.card.setOnClickListener(open);
+        holder.likes.setOnClickListener(view -> {
+            if (likeListener == null) listener.onOpen(item);
+            else {
+                likeListener.onLike(item);
+                notifyDataSetChanged();
+            }
+        });
         return reusable;
     }
 
     private TextView stat(int icon) {
         TextView view = label(10, mutedColor);
         view.setGravity(Gravity.CENTER);
+        view.setPadding(dp(4), 0, dp(4), 0);
         setStatIcon(view, icon, mutedColor, 14);
         return view;
+    }
+
+    private void updateStatView(TextView view, int count, boolean active, int icon) {
+        int bg = active ? activeStatBackground() : Color.TRANSPARENT;
+        int fg = active ? contrast(bg) : mutedColor;
+        view.setText(String.valueOf(Math.max(0, count)));
+        view.setTextColor(fg);
+        GradientDrawable drawable = round(bg, 8);
+        drawable.setStroke(dp(1), active ? blend(bg, fg, 0.24f) : Color.TRANSPARENT);
+        Compat.setBackground(view, drawable);
+        setStatIcon(view, icon, fg, active ? 16 : 14);
+    }
+
+    private int activeStatBackground() {
+        return darkMode ? blend(primaryColor, Color.WHITE, 0.10f) : primaryColor;
     }
 
     private void setStatIcon(TextView view, int icon, int color, int size) {

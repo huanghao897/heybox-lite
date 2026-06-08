@@ -9,7 +9,6 @@ import android.view.View;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -22,7 +21,7 @@ public final class ImageViewerActivity extends Activity {
 
     private FrameLayout root;
     private ZoomImageView image;
-    private ProgressBar progress;
+    private LoadingSpinnerView progress;
     private TextView original;
     private String url;
     private boolean closing;
@@ -64,8 +63,8 @@ public final class ImageViewerActivity extends Activity {
         controlsParams.bottomMargin = dp(12);
         root.addView(controls, controlsParams);
 
-        progress = new ProgressBar(this);
-        Compat.tint(progress, Color.argb(210, 235, 238, 241));
+        progress = new LoadingSpinnerView(this);
+        progress.setColor(Color.argb(210, 235, 238, 241));
         root.addView(progress, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
         setContentView(root);
         prepareEnterAnimation();
@@ -90,6 +89,11 @@ public final class ImageViewerActivity extends Activity {
         progress.setVisibility(View.VISIBLE);
         ImageLoader.load(url, previewTarget(), bitmap -> {
             if (destroyed || isFinishing()) return;
+            if (bitmap == null) {
+                progress.setVisibility(View.GONE);
+                Toast.makeText(this, "图片加载失败", Toast.LENGTH_SHORT).show();
+                return;
+            }
             image.animate().cancel();
             image.setAlpha(0f);
             image.setScaleX(0.985f);
@@ -112,6 +116,13 @@ public final class ImageViewerActivity extends Activity {
         progress.setVisibility(View.VISIBLE);
         ImageLoader.loadOriginal(url, 2400, bitmap -> {
             if (destroyed || isFinishing()) return;
+            if (bitmap == null) {
+                progress.setVisibility(View.GONE);
+                original.setEnabled(true);
+                original.setText("重试原图");
+                Toast.makeText(this, "原图加载失败", Toast.LENGTH_SHORT).show();
+                return;
+            }
             image.animate().cancel();
             image.setAlpha(0.72f);
             image.setImageBitmap(bitmap);

@@ -9,13 +9,14 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
@@ -26,7 +27,6 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -47,6 +47,14 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class MainActivity extends Activity {
+    private interface SavedListFallback {
+        boolean onFallback(String reason);
+    }
+
+    private interface WriteRequest {
+        void start(ApiClient.Callback callback);
+    }
+
     private static final int REPLY_PREVIEW_COUNT = 2;
     private static final int REPLY_PAGE_SIZE = 5;
     private static final String[] THEME_NAMES = {
@@ -61,6 +69,14 @@ public final class MainActivity extends Activity {
             {0xFF5D636A, 0xFFAEB4BA}, {0xFF173F76, 0xFF5D8BC4},
             {0xFF171717, 0xFFD0A83E}, {0xFF318B73, 0xFF88D8BF}
     };
+    private static final String TITLE_FAVORITES = "\u6211\u7684\u6536\u85cf";
+    private static final String MSG_OFFLINE_CACHE = "\u5df2\u663e\u793a\u79bb\u7ebf\u7f13\u5b58";
+    private static final String MSG_EMPTY_CONTENT = "\u8fd9\u91cc\u6682\u65f6\u6ca1\u6709\u5185\u5bb9";
+    private static final String MSG_FAVORITES_UNAVAILABLE =
+            "\u6211\u7684\u6536\u85cf\u6682\u4e0d\u53ef\u7528\n"
+                    + "\u5c0f\u9ed1\u76d2\u63a5\u53e3\u672a\u8fd4\u56de\u53ef\u8bbf\u95ee\u7684\u6536\u85cf\u5939\uff0c"
+                    + "\u8fd9\u901a\u5e38\u662f\u8d26\u53f7\u6743\u9650\u6216\u5f53\u524d\u7f51\u9875\u63a5\u53e3\u9650\u5236\u3002\n"
+                    + "\u5df2\u4fdd\u7559\u73b0\u6709\u7f13\u5b58\uff0c\u53ef\u7a0d\u540e\u518d\u8bd5\u3002";
 
     private int BG;
     private int PANEL;
@@ -70,9 +86,15 @@ public final class MainActivity extends Activity {
     private int SECONDARY;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable qrPollTask = new Runnable() {
+        @Override public void run() {
+            pollQr();
+        }
+    };
     private final List<FeedItem> feed = new ArrayList<>();
     private SessionStore session;
     private ApiClient api;
+    private WriteTokenProvider writeTokenProvider;
     private FrameLayout content;
     private LinearLayout bottom;
     private TextView title;
@@ -80,17 +102,29 @@ public final class MainActivity extends Activity {
     private TextView action;
     private FeedAdapter feedAdapter;
     private ListView feedListView;
-    private View feedRefreshHeader;
-    private TextView feedRefreshText;
+    private ListView cachedFeedListView;
+    private TextView feedFooter;
+    private ScrollView detailScroll;
+    private LocalCache localCache;
+    private final Map<View, Integer> searchBarHeights = new HashMap<>();
+    private final Map<View, Boolean> searchBarStates = new HashMap<>();
     private String screen = "feed";
     private String qrKey;
     private boolean pollingQr;
-    private boolean feedLoading;
+    private boolean feedLoadingMore;
+    private boolean feedRefreshing;
+    private boolean feedNoMore;
+    private boolean feedLoadMoreFailed;
     private int feedOffset;
+    private int feedRequestSerial;
+    private int feedResetSerial;
     private int feedFirstVisible;
     private int feedFirstTop;
     private String detailReturn = "feed";
     private String currentLinkId = "";
+    private String currentLinkHsrc = "";
+    private String currentAuthCode = "";
+    private FeedItem currentDetailItem;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -107,10 +141,12 @@ public final class MainActivity extends Activity {
             return;
         }
         session = new SessionStore(this);
+        localCache = new LocalCache(this);
         applyPalette();
         Compat.colorSystemBars(getWindow(), BG);
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
         api = new ApiClient(session);
+        writeTokenProvider = new WriteTokenProvider(this, session, api);
         buildShell();
         if (session.isLoggedIn()) {
             EmojiStore.load(api, () -> {
@@ -128,6 +164,10 @@ public final class MainActivity extends Activity {
         UpdateChecker.check(appVersion(), new UpdateChecker.Callback() {
             @Override public void onResult(UpdateChecker.Result result) {
                 if (!result.updateAvailable || isFinishing()) return;
+                if (result.title != null || result.notes != null) {
+                    showUpdateDialog(result);
+                    return;
+                }
                 new AlertDialog.Builder(MainActivity.this)
                         .setTitle("发现新版本 " + result.version)
                         .setMessage("heybox Lite 有新版本可用，是否前往下载？")
@@ -142,6 +182,35 @@ public final class MainActivity extends Activity {
                 // 启动检查失败时保持安静，避免网络不稳定影响正常使用。
             }
         });
+    }
+
+    private void showUpdateDialog(UpdateChecker.Result result) {
+        String releaseTitle = TextUtils.isEmpty(result.title) ? "" : result.title.trim();
+        String notes = TextUtils.isEmpty(result.notes)
+                ? "暂无更新内容说明。"
+                : limitUpdateNotes(result.notes.trim());
+        StringBuilder message = new StringBuilder();
+        message.append("当前版本：").append(appVersion()).append('\n');
+        message.append("最新版本：").append(result.version);
+        if (!TextUtils.isEmpty(releaseTitle)) {
+            message.append('\n').append("发布标题：").append(releaseTitle);
+        }
+        message.append("\n\n更新内容：\n").append(notes);
+
+        String target = TextUtils.isEmpty(result.downloadUrl)
+                ? result.releaseUrl : result.downloadUrl;
+        new AlertDialog.Builder(this)
+                .setTitle("发现新版本 " + result.version)
+                .setMessage(message.toString())
+                .setNegativeButton("稍后", null)
+                .setPositiveButton("下载", (dialog, which) -> openUpdateUrl(target))
+                .show();
+    }
+
+    private String limitUpdateNotes(String notes) {
+        int max = 1800;
+        if (notes.length() <= max) return notes;
+        return notes.substring(0, max) + "\n\n内容较长，完整更新日志请打开 GitHub 发布页查看。";
     }
 
     private void buildShell() {
@@ -234,13 +303,16 @@ public final class MainActivity extends Activity {
         screen = key;
         bottom.setVisibility(View.VISIBLE);
         leading.setVisibility(View.INVISIBLE);
+        int activeColor = TEXT;
+        int inactiveColor = MUTED;
         for (int i = 0; i < bottom.getChildCount(); i++) {
             TextView item = (TextView) bottom.getChildAt(i);
             boolean active = key.equals(item.getTag());
-            item.setTextColor(active ? PRIMARY : MUTED);
+            item.setAlpha(active ? 1f : 0.62f);
+            item.setTextColor(active ? activeColor : inactiveColor);
             item.setTypeface(Typeface.DEFAULT, active ? Typeface.BOLD : Typeface.NORMAL);
             Drawable icon = item.getCompoundDrawables()[1];
-            Compat.tintDrawable(icon, active ? PRIMARY : MUTED);
+            Compat.tintDrawable(icon, active ? activeColor : inactiveColor);
         }
     }
 
@@ -310,7 +382,7 @@ public final class MainActivity extends Activity {
                     if (image != null) image.setImageBitmap(QrCode.create(url, size));
                     setQrStatus("等待扫码", SECONDARY);
                     pollingQr = true;
-                    handler.postDelayed(MainActivity.this::pollQr, 900);
+                    handler.postDelayed(qrPollTask, 900);
                 } catch (Exception error) {
                     setQrStatus("二维码生成失败", PRIMARY);
                 }
@@ -347,13 +419,13 @@ public final class MainActivity extends Activity {
                     setQrStatus("登录已取消，请重新获取", PRIMARY);
                     return;
                 } else setQrStatus("等待扫码", SECONDARY);
-                handler.postDelayed(MainActivity.this::pollQr, 1300);
+                handler.postDelayed(qrPollTask, 1300);
             }
 
             @Override public void onError(String message) {
                 if (!pollingQr) return;
                 setQrStatus("网络波动，正在重试", MUTED);
-                handler.postDelayed(MainActivity.this::pollQr, 2200);
+                handler.postDelayed(qrPollTask, 2200);
             }
         });
     }
@@ -368,7 +440,7 @@ public final class MainActivity extends Activity {
 
     private void stopQrPolling() {
         pollingQr = false;
-        handler.removeCallbacksAndMessages(null);
+        handler.removeCallbacks(qrPollTask);
     }
 
     private void showFeed() {
@@ -383,116 +455,170 @@ public final class MainActivity extends Activity {
         action.setVisibility(View.VISIBLE);
         action.setOnClickListener(view -> loadFeed(true));
         content.removeAllViews();
+        if (cachedFeedListView != null && feedListView == cachedFeedListView
+                && cachedFeedListView.getParent() == null) {
+            content.addView(cachedFeedListView, match());
+            restoreFeedScroll();
+            updateFeedFooter();
+            return;
+        }
+        if (feed.isEmpty()) {
+            List<FeedItem> cached = filterItems(localCache.feedItems());
+            if (!cached.isEmpty()) {
+                feed.addAll(cached);
+                feedOffset = feed.size();
+                localCache.log("feed restored from offline cache: " + feed.size());
+            }
+        }
 
         ListView list = new ListView(this);
         feedListView = list;
+        cachedFeedListView = list;
         list.setBackgroundColor(BG);
         list.setDivider(new ColorDrawable(Color.TRANSPARENT));
         list.setDividerHeight(dp(2));
+        list.setOverScrollMode(View.OVER_SCROLL_NEVER);
         list.setSelector(new ColorDrawable(session.darkMode()
                 ? Color.rgb(50, 50, 50) : Color.rgb(225, 228, 232)));
-        feedRefreshHeader = createFeedRefreshHeader();
-        list.addHeaderView(feedRefreshHeader, null, false);
+        feedFooter = feedFooterView();
+        list.addFooterView(feedFooter, null, false);
         feedAdapter = new FeedAdapter(this, feed, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
-                session.darkMode(), PRIMARY, SECONDARY, this::showDetail);
+                session.darkMode(), PRIMARY, SECONDARY, this::showDetail, this::toggleFeedLike);
         list.setAdapter(feedAdapter);
-        final float[] pullStart = {-1f};
-        final boolean[] pulling = {false};
-        list.setOnTouchListener((view, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN
-                    && atFeedTop(list)) {
-                pullStart[0] = event.getY();
-                pulling[0] = false;
-            } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE && pullStart[0] >= 0) {
-                float distance = event.getY() - pullStart[0];
-                if (distance > dp(6) && atFeedTop(list)) {
-                    pulling[0] = true;
-                    int height = Math.min(dp(74), Math.round(distance * 0.48f));
-                    setFeedRefreshHeader(height,
-                            height >= dp(48) ? "松开刷新" : "下拉刷新");
-                    return true;
-                }
-            } else if (event.getActionMasked() == MotionEvent.ACTION_UP) {
-                boolean refresh = pulling[0] && refreshHeaderHeight() >= dp(48);
-                pullStart[0] = -1f;
-                pulling[0] = false;
-                if (refresh) {
-                    setFeedRefreshHeader(dp(46), "正在刷新");
-                    loadFeed(true);
-                } else {
-                    setFeedRefreshHeader(0, "下拉刷新");
-                }
-                return refresh;
-            } else if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-                pullStart[0] = -1f;
-                pulling[0] = false;
-                setFeedRefreshHeader(0, "下拉刷新");
-            }
-            return false;
-        });
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override public void onScrollStateChanged(AbsListView view, int state) {}
             @Override public void onScroll(AbsListView view, int first, int visible, int total) {
-                if (total > 0 && first + visible >= total - 2) loadFeed(false);
+                if (total > 0 && first + visible >= total - 2
+                        && !feedNoMore && !feedLoadMoreFailed) loadFeed(false);
             }
         });
+        updateFeedFooter();
         content.addView(list, match());
         restoreFeedScroll();
         if (feed.isEmpty()) loadFeed(true);
     }
 
-    private void loadFeed(boolean reset) {
-        if (feedLoading) return;
-        feedLoading = true;
+    private TextView feedFooterView() {
+        TextView footer = text("", 12, MUTED);
+        footer.setGravity(Gravity.CENTER);
+        footer.setPadding(dp(8), dp(10), dp(8), dp(16));
+        footer.setOnClickListener(view -> {
+            if (feedLoadMoreFailed) loadFeed(false);
+        });
+        return footer;
+    }
+
+    private void updateFeedFooter() {
+        if (feedFooter == null) return;
+        feedFooter.setVisibility(feed.isEmpty() && !feedLoadingMore
+                && !feedLoadMoreFailed && !feedNoMore ? View.GONE : View.VISIBLE);
+        feedFooter.setEnabled(feedLoadMoreFailed);
+        if (feedLoadingMore) {
+            feedFooter.setText("正在加载更多...");
+            feedFooter.setTextColor(MUTED);
+        } else if (feedLoadMoreFailed) {
+            feedFooter.setText("加载失败，点按重试");
+            feedFooter.setTextColor(SECONDARY);
+        } else if (feedNoMore) {
+            feedFooter.setText("没有更多了");
+            feedFooter.setTextColor(MUTED);
+        } else {
+            feedFooter.setText("上滑加载更多");
+            feedFooter.setTextColor(MUTED);
+        }
+    }
+
+    private boolean loadFeed(boolean reset) {
+        if (reset) {
+            if (feedRefreshing) return false;
+            feedRefreshing = true;
+            feedNoMore = false;
+            feedLoadMoreFailed = false;
+        } else {
+            if (feedNoMore) return false;
+            if (feedRefreshing || feedLoadingMore) return false;
+            feedLoadingMore = true;
+            feedLoadMoreFailed = false;
+        }
+        updateFeedFooter();
+        final int requestSerial = ++feedRequestSerial;
+        if (reset) feedResetSerial = requestSerial;
+        final int previousOffset = feedOffset;
         final List<FeedItem> previous = reset ? new ArrayList<>(feed) : null;
         if (reset) {
             feedOffset = 0;
+            setFeedRefreshBusy(true);
             if (feed.isEmpty()) showLoading();
-            else showRefreshStatus("正在刷新");
         }
         Map<String, String> params = new HashMap<>();
         params.put("offset", String.valueOf(feedOffset));
         params.put("pull", reset ? "1" : "0");
         api.get(EndpointProvider.feeds(), params, new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
-                feedLoading = false;
+                if (reset) feedRefreshing = false;
+                else feedLoadingMore = false;
+                if (!reset && requestSerial < feedResetSerial) return;
                 hideLoading();
                 JSONObject result = body.optJSONObject("result");
                 JSONArray links = result == null ? null : result.optJSONArray("links");
                 List<FeedItem> fresh = new ArrayList<>();
-                int added = 0;
+                int returned = 0;
                 if (links != null) {
                     for (int i = 0; i < links.length(); i++) {
                         JSONObject item = links.optJSONObject(i);
                         if (item != null) {
-                            fresh.add(FeedItem.from(item));
-                            added++;
+                            FeedItem parsed = FeedItem.from(item);
+                            if (!isBlocked(parsed)) fresh.add(parsed);
+                            returned++;
                         }
                     }
                 }
                 if (reset && fresh.isEmpty() && previous != null && !previous.isEmpty()) {
+                    feedOffset = Math.max(previousOffset, feed.size());
                     toast("没有获取到新内容，已保留原列表");
+                } else if (!reset && returned == 0) {
+                    feedNoMore = true;
                 } else {
                     if (reset) feed.clear();
-                    feed.addAll(fresh);
+                    appendUnique(feed, fresh);
+                    localCache.saveFeed(feed);
                 }
-                feedOffset += Math.max(added, 30);
-                hideRefreshStatus();
+                if (!reset && returned > 0 && fresh.isEmpty()) {
+                    toast("本页内容已被关键词过滤");
+                }
+                if (returned > 0) feedOffset += Math.max(returned, 30);
+                setFeedRefreshBusy(false);
+                updateFeedFooter();
                 if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
                 if (feed.isEmpty()) showMessage("暂时没有获取到社区内容");
             }
 
             @Override public void onError(String message) {
-                feedLoading = false;
+                if (reset) feedRefreshing = false;
+                else feedLoadingMore = false;
+                if (!reset && requestSerial < feedResetSerial) return;
                 hideLoading();
-                hideRefreshStatus();
+                setFeedRefreshBusy(false);
+                localCache.log((reset ? "feed refresh failed: " : "feed load more failed: ") + message);
                 if (reset && previous != null && feed.isEmpty()) feed.addAll(previous);
+                if (reset && !feed.isEmpty()) feedOffset = Math.max(previousOffset, feed.size());
+                if (reset && feed.isEmpty()) {
+                    List<FeedItem> cached = filterItems(localCache.feedItems());
+                    if (!cached.isEmpty()) {
+                        feed.addAll(cached);
+                        toast("已显示离线缓存");
+                    }
+                } else if (!reset) {
+                    feedLoadMoreFailed = true;
+                }
+                updateFeedFooter();
                 if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
                 if (feed.isEmpty()) showMessage("加载失败\n" + message);
                 else toast("刷新失败，已保留原内容");
             }
         });
+        return true;
     }
 
     private void showSearch() {
@@ -506,8 +632,8 @@ public final class MainActivity extends Activity {
         action.setVisibility(View.INVISIBLE);
         content.removeAllViews();
 
-        LinearLayout page = vertical(BG);
-        page.setPadding(dp(7), dp(6), dp(7), dp(4));
+        FrameLayout page = new FrameLayout(this);
+        page.setBackgroundColor(BG);
         LinearLayout searchBar = new LinearLayout(this);
         searchBar.setGravity(Gravity.CENTER_VERTICAL);
         EditText input = new EditText(this);
@@ -522,16 +648,26 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams submitParams = new LinearLayout.LayoutParams(dp(82), dp(38));
         submitParams.leftMargin = dp(5);
         searchBar.addView(submit, submitParams);
-        page.addView(searchBar);
 
         LinearLayout recent = vertical(BG);
-        page.addView(recent);
         FrameLayout results = new FrameLayout(this);
         results.setTag(searchBar);
-        page.addView(results, new LinearLayout.LayoutParams(-1, 0, 1));
+        page.addView(results, match());
         TextView hint = text("输入关键词搜索社区帖子", 13, MUTED);
         hint.setGravity(Gravity.CENTER);
         results.addView(hint, match());
+        FrameLayout.LayoutParams recentParams = new FrameLayout.LayoutParams(-1, -2);
+        recentParams.leftMargin = dp(7);
+        recentParams.rightMargin = dp(7);
+        recentParams.topMargin = dp(54);
+        page.addView(recent, recentParams);
+        FrameLayout.LayoutParams searchParams =
+                new FrameLayout.LayoutParams(-1, dp(42), Gravity.TOP);
+        searchParams.leftMargin = dp(7);
+        searchParams.rightMargin = dp(7);
+        searchParams.topMargin = dp(6);
+        page.addView(searchBar, searchParams);
+        prepareSearchBar(searchBar, dp(42));
 
         Runnable search = () -> {
             String keyword = input.getText().toString().trim();
@@ -596,8 +732,8 @@ public final class MainActivity extends Activity {
         results.setTag(searchBar);
         results.removeAllViews();
         setSearchBarVisible(searchBar, true);
-        ProgressBar progress = new ProgressBar(this);
-        Compat.tint(progress, PRIMARY);
+        LoadingSpinnerView progress = new LoadingSpinnerView(this);
+        progress.setColor(PRIMARY);
         results.addView(progress,
                 new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER));
         Map<String, String> params = new HashMap<>();
@@ -611,12 +747,14 @@ public final class MainActivity extends Activity {
                 if (!"search".equals(screen)) return;
                 List<FeedItem> items = new ArrayList<>();
                 collectFeedItems(body, items, new HashMap<>(), 0);
+                items = filterItems(items);
                 showSearchResults(results, items, searchBar,
                         items.isEmpty() ? "没有找到相关帖子" : "");
             }
 
             @Override public void onError(String message) {
                 if (!"search".equals(screen)) return;
+                localCache.log("search failed: " + message);
                 setSearchBarVisible(searchBar, true);
                 results.removeAllViews();
                 TextView error = text("搜索失败\n" + message, 13, MUTED);
@@ -638,37 +776,73 @@ public final class MainActivity extends Activity {
         }
         ListView list = feedList(items);
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
-            @Override public void onScrollStateChanged(AbsListView view, int scrollState) {}
+            @Override public void onScrollStateChanged(AbsListView view, int scrollState) {
+                setSearchBarVisible(searchBar, scrollState == SCROLL_STATE_IDLE);
+            }
 
             @Override public void onScroll(AbsListView view, int firstVisibleItem,
-                                           int visibleItemCount, int totalItemCount) {
-                View first = view.getChildAt(0);
-                boolean nearTop = firstVisibleItem == 0
-                        && (first == null || first.getTop() >= -dp(10));
-                setSearchBarVisible(searchBar, nearTop);
-            }
+                                           int visibleItemCount, int totalItemCount) {}
         });
         parent.addView(list, match());
     }
 
     private void setSearchBarVisible(View searchBar, boolean visible) {
         if (searchBar == null) return;
-        Object state = searchBar.getTag();
-        if (state instanceof Boolean && ((Boolean) state) == visible) return;
-        searchBar.setTag(visible);
+        Boolean state = searchBarStates.get(searchBar);
+        if (state != null && state == visible) return;
+        searchBarStates.put(searchBar, visible);
         searchBar.animate().cancel();
         if (visible) {
             searchBar.setVisibility(View.VISIBLE);
             searchBar.setEnabled(true);
-            searchBar.animate().alpha(1f).translationY(0f).setDuration(150).start();
+            setChildrenEnabled(searchBar, true);
+            searchBar.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(120)
+                    .start();
         } else {
+            clearFocusTree(searchBar);
             searchBar.setEnabled(false);
-            searchBar.animate().alpha(0f).translationY(-dp(12)).setDuration(150)
+            setChildrenEnabled(searchBar, false);
+            searchBar.animate()
+                    .alpha(0f)
+                    .translationY(-dp(12))
+                    .setDuration(110)
                     .start();
             handler.postDelayed(() -> {
-                Object current = searchBar.getTag();
-                if (Boolean.FALSE.equals(current)) searchBar.setVisibility(View.INVISIBLE);
-            }, 155);
+                Boolean current = searchBarStates.get(searchBar);
+                if (current != null && !current) searchBar.setVisibility(View.GONE);
+            }, 120);
+        }
+    }
+
+    private void prepareSearchBar(View searchBar, int height) {
+        searchBarHeights.put(searchBar, height);
+        searchBarStates.put(searchBar, true);
+        searchBar.setVisibility(View.VISIBLE);
+        searchBar.setAlpha(1f);
+        searchBar.setTranslationY(0f);
+    }
+
+    private void clearFocusTree(View view) {
+        view.clearFocus();
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                clearFocusTree(group.getChildAt(i));
+            }
+        }
+    }
+
+    private void setChildrenEnabled(View view, boolean enabled) {
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                child.setEnabled(enabled);
+                setChildrenEnabled(child, enabled);
+            }
         }
     }
 
@@ -700,67 +874,46 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void showRefreshStatus(String value) {
-        if (feedRefreshHeader != null && "feed".equals(screen)) {
-            setFeedRefreshHeader(dp(46), value);
-            return;
+    private void appendUnique(List<FeedItem> target, List<FeedItem> incoming) {
+        Map<String, Boolean> ids = new HashMap<>();
+        for (FeedItem item : target) ids.put(item.id, true);
+        for (FeedItem item : incoming) {
+            if (item == null || ids.containsKey(item.id)) continue;
+            target.add(item);
+            ids.put(item.id, true);
         }
-        hideRefreshStatus();
-        TextView status = text(value, 11, contrast(SECONDARY));
-        status.setTag("refresh_status");
-        status.setGravity(Gravity.CENTER);
-        Compat.setBackground(status, round(SECONDARY, 14));
-        FrameLayout.LayoutParams params =
-                new FrameLayout.LayoutParams(dp(88), dp(28), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        params.topMargin = dp(5);
-        content.addView(status, params);
     }
 
-    private void hideRefreshStatus() {
-        if (feedRefreshHeader != null && "feed".equals(screen)) {
-            setFeedRefreshHeader(0, "下拉刷新");
+    private List<FeedItem> filterItems(List<FeedItem> items) {
+        List<FeedItem> filtered = new ArrayList<>();
+        if (items == null) return filtered;
+        for (FeedItem item : items) {
+            if (!isBlocked(item)) filtered.add(item);
         }
-        View status = content.findViewWithTag("refresh_status");
-        if (status != null) content.removeView(status);
+        return filtered;
     }
 
-    private View createFeedRefreshHeader() {
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER);
-        header.setBackgroundColor(BG);
-        feedRefreshText = text("下拉刷新", 11, MUTED);
-        feedRefreshText.setGravity(Gravity.CENTER);
-        Compat.setBackground(feedRefreshText,
-                round(blend(PANEL, SECONDARY, session.darkMode() ? 0.22f : 0.12f), 18));
-        header.addView(feedRefreshText, new LinearLayout.LayoutParams(dp(96), dp(32)));
-        header.setLayoutParams(new AbsListView.LayoutParams(-1, 0));
-        return header;
+    private boolean isBlocked(FeedItem item) {
+        if (item == null) return false;
+        List<String> keywords = session.blockKeywordList();
+        if (keywords.isEmpty()) return false;
+        String haystack = (item.title + "\n" + item.description + "\n" + item.author)
+                .toLowerCase(Locale.US);
+        for (String keyword : keywords) {
+            if (!keyword.isEmpty() && haystack.contains(keyword)) return true;
+        }
+        return false;
     }
 
-    private boolean atFeedTop(ListView list) {
-        if (list.getFirstVisiblePosition() > 0) return false;
-        View first = list.getChildAt(0);
-        return first == null || first.getTop() >= 0;
-    }
-
-    private int refreshHeaderHeight() {
-        ViewGroup.LayoutParams params = feedRefreshHeader == null ? null
-                : feedRefreshHeader.getLayoutParams();
-        return params == null ? 0 : params.height;
-    }
-
-    private void setFeedRefreshHeader(int height, String label) {
-        if (feedRefreshHeader == null) return;
-        ViewGroup.LayoutParams params = feedRefreshHeader.getLayoutParams();
-        if (params == null) params = new AbsListView.LayoutParams(-1, height);
-        params.height = Math.max(0, height);
-        feedRefreshHeader.setLayoutParams(params);
-        if (feedRefreshText != null) feedRefreshText.setText(label);
+    private void setFeedRefreshBusy(boolean busy) {
+        if (!"feed".equals(screen) || action == null) return;
+        action.setEnabled(!busy);
+        action.setAlpha(busy ? 0.45f : 1f);
     }
 
     private void saveFeedScroll() {
         if (feedListView == null) return;
-        feedFirstVisible = Math.max(0, feedListView.getFirstVisiblePosition() - 1);
+        feedFirstVisible = Math.max(0, feedListView.getFirstVisiblePosition());
         View first = feedListView.getChildAt(0);
         feedFirstTop = first == null ? 0 : first.getTop();
     }
@@ -769,20 +922,31 @@ public final class MainActivity extends Activity {
         if (feedListView == null || feed.isEmpty()) return;
         final int position = Math.max(0, Math.min(feedFirstVisible, feed.size() - 1));
         final int top = feedFirstTop;
-        feedListView.post(() -> feedListView.setSelectionFromTop(position + 1, top));
+        feedListView.post(() -> feedListView.setSelectionFromTop(position, top));
+    }
+
+    private void invalidateFeedView() {
+        cachedFeedListView = null;
+        feedListView = null;
+        feedAdapter = null;
+        feedFooter = null;
     }
 
     private void showDetail(FeedItem item) {
+        saveCurrentDetailProgress();
         stopQrPolling();
         ensureEmojiCatalog(() -> {});
         if ("feed".equals(screen)) saveFeedScroll();
-        detailReturn = screen;
+        if (!"detail".equals(screen)) detailReturn = screen;
         screen = "detail";
         currentLinkId = item.id;
+        currentLinkHsrc = item.hsrc;
+        currentAuthCode = "";
+        currentDetailItem = item;
         bottom.setVisibility(View.GONE);
         leading.setVisibility(View.VISIBLE);
         leading.setOnClickListener(view -> returnFromDetail());
-        title.setText("帖子详情");
+        title.setText("正文");
         action.setVisibility(View.INVISIBLE);
         content.removeAllViews();
         showLoading();
@@ -796,11 +960,19 @@ public final class MainActivity extends Activity {
         api.get(EndpointProvider.linkTree(), params, new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
                 hideLoading();
+                localCache.saveDetail(item.id, body);
                 renderDetail(body, item);
             }
 
             @Override public void onError(String message) {
                 hideLoading();
+                localCache.log("detail failed " + item.id + ": " + message);
+                JSONObject cached = localCache.detail(item.id);
+                if (cached != null) {
+                    toast("已显示离线缓存");
+                    renderDetail(cached, item);
+                    return;
+                }
                 showMessage("详情加载失败\n" + message);
             }
         });
@@ -809,37 +981,41 @@ public final class MainActivity extends Activity {
     private void renderDetail(JSONObject body, FeedItem fallback) {
         JSONObject result = body.optJSONObject("result");
         JSONObject link = result == null ? null : result.optJSONObject("link");
+        currentLinkHsrc = first(hsrc(link), fallback == null ? "" : fallback.hsrc, currentLinkHsrc);
+        String authCode = link == null ? "" : link.optString("auth_code");
+        if (authCode.isEmpty() && result != null) authCode = result.optString("auth_code");
+        if (authCode.isEmpty()) authCode = body.optString("auth_code");
+        if (!authCode.isEmpty()) currentAuthCode = authCode;
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(BG);
         LinearLayout page = vertical(BG);
-        int pagePadding = dp(session.pagePadding());
-        page.setPadding(pagePadding, dp(4), pagePadding, dp(16));
+        int pagePadding = Math.max(dp(10), dp(session.pagePadding()));
+        page.setPadding(pagePadding, dp(8), pagePadding, dp(18));
         scroll.addView(page);
 
         LinearLayout article = vertical(BG);
-        article.setPadding(dp(4), dp(6), dp(4), dp(10));
-        String heading = link == null ? fallback.title : link.optString("title", fallback.title);
-        TextView headline = text(heading, 17, TEXT);
-        headline.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        article.addView(headline);
+        article.setPadding(dp(2), dp(4), dp(2), dp(12));
         JSONObject user = link == null ? null : link.optJSONObject("user");
         String author = user == null ? fallback.author : user.optString("username", fallback.author);
-        addTop(article, text(author + "  " + formatTime(
-                link == null ? 0 : link.optLong("create_at")), 11, MUTED), 6);
-        String value = link == null ? fallback.description
-                : first(link.optString("text"), link.optString("description"));
+        addAuthorHeader(article, link, user, author);
+        String heading = link == null ? fallback.title : link.optString("title", fallback.title);
+        TextView headline = text(heading, 18, TEXT);
+        headline.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        headline.setLineSpacing(dp(1), 1.04f);
+        addTop(article, headline, 14);
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
-        addRichContent(article, value, fallbackImages);
+        addRichContent(article, link, fallback.description, fallbackImages);
+        addDetailActions(article, fallback, link);
         page.addView(article);
 
         View section = new View(this);
-        section.setBackgroundColor(blend(PANEL, SECONDARY, session.darkMode() ? 0.32f : 0.18f));
-        addTop(page, section, 2);
-        section.getLayoutParams().height = dp(6);
+        section.setBackgroundColor(blend(PANEL, SECONDARY, session.darkMode() ? 0.20f : 0.12f));
+        addTop(page, section, 10);
+        section.getLayoutParams().height = dp(1);
 
         TextView commentTitle = text("评论", 14, TEXT);
         commentTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        commentTitle.setPadding(dp(4), dp(8), dp(4), dp(5));
+        commentTitle.setPadding(dp(2), dp(10), dp(2), dp(5));
         page.addView(commentTitle);
         LinearLayout comments = vertical(BG);
         page.addView(comments);
@@ -850,43 +1026,763 @@ public final class MainActivity extends Activity {
             comments.addView(empty);
         }
         content.addView(scroll, match());
+        detailScroll = scroll;
+        int savedScroll = localCache.scroll(currentLinkId);
+        if (savedScroll > 0) {
+            scroll.postDelayed(() -> scroll.scrollTo(0, savedScroll), 80);
+        }
+    }
+
+    private void addDetailActions(LinearLayout article, FeedItem item, JSONObject link) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView like = actionPill("", R.drawable.ic_thumb_up);
+        boolean liked = linkLiked(link, item);
+        int likes = linkLikes(link, item);
+        item.liked = liked;
+        item.likes = likes;
+        updateFeedLike(item.id, liked, likes);
+        updateLinkLikeView(like, liked, likes);
+        like.setOnClickListener(view -> toggleLinkLike(item, like));
+        row.addView(like, new LinearLayout.LayoutParams(0, dp(36), 1));
+
+        TextView favorite = actionPill("", R.drawable.ic_bookmark);
+        boolean favored = linkFavored(link);
+        updateFavoriteView(favorite, favored);
+        LinearLayout.LayoutParams favoriteParams = new LinearLayout.LayoutParams(0, dp(36), 1);
+        favoriteParams.leftMargin = dp(6);
+        row.addView(favorite, favoriteParams);
+        favorite.setOnClickListener(view -> toggleFavorite(item, favorite));
+
+        TextView comment = actionPill("评论", R.drawable.ic_comment);
+        LinearLayout.LayoutParams commentParams = new LinearLayout.LayoutParams(0, dp(36), 1);
+        commentParams.leftMargin = dp(6);
+        row.addView(comment, commentParams);
+        comment.setOnClickListener(view -> showCommentDialog(null));
+
+        addTop(article, row, 10);
+    }
+
+    private TextView actionPill(String label, int icon) {
+        TextView view = text(label, 12, TEXT);
+        view.setGravity(Gravity.CENTER);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setPadding(dp(7), 0, dp(7), 0);
+        updatePill(view, blend(PANEL, SECONDARY, session.darkMode() ? 0.20f : 0.10f),
+                TEXT, icon);
+        return view;
+    }
+
+    private void updateLinkLikeView(TextView view, boolean liked, int likes) {
+        int bg = liked ? activeActionBackground(PRIMARY)
+                : blend(PANEL, SECONDARY, session.darkMode() ? 0.20f : 0.10f);
+        int fg = liked ? contrast(bg) : TEXT;
+        view.setText(String.valueOf(Math.max(0, likes)));
+        updatePill(view, bg, fg, R.drawable.ic_thumb_up);
+    }
+
+    private void updateFavoriteView(TextView view, boolean favored) {
+        view.setTag(Boolean.valueOf(favored));
+        int bg = favored ? blend(PANEL, SECONDARY, session.darkMode() ? 0.48f : 0.22f)
+                : blend(PANEL, SECONDARY, session.darkMode() ? 0.20f : 0.10f);
+        int fg = favored ? SECONDARY : TEXT;
+        view.setText(favored ? "已收藏" : "收藏");
+        updatePill(view, bg, fg, R.drawable.ic_bookmark);
+    }
+
+    private void updatePill(TextView view, int bg, int fg, int icon) {
+        view.setTextColor(fg);
+        GradientDrawable drawable = round(bg, 10);
+        drawable.setStroke(dp(1), blend(bg, fg, 0.20f));
+        Compat.setBackground(view, drawable);
+        setLeftIcon(view, icon, fg, 15);
+    }
+
+    private boolean linkLiked(JSONObject link, FeedItem fallback) {
+        if (link == null) return fallback.liked;
+        if (truthy(link, "is_award_link", "is_award", "liked", "is_liked", "has_award")) {
+            return true;
+        }
+        return truthy(link, "award_state", "like_state");
+    }
+
+    private int linkLikes(JSONObject link, FeedItem fallback) {
+        if (link == null) return fallback.likes;
+        return firstInt(link, fallback.likes, "link_award_num", "like_num", "award_num",
+                "award_count", "like_count", "liked_num", "total_award_num", "up_num", "up");
+    }
+
+    private boolean linkFavored(JSONObject link) {
+        if (link == null) return false;
+        return truthy(link, "is_favour", "is_favor", "is_fav", "favored",
+                "has_favour", "has_favor");
+    }
+
+    private boolean truthy(JSONObject source, String... keys) {
+        if (source == null) return false;
+        for (String key : keys) {
+            if (!source.has(key)) continue;
+            Object value = source.opt(key);
+            if (value instanceof Boolean) return (Boolean) value;
+            if (value instanceof Number) return ((Number) value).intValue() == 1;
+            String text = String.valueOf(value).trim();
+            if ("1".equals(text) || "true".equalsIgnoreCase(text)
+                    || "yes".equalsIgnoreCase(text)) return true;
+            if ("0".equals(text) || "2".equals(text) || "false".equalsIgnoreCase(text)
+                    || "no".equalsIgnoreCase(text)) return false;
+        }
+        return false;
+    }
+
+    private String hsrc(JSONObject link) {
+        if (link == null) return "";
+        String value = first(link.optString("h_src"), link.optString("hsrc"));
+        if (!value.isEmpty()) return value;
+        String shareUrl = link.optString("share_url");
+        if (shareUrl.isEmpty()) return "";
+        try {
+            value = Uri.parse(shareUrl).getQueryParameter("h_src");
+            return value == null ? "" : value;
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private int firstInt(JSONObject source, int fallback, String... keys) {
+        if (source == null) return fallback;
+        for (String key : keys) {
+            if (source.has(key)) return source.optInt(key, fallback);
+        }
+        return fallback;
+    }
+
+    private void toggleLinkLike(FeedItem item, TextView view) {
+        if (item == null || item.id.isEmpty()) return;
+        boolean beforeLiked = item.liked;
+        int beforeLikes = Math.max(0, item.likes);
+        boolean nextLiked = !beforeLiked;
+        int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
+        item.liked = nextLiked;
+        item.likes = nextLikes;
+        updateLinkLikeView(view, nextLiked, nextLikes);
+        updateFeedLike(item.id, nextLiked, nextLikes);
+
+        postLinkLike(item, nextLiked, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                updateFeedLike(item.id, nextLiked, nextLikes);
+            }
+
+            @Override public void onError(String message) {
+                item.liked = beforeLiked;
+                item.likes = beforeLikes;
+                updateLinkLikeView(view, beforeLiked, beforeLikes);
+                updateFeedLike(item.id, beforeLiked, beforeLikes);
+                toast("点赞失败：" + message);
+            }
+        });
+    }
+
+    private void toggleFeedLike(FeedItem item) {
+        if (item == null || item.id.isEmpty()) return;
+        boolean beforeLiked = item.liked;
+        int beforeLikes = Math.max(0, item.likes);
+        boolean nextLiked = !beforeLiked;
+        int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
+        item.liked = nextLiked;
+        item.likes = nextLikes;
+        updateFeedLike(item.id, nextLiked, nextLikes);
+
+        postLinkLike(item, nextLiked, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                updateFeedLike(item.id, nextLiked, nextLikes);
+            }
+
+            @Override public void onError(String message) {
+                item.liked = beforeLiked;
+                item.likes = beforeLikes;
+                updateFeedLike(item.id, beforeLiked, beforeLikes);
+                toast("点赞失败：" + message);
+            }
+        });
+    }
+
+    private void toggleFavorite(FeedItem item, TextView view) {
+        if (item == null || item.id.isEmpty()) return;
+        Object tag = view.getTag();
+        boolean favored = tag instanceof Boolean && (Boolean) tag;
+        boolean nextFavored = !favored;
+        updateFavoriteView(view, nextFavored);
+        view.setEnabled(false);
+        postFavorite(item, nextFavored, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                view.setEnabled(true);
+                toast(nextFavored ? "已收藏" : "已取消收藏");
+            }
+
+            @Override public void onError(String message) {
+                view.setEnabled(true);
+                updateFavoriteView(view, favored);
+                toast("收藏操作失败：" + message);
+            }
+        });
+    }
+
+    private void postLinkLike(FeedItem item, boolean nextLiked, ApiClient.Callback callback) {
+        WriteRequest award = cb -> api.postForm(EndpointProvider.awardLink(),
+                Collections.emptyMap(), awardBody(item.id, nextLiked), cb);
+        WriteRequest awardWithHsrc = cb -> api.postForm(EndpointProvider.awardLink(),
+                queryHsrc(item), awardBody(item.id, nextLiked), cb);
+        runWriteFallback(new WriteRequest[]{award, awardWithHsrc}, callback);
+    }
+
+    private void postFavorite(FeedItem item, boolean nextFavored, ApiClient.Callback callback) {
+        WriteRequest official = cb -> api.postForm(EndpointProvider.favourLink(),
+                Collections.emptyMap(), favouriteBody(item.id, nextFavored ? "1" : "2", false), cb);
+        WriteRequest withFolder = cb -> api.postForm(EndpointProvider.favourLink(),
+                Collections.emptyMap(), favouriteBody(item.id, nextFavored ? "1" : "2", true), cb);
+        WriteRequest compact = cb -> api.postForm(EndpointProvider.favourLink(),
+                queryHsrc(item), favouriteBody(item.id, nextFavored ? "1" : "2", false), cb);
+        WriteRequest withNewsId = cb -> api.postForm(EndpointProvider.favourLink(),
+                queryHsrc(item), favouriteBody(item.id, nextFavored ? "1" : "2", true, true), cb);
+        WriteRequest noHsrc = cb -> api.postForm(EndpointProvider.favourLink(),
+                Collections.emptyMap(), favouriteBody(item.id, nextFavored ? "1" : "2", true), cb);
+        runWriteFallback(new WriteRequest[]{official, withFolder, compact, withNewsId, noHsrc}, callback);
+    }
+
+    private Map<String, String> awardBody(String linkId, boolean liked) {
+        Map<String, String> body = new HashMap<>();
+        body.put("link_id", linkId);
+        body.put("award_type", liked ? "1" : "0");
+        return body;
+    }
+
+    private Map<String, String> linkIdBody(String linkId) {
+        Map<String, String> body = new HashMap<>();
+        body.put("link_id", linkId);
+        return body;
+    }
+
+    private Map<String, String> favouriteBody(String linkId, String type, boolean includeFolder) {
+        return favouriteBody(linkId, type, includeFolder, false);
+    }
+
+    private Map<String, String> favouriteBody(String linkId, String type, boolean includeFolder,
+                                              boolean includeNewsId) {
+        Map<String, String> body = linkIdBody(linkId);
+        body.put("favour_type", type);
+        if (!session.userId().isEmpty()) body.put(SecureStrings.userid(), session.userId());
+        if (includeNewsId) body.put("newsid", linkId);
+        if (includeFolder) body.put("folder_id", "");
+        return body;
+    }
+
+    private Map<String, String> queryHsrc(FeedItem item) {
+        Map<String, String> query = new HashMap<>();
+        String value = item == null ? "" : item.hsrc;
+        if (value.isEmpty() && item != null && item.id.equals(currentLinkId)) {
+            value = currentLinkHsrc;
+        }
+        if (value.isEmpty() && item == null) value = currentLinkHsrc;
+        if (!value.isEmpty()) query.put("h_src", value);
+        return query;
+    }
+
+    private Map<String, String> commentCreateQuery() {
+        Map<String, String> query = queryHsrc(currentDetailItem);
+        if (!currentAuthCode.isEmpty()) query.put("auth_code", currentAuthCode);
+        return query;
+    }
+
+    private void runWriteFallback(WriteRequest[] requests, ApiClient.Callback callback) {
+        if (localCache != null) {
+            localCache.log("write cookie keys: " + session.authCookieKeysForLog());
+        }
+        runWriteFallback(requests, 0, "", "", false, callback);
+    }
+
+    private void runWriteFallback(WriteRequest[] requests, int index, String lastError,
+                                  String importantError, boolean tokenRetried,
+                                  ApiClient.Callback callback) {
+        if (index >= requests.length) {
+            String message = !importantError.isEmpty() ? importantError : lastError;
+            callback.onError(message == null || message.isEmpty()
+                    ? "\u63a5\u53e3\u672a\u8fd4\u56de\u53ef\u7528\u7ed3\u679c" : message);
+            return;
+        }
+        requests[index].start(new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                callback.onSuccess(body);
+            }
+
+            @Override public void onError(String message) {
+                if (localCache != null) {
+                    localCache.log("write fallback " + index + " failed: " + message);
+                }
+                if (isTokenWriteError(message)) {
+                    if (!tokenRetried && writeTokenProvider != null) {
+                        if (localCache != null) localCache.log("write auth failed, refreshing token");
+                        writeTokenProvider.refresh(new WriteTokenProvider.Callback() {
+                            @Override public void onReady() {
+                                runWriteFallback(requests, 0, "", "", true, callback);
+                            }
+
+                            @Override public void onError(String tokenMessage) {
+                                if (localCache != null) {
+                                    localCache.log("write token refresh failed: " + tokenMessage);
+                                }
+                                callback.onError(message + "\n" + tokenMessage);
+                            }
+                        });
+                        return;
+                    }
+                    callback.onError(message);
+                    return;
+                }
+                if (isLoginWriteError(message)) {
+                    callback.onError(message);
+                    return;
+                }
+                String nextImportant = importantError;
+                if (nextImportant == null || nextImportant.isEmpty()) {
+                    nextImportant = isParameterWriteError(message) ? message : "";
+                }
+                runWriteFallback(requests, index + 1, message, nextImportant,
+                        tokenRetried, callback);
+            }
+        });
+    }
+
+    private boolean isTokenWriteError(String message) {
+        if (message == null) return false;
+        String lower = message.toLowerCase(java.util.Locale.US);
+        return lower.contains("lack_token")
+                || lower.contains("x_xhh_tokenid")
+                || lower.contains("tokenid")
+                || lower.contains("token")
+                || message.contains("\u4ee4\u724c");
+    }
+
+    private boolean isLoginWriteError(String message) {
+        if (message == null) return false;
+        String lower = message.toLowerCase(java.util.Locale.US);
+        return lower.contains("login")
+                || lower.contains("relogin")
+                || message.contains("\u767b\u5f55")
+                || message.contains("\u91cd\u65b0\u767b\u5f55");
+    }
+
+    private boolean isParameterWriteError(String message) {
+        if (message == null) return false;
+        return message.contains("验证参数") || message.contains("参数")
+                || message.contains("param") || message.contains("sign");
+    }
+
+    private void updateFeedLike(String linkId, boolean liked, int likes) {
+        if (linkId == null || linkId.isEmpty()) return;
+        for (FeedItem candidate : feed) {
+            if (linkId.equals(candidate.id)) {
+                candidate.liked = liked;
+                candidate.likes = likes;
+                break;
+            }
+        }
+        localCache.saveFeed(feed);
+        if (feedAdapter != null) feedAdapter.notifyDataSetChanged();
+    }
+
+    private void addAuthorHeader(LinearLayout article, JSONObject link, JSONObject user,
+                                 String fallbackAuthor) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView avatar = new ImageView(this);
+        avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        Compat.setBackground(avatar, round(session.darkMode()
+                ? Color.rgb(50, 53, 56) : Color.rgb(226, 229, 232), 18));
+        Compat.clipToOutline(avatar);
+        row.addView(avatar, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        String avatarUrl = user == null ? "" : user.optString("avatar",
+                user.optString("avartar"));
+        if (!session.noImage() && !avatarUrl.isEmpty()) ImageLoader.into(avatar, avatarUrl, 96);
+
+        LinearLayout copy = vertical(Color.TRANSPARENT);
+        LinearLayout nameRow = new LinearLayout(this);
+        nameRow.setGravity(Gravity.CENTER_VERTICAL);
+        String nameValue = user == null ? fallbackAuthor
+                : first(user.optString("username"), user.optString("nickname"),
+                user.optString("name"), fallbackAuthor);
+        TextView name = text(nameValue.isEmpty() ? "小黑盒用户" : nameValue, 13, TEXT);
+        name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        name.setMaxWidth(dp(118));
+        nameRow.addView(name, new LinearLayout.LayoutParams(-2, -2));
+        int level = userLevel(user);
+        if (level > 0) {
+            TextView badge = text("Lv." + level, 8, Color.WHITE);
+            badge.setGravity(Gravity.CENTER);
+            badge.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            Compat.setBackground(badge, round(Color.rgb(210, 72, 218), 3));
+            LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(32), dp(15));
+            badgeParams.leftMargin = dp(5);
+            nameRow.addView(badge, badgeParams);
+        }
+        copy.addView(nameRow);
+
+        String signature = user == null ? "" : first(user.optString("signature"),
+                user.optString("desc"));
+        if (!signature.isEmpty()) {
+            TextView desc = text(signature, 10, MUTED);
+            desc.setSingleLine(true);
+            addTop(copy, desc, 1);
+        }
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1);
+        copyParams.leftMargin = dp(9);
+        row.addView(copy, copyParams);
+
+        int followBg = session.darkMode() ? blend(PANEL, TEXT, 0.12f)
+                : blend(PANEL, TEXT, 0.06f);
+        TextView follow = text("+ 关注", 11, TEXT);
+        follow.setGravity(Gravity.CENTER);
+        follow.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        Compat.setBackground(follow, round(followBg, 5));
+        String targetUserId = authorUserId(link, user);
+        updateFollowView(follow, isFollowing(link, user));
+        row.addView(follow, new LinearLayout.LayoutParams(dp(62), dp(30)));
+        follow.setOnClickListener(view -> toggleFollow(follow, link, user, targetUserId));
+        article.addView(row);
+    }
+
+    private void updateFollowView(TextView follow, boolean following) {
+        follow.setTag(Boolean.valueOf(following));
+        int bg = following ? activeFollowBackground()
+                : blend(PANEL, TEXT, session.darkMode() ? 0.12f : 0.06f);
+        int fg = following ? contrast(bg) : TEXT;
+        follow.setText(following ? "已关注" : "+ 关注");
+        follow.setTextColor(fg);
+        GradientDrawable drawable = round(bg, 7);
+        drawable.setStroke(dp(1), following
+                ? blend(bg, fg, 0.26f)
+                : blend(bg, SECONDARY, session.darkMode() ? 0.32f : 0.18f));
+        Compat.setBackground(follow, drawable);
+    }
+
+    private int activeFollowBackground() {
+        return session.darkMode() ? blend(SECONDARY, Color.WHITE, 0.10f) : SECONDARY;
+    }
+
+    private int activeActionBackground(int accent) {
+        return session.darkMode() ? blend(accent, Color.WHITE, 0.10f) : accent;
+    }
+
+    private void toggleFollow(TextView follow, JSONObject link, JSONObject user,
+                              String targetUserId) {
+        if (targetUserId == null || targetUserId.isEmpty()) {
+            toast("没有获取到用户 ID");
+            return;
+        }
+        if (targetUserId.equals(session.userId())) {
+            toast("不能关注自己");
+            return;
+        }
+        Object tag = follow.getTag();
+        boolean before = tag instanceof Boolean && (Boolean) tag;
+        int beforeStatus = followStatus(link, user);
+        boolean next = !before;
+        updateFollowView(follow, next);
+        follow.setClickable(false);
+        follow.setAlpha(0.92f);
+        postFollow(targetUserId, next, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                applyFollowState(link, user, nextFollowStatus(beforeStatus, next));
+                follow.setClickable(true);
+                follow.setAlpha(1f);
+                updateFollowView(follow, next);
+                toast(next ? "已关注" : "已取消关注");
+            }
+
+            @Override public void onError(String message) {
+                follow.setClickable(true);
+                follow.setAlpha(1f);
+                updateFollowView(follow, before);
+                toast("关注操作失败：" + message);
+            }
+        });
+    }
+
+    private void postFollow(String targetUserId, boolean next, ApiClient.Callback callback) {
+        String path = next ? EndpointProvider.followUser() : EndpointProvider.unfollowUser();
+        WriteRequest official = cb -> api.postForm(path, Collections.emptyMap(),
+                userBody(targetUserId, false, false), cb);
+        WriteRequest compact = cb -> api.postForm(path, Collections.emptyMap(),
+                userBody(targetUserId, true, false), cb);
+        WriteRequest withHsrc = cb -> api.postForm(path, queryHsrc(currentDetailItem),
+                userBody(targetUserId, false, false), cb);
+        WriteRequest withState = cb -> api.postForm(path, Collections.emptyMap(),
+                userBody(targetUserId, false, next), cb);
+        runWriteFallback(new WriteRequest[]{official, compact, withHsrc, withState}, callback);
+    }
+
+    private Map<String, String> userBody(String value, boolean compact, boolean includeState) {
+        Map<String, String> body = new HashMap<>();
+        body.put("following_id", value);
+        if (!compact && currentLinkId != null && !currentLinkId.isEmpty()) {
+            body.put("link_id", currentLinkId);
+        }
+        if (includeState) body.put("follows", "1");
+        return body;
+    }
+
+    private boolean isFollowing(JSONObject link, JSONObject user) {
+        int status = followStatus(link, user);
+        if (status >= 0) return status == 1 || status == 3;
+        return truthy(link, "is_follow", "is_following", "followed")
+                || truthy(user, "is_follow", "is_following", "followed");
+    }
+
+    private int followStatus(JSONObject link, JSONObject user) {
+        int linkStatus = followStatusValue(link);
+        if (linkStatus >= 0) return linkStatus;
+        return followStatusValue(user);
+    }
+
+    private int followStatusValue(JSONObject source) {
+        if (source == null) return -1;
+        String[] keys = {"follow_status", "follow_state", "follow_state_v2",
+                "is_follow", "is_following", "followed"};
+        for (String key : keys) {
+            if (!source.has(key)) continue;
+            Object value = source.opt(key);
+            if (value instanceof Boolean) return (Boolean) value ? 1 : 0;
+            if (value instanceof Number) return ((Number) value).intValue();
+            String text = String.valueOf(value).trim();
+            if (text.isEmpty()) continue;
+            if ("true".equalsIgnoreCase(text) || "followed".equalsIgnoreCase(text)
+                    || "following".equalsIgnoreCase(text)) return 1;
+            if ("mutual".equalsIgnoreCase(text)) return 3;
+            if ("false".equalsIgnoreCase(text) || "none".equalsIgnoreCase(text)
+                    || "unfollowed".equalsIgnoreCase(text)) return 0;
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException ignored) {
+                // Some API variants return labels; keep looking for a numeric field.
+            }
+        }
+        return -1;
+    }
+
+    private int nextFollowStatus(int beforeStatus, boolean following) {
+        if (following) return beforeStatus == 2 ? 3 : 1;
+        return beforeStatus == 3 ? 2 : 0;
+    }
+
+    private void applyFollowState(JSONObject link, JSONObject user, int status) {
+        boolean following = status == 1 || status == 3;
+        putFollowState(link, status, following);
+        putFollowState(user, status, following);
+    }
+
+    private void putFollowState(JSONObject target, int status, boolean following) {
+        if (target == null) return;
+        try {
+            target.put("follow_status", status);
+            target.put("follow_state", status);
+            target.put("is_follow", following ? 1 : 0);
+            target.put("is_following", following);
+            target.put("followed", following);
+        } catch (Exception ignored) {
+            // This only updates the already loaded detail JSON for the current screen.
+        }
+    }
+
+    private String authorUserId(JSONObject link, JSONObject user) {
+        return first(link == null ? "" : link.optString(SecureStrings.userid()),
+                link == null ? "" : link.optString(SecureStrings.userId()),
+                link == null ? "" : link.optString(SecureStrings.heyboxId()),
+                link == null ? "" : link.optString("heyboxid"),
+                link == null ? "" : link.optString("uid"),
+                link == null ? "" : link.optString("account_id"),
+                link == null ? "" : link.optString("id"),
+                userId(user));
+    }
+
+    private String userId(JSONObject user) {
+        if (user == null) return "";
+        return first(user.optString(SecureStrings.userid()),
+                user.optString(SecureStrings.userId()),
+                user.optString(SecureStrings.heyboxId()),
+                user.optString("heyboxid"),
+                user.optString("uid"),
+                user.optString("account_id"),
+                user.optString("id"));
+    }
+
+    private int userLevel(JSONObject user) {
+        if (user == null) return 0;
+        JSONObject levelInfo = user.optJSONObject("level_info");
+        if (levelInfo != null) return levelInfo.optInt("level", 0);
+        return user.optInt("level", 0);
     }
 
     private void addRichContent(LinearLayout parent, String source, JSONArray fallbackImages) {
-        List<RichContent.Block> blocks = RichContent.parse(source, fallbackImages);
+        addRichContent(parent, RichContent.parse(source, fallbackImages));
+    }
+
+    private void addRichContent(LinearLayout parent, JSONObject link, String fallback,
+                                JSONArray fallbackImages) {
+        List<RichContent.Block> blocks = link == null
+                ? RichContent.parse(fallback, fallbackImages)
+                : RichContent.parse(link, fallbackImages);
+        if (!RichContent.hasReadableText(blocks) && fallback != null && !fallback.isEmpty()) {
+            List<RichContent.Block> fallbackBlocks = RichContent.parse(fallback, null);
+            if (RichContent.hasReadableText(fallbackBlocks)) {
+                fallbackBlocks.addAll(blocks);
+                blocks = fallbackBlocks;
+            } else if (blocks.isEmpty()) {
+                blocks = RichContent.parse(fallback, fallbackImages);
+            }
+        }
+        addRichContent(parent, blocks);
+    }
+
+    private void addRichContent(LinearLayout parent, List<RichContent.Block> blocks) {
         if (blocks.isEmpty()) {
             addTop(parent, text("正文为空", 13, MUTED), 9);
             return;
         }
         int imageCount = 0;
+        boolean bodyStarted = false;
         for (RichContent.Block block : blocks) {
             if (block.image) {
                 if (session.noImage() || imageCount >= 12) continue;
-                ImageView image = new ImageView(this);
-                image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                Compat.setBackground(image, round(session.darkMode()
-                        ? Color.rgb(28, 30, 32) : Color.rgb(235, 237, 240), 7));
-                Compat.clipToOutline(image);
+                View image = postImageBlock(block.value, 1080, 150);
                 LinearLayout.LayoutParams imageParams =
                         new LinearLayout.LayoutParams(-1, dp(150));
                 imageParams.topMargin = dp(8);
                 parent.addView(image, imageParams);
-                ImageLoader.into(image, block.value, 1080);
-                image.setOnClickListener(view -> openImage(image, block.value));
                 imageCount++;
             } else {
-                TextView bodyText = text(block.value,
-                        14 * session.bodyTextScale() / 100f, TEXT);
-                bodyText.setLineSpacing(0, session.bodyLineSpacing() / 100f);
-                Compat.setLetterSpacing(bodyText, session.bodyLetterSpacing() / 200f);
-                if (session.bodyBold()) {
-                    bodyText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-                }
-                bodyText.setTextIsSelectable(true);
-                EmojiRenderer.set(bodyText, block.value, session.darkMode());
-                addTop(parent, bodyText, session.bodyParagraphSpacing());
+                bodyStarted = addBodyParagraphs(parent, block.value, bodyStarted);
             }
         }
+    }
+
+    private boolean addBodyParagraphs(LinearLayout parent, String source, boolean bodyStarted) {
+        List<String> paragraphs = articleParagraphs(source);
+        for (String paragraph : paragraphs) {
+            TextView bodyText = text(paragraph,
+                    15 * session.bodyTextScale() / 100f, TEXT);
+            float lineScale = Math.max(1.10f, session.bodyLineSpacing() / 100f);
+            bodyText.setLineSpacing(dp(3), lineScale);
+            Compat.setLetterSpacing(bodyText, session.bodyLetterSpacing() / 200f);
+            bodyText.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+            bodyText.setTextIsSelectable(true);
+            EmojiRenderer.set(bodyText, paragraph, session.darkMode());
+            addTop(parent, bodyText, bodyStarted
+                    ? Math.max(dp(0), session.bodyParagraphSpacing() + 9) : 14);
+            bodyStarted = true;
+        }
+        return bodyStarted;
+    }
+
+    private View postImageBlock(String url, int targetPx, int heightDp) {
+        FrameLayout frame = new FrameLayout(this);
+        int placeholder = session.darkMode()
+                ? Color.rgb(28, 30, 32) : Color.rgb(235, 237, 240);
+        Compat.setBackground(frame, round(placeholder, 7));
+        Compat.clipToOutline(frame);
+
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        frame.addView(image, match());
+
+        LoadingSpinnerView spinner = new LoadingSpinnerView(this);
+        spinner.setColor(blend(TEXT, SECONDARY, 0.35f));
+        FrameLayout.LayoutParams spinnerParams =
+                new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER);
+        frame.addView(spinner, spinnerParams);
+
+        View.OnClickListener open = view -> openImage(image, url);
+        frame.setOnClickListener(open);
+        image.setOnClickListener(open);
+        ImageLoader.into(image, url, targetPx, success -> {
+            spinner.setVisibility(View.GONE);
+            if (!success && image.getDrawable() == null) {
+                TextView failed = text("图片加载失败", 11, MUTED);
+                failed.setGravity(Gravity.CENTER);
+                frame.addView(failed, match());
+            }
+        });
+        return frame;
+    }
+
+    private List<String> articleParagraphs(String source) {
+        List<String> paragraphs = new ArrayList<>();
+        String value = source == null ? "" : source
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .trim();
+        if (value.isEmpty()) return paragraphs;
+        value = consumeLeadingArticleLabel(paragraphs, value);
+        if (value.isEmpty()) return paragraphs;
+        if (value.contains("\n")) {
+            String[] parts = value.split("\\n+");
+            for (String part : parts) {
+                String clean = part.trim();
+                if (!clean.isEmpty()) paragraphs.add(clean);
+            }
+            return paragraphs;
+        }
+
+        StringBuilder current = new StringBuilder();
+        int visible = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            current.append(ch);
+            if (!Character.isWhitespace(ch)) visible++;
+            if ((isSentenceEnd(ch) && visible >= 28)
+                    || (isSoftBreak(ch) && visible >= 68)) {
+                String paragraph = current.toString().trim();
+                if (!paragraph.isEmpty()) paragraphs.add(paragraph);
+                current.setLength(0);
+                visible = 0;
+            }
+        }
+        String tail = current.toString().trim();
+        if (!tail.isEmpty()) paragraphs.add(tail);
+        return paragraphs;
+    }
+
+    private String consumeLeadingArticleLabel(List<String> paragraphs, String value) {
+        String[] labels = {"提示词：", "提示词:", "提示词", "Prompt:", "Prompt"};
+        for (String label : labels) {
+            if (value.equals(label)) {
+                paragraphs.add(displayLabel(label));
+                return "";
+            }
+            if (value.startsWith(label + " ") || value.startsWith(label + "\n")
+                    || (label.endsWith(":") || label.endsWith("：")) && value.startsWith(label)) {
+                paragraphs.add(displayLabel(label));
+                return value.substring(label.length()).trim();
+            }
+        }
+        return value;
+    }
+
+    private String displayLabel(String label) {
+        if (label.startsWith("提示词")) return "提示词";
+        if (label.startsWith("Prompt")) return "Prompt";
+        return label;
+    }
+
+    private boolean isSentenceEnd(char ch) {
+        return ch == '。' || ch == '！' || ch == '？'
+                || ch == '!' || ch == '?';
+    }
+
+    private boolean isSoftBreak(char ch) {
+        return ch == '；' || ch == ';';
     }
 
     private int addComments(LinearLayout page, JSONArray groups) {
@@ -1089,6 +1985,171 @@ public final class MainActivity extends Activity {
                 comment.optInt("award_num", comment.optInt("up")));
     }
 
+    private boolean commentLiked(JSONObject comment) {
+        if (comment == null) return false;
+        return truthy(comment, "is_support", "supported", "is_award", "liked",
+                "has_support");
+    }
+
+    private void updateCommentLikeView(TextView view, boolean liked, int likes) {
+        int bg = liked ? activeActionBackground(PRIMARY) : Color.TRANSPARENT;
+        int color = liked ? contrast(bg) : MUTED;
+        view.setText(String.valueOf(Math.max(0, likes)));
+        view.setTextColor(color);
+        view.setPadding(dp(4), 0, dp(4), 0);
+        GradientDrawable drawable = round(bg, 8);
+        drawable.setStroke(dp(1), liked ? blend(bg, color, 0.24f) : Color.TRANSPARENT);
+        Compat.setBackground(view, drawable);
+        setLeftIcon(view, R.drawable.ic_thumb_up, color, liked ? 14 : 13);
+    }
+
+    private void toggleCommentLike(JSONObject comment, TextView view) {
+        String id = commentId(comment);
+        if (id.isEmpty()) {
+            toast("没有获取到评论 ID");
+            return;
+        }
+        boolean beforeLiked = commentLiked(comment);
+        int beforeLikes = commentLikes(comment);
+        boolean nextLiked = !beforeLiked;
+        int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
+        setCommentLikeState(comment, nextLiked, nextLikes);
+        updateCommentLikeView(view, nextLiked, nextLikes);
+        view.setEnabled(false);
+        postCommentLike(id, nextLiked, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                view.setEnabled(true);
+            }
+
+            @Override public void onError(String message) {
+                view.setEnabled(true);
+                setCommentLikeState(comment, beforeLiked, beforeLikes);
+                updateCommentLikeView(view, beforeLiked, beforeLikes);
+                toast("评论点赞失败：" + message);
+            }
+        });
+    }
+
+    private void setCommentLikeState(JSONObject comment, boolean liked, int likes) {
+        try {
+            comment.put("is_support", liked ? 1 : 2);
+            comment.put("comment_award_num", Math.max(0, likes));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private Map<String, String> commentSupportBody(String id, boolean liked) {
+        Map<String, String> body = new HashMap<>();
+        body.put("comment_id", id);
+        body.put("support_type", liked ? "1" : "2");
+        return body;
+    }
+
+    private void postCommentLike(String id, boolean liked, ApiClient.Callback callback) {
+        WriteRequest official = cb -> api.postForm(EndpointProvider.supportComment(),
+                Collections.emptyMap(), commentSupportBody(id, liked), cb);
+        WriteRequest withHsrc = cb -> api.postForm(EndpointProvider.supportComment(),
+                queryHsrc(currentDetailItem), commentSupportBody(id, liked), cb);
+        WriteRequest hsrcInBody = cb -> api.postForm(EndpointProvider.supportComment(),
+                Collections.emptyMap(), commentSupportBody(id, liked, currentLinkHsrc), cb);
+        runWriteFallback(new WriteRequest[]{official, withHsrc, hsrcInBody}, callback);
+    }
+
+    private Map<String, String> commentSupportBody(String id, boolean liked, String hsrc) {
+        Map<String, String> body = commentSupportBody(id, liked);
+        if (hsrc != null && !hsrc.isEmpty()) body.put("h_src", hsrc);
+        return body;
+    }
+
+    private void showCommentDialog(JSONObject replyTo) {
+        if (currentLinkId == null || currentLinkId.isEmpty()) {
+            toast("没有打开的帖子");
+            return;
+        }
+        EditText input = new EditText(this);
+        input.setTextColor(TEXT);
+        input.setHintTextColor(MUTED);
+        input.setTextSize(sp(14));
+        input.setMinLines(3);
+        input.setMaxLines(5);
+        input.setGravity(Gravity.TOP | Gravity.START);
+        input.setHint(replyTo == null ? "写下你的评论" : "回复评论");
+        Compat.tint(input, PRIMARY);
+        int pad = dp(12);
+        input.setPadding(pad, dp(8), pad, dp(8));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(replyTo == null ? "发表评论" : "回复评论")
+                .setView(input)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("发送", null)
+                .create();
+        dialog.setOnShowListener(value -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view -> {
+                    String text = input.getText().toString().trim();
+                    if (text.isEmpty()) {
+                        toast("评论不能为空");
+                        return;
+                    }
+                    sendComment(text, replyTo, dialog);
+                }));
+        dialog.show();
+    }
+
+    private void sendComment(String value, JSONObject replyTo, AlertDialog dialog) {
+        String replyId = replyTo == null ? "-1" : commentId(replyTo);
+        String rootId = replyTo == null ? "-1" : commentRootId(replyTo);
+        if (dialog != null) dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+        postCreateComment(value, rootId, replyId, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                if (dialog != null && dialog.isShowing()) dialog.dismiss();
+                toast("评论已发送");
+                if (currentDetailItem != null) showDetail(currentDetailItem);
+            }
+
+            @Override public void onError(String message) {
+                if (dialog != null && dialog.isShowing()) {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+                }
+                toast("评论发送失败：" + message);
+            }
+        });
+    }
+
+    private void postCreateComment(String value, String rootId, String replyId,
+                                   ApiClient.Callback callback) {
+        WriteRequest official = cb -> api.postForm(EndpointProvider.createComment(),
+                Collections.emptyMap(), commentCreateBody(value, rootId, replyId, false), cb);
+        WriteRequest withAuth = cb -> api.postForm(EndpointProvider.createComment(),
+                commentCreateQuery(), commentCreateBody(value, rootId, replyId, false), cb);
+        WriteRequest withHsrc = cb -> api.postForm(EndpointProvider.createComment(),
+                queryHsrc(currentDetailItem), commentCreateBody(value, rootId, replyId, false), cb);
+        WriteRequest compat = cb -> api.postForm(EndpointProvider.createComment(),
+                commentCreateQuery(), commentCreateBody(value, rootId, replyId, true), cb);
+        WriteRequest compatNoHsrc = cb -> api.postForm(EndpointProvider.createComment(),
+                Collections.emptyMap(), commentCreateBody(value, rootId, replyId, true), cb);
+        runWriteFallback(new WriteRequest[]{official, withAuth, withHsrc, compat, compatNoHsrc}, callback);
+    }
+
+    private Map<String, String> commentCreateBody(String value, String rootId, String replyId,
+                                                  boolean compat) {
+        Map<String, String> body = new HashMap<>();
+        body.put("link_id", currentLinkId);
+        body.put("text", value);
+        body.put("root_id", rootId == null ? "" : rootId);
+        body.put("reply_id", replyId == null ? "" : replyId);
+        body.put("is_cy", "0");
+        if (compat) {
+            body.put("recommend_state", "0");
+            body.put("linkid", currentLinkId);
+            body.put("content", value);
+            body.put("comment", value);
+            body.put("root_comment_id", rootId == null ? "" : rootId);
+            body.put("reply_comment_id", replyId == null ? "" : replyId);
+        }
+        return body;
+    }
+
     private long commentTime(JSONObject comment) {
         return comment.optLong("create_at", comment.optLong("create_time"));
     }
@@ -1096,6 +2157,13 @@ public final class MainActivity extends Activity {
     private String commentId(JSONObject comment) {
         return first(comment.optString("commentid"),
                 first(comment.optString("comment_id"), comment.optString("id")));
+    }
+
+    private String commentRootId(JSONObject comment) {
+        String root = first(comment.optString("root_id"),
+                comment.optString("root_comment_id"),
+                comment.optString("rootid"));
+        return root.isEmpty() ? commentId(comment) : root;
     }
 
     private void addComment(LinearLayout page, JSONObject comment, boolean reply) {
@@ -1127,7 +2195,8 @@ public final class MainActivity extends Activity {
         TextView metaView = text(meta, reply ? 10 : 11, reply ? MUTED : TEXT);
         if (!reply) metaView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         block.addView(metaView);
-        String rawComment = first(comment.optString("text"), comment.optString("content"));
+        String rawComment = first(comment.optString("text"), comment.optString("content"),
+                comment.optString("html"), comment.optString("description"));
         String visibleComment = RichContent.plainText(rawComment);
         TextView value = text(visibleComment, 13, TEXT);
         value.setLineSpacing(0, reply ? 1.16f : session.bodyLineSpacing() / 100f);
@@ -1139,23 +2208,18 @@ public final class MainActivity extends Activity {
         addTop(block, value, 4);
         String commentImage = commentImage(comment);
         if (!session.noImage() && !commentImage.isEmpty()) {
-            ImageView image = new ImageView(this);
-            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            Compat.setBackground(image, round(session.darkMode()
-                    ? Color.rgb(39, 42, 45) : Color.rgb(236, 238, 240), 6));
-            Compat.clipToOutline(image);
+            View image = postImageBlock(commentImage, 720, reply ? 92 : 115);
             LinearLayout.LayoutParams imageParams =
                     new LinearLayout.LayoutParams(-1, dp(reply ? 92 : 115));
             imageParams.topMargin = dp(6);
             block.addView(image, imageParams);
-            ImageLoader.into(image, commentImage, 720);
-            image.setOnClickListener(view -> openImage(image, commentImage));
         }
 
         if (!reply) {
             TextView likes = text(String.valueOf(commentLikes(comment)), 10, MUTED);
-            setLeftIcon(likes, R.drawable.ic_thumb_up, SECONDARY, 13);
+            updateCommentLikeView(likes, commentLiked(comment), commentLikes(comment));
             likes.setGravity(Gravity.CENTER_VERTICAL);
+            likes.setOnClickListener(view -> toggleCommentLike(comment, likes));
             LinearLayout.LayoutParams likeParams = new LinearLayout.LayoutParams(dp(44), dp(24));
             likeParams.leftMargin = dp(3);
             row.addView(likes, likeParams);
@@ -1311,45 +2375,204 @@ public final class MainActivity extends Activity {
         TextView arrow = text("›", 20, MUTED);
         arrow.setGravity(Gravity.CENTER);
         row.addView(arrow, new LinearLayout.LayoutParams(dp(24), dp(42)));
-        row.setOnClickListener(view -> action.run());
+        row.setOnClickListener(view -> runWithPressFeedback(view, action));
         addTop(parent, row, parent.getChildCount() == 0 ? 0 : 4);
+        animateIn(row);
     }
 
     private void showFavorites() {
         showLoading();
+        api.get(EndpointProvider.favoriteTabs(), Collections.emptyMap(), new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                localCache.log("favorite tabs loaded: " + favoriteTabSummary(body));
+                showFavoriteContents("tab ok");
+            }
+
+            @Override public void onError(String message) {
+                localCache.log("favorite tabs failed, trying content: " + message);
+                showFavoriteContents(message);
+            }
+        });
+    }
+
+    private void showFavoriteContents(String reason) {
+        Map<String, String> params = favoriteParams("");
+        params.put("limit", "30");
+        showSavedList(TITLE_FAVORITES, EndpointProvider.favoriteLinks(), params, false,
+                fallbackReason -> {
+                    showFavoriteFoldersFallback(reason + "; " + fallbackReason);
+                    return true;
+                });
+    }
+
+    private void showFavoriteFoldersFallback(String reason) {
+        localCache.log("favorite content fallback to folders: " + reason);
+        showLoading();
         Map<String, String> folderParams = new HashMap<>();
-        folderParams.put(SecureStrings.userid(), session.userId());
         folderParams.put("enable_new_style_collect", "1");
         folderParams.put("x_os_type", "Windows");
         folderParams.put("device_info", "Edge");
         api.get(EndpointProvider.favoriteFolders(), folderParams, new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
-                JSONObject result = body.optJSONObject("result");
-                JSONArray folders = result == null ? null : result.optJSONArray("folders");
-                if (folders == null) folders = body.optJSONArray("folders");
-                JSONObject firstFolder = folders == null ? null : folders.optJSONObject(0);
-                if (firstFolder == null) {
-                    hideLoading();
-                    showMessage("收藏夹里暂时没有内容");
+                JSONObject folder = firstFavoriteFolder(findFavoriteFolders(body));
+                String folderId = favoriteFolderId(folder);
+                if (folder == null) {
+                    localCache.log("favorite folders missing: " + favoriteFolderSummary(body));
+                    showFavoritesUnavailable(body, "");
+                    return;
+                } else if (folderId.isEmpty()) {
+                    localCache.log("favorite folder id missing: " + folder);
+                    showFavoritesUnavailable(body, "");
                     return;
                 }
-                Map<String, String> params = new HashMap<>();
-                params.put("folder_id", firstFolder.optString("id",
-                        firstFolder.optString("folder_id")));
-                params.put("enable_new_style_collect", "1");
-                params.put("dw", "604");
-                params.put("no_more", "false");
-                showSavedList("我的收藏", EndpointProvider.favoriteLinks(), params);
+                showSavedList(TITLE_FAVORITES, EndpointProvider.favoriteLinks(),
+                        favoriteParams(folderId), false, null);
             }
 
             @Override public void onError(String message) {
-                hideLoading();
-                toast("收藏夹加载失败：" + message);
+                localCache.log("favorite folders failed: " + message);
+                showFavoritesUnavailable(null, message);
             }
         });
     }
 
-    private void showSavedList(String pageTitle, String path, Map<String, String> params) {
+    private String favoriteTabSummary(JSONObject body) {
+        if (body == null) return "no body";
+        JSONObject result = body.optJSONObject("result");
+        JSONArray tabs = result == null ? null : result.optJSONArray("tab_list");
+        return "status=" + body.optString("status")
+                + ", tabs=" + (tabs == null ? -1 : tabs.length())
+                + ", msg=" + first(body.optString("msg"), body.optString("message"));
+    }
+
+    private void showFavoritesUnavailable(JSONObject body, String message) {
+        hideLoading();
+        prepareSavedPage(TITLE_FAVORITES);
+        String cacheKey = savedCacheKey(TITLE_FAVORITES, EndpointProvider.favoriteLinks());
+        List<FeedItem> cached = filterItems(localCache.savedList(cacheKey));
+        if (!cached.isEmpty()) {
+            toast(MSG_OFFLINE_CACHE);
+            renderSavedItems(TITLE_FAVORITES, cached);
+            return;
+        }
+        if (message != null && !message.isEmpty()) {
+            localCache.log("favorite unavailable reason: " + message);
+        }
+        if (body != null) {
+            localCache.log("favorite unavailable body: " + favoriteFolderSummary(body));
+        }
+        showMessage(MSG_FAVORITES_UNAVAILABLE);
+    }
+
+    private String favoriteFolderSummary(JSONObject body) {
+        if (body == null) return "no body";
+        JSONObject result = body.optJSONObject("result");
+        JSONObject source = result == null ? body : result;
+        JSONArray folders = source.optJSONArray("folders");
+        int folderCount = folders == null ? -1 : folders.length();
+        return "status=" + body.optString("status")
+                + ", msg=" + first(body.optString("msg"), body.optString("message"))
+                + ", folders=" + folderCount
+                + ", favour_post_num=" + source.optInt("favour_post_num",
+                source.optInt("favor_post_num", source.optInt("favorite_post_num", -1)));
+    }
+
+    private Map<String, String> favoriteParams(String folderId) {
+        Map<String, String> params = new HashMap<>();
+        if (folderId != null && !folderId.isEmpty()) {
+            params.put("folder_id", folderId);
+            params.put("folderid", folderId);
+            params.put("fav_folder_id", folderId);
+            params.put("collect_folder_id", folderId);
+        }
+        params.put("enable_new_style_collect", "1");
+        params.put("dw", "604");
+        params.put("no_more", "false");
+        return params;
+    }
+
+    private JSONArray findFavoriteFolders(JSONObject body) {
+        JSONObject result = body == null ? null : body.optJSONObject("result");
+        JSONArray folders = findFavoriteFolderArray(result, 0);
+        return folders == null ? findFavoriteFolderArray(body, 0) : folders;
+    }
+
+    private JSONArray findFavoriteFolderArray(Object node, int depth) {
+        if (node == null || depth > 5) return null;
+        if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            return looksLikeFolderArray(array) ? array : null;
+        }
+        if (!(node instanceof JSONObject)) return null;
+        JSONObject object = (JSONObject) node;
+        String[] keys = {"folders", "folder_list", "fav_folders", "favorite_folders",
+                "collect_folders", "collections", "list", "items", "data"};
+        for (String key : keys) {
+            JSONArray array = object.optJSONArray(key);
+            if (array != null && looksLikeFolderArray(array)) return array;
+        }
+        Iterator<String> names = object.keys();
+        while (names.hasNext()) {
+            Object child = object.opt(names.next());
+            JSONArray found = findFavoriteFolderArray(child, depth + 1);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private boolean looksLikeFolderArray(JSONArray array) {
+        if (array == null || array.length() == 0) return false;
+        int limit = Math.min(6, array.length());
+        for (int i = 0; i < limit; i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) continue;
+            JSONObject folder = unwrapFavoriteFolder(item);
+            if (!favoriteFolderId(folder).isEmpty()) return true;
+            if (folder == null) continue;
+            if (!first(folder.optString("folder_name"), folder.optString("name"),
+                    folder.optString("title")).isEmpty()) return true;
+        }
+        return false;
+    }
+
+    private JSONObject firstFavoriteFolder(JSONArray folders) {
+        if (folders == null) return null;
+        JSONObject fallback = null;
+        for (int i = 0; i < folders.length(); i++) {
+            JSONObject folder = unwrapFavoriteFolder(folders.optJSONObject(i));
+            if (folder == null) continue;
+            if (fallback == null) fallback = folder;
+            if (!favoriteFolderId(folder).isEmpty()) return folder;
+        }
+        return fallback;
+    }
+
+    private JSONObject unwrapFavoriteFolder(JSONObject item) {
+        JSONObject current = item;
+        for (int depth = 0; depth < 4 && current != null; depth++) {
+            if (!favoriteFolderId(current).isEmpty()) return current;
+            JSONObject next = current.optJSONObject("folder");
+            if (next == null) next = current.optJSONObject("folder_info");
+            if (next == null) next = current.optJSONObject("fav_folder");
+            if (next == null) next = current.optJSONObject("collect_folder");
+            if (next == null) next = current.optJSONObject("collection");
+            if (next == null) next = current.optJSONObject("data");
+            if (next == null) next = current.optJSONObject("item");
+            if (next == current) break;
+            current = next;
+        }
+        return current;
+    }
+
+    private String favoriteFolderId(JSONObject folder) {
+        if (folder == null) return "";
+        return first(folder.optString("folder_id"), folder.optString("folderid"),
+                folder.optString("fav_folder_id"), folder.optString("collect_folder_id"),
+                folder.optString("collection_id"), folder.optString("id"),
+                folder.optString("fid"));
+    }
+
+    private void prepareSavedPage(String pageTitle) {
         stopQrPolling();
         ensureEmojiCatalog(() -> {});
         screen = "saved";
@@ -1359,12 +2582,22 @@ public final class MainActivity extends Activity {
         title.setText(pageTitle);
         action.setVisibility(View.INVISIBLE);
         content.removeAllViews();
+    }
+
+    private void showSavedList(String pageTitle, String path, Map<String, String> params) {
+        showSavedList(pageTitle, path, params, true, null);
+    }
+
+    private void showSavedList(String pageTitle, String path, Map<String, String> params,
+                               boolean includeUserId, SavedListFallback fallback) {
+        prepareSavedPage(pageTitle);
         showLoading();
-        params.put("offset", "0");
-        params.put("limit", "20");
-        params.put(SecureStrings.userid(), session.userId());
+        if (!params.containsKey("offset")) params.put("offset", "0");
+        if (!params.containsKey("limit")) params.put("limit", "20");
+        if (includeUserId) params.put(SecureStrings.userid(), session.userId());
         params.put("x_os_type", "Windows");
         params.put("device_info", "Edge");
+        final String cacheKey = savedCacheKey(pageTitle, path);
         api.get(path, params, new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
                 hideLoading();
@@ -1380,18 +2613,54 @@ public final class MainActivity extends Activity {
                         }
                     }
                 }
-                if (pageTitle.contains("历史")) showHistoryList(items);
-                else {
-                    content.addView(feedList(items), match());
-                    if (items.isEmpty()) showMessage("这里暂时没有内容");
+                if (items.isEmpty()) {
+                    collectFeedItems(body, items, new HashMap<>(), 0);
                 }
+                items = filterItems(items);
+                if (items.isEmpty()) {
+                    List<FeedItem> cached = filterItems(localCache.savedList(cacheKey));
+                    if (!cached.isEmpty()) {
+                        toast(MSG_OFFLINE_CACHE);
+                        renderSavedItems(pageTitle, cached);
+                        return;
+                    }
+                    if (fallback != null && fallback.onFallback("empty result")) return;
+                } else {
+                    localCache.saveSavedList(cacheKey, items);
+                }
+                renderSavedItems(pageTitle, items);
             }
 
             @Override public void onError(String message) {
                 hideLoading();
+                localCache.log(pageTitle + " failed: " + message);
+                List<FeedItem> cached = filterItems(localCache.savedList(cacheKey));
+                if (!cached.isEmpty()) {
+                    toast(MSG_OFFLINE_CACHE);
+                    renderSavedItems(pageTitle, cached);
+                    return;
+                }
+                if (fallback != null && fallback.onFallback(message)) return;
                 showMessage(pageTitle + "加载失败\n" + message);
             }
         });
+    }
+
+    private String savedCacheKey(String pageTitle, String path) {
+        return pageTitle + "_" + path;
+    }
+
+    private void renderSavedItems(String pageTitle, List<FeedItem> items) {
+        if (isHistoryPage(pageTitle)) showHistoryList(items);
+        else {
+            content.addView(feedList(items), match());
+            if (items.isEmpty()) showMessage(MSG_EMPTY_CONTENT);
+        }
+    }
+
+    private boolean isHistoryPage(String pageTitle) {
+        return pageTitle != null
+                && (pageTitle.contains("历史") || pageTitle.contains("鍘嗗彶"));
     }
 
     private ListView feedList(List<FeedItem> items) {
@@ -1401,7 +2670,7 @@ public final class MainActivity extends Activity {
         list.setDividerHeight(dp(2));
         list.setAdapter(new FeedAdapter(this, items, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
-                session.darkMode(), PRIMARY, SECONDARY, this::showDetail));
+                session.darkMode(), PRIMARY, SECONDARY, this::showDetail, this::toggleFeedLike));
         return list;
     }
 
@@ -1412,8 +2681,8 @@ public final class MainActivity extends Activity {
 
     private void showHistoryList(List<FeedItem> allItems) {
         content.removeAllViews();
-        LinearLayout page = vertical(BG);
-        page.setPadding(dp(7), dp(5), dp(7), 0);
+        FrameLayout page = new FrameLayout(this);
+        page.setBackgroundColor(BG);
         EditText search = new EditText(this);
         search.setHint("搜索历史：标题、摘要或作者");
         search.setHintTextColor(MUTED);
@@ -1421,20 +2690,40 @@ public final class MainActivity extends Activity {
         search.setSingleLine(true);
         search.setTextSize(sp(12));
         Compat.tint(search, PRIMARY);
-        page.addView(search, new LinearLayout.LayoutParams(-1, dp(40)));
 
         FrameLayout results = new FrameLayout(this);
-        page.addView(results, new LinearLayout.LayoutParams(-1, 0, 1));
+        page.addView(results, match());
+        FrameLayout.LayoutParams searchParams =
+                new FrameLayout.LayoutParams(-1, dp(40), Gravity.TOP);
+        searchParams.leftMargin = dp(7);
+        searchParams.rightMargin = dp(7);
+        searchParams.topMargin = dp(5);
+        page.addView(search, searchParams);
+        prepareSearchBar(search, dp(40));
         List<FeedItem> filtered = new ArrayList<>(allItems);
         FeedAdapter adapter = new FeedAdapter(this, filtered, session.noImage(),
                 session.uiScale() / 100f, session.textScale() / 100f,
-                session.darkMode(), PRIMARY, SECONDARY, this::showDetail);
+                session.darkMode(), PRIMARY, SECONDARY, this::showDetail, this::toggleFeedLike);
         ListView list = new ListView(this);
         list.setBackgroundColor(BG);
         list.setDivider(new ColorDrawable(Color.TRANSPARENT));
         list.setDividerHeight(dp(2));
         list.setAdapter(adapter);
+        list.setOnScrollListener(new AbsListView.OnScrollListener() {
+            @Override public void onScrollStateChanged(AbsListView view, int scrollState) {
+                setSearchBarVisible(search, scrollState == SCROLL_STATE_IDLE);
+            }
+
+            @Override public void onScroll(AbsListView view, int firstVisibleItem,
+                                           int visibleItemCount, int totalItemCount) {}
+        });
         results.addView(list, match());
+        TextView emptyView = text(allItems.isEmpty()
+                ? "这里暂时没有内容" : "没有找到相关历史记录", 13, MUTED);
+        emptyView.setGravity(Gravity.CENTER);
+        results.addView(emptyView, match());
+        emptyView.setVisibility(allItems.isEmpty() ? View.VISIBLE : View.GONE);
+        list.setVisibility(allItems.isEmpty() ? View.GONE : View.VISIBLE);
 
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence value, int start,
@@ -1449,23 +2738,18 @@ public final class MainActivity extends Activity {
                     if (query.isEmpty() || haystack.contains(query)) filtered.add(item);
                 }
                 adapter.notifyDataSetChanged();
-                results.removeAllViews();
+                emptyView.setText("没有找到相关历史记录");
                 if (filtered.isEmpty()) {
-                    TextView empty = text("没有找到相关历史记录", 13, MUTED);
-                    empty.setGravity(Gravity.CENTER);
-                    results.addView(empty, match());
+                    setSearchBarVisible(search, true);
+                    emptyView.setVisibility(View.VISIBLE);
+                    list.setVisibility(View.GONE);
                 } else {
-                    results.addView(list, match());
+                    emptyView.setVisibility(View.GONE);
+                    list.setVisibility(View.VISIBLE);
                 }
             }
             @Override public void afterTextChanged(Editable value) {}
         });
-        if (allItems.isEmpty()) {
-            results.removeAllViews();
-            TextView empty = text("这里暂时没有内容", 13, MUTED);
-            empty.setGravity(Gravity.CENTER);
-            results.addView(empty, match());
-        }
         content.addView(page, match());
     }
 
@@ -1478,7 +2762,45 @@ public final class MainActivity extends Activity {
         if (links == null) links = result.optJSONArray("visits");
         if (links == null) links = result.optJSONArray("history");
         if (links == null) links = result.optJSONArray("data");
+        if (links == null) links = result.optJSONArray("items");
+        if (links == null) links = result.optJSONArray("rows");
+        if (links == null) links = result.optJSONArray("records");
+        if (links == null) links = result.optJSONArray("favorites");
+        if (links == null) links = result.optJSONArray("collects");
+        if (links == null) links = result.optJSONArray("link_list");
+        if (links == null) links = result.optJSONArray("links_list");
+        if (links == null) links = findNestedLinkArray(result, 0);
         return links;
+    }
+
+    private JSONArray findNestedLinkArray(Object node, int depth) {
+        if (node == null || depth > 5) return null;
+        if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            return looksLikeLinkArray(array) ? array : null;
+        }
+        if (!(node instanceof JSONObject)) return null;
+        JSONObject object = (JSONObject) node;
+        Iterator<String> names = object.keys();
+        while (names.hasNext()) {
+            JSONArray found = findNestedLinkArray(object.opt(names.next()), depth + 1);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private boolean looksLikeLinkArray(JSONArray array) {
+        if (array == null || array.length() == 0) return false;
+        int limit = Math.min(8, array.length());
+        for (int i = 0; i < limit; i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) continue;
+            JSONObject value = savedFeedValue(item);
+            if (value == null) continue;
+            String id = value.optString("linkid", value.optString("link_id"));
+            if (!id.isEmpty()) return true;
+        }
+        return false;
     }
 
     private JSONObject unwrapSavedItem(JSONObject item) {
@@ -1488,8 +2810,15 @@ public final class MainActivity extends Activity {
                     current.optString("link_id")).isEmpty()) return current;
             JSONObject next = current.optJSONObject("link");
             if (next == null) next = current.optJSONObject("link_info");
+            if (next == null) next = current.optJSONObject("link_detail");
             if (next == null) next = current.optJSONObject("moment");
             if (next == null) next = current.optJSONObject("post");
+            if (next == null) next = current.optJSONObject("favorite");
+            if (next == null) next = current.optJSONObject("fav");
+            if (next == null) next = current.optJSONObject("record");
+            if (next == null) next = current.optJSONObject("target");
+            if (next == null) next = current.optJSONObject("source");
+            if (next == null) next = current.optJSONObject("obj");
             if (next == null) next = current.optJSONObject("content");
             if (next == null) next = current.optJSONObject("data");
             if (next == null) next = current.optJSONObject("item");
@@ -1621,6 +2950,7 @@ public final class MainActivity extends Activity {
         page.setPadding(dp(8), dp(8), dp(8), dp(14));
         scroll.addView(page);
         content.addView(scroll, match());
+        animateIn(scroll);
         return page;
     }
 
@@ -1866,9 +3196,32 @@ public final class MainActivity extends Activity {
         addTop(panel, toggleRow("无图模式", session.noImage(), value -> {
             session.setNoImage(value);
             feed.clear();
+            invalidateFeedView();
         }), 0);
         addTop(panel, toggleRow("图片查看器允许查看原图", session.originalImages(),
                 session::setOriginalImages), 4);
+
+        EditText blockKeywords = textField(panel, "屏蔽关键词", session.blockKeywords());
+        blockKeywords.setSingleLine(false);
+        blockKeywords.setMinLines(2);
+        blockKeywords.setGravity(Gravity.CENTER_VERTICAL);
+        Button saveFilter = button("保存内容过滤", R.drawable.ic_settings);
+        saveFilter.setOnClickListener(view -> {
+            session.setBlockKeywords(blockKeywords.getText().toString());
+            feed.clear();
+            feedOffset = 0;
+            invalidateFeedView();
+            toast("内容过滤已保存");
+        });
+        addTop(panel, saveFilter, 7);
+
+        TextView offlineInfo = text("离线缓存 " + formatCacheMb(localCache.offlineBytes())
+                + " / 已缓存帖子 " + localCache.detailCount(), 11, MUTED);
+        addTop(panel, offlineInfo, 8);
+
+        Button diagnostics = button("导出诊断信息", R.drawable.ic_info);
+        diagnostics.setOnClickListener(view -> exportDiagnostics());
+        addTop(panel, diagnostics, 7);
 
         Button clearTempCache = button("清除临时缓存 " + formatCacheMb(tempCacheBytes()),
                 R.drawable.ic_trash);
@@ -1897,6 +3250,7 @@ public final class MainActivity extends Activity {
             if (session.isLoggedIn()) {
                 session.clearSession();
                 feed.clear();
+                invalidateFeedView();
                 toast("已退出登录");
             }
             showLogin();
@@ -2013,6 +3367,15 @@ public final class MainActivity extends Activity {
         disclaimer.setLineSpacing(0, 1.22f);
         addTop(panel, disclaimer, 10);
 
+        TextView feedbackTitle = text("Bug 反馈群", 13, TEXT);
+        feedbackTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        addTop(panel, feedbackTitle, 12);
+        addTop(panel, text("QQ群：781941517", 12, TEXT), 5);
+        addTop(panel, text("遇到问题可以扫码进群反馈。", 11, MUTED), 3);
+        Button feedbackQr = button("查看反馈群二维码", R.drawable.ic_info);
+        feedbackQr.setOnClickListener(view -> showFeedbackGroupQr());
+        addTop(panel, feedbackQr, 8);
+
         TextView updateStatus = text("可从 GitHub 检查最新版本", 12, MUTED);
         addTop(panel, updateStatus, 12);
         Button update = button("检查更新", R.drawable.ic_refresh);
@@ -2024,9 +3387,10 @@ public final class MainActivity extends Activity {
                     if (isFinishing()) return;
                     update.setEnabled(true);
                     if (result.updateAvailable) {
+                        showUpdateDialog(result);
                         updateStatus.setText("发现新版本 " + result.version);
                         update.setText("前往下载 " + result.version);
-                        update.setOnClickListener(button -> openUrl(
+                        update.setOnClickListener(button -> openUpdateUrl(
                                 result.downloadUrl.isEmpty() ? result.releaseUrl : result.downloadUrl));
                     } else {
                         updateStatus.setText("当前已是最新版本");
@@ -2049,6 +3413,48 @@ public final class MainActivity extends Activity {
                 openUrl("https://github.com/huanghao897/heybox-lite"));
         addTop(panel, repository, 7);
         page.addView(panel);
+    }
+
+    private void showFeedbackGroupQr() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(14), dp(12), dp(14), dp(12));
+        Compat.setBackground(box, round(Color.WHITE, 12));
+
+        TextView title = text("Bug 反馈群", 16, Color.rgb(28, 28, 28));
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setGravity(Gravity.CENTER);
+        box.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView group = text("QQ群：781941517", 12, Color.rgb(84, 84, 84));
+        group.setGravity(Gravity.CENTER);
+        addTop(box, group, 5);
+
+        ImageView qr = new ImageView(this);
+        qr.setImageResource(R.drawable.qq_feedback_group_qr);
+        qr.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        qr.setAdjustViewBounds(true);
+        qr.setPadding(dp(4), dp(4), dp(4), dp(4));
+        int size = Math.min(
+                Math.min(getResources().getDisplayMetrics().widthPixels - dp(56),
+                        getResources().getDisplayMetrics().heightPixels - dp(170)),
+                dp(300));
+        size = Math.max(dp(150), size);
+        LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(size, size);
+        qrParams.gravity = Gravity.CENTER_HORIZONTAL;
+        qrParams.topMargin = dp(10);
+        box.addView(qr, qrParams);
+
+        TextView hint = text("点击空白处关闭", 11, Color.rgb(120, 120, 120));
+        hint.setGravity(Gravity.CENTER);
+        addTop(box, hint, 8);
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(box).create();
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
     }
 
     private LinearLayout toggleRow(String label, boolean initial, ToggleListener listener) {
@@ -2192,7 +3598,7 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "1.57";
+            return "1.70";
         }
     }
 
@@ -2217,6 +3623,53 @@ public final class MainActivity extends Activity {
         } catch (Exception ignored) {
             toast("无法打开链接");
         }
+    }
+
+    private void openUpdateUrl(String url) {
+        if (TextUtils.isEmpty(url)) {
+            toast("没有可用下载链接");
+            return;
+        }
+        openUrl(url);
+    }
+
+    private void exportDiagnostics() {
+        String diagnostics = buildDiagnostics();
+        java.io.File file = localCache.writeDiagnostics(diagnostics);
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_SUBJECT, "heybox Lite diagnostics");
+        share.putExtra(Intent.EXTRA_TEXT, diagnostics + "\n\nFile: " + file.getAbsolutePath());
+        try {
+            startActivity(Intent.createChooser(share, "导出诊断信息"));
+        } catch (Exception ignored) {
+            toast("诊断信息已保存：" + file.getAbsolutePath());
+        }
+    }
+
+    private String buildDiagnostics() {
+        StringBuilder out = new StringBuilder();
+        out.append("heybox Lite diagnostics\n");
+        out.append("version: ").append(appVersion()).append('\n');
+        out.append("android: ").append(Build.VERSION.RELEASE)
+                .append(" api ").append(Build.VERSION.SDK_INT).append('\n');
+        out.append("device: ").append(Build.MANUFACTURER).append(' ')
+                .append(Build.MODEL).append('\n');
+        out.append("screen: ").append(screen).append('\n');
+        out.append("loggedIn: ").append(session.isLoggedIn()).append('\n');
+        out.append("feedCount: ").append(feed.size()).append('\n');
+        out.append("feedOffset: ").append(feedOffset).append('\n');
+        out.append("feedNoMore: ").append(feedNoMore).append('\n');
+        out.append("offlineFeedSavedAt: ").append(localCache.feedSavedAt()).append('\n');
+        out.append("offlineBytes: ").append(localCache.offlineBytes()).append('\n');
+        out.append("cachedDetails: ").append(localCache.detailCount()).append('\n');
+        out.append("imageMemoryCacheKb: ").append(ImageLoader.cacheSizeKb()).append('\n');
+        out.append("emojiMemoryCacheKb: ").append(EmojiRenderer.cacheSizeKb()).append('\n');
+        out.append("noImage: ").append(session.noImage()).append('\n');
+        out.append("darkMode: ").append(session.darkMode()).append('\n');
+        out.append("keywords: ").append(session.blockKeywords()).append('\n');
+        out.append("\nrecent events:\n").append(localCache.recentLog());
+        return out.toString();
     }
 
     private interface ToggleListener {
@@ -2433,25 +3886,40 @@ public final class MainActivity extends Activity {
     }
 
     private void returnFromDetail() {
+        saveCurrentDetailProgress();
         if ("saved".equals(detailReturn)) showProfile();
         else if ("search".equals(detailReturn)) showSearch();
         else showFeed();
     }
 
+    private void saveCurrentDetailProgress() {
+        if (!"detail".equals(screen) || detailScroll == null || currentLinkId.isEmpty()
+                || localCache == null) return;
+        localCache.saveScroll(currentLinkId, detailScroll.getScrollY());
+    }
+
+    @Override
+    protected void onPause() {
+        saveCurrentDetailProgress();
+        super.onPause();
+    }
+
     @Override
     protected void onDestroy() {
+        saveCurrentDetailProgress();
         stopQrPolling();
         ImageLoader.cancelTree(content);
         handler.removeCallbacksAndMessages(null);
+        if (writeTokenProvider != null) writeTokenProvider.close();
         if (api != null) api.close();
         super.onDestroy();
     }
 
     private void showLoading() {
         hideLoading();
-        ProgressBar progress = new ProgressBar(this);
+        LoadingSpinnerView progress = new LoadingSpinnerView(this);
         progress.setTag("loading");
-        Compat.tint(progress, PRIMARY);
+        progress.setColor(PRIMARY);
         content.addView(progress, new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER));
     }
 
@@ -2538,6 +4006,19 @@ public final class MainActivity extends Activity {
                 .setInterpolator(new DecelerateInterpolator()).start();
     }
 
+    private void runWithPressFeedback(View view, Runnable action) {
+        if (action == null) return;
+        view.setEnabled(false);
+        view.animate().cancel();
+        view.animate().scaleX(0.98f).scaleY(0.98f).setDuration(65).start();
+        handler.postDelayed(() -> {
+            view.animate().scaleX(1f).scaleY(1f).setDuration(90)
+                    .setInterpolator(new DecelerateInterpolator()).start();
+            view.setEnabled(true);
+            if (!isFinishing()) action.run();
+        }, 75);
+    }
+
     private LinearLayout vertical(int color) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -2575,7 +4056,10 @@ public final class MainActivity extends Activity {
                 .format(new Date(seconds * 1000L));
     }
 
-    private static String first(String first, String second) {
-        return first == null || first.isEmpty() ? (second == null ? "" : second) : first;
+    private static String first(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isEmpty()) return value;
+        }
+        return "";
     }
 }

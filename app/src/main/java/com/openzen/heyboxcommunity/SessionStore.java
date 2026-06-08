@@ -47,6 +47,7 @@ final class SessionStore {
     private static final String SPLASH_TEXT = "splash_text";
     private static final String SPLASH_DURATION = "splash_duration";
     private static final String SEARCH_HISTORY = "search_history";
+    private static final String BLOCK_KEYWORDS = "block_keywords";
     static final String DEFAULT_SPLASH_TEXT = "方寸之间，看见热爱";
     private static final String LEGACY_PREFIX = "L1:";
 
@@ -78,7 +79,9 @@ final class SessionStore {
                     && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 saveCookie(cookie);
             }
-            return cookie;
+            String normalized = normalizeCookie(cookie);
+            if (!normalized.equals(cookie)) saveCookie(normalized);
+            return normalized;
         }
         return "";
     }
@@ -91,7 +94,13 @@ final class SessionStore {
     }
 
     String userId() {
-        return prefs.getString(SecureStrings.userId(), "");
+        String saved = prefs.getString(SecureStrings.userId(), "");
+        if (!saved.isEmpty()) return saved;
+        String fromCookie = userIdFromCookie(getCookie());
+        if (!fromCookie.isEmpty()) {
+            prefs.edit().putString(SecureStrings.userId(), fromCookie).apply();
+        }
+        return fromCookie;
     }
 
     String userName() {
@@ -276,6 +285,26 @@ final class SessionStore {
         prefs.edit().remove(SEARCH_HISTORY).apply();
     }
 
+    String blockKeywords() {
+        return prefs.getString(BLOCK_KEYWORDS, "");
+    }
+
+    void setBlockKeywords(String value) {
+        prefs.edit().putString(BLOCK_KEYWORDS, value == null ? "" : value.trim()).apply();
+    }
+
+    List<String> blockKeywordList() {
+        List<String> values = new java.util.ArrayList<>();
+        String raw = blockKeywords();
+        if (raw.isEmpty()) return values;
+        String[] parts = raw.split("[,，;；\\n\\r]+");
+        for (String part : parts) {
+            String clean = part.trim().toLowerCase(java.util.Locale.US);
+            if (!clean.isEmpty()) values.add(clean);
+        }
+        return values;
+    }
+
     void setTheme(String primary, String secondary) {
         prefs.edit()
                 .putString(PRIMARY_COLOR, primary)
@@ -303,6 +332,7 @@ final class SessionStore {
 
     Map<String, String> commonParams() {
         Map<String, String> result = new HashMap<>();
+        String id = userId();
         result.put("os_type", "web");
         result.put("app", "heybox");
         result.put("client_type", "web");
@@ -310,9 +340,10 @@ final class SessionStore {
         result.put("web_version", "2.5");
         result.put("x_client_type", "web");
         result.put("x_app", "heybox_website");
-        result.put(SecureStrings.heyboxId(), userId());
-        result.put("x_os_type", "Android");
-        result.put("device_info", "Chrome");
+        result.put(SecureStrings.heyboxId(), id);
+        if (!id.isEmpty()) result.put(SecureStrings.userid(), id);
+        result.put("x_os_type", "Windows");
+        result.put("device_info", "Edge");
         result.put(SecureStrings.deviceId(), prefs.getString(SecureStrings.deviceId(), ""));
         return result;
     }
@@ -329,20 +360,17 @@ final class SessionStore {
             if (name.isEmpty()) name = account.optString("username", account.optString("nickname"));
             if (avatar.isEmpty()) avatar = account.optString("avatar");
         }
-        prefs.edit()
-                .putString(SecureStrings.userId(), id)
-                .putString(USER_NAME, name)
-                .putString(AVATAR, avatar)
-                .apply();
+        if (id.isEmpty()) id = userIdFromCookie(getCookie());
+        SharedPreferences.Editor editor = prefs.edit();
+        if (!id.isEmpty()) editor.putString(SecureStrings.userId(), id);
+        if (!name.isEmpty()) editor.putString(USER_NAME, name);
+        if (!avatar.isEmpty()) editor.putString(AVATAR, avatar);
+        editor.apply();
     }
 
     void mergeCookies(List<String> headers) {
         if (headers == null || headers.isEmpty()) return;
-        Map<String, String> values = new LinkedHashMap<>();
-        for (String part : getCookie().split(";")) {
-            int equals = part.indexOf('=');
-            if (equals > 0) values.put(part.substring(0, equals).trim(), part.substring(equals + 1).trim());
-        }
+        Map<String, String> values = cookieMap(getCookie());
         for (String header : headers) {
             if (header == null) continue;
             String first = header.split(";", 2)[0];
@@ -353,21 +381,147 @@ final class SessionStore {
             if (value.isEmpty()) values.remove(key);
             else values.put(key, value);
         }
+        normalizeAuthCookies(values);
+        String cookie = joinCookies(values);
+        saveCookie(cookie);
+        persistUserIdFromCookie(cookie);
+    }
+
+    boolean hasCookieValue(String key) {
+        return !cookieValue(getCookie(), key).isEmpty();
+    }
+
+    void putCookieValue(String key, String value) {
+        if (key == null || key.isEmpty()) return;
+        Map<String, String> values = cookieMap(getCookie());
+        if (value == null || value.isEmpty()) values.remove(key);
+        else values.put(key, value);
+        normalizeAuthCookies(values);
+        String cookie = joinCookies(values);
+        saveCookie(cookie);
+        persistUserIdFromCookie(cookie);
+    }
+
+    void removeCookieValue(String key) {
+        putCookieValue(key, "");
+    }
+
+    private void persistUserIdFromCookie(String cookie) {
+        if (!prefs.getString(SecureStrings.userId(), "").isEmpty()) return;
+        String id = userIdFromCookie(cookie);
+        if (!id.isEmpty()) prefs.edit().putString(SecureStrings.userId(), id).apply();
+    }
+
+    private String userIdFromCookie(String cookie) {
+        Map<String, String> values = cookieMap(cookie);
+        String value = firstCookieValue(values, SecureStrings.userHeyboxId(),
+                SecureStrings.xHeyboxId(), "user_" + SecureStrings.heyboxId());
+        if (value.isEmpty()) value = firstCookieValue(values, SecureStrings.heyboxId(),
+                SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
+        return value;
+    }
+
+    String authCookieKeysForLog() {
+        Map<String, String> values = cookieMap(getCookie());
+        StringBuilder result = new StringBuilder();
+        appendCookieKey(result, values, SecureStrings.userPkey());
+        appendCookieKey(result, values, SecureStrings.xPkey());
+        appendCookieKey(result, values, SecureStrings.userHeyboxId());
+        appendCookieKey(result, values, SecureStrings.xHeyboxId());
+        appendCookieKey(result, values, SecureStrings.xXhhTokenId());
+        appendCookieKey(result, values, SecureStrings.heyboxId());
+        appendCookieKey(result, values, SecureStrings.userid());
+        return result.length() == 0 ? "none" : result.toString();
+    }
+
+    private void appendCookieKey(StringBuilder result, Map<String, String> values, String key) {
+        if (values == null || key == null || key.isEmpty() || !values.containsKey(key)) return;
+        if (result.length() > 0) result.append(',');
+        result.append(key);
+    }
+
+    private String firstCookieValue(Map<String, String> values, String... keys) {
+        if (values == null || keys == null) return "";
+        for (String key : keys) {
+            if (key == null || key.isEmpty()) continue;
+            String value = values.get(key);
+            if (value != null && !value.isEmpty()) return value;
+        }
+        return "";
+    }
+
+    private void normalizeAuthCookies(Map<String, String> values) {
+        if (values == null || values.isEmpty()) return;
+        mirrorCookie(values, SecureStrings.userPkey(), SecureStrings.xPkey());
+        mirrorCookie(values, SecureStrings.xPkey(), SecureStrings.userPkey());
+
+        String id = firstCookieValue(values, SecureStrings.userHeyboxId(),
+                SecureStrings.xHeyboxId(), SecureStrings.heyboxId(),
+                SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
+        if (!id.isEmpty()) {
+            putCookieIfMissing(values, SecureStrings.userHeyboxId(), id);
+            putCookieIfMissing(values, SecureStrings.xHeyboxId(), id);
+            putCookieIfMissing(values, SecureStrings.heyboxId(), id);
+        }
+    }
+
+    private void mirrorCookie(Map<String, String> values, String from, String to) {
+        String value = values.get(from);
+        if (value != null && !value.isEmpty()) putCookieIfMissing(values, to, value);
+    }
+
+    private void putCookieIfMissing(Map<String, String> values, String key, String value) {
+        if (key == null || key.isEmpty() || value == null || value.isEmpty()) return;
+        String existing = values.get(key);
+        if (existing == null || existing.isEmpty()) values.put(key, value);
+    }
+
+    private String normalizeCookie(String cookie) {
+        Map<String, String> values = cookieMap(cookie);
+        normalizeAuthCookies(values);
+        return joinCookies(values);
+    }
+
+    private String cookieValue(String cookie, String key) {
+        if (cookie == null || cookie.isEmpty() || key == null || key.isEmpty()) return "";
+        String value = cookieMap(cookie).get(key);
+        return value == null ? "" : value;
+    }
+
+    private Map<String, String> cookieMap(String cookie) {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (cookie == null || cookie.isEmpty()) return values;
+        String[] parts = cookie.split(";");
+        for (String part : parts) {
+            int equals = part.indexOf('=');
+            if (equals <= 0) continue;
+            String name = part.substring(0, equals).trim();
+            String value = part.substring(equals + 1).trim();
+            if (!name.isEmpty() && !value.isEmpty()) values.put(name, value);
+        }
+        return values;
+    }
+
+    private String joinCookies(Map<String, String> values) {
         StringBuilder merged = new StringBuilder();
         for (Map.Entry<String, String> entry : values.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isEmpty()
+                    || entry.getValue() == null || entry.getValue().isEmpty()) continue;
             if (merged.length() > 0) merged.append("; ");
             merged.append(entry.getKey()).append('=').append(entry.getValue());
         }
-        saveCookie(merged.toString());
+        return merged.toString();
     }
 
     void saveCookie(String value) {
         try {
+            String cookie = normalizeCookie(value == null ? "" : value);
             String encrypted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                    ? ModernCookieCrypto.encrypt(value) : encryptLegacy(value);
+                    ? ModernCookieCrypto.encrypt(cookie) : encryptLegacy(cookie);
             prefs.edit().putString(SecureStrings.encryptedCookieKey(),
                     encrypted)
                     .remove(SecureStrings.cookieKey()).apply();
+            persistUserIdFromCookie(cookie);
         } catch (Exception ignored) {
             prefs.edit().remove(SecureStrings.cookieKey())
                     .remove(SecureStrings.encryptedCookieKey()).apply();
@@ -472,6 +626,7 @@ final class SessionStore {
         String splashText = splashText();
         int splashDuration = splashDuration();
         String searchHistory = prefs.getString(SEARCH_HISTORY, "[]");
+        String blockKeywords = blockKeywords();
         prefs.edit().clear()
                 .putString(SecureStrings.deviceId(), deviceId)
                 .putBoolean(NO_IMAGE, noImage)
@@ -492,6 +647,7 @@ final class SessionStore {
                 .putString(SPLASH_TEXT, splashText)
                 .putInt(SPLASH_DURATION, splashDuration)
                 .putString(SEARCH_HISTORY, searchHistory)
+                .putString(BLOCK_KEYWORDS, blockKeywords)
                 .apply();
     }
 }

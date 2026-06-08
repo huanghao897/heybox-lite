@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -23,12 +24,17 @@ final class UpdateChecker {
     static final class Result {
         final boolean updateAvailable;
         final String version;
+        final String title;
+        final String notes;
         final String releaseUrl;
         final String downloadUrl;
 
-        Result(boolean updateAvailable, String version, String releaseUrl, String downloadUrl) {
+        Result(boolean updateAvailable, String version, String title, String notes,
+                String releaseUrl, String downloadUrl) {
             this.updateAvailable = updateAvailable;
             this.version = version;
+            this.title = title;
+            this.notes = notes;
             this.releaseUrl = releaseUrl;
             this.downloadUrl = downloadUrl;
         }
@@ -62,6 +68,8 @@ final class UpdateChecker {
             JSONObject release = new JSONObject(text);
             String tag = release.optString("tag_name");
             String latest = normalize(tag);
+            String title = release.optString("name");
+            String notes = cleanNotes(release.optString("body"));
             String releaseUrl = release.optString("html_url");
             String downloadUrl = "";
             JSONArray assets = release.optJSONArray("assets");
@@ -69,7 +77,7 @@ final class UpdateChecker {
                 for (int i = 0; i < assets.length(); i++) {
                     JSONObject asset = assets.optJSONObject(i);
                     if (asset == null) continue;
-                    String name = asset.optString("name").toLowerCase();
+                    String name = asset.optString("name").toLowerCase(Locale.US);
                     if (name.endsWith(".apk")) {
                         downloadUrl = asset.optString("browser_download_url");
                         break;
@@ -77,7 +85,7 @@ final class UpdateChecker {
                 }
             }
             Result result = new Result(compare(latest, normalize(currentVersion)) > 0,
-                    latest, releaseUrl, downloadUrl);
+                    latest, title, notes, releaseUrl, downloadUrl);
             if (result.updateAvailable && downloadUrl.isEmpty()) {
                 throw new IllegalStateException("未找到匹配的 APK 资源，可打开发布页手动下载");
             }
@@ -85,8 +93,9 @@ final class UpdateChecker {
         } catch (Exception error) {
             String message = error.getMessage() == null
                     ? error.getClass().getSimpleName() : error.getMessage();
-            if (message.toLowerCase().contains("ssl")
-                    || message.toLowerCase().contains("handshake")) {
+            String lowerMessage = message.toLowerCase(Locale.US);
+            if (lowerMessage.contains("ssl")
+                    || lowerMessage.contains("handshake")) {
                 message = "当前系统 TLS 过旧或网络不兼容，请打开发布页检查：" + BuildConfig.UPDATE_FALLBACK_URL;
             }
             final String finalMessage = message;
@@ -106,6 +115,13 @@ final class UpdateChecker {
             while ((count = reader.read(buffer)) >= 0) result.append(buffer, 0, count);
         }
         return result.toString();
+    }
+
+    private static String cleanNotes(String notes) {
+        if (notes == null) return "";
+        String value = notes.replace("\r\n", "\n").replace('\r', '\n').trim();
+        while (value.contains("\n\n\n")) value = value.replace("\n\n\n", "\n\n");
+        return value;
     }
 
     private static String normalize(String version) {

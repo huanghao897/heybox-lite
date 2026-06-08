@@ -41,6 +41,7 @@ final class EmojiStore {
 
     static void whenReady(Runnable ready) {
         if (catalogLoaded) ready.run();
+        else if (!loading) ready.run();
         else READY.add(ready);
     }
 
@@ -63,6 +64,7 @@ final class EmojiStore {
 
             @Override public void onError(String message) {
                 loading = false;
+                notifyReady();
             }
         });
     }
@@ -156,6 +158,10 @@ final class EmojiStore {
 
     private static String lookup(String code, boolean darkMode) {
         String clean = normalizeCode(code);
+        String fallback = OfficialEmojiFallback.url(clean);
+        if (fallback != null && isOfficialToken(clean)) return fallback;
+        String direct = directLookup(code, darkMode);
+        if (direct != null) return direct;
         String[] variants = variants(clean);
         for (String variant : variants) {
             String value = darkMode ? DARK_URLS.get(variant) : URLS.get(variant);
@@ -165,7 +171,28 @@ final class EmojiStore {
             String value = URLS.get(variant);
             if (value != null) return value;
         }
-        return OfficialEmojiFallback.url(clean);
+        return fallback;
+    }
+
+    private static boolean isOfficialToken(String clean) {
+        if (clean == null) return false;
+        return clean.startsWith("cube_") || clean.startsWith("heygirl_")
+                || OfficialEmojiFallback.url(clean) != null;
+    }
+
+    private static String directLookup(String code, boolean darkMode) {
+        if (code == null || code.isEmpty()) return null;
+        String value = darkMode ? DARK_URLS.get(code) : URLS.get(code);
+        if (value != null) return value;
+        value = URLS.get(code);
+        if (value != null) return value;
+        if (!code.startsWith("[")) {
+            String bracketed = "[" + code + "]";
+            value = darkMode ? DARK_URLS.get(bracketed) : URLS.get(bracketed);
+            if (value != null) return value;
+            return URLS.get(bracketed);
+        }
+        return null;
     }
 
     private static void putVariants(String code, String lightUrl, String darkUrl) {
@@ -192,7 +219,13 @@ final class EmojiStore {
             String suffix = clean.substring(underscore + 1);
             return new String[] {clean, "[" + clean + "]", suffix, "[" + suffix + "]"};
         }
-        return new String[] {clean, "[" + clean + "]"};
+        String cube = "cube_" + clean;
+        String heygirl = "heygirl_" + clean;
+        return new String[] {
+                clean, "[" + clean + "]",
+                cube, "[" + cube + "]",
+                heygirl, "[" + heygirl + "]"
+        };
     }
 
     private static String first(String... values) {
@@ -212,6 +245,7 @@ final class EmojiStore {
     private static String normalizeUrl(String value) {
         if (value == null) return "";
         String url = value.replace("\\/", "/").trim();
+        if (url.startsWith("//")) url = "https:" + url;
         if (url.regionMatches(true, 0, "http:", 0, 5)) url = "https:" + url.substring(5);
         return url;
     }

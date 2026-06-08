@@ -16,8 +16,8 @@ android {
         applicationId "com.openzen.heyboxcommunity"
         minSdk 14
         targetSdk 35
-        versionCode 157
-        versionName "1.57"
+        versionCode 170
+        versionName "1.70"
         buildConfigField "String", "RELEASE_CERT_SHA256",
                 "\"7b163883d570408505d820174fb9565471efde8d863508fd390e4f4eb1645eb8\""
         buildConfigField "String", "UPDATE_API_URL",
@@ -59,4 +59,39 @@ android {
 
 dependencies {
     implementation "com.google.zxing:core:3.5.3"
+}
+
+tasks.register("copyReleaseApkToDist") {
+    group = "build"
+    description = "Copy the release APK to a stable dist path."
+
+    doLast {
+        File source = layout.buildDirectory.file("outputs/apk/release/app-release.apk").get().asFile
+        if (!source.exists()) {
+            throw new GradleException("Release APK not found: " + source)
+        }
+
+        File distDir = rootProject.file("dist")
+        distDir.mkdirs()
+
+        String versionName = android.defaultConfig.versionName
+        copy {
+            from source
+            into distDir
+            rename { "heybox-Lite-${versionName}.apk" }
+        }
+        copy {
+            from source
+            into distDir
+            rename { "heybox-Lite-latest.apk" }
+        }
+        println "Release APK copied to ${new File(distDir, "heybox-Lite-${versionName}.apk")}"
+        println "Release APK copied to ${new File(distDir, "heybox-Lite-latest.apk")}"
+    }
+}
+
+afterEvaluate {
+    tasks.named("assembleRelease") {
+        finalizedBy("copyReleaseApkToDist")
+    }
 }
