@@ -17,7 +17,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 final class EmojiRenderer {
-    private static final Pattern TOKEN = Pattern.compile("\\[[^\\]\\s]{1,48}\\]");
+    private static final Pattern TOKEN = Pattern.compile(
+            "\\[[^\\]\\s]{1,48}\\]|(?<![A-Za-z0-9_./-])(?:cube|heygirl)_[^\\s\\[\\]<>\"']{1,48}");
     private static final Map<String, Bitmap> BITMAPS = new HashMap<>();
     private static final Set<String> LOADING = new HashSet<>();
     private static final Map<String, List<Waiter>> WAITERS = new HashMap<>();
@@ -58,6 +59,18 @@ final class EmojiRenderer {
         Matcher matcher = TOKEN.matcher(source);
         while (matcher.find()) {
             String code = matcher.group();
+            String url = EmojiStore.url(code, darkMode);
+            if (url.isEmpty()) {
+                String trimmed = trimBareToken(code);
+                if (!trimmed.equals(code)) {
+                    String trimmedUrl = EmojiStore.url(trimmed, darkMode);
+                    if (!trimmedUrl.isEmpty()) {
+                        code = trimmed;
+                        url = trimmedUrl;
+                    }
+                }
+            }
+            if (url.isEmpty()) continue;
             String cacheKey = (darkMode ? "d:" : "l:") + code;
             Bitmap bitmap = BITMAPS.get(cacheKey);
             if (bitmap != null) {
@@ -69,11 +82,10 @@ final class EmojiRenderer {
                         new android.graphics.drawable.BitmapDrawable(view.getResources(), bitmap);
                 drawable.setBounds(0, 0, width, height);
                 styled.setSpan(new ImageSpan(drawable, ImageSpan.ALIGN_BASELINE),
-                        matcher.start(), matcher.end(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        matcher.start(), matcher.start() + code.length(),
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
                 continue;
             }
-            String url = EmojiStore.url(code, darkMode);
-            if (url.isEmpty()) continue;
             waitFor(cacheKey, view, source, darkMode);
             if (LOADING.add(cacheKey)) {
                 ImageLoader.loadOriginal(url, 96, loaded -> {
@@ -84,6 +96,17 @@ final class EmojiRenderer {
             }
         }
         view.setText(styled);
+    }
+
+    private static String trimBareToken(String value) {
+        if (value == null || value.startsWith("[")) return value == null ? "" : value;
+        int end = value.length();
+        while (end > 0) {
+            char ch = value.charAt(end - 1);
+            if ("，。！？、,.?:;；：)）】".indexOf(ch) < 0) break;
+            end--;
+        }
+        return value.substring(0, end);
     }
 
     private static void waitFor(String cacheKey, TextView view, String source,
