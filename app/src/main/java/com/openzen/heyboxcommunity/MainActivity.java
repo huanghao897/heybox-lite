@@ -2,6 +2,7 @@ package com.openzen.heyboxcommunity;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -18,6 +19,7 @@ import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
@@ -54,6 +56,16 @@ public final class MainActivity extends Activity {
 
     private interface WriteRequest {
         void start(ApiClient.Callback callback);
+    }
+
+    private static final class LikeState {
+        final boolean liked;
+        final int likes;
+
+        LikeState(boolean liked, int likes) {
+            this.liked = liked;
+            this.likes = Math.max(0, likes);
+        }
     }
 
     private static final int REPLY_PREVIEW_COUNT = 2;
@@ -109,6 +121,7 @@ public final class MainActivity extends Activity {
     private LocalCache localCache;
     private final Map<View, Integer> searchBarHeights = new HashMap<>();
     private final Map<View, Boolean> searchBarStates = new HashMap<>();
+    private final Map<String, LikeState> linkLikeOverrides = new HashMap<>();
     private String screen = "feed";
     private String qrKey;
     private boolean pollingQr;
@@ -126,6 +139,7 @@ public final class MainActivity extends Activity {
     private String currentLinkHsrc = "";
     private String currentAuthCode = "";
     private FeedItem currentDetailItem;
+    private String lastDetailDiagnostics = "";
 
     @Override
     protected void onCreate(Bundle state) {
@@ -1005,6 +1019,10 @@ public final class MainActivity extends Activity {
         headline.setLineSpacing(dp(1), 1.04f);
         addTop(article, headline, 14);
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
+        lastDetailDiagnostics = buildDetailDiagnostics(body, fallback, link, fallbackImages);
+        localCache.log("detail diagnostics captured link="
+                + (fallback == null ? "" : fallback.id)
+                + " title=" + compactLogText(heading, 48));
         addRichContent(article, link, fallback.description, fallbackImages);
         addDetailActions(article, fallback, link);
         page.addView(article);
@@ -1028,10 +1046,68 @@ public final class MainActivity extends Activity {
         }
         content.addView(scroll, match());
         detailScroll = scroll;
+        installCommentSwipe(scroll, commentTitle);
         int savedScroll = localCache.scroll(currentLinkId);
         if (savedScroll > 0) {
             scroll.postDelayed(() -> scroll.scrollTo(0, savedScroll), 80);
         }
+    }
+
+    private void installCommentSwipe(ScrollView scroll, View commentAnchor) {
+        final float[] startX = new float[1];
+        final float[] startY = new float[1];
+        final long[] startTime = new long[1];
+        final boolean[] tracking = new boolean[1];
+        scroll.setOnTouchListener((view, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    startX[0] = event.getX();
+                    startY[0] = event.getY();
+                    startTime[0] = event.getEventTime();
+                    tracking[0] = true;
+                    return false;
+                case MotionEvent.ACTION_MOVE: {
+                    if (!tracking[0]) return false;
+                    float dx = event.getX() - startX[0];
+                    float dy = event.getY() - startY[0];
+                    if (Math.abs(dy) > dp(28) && Math.abs(dy) > Math.abs(dx)) {
+                        tracking[0] = false;
+                    }
+                    return false;
+                }
+                case MotionEvent.ACTION_UP: {
+                    if (!tracking[0]) return false;
+                    tracking[0] = false;
+                    float dx = event.getX() - startX[0];
+                    float dy = event.getY() - startY[0];
+                    long duration = event.getEventTime() - startTime[0];
+                    if (isCommentSwipe(dx, dy, duration)) {
+                        smoothScrollToComments(scroll, commentAnchor);
+                        return true;
+                    }
+                    return false;
+                }
+                case MotionEvent.ACTION_CANCEL:
+                    tracking[0] = false;
+                    return false;
+                default:
+                    return false;
+            }
+        });
+    }
+
+    private boolean isCommentSwipe(float dx, float dy, long durationMs) {
+        int distance = durationMs < 260 ? dp(52) : dp(72);
+        return dx > distance && Math.abs(dx) > Math.abs(dy) * 1.35f;
+    }
+
+    private void smoothScrollToComments(ScrollView scroll, View commentAnchor) {
+        if (scroll == null || commentAnchor == null) return;
+        scroll.post(() -> {
+            int target = Math.max(0, commentAnchor.getTop() - dp(8));
+            if (scroll.getScrollY() + dp(24) >= target) return;
+            scroll.smoothScrollTo(0, target);
+        });
     }
 
     private void addDetailActions(LinearLayout article, FeedItem item, JSONObject link) {
@@ -1039,8 +1115,9 @@ public final class MainActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView like = actionPill("", R.drawable.ic_thumb_up);
-        boolean liked = linkLiked(link, item);
-        int likes = linkLikes(link, item);
+        LikeState state = linkLikeState(link, item);
+        boolean liked = state.liked;
+        int likes = state.likes;
         item.liked = liked;
         item.likes = likes;
         updateFeedLike(item.id, liked, likes);
@@ -1101,7 +1178,9 @@ public final class MainActivity extends Activity {
     }
 
     private boolean linkLiked(JSONObject link, FeedItem fallback) {
-        if (link == null) return fallback.liked;
+        LikeState override = linkLikeOverride(link, fallback);
+        if (override != null) return override.liked;
+        if (link == null) return fallback != null && fallback.liked;
         if (truthy(link, "is_award_link", "is_award", "liked", "is_liked", "has_award")) {
             return true;
         }
@@ -1109,9 +1188,31 @@ public final class MainActivity extends Activity {
     }
 
     private int linkLikes(JSONObject link, FeedItem fallback) {
-        if (link == null) return fallback.likes;
-        return firstInt(link, fallback.likes, "link_award_num", "like_num", "award_num",
+        LikeState override = linkLikeOverride(link, fallback);
+        if (override != null) return override.likes;
+        int fallbackLikes = fallback == null ? 0 : fallback.likes;
+        if (link == null) return fallbackLikes;
+        return firstInt(link, fallbackLikes, "link_award_num", "like_num", "award_num",
                 "award_count", "like_count", "liked_num", "total_award_num", "up_num", "up");
+    }
+
+    private LikeState linkLikeState(JSONObject link, FeedItem fallback) {
+        LikeState override = linkLikeOverride(link, fallback);
+        if (override != null) return override;
+        return new LikeState(linkLiked(link, fallback), linkLikes(link, fallback));
+    }
+
+    private LikeState linkLikeOverride(JSONObject link, FeedItem fallback) {
+        String id = first(fallback == null ? "" : fallback.id,
+                link == null ? "" : link.optString("linkid"),
+                link == null ? "" : link.optString("link_id"),
+                currentLinkId);
+        return id.isEmpty() ? null : linkLikeOverrides.get(id);
+    }
+
+    private void rememberLinkLike(String linkId, boolean liked, int likes) {
+        if (linkId == null || linkId.isEmpty()) return;
+        linkLikeOverrides.put(linkId, new LikeState(liked, likes));
     }
 
     private boolean linkFavored(JSONObject link) {
@@ -1166,17 +1267,21 @@ public final class MainActivity extends Activity {
         int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
         item.liked = nextLiked;
         item.likes = nextLikes;
+        rememberLinkLike(item.id, nextLiked, nextLikes);
         updateLinkLikeView(view, nextLiked, nextLikes);
         updateFeedLike(item.id, nextLiked, nextLikes);
 
         postLinkLike(item, nextLiked, new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
+                rememberLinkLike(item.id, nextLiked, nextLikes);
                 updateFeedLike(item.id, nextLiked, nextLikes);
+                localCache.log("link like ok " + item.id + ": " + beforeLikes + " -> " + nextLikes);
             }
 
             @Override public void onError(String message) {
                 item.liked = beforeLiked;
                 item.likes = beforeLikes;
+                rememberLinkLike(item.id, beforeLiked, beforeLikes);
                 updateLinkLikeView(view, beforeLiked, beforeLikes);
                 updateFeedLike(item.id, beforeLiked, beforeLikes);
                 toast("点赞失败：" + message);
@@ -1192,16 +1297,20 @@ public final class MainActivity extends Activity {
         int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
         item.liked = nextLiked;
         item.likes = nextLikes;
+        rememberLinkLike(item.id, nextLiked, nextLikes);
         updateFeedLike(item.id, nextLiked, nextLikes);
 
         postLinkLike(item, nextLiked, new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
+                rememberLinkLike(item.id, nextLiked, nextLikes);
                 updateFeedLike(item.id, nextLiked, nextLikes);
+                localCache.log("feed like ok " + item.id + ": " + beforeLikes + " -> " + nextLikes);
             }
 
             @Override public void onError(String message) {
                 item.liked = beforeLiked;
                 item.likes = beforeLikes;
+                rememberLinkLike(item.id, beforeLiked, beforeLikes);
                 updateFeedLike(item.id, beforeLiked, beforeLikes);
                 toast("点赞失败：" + message);
             }
@@ -3682,10 +3791,18 @@ public final class MainActivity extends Activity {
     private void exportDiagnostics() {
         String diagnostics = buildDiagnostics();
         java.io.File file = localCache.writeDiagnostics(diagnostics);
+        Uri fileUri = DiagnosticsProvider.uriFor(file);
         Intent share = new Intent(Intent.ACTION_SEND);
         share.setType("text/plain");
+        share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            share.setClipData(ClipData.newUri(getContentResolver(), file.getName(), fileUri));
+        }
         share.putExtra(Intent.EXTRA_SUBJECT, "heybox Lite diagnostics");
-        share.putExtra(Intent.EXTRA_TEXT, diagnostics + "\n\nFile: " + file.getAbsolutePath());
+        share.putExtra(Intent.EXTRA_STREAM, fileUri);
+        share.putExtra(Intent.EXTRA_TEXT, "heybox Lite diagnostics txt\n"
+                + "TXT file: " + file.getName()
+                + "\nPath: " + file.getAbsolutePath());
         try {
             startActivity(Intent.createChooser(share, "导出诊断信息"));
         } catch (Exception ignored) {
@@ -3696,7 +3813,12 @@ public final class MainActivity extends Activity {
     private String buildDiagnostics() {
         StringBuilder out = new StringBuilder();
         out.append("heybox Lite diagnostics\n");
+        out.append("exportTimeLocal: ").append(diagnosticTime()).append('\n');
+        out.append("exportTimeMillis: ").append(System.currentTimeMillis()).append('\n');
+        out.append("timeZone: ").append(java.util.TimeZone.getDefault().getID()).append('\n');
         out.append("version: ").append(appVersion()).append('\n');
+        out.append("currentLinkId: ").append(currentLinkId).append('\n');
+        out.append("currentLinkHsrc: ").append(currentLinkHsrc).append('\n');
         out.append("android: ").append(Build.VERSION.RELEASE)
                 .append(" api ").append(Build.VERSION.SDK_INT).append('\n');
         out.append("device: ").append(Build.MANUFACTURER).append(' ')
@@ -3714,8 +3836,64 @@ public final class MainActivity extends Activity {
         out.append("noImage: ").append(session.noImage()).append('\n');
         out.append("darkMode: ").append(session.darkMode()).append('\n');
         out.append("keywords: ").append(session.blockKeywords()).append('\n');
+        if (!lastDetailDiagnostics.isEmpty()) {
+            out.append("\nlast detail diagnostics:\n").append(lastDetailDiagnostics);
+            if (!lastDetailDiagnostics.endsWith("\n")) out.append('\n');
+        } else {
+            out.append("\nlast detail diagnostics: none captured\n");
+        }
         out.append("\nrecent events:\n").append(localCache.recentLog());
         return out.toString();
+    }
+
+    private String diagnosticTime() {
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+                .format(new Date());
+    }
+
+    private String buildDetailDiagnostics(JSONObject body, FeedItem fallback,
+                                          JSONObject link, JSONArray fallbackImages) {
+        StringBuilder out = new StringBuilder();
+        out.append("detail screen: ").append(screen).append('\n');
+        out.append("currentLinkId: ").append(currentLinkId).append('\n');
+        out.append("fallbackId: ").append(fallback == null ? "" : fallback.id).append('\n');
+        out.append("fallbackTitle: ")
+                .append(compactLogText(fallback == null ? "" : fallback.title, 180))
+                .append('\n');
+        out.append("fallbackArticle: ")
+                .append(fallback != null && fallback.article).append('\n');
+        out.append("bodyKeys: ");
+        if (body != null) {
+            Iterator<String> keys = body.keys();
+            while (keys.hasNext()) out.append(keys.next()).append(' ');
+        }
+        out.append('\n');
+        if (link == null) {
+            out.append("link: null\n");
+        } else {
+            out.append("linkid: ").append(link.optString("linkid",
+                    link.optString("link_id"))).append('\n');
+            out.append("title: ")
+                    .append(compactLogText(link.optString("title"), 180)).append('\n');
+            out.append("use_concept_type: ")
+                    .append(link.opt("use_concept_type")).append('\n');
+            out.append("is_article: ").append(link.opt("is_article")).append('\n');
+            out.append("link_type: ").append(link.opt("link_type")).append('\n');
+            out.append("content_type: ").append(link.opt("content_type")).append('\n');
+            out.append("has imgs: ").append(link.has("imgs"))
+                    .append(" count=")
+                    .append(link.optJSONArray("imgs") == null ? 0 : link.optJSONArray("imgs").length())
+                    .append('\n');
+            out.append(RichContent.diagnostics(link, fallbackImages));
+        }
+        return out.toString();
+    }
+
+    private String compactLogText(String value, int max) {
+        String clean = value == null ? "" : value.replace('\n', ' ')
+                .replace('\r', ' ').replaceAll("\\s+", " ").trim();
+        if (clean.length() <= max) return clean;
+        return clean.substring(0, Math.max(0, max)) + "...";
     }
 
     private interface ToggleListener {

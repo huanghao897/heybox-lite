@@ -122,8 +122,11 @@ final class LocalCache {
 
     File writeDiagnostics(String text) {
         diagnosticsDir.mkdirs();
-        File output = new File(diagnosticsDir, "heybox-lite-diagnostics.txt");
+        File output = new File(diagnosticsDir,
+                "heybox-lite-diagnostics-" + timestampFile() + ".txt");
         write(output, text == null ? "" : text);
+        write(new File(diagnosticsDir, "heybox-lite-diagnostics-latest.txt"),
+                text == null ? "" : text);
         return output;
     }
 
@@ -217,5 +220,9 @@ final class LocalCache {
 
     private String timestamp() {
         return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date());
+    }
+
+    private String timestampFile() {
+        return new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
     }
 }

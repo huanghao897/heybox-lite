@@ -29,5 +29,10 @@
             android:name=".ImageViewerActivity"
             android:exported="false"
             android:theme="@style/ImageViewerTheme" />
+        <provider
+            android:name=".DiagnosticsProvider"
+            android:authorities="com.openzen.heyboxcommunity.diagnostics"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>
