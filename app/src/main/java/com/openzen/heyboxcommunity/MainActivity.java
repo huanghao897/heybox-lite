@@ -228,10 +228,9 @@ public final class MainActivity extends Activity {
         AnnouncementChecker.load(new AnnouncementChecker.Callback() {
             @Override public void onResult(List<AnnouncementChecker.Item> items) {
                 if (isFinishing()) return;
-                AnnouncementChecker.Item item = firstEnabledAnnouncement(
+                AnnouncementChecker.Item item = firstUnseenAnnouncement(
                         withWelcomeAnnouncement(items));
                 if (item == null) return;
-                if (!item.id.isEmpty() && item.id.equals(session.lastAnnouncementId())) return;
                 if (!item.id.isEmpty()) session.setLastAnnouncementId(item.id);
                 showAnnouncementDialog(item);
             }
@@ -272,12 +271,14 @@ public final class MainActivity extends Activity {
                 true);
     }
 
-    private AnnouncementChecker.Item firstEnabledAnnouncement(
+    private AnnouncementChecker.Item firstUnseenAnnouncement(
             List<AnnouncementChecker.Item> items) {
         if (items == null) return null;
+        String lastId = session == null ? "" : session.lastAnnouncementId();
         for (AnnouncementChecker.Item item : items) {
             if (item != null && item.enabled
-                    && (!item.title.isEmpty() || !item.content.isEmpty())) return item;
+                    && (!item.title.isEmpty() || !item.content.isEmpty())
+                    && (item.id.isEmpty() || !item.id.equals(lastId))) return item;
         }
         return null;
     }
