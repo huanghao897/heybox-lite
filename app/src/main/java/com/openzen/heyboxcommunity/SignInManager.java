@@ -1,14 +1,13 @@
 package com.openzen.heyboxcommunity;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Locale;
-import java.util.Map;
 
 final class SignInManager {
     interface Callback {
@@ -86,10 +85,32 @@ final class SignInManager {
 
     private static final class Attempt {
         final String label;
+        final String path;
+        final HeyboxSigner.Algorithm algorithm;
+        final ApiClient.RequestProfile profile;
+        final boolean stateOnly;
+        final boolean taskListState;
         final RequestStarter starter;
+
+        Attempt(String label, String path, HeyboxSigner.Algorithm algorithm,
+                ApiClient.RequestProfile profile, boolean stateOnly, boolean taskListState,
+                RequestStarter starter) {
+            this.label = label;
+            this.path = path;
+            this.algorithm = algorithm;
+            this.profile = profile;
+            this.stateOnly = stateOnly;
+            this.taskListState = taskListState;
+            this.starter = starter;
+        }
 
         Attempt(String label, RequestStarter starter) {
             this.label = label;
+            this.path = "";
+            this.algorithm = HeyboxSigner.Algorithm.LEGACY;
+            this.profile = ApiClient.RequestProfile.WEB;
+            this.stateOnly = false;
+            this.taskListState = false;
             this.starter = starter;
         }
     }
@@ -158,17 +179,68 @@ final class SignInManager {
 
     private Attempt[] buildAttempts() {
         return new Attempt[] {
-                new Attempt("v3-sign-web", cb -> api.get(
-                        EndpointProvider.taskSignV3(), Collections.emptyMap(), cb)),
-                new Attempt("v3-sign-mobile", cb -> api.get(
-                        EndpointProvider.taskSignV3(), mobileParams(), cb)),
-                new Attempt("legacy-sign-web", cb -> api.get(
-                        EndpointProvider.taskSign(), Collections.emptyMap(), cb)),
-                new Attempt("legacy-sign-mobile", cb -> api.get(
-                        EndpointProvider.taskSign(), mobileParams(), cb)),
-                new Attempt("v2-sign-mobile", cb -> api.get(
-                        EndpointProvider.taskSignV2(), mobileParams(), cb))
+                taskListAttempt("task-list-v2-mobile-old-md5",
+                        EndpointProvider.taskListV2(),
+                        HeyboxSigner.Algorithm.OLD_MD5,
+                        ApiClient.RequestProfile.MOBILE),
+                taskListAttempt("task-list-v2-web-legacy",
+                        EndpointProvider.taskListV2(),
+                        HeyboxSigner.Algorithm.LEGACY,
+                        ApiClient.RequestProfile.WEB),
+                stateAttempt("v3-state-official-client-android-hkey",
+                        EndpointProvider.taskSignV3State(),
+                        HeyboxSigner.Algorithm.ANDROID,
+                        ApiClient.RequestProfile.OFFICIAL_MOBILE_CLIENT),
+                stateAttempt("v3-state-official-android-hkey",
+                        EndpointProvider.taskSignV3State(),
+                        HeyboxSigner.Algorithm.ANDROID,
+                        ApiClient.RequestProfile.OFFICIAL_MOBILE),
+                signedAttempt("v3-official-client-android-hkey", EndpointProvider.taskSignV3(),
+                        HeyboxSigner.Algorithm.ANDROID,
+                        ApiClient.RequestProfile.OFFICIAL_MOBILE_CLIENT),
+                signedAttempt("v3-official-android-hkey", EndpointProvider.taskSignV3(),
+                        HeyboxSigner.Algorithm.ANDROID,
+                        ApiClient.RequestProfile.OFFICIAL_MOBILE),
+                signedAttempt("v3-official-client-web-hkey", EndpointProvider.taskSignV3(),
+                        HeyboxSigner.Algorithm.WEB,
+                        ApiClient.RequestProfile.OFFICIAL_MOBILE_CLIENT),
+                signedAttempt("v3-sign-web-hkey", EndpointProvider.taskSignV3(),
+                        HeyboxSigner.Algorithm.WEB,
+                        ApiClient.RequestProfile.WEB),
+                signedAttempt("v3-sign-android-hkey", EndpointProvider.taskSignV3(),
+                        HeyboxSigner.Algorithm.ANDROID,
+                        ApiClient.RequestProfile.MOBILE),
+                signedAttempt("legacy-sign-old-md5-mobile", EndpointProvider.taskSign(),
+                        HeyboxSigner.Algorithm.OLD_MD5,
+                        ApiClient.RequestProfile.MOBILE),
+                signedAttempt("legacy-sign-android-hkey", EndpointProvider.taskSign(),
+                        HeyboxSigner.Algorithm.ANDROID,
+                        ApiClient.RequestProfile.MOBILE),
+                signedAttempt("v2-sign-android-hkey", EndpointProvider.taskSignV2(),
+                        HeyboxSigner.Algorithm.ANDROID,
+                        ApiClient.RequestProfile.MOBILE),
+                signedAttempt("v3-sign-legacy-app", EndpointProvider.taskSignV3(),
+                        HeyboxSigner.Algorithm.LEGACY,
+                        ApiClient.RequestProfile.WEB)
         };
+    }
+
+    private Attempt stateAttempt(String label, String path, HeyboxSigner.Algorithm algorithm,
+                                 ApiClient.RequestProfile profile) {
+        return new Attempt(label, path, algorithm, profile, true, false, cb -> api.getSigned(
+                path, Collections.emptyMap(), algorithm, profile, cb));
+    }
+
+    private Attempt taskListAttempt(String label, String path, HeyboxSigner.Algorithm algorithm,
+                                    ApiClient.RequestProfile profile) {
+        return new Attempt(label, path, algorithm, profile, true, true, cb -> api.getSigned(
+                path, Collections.emptyMap(), algorithm, profile, cb));
+    }
+
+    private Attempt signedAttempt(String label, String path, HeyboxSigner.Algorithm algorithm,
+                                  ApiClient.RequestProfile profile) {
+        return new Attempt(label, path, algorithm, profile, false, false, cb -> api.getSigned(
+                path, Collections.emptyMap(), algorithm, profile, cb));
     }
 
     private void runAttempts(Attempt[] attempts, int index, String lastError,
@@ -181,15 +253,33 @@ final class SignInManager {
             }
             String message = first(importantError, lastError);
             finish(today, Result.failure("\u7b7e\u5230\u5931\u8d25\uff1a"
-                    + first(message, "\u63a5\u53e3\u672a\u8fd4\u56de\u53ef\u7528\u7ed3\u679c")),
+                    + readableFailure(message)),
                     callback);
             return;
         }
 
         Attempt attempt = attempts[index];
-        log("sign-in attempt " + index + " " + attempt.label);
+        log("sign-in attempt " + index + " " + attempt.label
+                + " path=" + attempt.path
+                + " profile=" + attempt.profile
+                + " algorithm=" + attempt.algorithm
+                + " params=" + paramKeys(attempt.profile, attempt.algorithm)
+                + " cookieKeys=" + cookieKeys(attempt.profile));
         attempt.starter.start(new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
+                if (attempt.stateOnly) {
+                    Result state = attempt.taskListState ? parseTaskListState(body) : parseState(body);
+                    log("sign-in state " + attempt.label
+                            + " signed=" + state.alreadySigned
+                            + " message=" + safe(state.message));
+                    if (state.success && state.alreadySigned) {
+                        finish(today, state, callback);
+                        return;
+                    }
+                    runAttempts(attempts, index + 1, lastError,
+                            importantError, tokenRetried, today, callback);
+                    return;
+                }
                 Result result = parse(body);
                 log("sign-in attempt " + attempt.label
                         + " success already=" + result.alreadySigned
@@ -247,21 +337,6 @@ final class SignInManager {
         dispatch(callback, result);
     }
 
-    private Map<String, String> mobileParams() {
-        Map<String, String> params = new HashMap<>();
-        String id = session.userId();
-        params.put("os_type", "Android");
-        params.put("client_type", "android");
-        params.put("x_client_type", "android");
-        params.put("x_os_type", "Android");
-        params.put("x_app", "heybox");
-        params.put("version", "1.3.379");
-        params.put("device_info", "Android");
-        params.put(SecureStrings.heyboxId(), id);
-        if (!id.isEmpty()) params.put(SecureStrings.userid(), id);
-        return params;
-    }
-
     private Result parse(JSONObject body) {
         String message = first(findText(body, "msg", "message", "toast", "desc"),
                 "\u7b7e\u5230\u6210\u529f");
@@ -275,6 +350,78 @@ final class SignInManager {
         String summary = buildSummary(streak, coin, exp, already);
         return Result.success(already,
                 already ? "\u4eca\u65e5\u5df2\u7b7e\u5230" : message, summary);
+    }
+
+    private Result parseState(JSONObject body) {
+        String message = first(findText(body, "msg", "message", "toast", "desc",
+                        "description", "notify_description"),
+                "\u7b7e\u5230\u72b6\u6001\u5df2\u83b7\u53d6");
+        String state = findText(body, "state", "sign_state", "signin_state");
+        boolean already = looksAlreadySigned(message)
+                || looksSignedState(state)
+                || truthy(body, "signed", "is_signed", "has_signed", "already_signed");
+        String streak = findText(body, "sign_in_streak", "signin_streak",
+                "continue_days", "continuous_days", "streak", "days");
+        String coin = findText(body, "sign_in_coin", "sign_in_member_coin",
+                "coin", "coins", "heybox_coin");
+        String exp = findText(body, "sign_in_exp", "exp", "experience");
+        String summary = buildSummary(streak, coin, exp, already);
+        if (already) return Result.success(true, "\u4eca\u65e5\u5df2\u7b7e\u5230", summary);
+        return Result.failure(message);
+    }
+
+    private Result parseTaskListState(JSONObject body) {
+        JSONObject result = body == null ? null : body.optJSONObject("result");
+        JSONObject source = result == null ? body : result;
+        JSONObject signInfo = source == null ? null : source.optJSONObject("sign_v2_info");
+        boolean already = false;
+        String desc = "";
+        if (signInfo != null) {
+            already = truthyValue(signInfo.opt("today_signed"))
+                    || looksSignedState(optText(signInfo, "today_signed"));
+            desc = first(optText(signInfo, "sign_desc"), optText(signInfo, "description"));
+        }
+        JSONObject task = findSignTask(source, 0);
+        if (task != null) {
+            already = already || looksSignedState(optText(task, "state"))
+                    || looksAlreadySigned(optText(task, "state_desc"));
+            desc = first(desc, optText(task, "state_desc"));
+        }
+        String streak = first(findText(source, "sign_in_streak", "signin_streak",
+                        "continue_days", "continuous_days", "streak", "days"),
+                task == null ? "" : optText(task, "sign_in_streak"));
+        String coin = first(findText(source, "sign_in_coin", "sign_in_member_coin",
+                        "award_coin", "coin", "coins", "heybox_coin"),
+                task == null ? "" : optText(task, "award_coin"));
+        String exp = first(findText(source, "sign_in_exp", "award_exp", "exp", "experience"),
+                task == null ? "" : optText(task, "award_exp"));
+        String summary = buildSummary(streak, coin, exp, already);
+        if (already) return Result.success(true, "\u4eca\u65e5\u5df2\u7b7e\u5230", summary);
+        return Result.failure(first(desc, "\u4eca\u65e5\u8fd8\u672a\u7b7e\u5230"));
+    }
+
+    private static JSONObject findSignTask(Object node, int depth) {
+        if (node == null || depth > 8) return null;
+        if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject found = findSignTask(array.opt(i), depth + 1);
+                if (found != null) return found;
+            }
+            return null;
+        }
+        if (!(node instanceof JSONObject)) return null;
+        JSONObject object = (JSONObject) node;
+        String title = optText(object, "title") + " " + optText(object, "desc")
+                + " " + optText(object, "type") + " " + optText(object, "url");
+        String lower = title.toLowerCase(Locale.US);
+        if (title.contains("\u7b7e\u5230") || lower.contains("sign")) return object;
+        Iterator<String> names = object.keys();
+        while (names.hasNext()) {
+            JSONObject found = findSignTask(object.opt(names.next()), depth + 1);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     private static String buildSummary(String streak, String coin, String exp,
@@ -348,6 +495,18 @@ final class SignInManager {
                 || (lower.contains("already") && lower.contains("sign"));
     }
 
+    private static boolean looksSignedState(String value) {
+        if (value == null) return false;
+        String lower = value.trim().toLowerCase(Locale.US);
+        if (lower.isEmpty() || lower.contains("un") || lower.contains("not")) return false;
+        return "1".equals(lower)
+                || "signed".equals(lower)
+                || "done".equals(lower)
+                || "finish".equals(lower)
+                || "finished".equals(lower)
+                || lower.contains("\u5df2\u7b7e");
+    }
+
     private static boolean isLoginError(String message) {
         if (message == null) return false;
         String lower = message.toLowerCase(Locale.US);
@@ -369,6 +528,57 @@ final class SignInManager {
                 || message.contains("\u53c2\u6570")
                 || message.contains("\u9a8c\u8bc1")
                 || message.contains("\u975e\u6cd5");
+    }
+
+    private static String readableFailure(String message) {
+        String value = first(message, "\u63a5\u53e3\u672a\u8fd4\u56de\u53ef\u7528\u7ed3\u679c");
+        if (value.contains("\u975e\u6cd5") || value.toLowerCase(Locale.US).contains("illegal")) {
+            return "\u63a5\u53e3\u6821\u9a8c\u672a\u901a\u8fc7\uff0c\u5df2\u4fdd\u7559\u7b7e\u5230\u72b6\u6001\u663e\u793a";
+        }
+        return value;
+    }
+
+    private String cookieKeys(ApiClient.RequestProfile profile) {
+        if (profile == ApiClient.RequestProfile.OFFICIAL_MOBILE_CLIENT
+                || profile == ApiClient.RequestProfile.OFFICIAL_SPARSE_CLIENT) {
+            return session.officialMobileCookieKeysForLog(true);
+        }
+        if (profile == ApiClient.RequestProfile.OFFICIAL_MOBILE
+                || profile == ApiClient.RequestProfile.OFFICIAL_SPARSE) {
+            return session.officialMobileCookieKeysForLog(false);
+        }
+        return session.authCookieKeysForLog();
+    }
+
+    private static String paramKeys(ApiClient.RequestProfile profile,
+                                    HeyboxSigner.Algorithm algorithm) {
+        StringBuilder out = new StringBuilder();
+        if (profile == ApiClient.RequestProfile.WEB) {
+            out.append("web-common");
+        } else if (profile == ApiClient.RequestProfile.MOBILE) {
+            out.append("mobile-common");
+        } else if (profile == ApiClient.RequestProfile.OFFICIAL_MOBILE
+                || profile == ApiClient.RequestProfile.OFFICIAL_MOBILE_CLIENT) {
+            out.append("official-mobile-common");
+        } else {
+            out.append("official-sparse-common");
+        }
+        String sign = signKeys(algorithm);
+        if (!sign.isEmpty()) out.append('+').append(sign);
+        return out.toString();
+    }
+
+    private static String signKeys(HeyboxSigner.Algorithm algorithm) {
+        if (algorithm == HeyboxSigner.Algorithm.NONE) return "";
+        if (algorithm == HeyboxSigner.Algorithm.PLAIN
+                || algorithm == HeyboxSigner.Algorithm.OLD_MD5) return "hkey,_time";
+        if (algorithm == HeyboxSigner.Algorithm.PLAIN_KEY) return "key,_time";
+        if (algorithm == HeyboxSigner.Algorithm.WEB_KEY
+                || algorithm == HeyboxSigner.Algorithm.ANDROID_KEY
+                || algorithm == HeyboxSigner.Algorithm.LEGACY_KEY) {
+            return "key,_time,nonce";
+        }
+        return "hkey,_time,nonce";
     }
 
     private static String today() {

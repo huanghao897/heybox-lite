@@ -4973,6 +4973,7 @@ public final class MainActivity extends Activity {
                 .append(Build.MODEL).append('\n');
         out.append("screen: ").append(screen).append('\n');
         out.append("loggedIn: ").append(session.isLoggedIn()).append('\n');
+        out.append("signInFlow: task-list-v2-first/no-native\n");
         out.append("feedCount: ").append(feed.size()).append('\n');
         out.append("feedOffset: ").append(feedOffset).append('\n');
         out.append("feedNoMore: ").append(feedNoMore).append('\n');

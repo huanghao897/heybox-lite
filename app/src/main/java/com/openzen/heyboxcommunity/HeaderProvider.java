@@ -11,6 +11,24 @@ final class HeaderProvider {
         if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
     }
 
+    static void applyMobile(HttpURLConnection connection, SessionStore session) {
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9");
+        connection.setRequestProperty("User-Agent", mobileUserAgent());
+        connection.setRequestProperty("X-Requested-With", "com.max.xiaoheihe");
+        String cookie = session.getCookie();
+        if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
+    }
+
+    static void applyOfficialMobile(HttpURLConnection connection, SessionStore session,
+                                    boolean addClientKey) {
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Referer", "http://api.maxjia.com/");
+        connection.setRequestProperty("User-Agent", mobileUserAgent());
+        String cookie = session.officialMobileCookie(addClientKey);
+        if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
+    }
+
     static void applyPublic(HttpURLConnection connection) {
         String webBase = EndpointProvider.baseUrl().replace("api.", "www.");
         connection.setRequestProperty("Accept", "application/json, text/plain, */*");
@@ -23,5 +41,10 @@ final class HeaderProvider {
     private static String userAgent() {
         return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0";
+    }
+
+    private static String mobileUserAgent() {
+        return "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) "
+                + "Chrome/41.0.2272.118 Safari/537.36 ApiMaxJia/1.0";
     }
 }

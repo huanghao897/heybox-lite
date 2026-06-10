@@ -6,6 +6,7 @@ final class SecureStrings {
     private SecureStrings() {}
 
     static String hkey() { return decode(59, 56, 54, 42); }
+    static String keyParam() { return decode(56, 54, 42); }
     static String nonce() { return decode(61, 60, 61, 48, 54); }
     static String time() { return decode(12, 39, 58, 62, 54); }
     static String cookieHeader() { return decode(16, 60, 60, 56, 58, 54); }

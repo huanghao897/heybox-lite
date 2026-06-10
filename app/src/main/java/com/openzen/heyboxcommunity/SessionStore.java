@@ -13,9 +13,11 @@ import org.json.JSONObject;
 import org.json.JSONArray;
 
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.UUID;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -105,6 +107,10 @@ final class SessionStore {
             prefs.edit().putString(SecureStrings.userId(), fromCookie).apply();
         }
         return fromCookie;
+    }
+
+    Context appContext() {
+        return context;
     }
 
     String userName() {
@@ -283,11 +289,27 @@ final class SessionStore {
     }
 
     String signSummary() {
-        return prefs.getString(SIGN_SUMMARY, "");
+        String value = prefs.getString(SIGN_SUMMARY, "");
+        String clean = sanitizeSignSummary(value);
+        if (!clean.equals(value)) prefs.edit().putString(SIGN_SUMMARY, clean).apply();
+        return clean;
     }
 
     void setSignSummary(String value) {
-        prefs.edit().putString(SIGN_SUMMARY, value == null ? "" : value).apply();
+        prefs.edit().putString(SIGN_SUMMARY, sanitizeSignSummary(value)).apply();
+    }
+
+    private String sanitizeSignSummary(String value) {
+        if (value == null) return "";
+        String clean = value.trim();
+        if (clean.contains("\u6211\u4f1a\u7ee7\u7eed")
+                || clean.contains("\u63a5\u53e3\u6821\u9a8c\u8fd8\u6ca1")
+                || clean.contains("\u5b98\u65b9\u7b7e\u5230\u53c2\u6570")
+                || clean.toLowerCase(java.util.Locale.US).contains("native")) {
+            return "\u7b7e\u5230\u5931\u8d25\uff1a\u63a5\u53e3\u6821\u9a8c\u672a\u901a\u8fc7\uff0c"
+                    + "\u5df2\u4fdd\u7559\u7b7e\u5230\u72b6\u6001\u663e\u793a";
+        }
+        return clean;
     }
 
     List<String> searchHistory() {
@@ -384,6 +406,74 @@ final class SessionStore {
         return result;
     }
 
+    Map<String, String> mobileCommonParams() {
+        Map<String, String> result = officialMobileParams(true);
+        result.put("client_type", "mobile");
+        return result;
+    }
+
+    Map<String, String> officialMobileParams(boolean includeDeviceParams) {
+        Map<String, String> result = new LinkedHashMap<>();
+        String id = userId();
+        String safeId = id.isEmpty() ? "-1" : id;
+        result.put(SecureStrings.heyboxId(), safeId);
+        if (!id.isEmpty()) {
+            result.put(SecureStrings.userid(), id);
+            result.put(SecureStrings.userId(), id);
+        }
+        if (!includeDeviceParams) return result;
+        String release = Build.VERSION.RELEASE == null ? "" : Build.VERSION.RELEASE;
+        String model = Build.MODEL == null ? "" : Build.MODEL;
+        result.put("app", "heybox");
+        result.put(SecureStrings.deviceId(), prefs.getString(SecureStrings.deviceId(), ""));
+        result.put("device_info", model.trim());
+        result.put("os_type", "Android");
+        result.put("os_version", release.trim());
+        result.put("x_os_type", "Android");
+        result.put("x_client_type", "mobile");
+        result.put("x_app", "heybox");
+        result.put("version", "1.3.379");
+        result.put("build", "1055");
+        result.put("time_zone", TimeZone.getDefault().getID());
+        result.put(SecureStrings.time(), String.valueOf(System.currentTimeMillis() / 1000L));
+        result.put("channel", "heybox");
+        return result;
+    }
+
+    String officialMobileCookie(boolean addClientKey) {
+        Map<String, String> values = cookieMap(getCookie());
+        List<String> parts = new ArrayList<>();
+        String pkey = firstCookieValue(values, SecureStrings.userPkey(), SecureStrings.xPkey());
+        appendCookiePart(parts, SecureStrings.userPkey(), pkey);
+        if (addClientKey) appendCookiePart(parts, SecureStrings.xPkey(), pkey);
+        appendCookiePart(parts, SecureStrings.xXhhTokenId(),
+                values.get(SecureStrings.xXhhTokenId()));
+        appendRestCookies(parts, values);
+        if (addClientKey) {
+            String id = firstCookieValue(values, SecureStrings.xHeyboxId(),
+                    SecureStrings.userHeyboxId(), SecureStrings.heyboxId(),
+                    SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
+            appendCookiePart(parts, SecureStrings.xHeyboxId(), id);
+        }
+        StringBuilder cookie = new StringBuilder();
+        for (String part : parts) {
+            if (part == null || part.isEmpty()) continue;
+            if (cookie.length() > 0) cookie.append("; ");
+            cookie.append(part);
+        }
+        return cookie.toString();
+    }
+
+    String officialMobileCookieKeysForLog(boolean addClientKey) {
+        Map<String, String> values = cookieMap(officialMobileCookie(addClientKey));
+        StringBuilder result = new StringBuilder();
+        for (String key : values.keySet()) {
+            if (result.length() > 0) result.append(',');
+            result.append(key);
+        }
+        return result.length() == 0 ? "none" : result.toString();
+    }
+
     void saveLogin(JSONObject result) {
         String id = result.optString("heyboxid",
                 result.optString(SecureStrings.userid(), result.optString(SecureStrings.heyboxId())));
@@ -474,6 +564,36 @@ final class SessionStore {
         if (values == null || key == null || key.isEmpty() || !values.containsKey(key)) return;
         if (result.length() > 0) result.append(',');
         result.append(key);
+    }
+
+    private void appendCookiePart(List<String> parts, String key, String value) {
+        if (parts == null || key == null || key.isEmpty()
+                || value == null || value.isEmpty()) return;
+        parts.add(key + "=" + value);
+    }
+
+    private void appendRestCookies(List<String> parts, Map<String, String> values) {
+        if (parts == null || values == null || values.isEmpty()) return;
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key == null || key.isEmpty() || value == null || value.isEmpty()) continue;
+            if (isOfficialAuthCookie(key)) continue;
+            appendCookiePart(parts, key, value);
+        }
+    }
+
+    private boolean isOfficialAuthCookie(String key) {
+        return SecureStrings.userPkey().equals(key)
+                || SecureStrings.xPkey().equals(key)
+                || SecureStrings.userHeyboxId().equals(key)
+                || SecureStrings.xHeyboxId().equals(key)
+                || SecureStrings.xXhhTokenId().equals(key)
+                || SecureStrings.heyboxId().equals(key)
+                || SecureStrings.userid().equals(key)
+                || SecureStrings.userId().equals(key)
+                || "heyboxid".equals(key)
+                || ("user_" + SecureStrings.heyboxId()).equals(key);
     }
 
     private String firstCookieValue(Map<String, String> values, String... keys) {

@@ -19,6 +19,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class ApiClient {
+    enum RequestProfile {
+        WEB,
+        MOBILE,
+        OFFICIAL_MOBILE,
+        OFFICIAL_MOBILE_CLIENT,
+        OFFICIAL_SPARSE,
+        OFFICIAL_SPARSE_CLIENT
+    }
+
     interface Callback {
         void onSuccess(JSONObject body);
         void onError(String message);
@@ -35,18 +44,35 @@ final class ApiClient {
 
     void get(String path, Map<String, String> extra, Callback callback) {
         if (closed) return;
-        executor.execute(() -> request("GET", path, extra, null, callback));
+        executor.execute(() -> request("GET", path, extra, null,
+                HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback));
+    }
+
+    void getSigned(String path, Map<String, String> extra,
+                   HeyboxSigner.Algorithm algorithm, boolean mobile, Callback callback) {
+        if (closed) return;
+        executor.execute(() -> request("GET", path, extra, null, algorithm,
+                mobile ? RequestProfile.MOBILE : RequestProfile.WEB, callback));
+    }
+
+    void getSigned(String path, Map<String, String> extra,
+                   HeyboxSigner.Algorithm algorithm, RequestProfile profile,
+                   Callback callback) {
+        if (closed) return;
+        executor.execute(() -> request("GET", path, extra, null, algorithm, profile, callback));
     }
 
     void postForm(String path, Map<String, String> body, Callback callback) {
         if (closed) return;
-        executor.execute(() -> request("POST", path, new HashMap<>(), body, callback));
+        executor.execute(() -> request("POST", path, new HashMap<>(), body,
+                HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback));
     }
 
     void postForm(String path, Map<String, String> queryExtra,
                   Map<String, String> body, Callback callback) {
         if (closed) return;
-        executor.execute(() -> request("POST", path, queryExtra, body, callback));
+        executor.execute(() -> request("POST", path, queryExtra, body,
+                HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback));
     }
 
     void close() {
@@ -56,19 +82,20 @@ final class ApiClient {
     }
 
     private void request(String method, String path, Map<String, String> extra,
-                         Map<String, String> body, Callback callback) {
+                         Map<String, String> body, HeyboxSigner.Algorithm algorithm,
+                         RequestProfile profile, Callback callback) {
         HttpURLConnection connection = null;
         try {
             if (closed || Thread.currentThread().isInterrupted()) return;
-            Map<String, String> params = new HashMap<>(session.commonParams());
+            Map<String, String> params = new HashMap<>(baseParams(profile));
             if (extra != null) params.putAll(extra);
-            params.putAll(HeyboxSigner.sign(path));
+            params.putAll(HeyboxSigner.sign(path, algorithm));
             URL url = new URL(endpoint() + path + "?" + encode(params));
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod(method);
             connection.setConnectTimeout(7000);
             connection.setReadTimeout(12000);
-            HeaderProvider.apply(connection, session);
+            applyHeaders(connection, profile);
             if ("POST".equals(method)) {
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Content-Type",
@@ -209,5 +236,36 @@ final class ApiClient {
 
     private static String endpoint() {
         return EndpointProvider.baseUrl();
+    }
+
+    private Map<String, String> baseParams(RequestProfile profile) {
+        if (profile == RequestProfile.MOBILE) return session.mobileCommonParams();
+        if (profile == RequestProfile.OFFICIAL_MOBILE
+                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT) {
+            return session.officialMobileParams(true);
+        }
+        if (profile == RequestProfile.OFFICIAL_SPARSE
+                || profile == RequestProfile.OFFICIAL_SPARSE_CLIENT) {
+            return session.officialMobileParams(false);
+        }
+        return session.commonParams();
+    }
+
+    private void applyHeaders(HttpURLConnection connection, RequestProfile profile) {
+        if (profile == RequestProfile.MOBILE) {
+            HeaderProvider.applyMobile(connection, session);
+            return;
+        }
+        if (profile == RequestProfile.OFFICIAL_MOBILE
+                || profile == RequestProfile.OFFICIAL_SPARSE) {
+            HeaderProvider.applyOfficialMobile(connection, session, false);
+            return;
+        }
+        if (profile == RequestProfile.OFFICIAL_MOBILE_CLIENT
+                || profile == RequestProfile.OFFICIAL_SPARSE_CLIENT) {
+            HeaderProvider.applyOfficialMobile(connection, session, true);
+            return;
+        }
+        HeaderProvider.apply(connection, session);
     }
 }
