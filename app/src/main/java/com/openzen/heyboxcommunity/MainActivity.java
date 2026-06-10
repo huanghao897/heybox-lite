@@ -175,7 +175,7 @@ public final class MainActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
         api = new ApiClient(session);
         writeTokenProvider = new WriteTokenProvider(this, session, api);
-        signInManager = new SignInManager(session, api, message -> {
+        signInManager = new SignInManager(session, api, writeTokenProvider, message -> {
             if (localCache != null) localCache.log(message);
         });
         buildShell();
