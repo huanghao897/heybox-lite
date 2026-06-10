@@ -49,6 +49,7 @@ final class SessionStore {
     private static final String SPLASH_TEXT = "splash_text";
     private static final String SPLASH_DURATION = "splash_duration";
     private static final String LAST_ANNOUNCEMENT_ID = "last_announcement_id";
+    private static final String SEEN_ANNOUNCEMENT_IDS = "seen_announcement_ids";
     private static final String LAST_SIGN_ATTEMPT_DATE = "last_sign_attempt_date";
     private static final String LAST_SIGN_SUCCESS_DATE = "last_sign_success_date";
     private static final String SIGN_SUMMARY = "sign_summary";
@@ -270,6 +271,47 @@ final class SessionStore {
 
     void setLastAnnouncementId(String value) {
         prefs.edit().putString(LAST_ANNOUNCEMENT_ID, value == null ? "" : value).apply();
+    }
+
+    boolean isAnnouncementSeen(String id) {
+        String clean = id == null ? "" : id.trim();
+        if (clean.isEmpty()) return false;
+        if (clean.equals(lastAnnouncementId())) return true;
+        JSONArray array = seenAnnouncementArray();
+        for (int i = 0; i < array.length(); i++) {
+            if (clean.equals(array.optString(i))) return true;
+        }
+        return false;
+    }
+
+    void markAnnouncementSeen(String id) {
+        String clean = id == null ? "" : id.trim();
+        if (clean.isEmpty()) return;
+        List<String> ids = new ArrayList<>();
+        String last = lastAnnouncementId();
+        if (!last.isEmpty()) ids.add(last);
+        JSONArray array = seenAnnouncementArray();
+        for (int i = 0; i < array.length(); i++) {
+            String value = array.optString(i).trim();
+            if (!value.isEmpty() && !ids.contains(value)) ids.add(value);
+        }
+        ids.remove(clean);
+        ids.add(0, clean);
+        while (ids.size() > 50) ids.remove(ids.size() - 1);
+        JSONArray next = new JSONArray();
+        for (String value : ids) next.put(value);
+        prefs.edit()
+                .putString(LAST_ANNOUNCEMENT_ID, clean)
+                .putString(SEEN_ANNOUNCEMENT_IDS, next.toString())
+                .apply();
+    }
+
+    private JSONArray seenAnnouncementArray() {
+        try {
+            return new JSONArray(prefs.getString(SEEN_ANNOUNCEMENT_IDS, "[]"));
+        } catch (Exception ignored) {
+            return new JSONArray();
+        }
     }
 
     String lastSignAttemptDate() {
@@ -782,6 +824,7 @@ final class SessionStore {
         String splashText = splashText();
         int splashDuration = splashDuration();
         String lastAnnouncementId = lastAnnouncementId();
+        String seenAnnouncementIds = prefs.getString(SEEN_ANNOUNCEMENT_IDS, "[]");
         String searchHistory = prefs.getString(SEARCH_HISTORY, "[]");
         String blockKeywords = blockKeywords();
         prefs.edit().clear()
@@ -804,6 +847,7 @@ final class SessionStore {
                 .putString(SPLASH_TEXT, splashText)
                 .putInt(SPLASH_DURATION, splashDuration)
                 .putString(LAST_ANNOUNCEMENT_ID, lastAnnouncementId)
+                .putString(SEEN_ANNOUNCEMENT_IDS, seenAnnouncementIds)
                 .putString(SEARCH_HISTORY, searchHistory)
                 .putString(BLOCK_KEYWORDS, blockKeywords)
                 .apply();

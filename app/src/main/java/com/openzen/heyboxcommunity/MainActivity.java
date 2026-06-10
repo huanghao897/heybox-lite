@@ -225,25 +225,35 @@ public final class MainActivity extends Activity {
     }
 
     private void checkAnnouncementOnLaunch() {
+        AnnouncementChecker.Item welcome = welcomeAnnouncement();
+        if (shouldShowWelcomeAnnouncement(welcome)) {
+            showAnnouncementDialog(welcome);
+            return;
+        }
         AnnouncementChecker.load(new AnnouncementChecker.Callback() {
             @Override public void onResult(List<AnnouncementChecker.Item> items) {
                 if (isFinishing()) return;
-                AnnouncementChecker.Item item = firstUnseenAnnouncement(
-                        withWelcomeAnnouncement(items));
+                AnnouncementChecker.Item item = firstUnseenAnnouncement(items);
                 if (item == null) return;
-                if (!item.id.isEmpty()) session.setLastAnnouncementId(item.id);
                 showAnnouncementDialog(item);
             }
 
             @Override public void onError(String message) {
-                if (isFinishing()) return;
-                AnnouncementChecker.Item item = welcomeAnnouncement();
-                if (!item.id.equals(session.lastAnnouncementId())) {
-                    session.setLastAnnouncementId(item.id);
-                    showAnnouncementDialog(item);
-                }
+                // Server announcements are optional; a network failure must not show
+                // the one-time local welcome again after it has been dismissed.
             }
         });
+    }
+
+    private boolean shouldShowWelcomeAnnouncement(AnnouncementChecker.Item item) {
+        if (item == null || TextUtils.isEmpty(item.id) || session == null) return false;
+        if (session.isAnnouncementSeen(item.id)) return false;
+        String previous = session.lastAnnouncementId();
+        if (!TextUtils.isEmpty(previous) && !item.id.equals(previous)) {
+            session.markAnnouncementSeen(item.id);
+            return false;
+        }
+        return true;
     }
 
     private List<AnnouncementChecker.Item> withWelcomeAnnouncement(
@@ -274,11 +284,11 @@ public final class MainActivity extends Activity {
     private AnnouncementChecker.Item firstUnseenAnnouncement(
             List<AnnouncementChecker.Item> items) {
         if (items == null) return null;
-        String lastId = session == null ? "" : session.lastAnnouncementId();
         for (AnnouncementChecker.Item item : items) {
             if (item != null && item.enabled
                     && (!item.title.isEmpty() || !item.content.isEmpty())
-                    && (item.id.isEmpty() || !item.id.equals(lastId))) return item;
+                    && (item.id.isEmpty() || session == null
+                    || !session.isAnnouncementSeen(item.id))) return item;
         }
         return null;
     }
@@ -294,12 +304,22 @@ public final class MainActivity extends Activity {
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
                 .setTitle(titleValue)
                 .setMessage(message.toString())
-                .setPositiveButton("\u77e5\u9053\u4e86", null);
+                .setPositiveButton("\u77e5\u9053\u4e86",
+                        (dialog, which) -> markAnnouncementSeen(item));
         if (WELCOME_ANNOUNCEMENT_ID.equals(item.id)) {
             builder.setNeutralButton("群二维码",
-                    (dialog, which) -> showFeedbackGroupQr());
+                    (dialog, which) -> {
+                        markAnnouncementSeen(item);
+                        showFeedbackGroupQr();
+                    });
         }
         builder.show();
+    }
+
+    private void markAnnouncementSeen(AnnouncementChecker.Item item) {
+        if (session != null && item != null && !TextUtils.isEmpty(item.id)) {
+            session.markAnnouncementSeen(item.id);
+        }
     }
 
     private void showUpdateDialog(UpdateChecker.Result result) {
