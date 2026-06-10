@@ -227,6 +227,7 @@ public final class MainActivity extends Activity {
     private void checkAnnouncementOnLaunch() {
         AnnouncementChecker.Item welcome = welcomeAnnouncement();
         if (shouldShowWelcomeAnnouncement(welcome)) {
+            markAnnouncementSeen(welcome);
             showAnnouncementDialog(welcome);
             return;
         }
