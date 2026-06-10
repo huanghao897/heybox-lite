@@ -46,6 +46,10 @@ final class SessionStore {
     private static final String SPLASH_ENABLED = "splash_enabled";
     private static final String SPLASH_TEXT = "splash_text";
     private static final String SPLASH_DURATION = "splash_duration";
+    private static final String LAST_ANNOUNCEMENT_ID = "last_announcement_id";
+    private static final String LAST_SIGN_ATTEMPT_DATE = "last_sign_attempt_date";
+    private static final String LAST_SIGN_SUCCESS_DATE = "last_sign_success_date";
+    private static final String SIGN_SUMMARY = "sign_summary";
     private static final String SEARCH_HISTORY = "search_history";
     private static final String BLOCK_KEYWORDS = "block_keywords";
     static final String DEFAULT_SPLASH_TEXT = "方寸之间，看见热爱";
@@ -252,6 +256,38 @@ final class SessionStore {
 
     void setSplashDuration(int value) {
         prefs.edit().putInt(SPLASH_DURATION, value).apply();
+    }
+
+    String lastAnnouncementId() {
+        return prefs.getString(LAST_ANNOUNCEMENT_ID, "");
+    }
+
+    void setLastAnnouncementId(String value) {
+        prefs.edit().putString(LAST_ANNOUNCEMENT_ID, value == null ? "" : value).apply();
+    }
+
+    String lastSignAttemptDate() {
+        return prefs.getString(LAST_SIGN_ATTEMPT_DATE, "");
+    }
+
+    void setLastSignAttemptDate(String value) {
+        prefs.edit().putString(LAST_SIGN_ATTEMPT_DATE, value == null ? "" : value).apply();
+    }
+
+    String lastSignSuccessDate() {
+        return prefs.getString(LAST_SIGN_SUCCESS_DATE, "");
+    }
+
+    void setLastSignSuccessDate(String value) {
+        prefs.edit().putString(LAST_SIGN_SUCCESS_DATE, value == null ? "" : value).apply();
+    }
+
+    String signSummary() {
+        return prefs.getString(SIGN_SUMMARY, "");
+    }
+
+    void setSignSummary(String value) {
+        prefs.edit().putString(SIGN_SUMMARY, value == null ? "" : value).apply();
     }
 
     List<String> searchHistory() {
@@ -625,6 +661,7 @@ final class SessionStore {
         boolean splashEnabled = splashEnabled();
         String splashText = splashText();
         int splashDuration = splashDuration();
+        String lastAnnouncementId = lastAnnouncementId();
         String searchHistory = prefs.getString(SEARCH_HISTORY, "[]");
         String blockKeywords = blockKeywords();
         prefs.edit().clear()
@@ -646,6 +683,7 @@ final class SessionStore {
                 .putBoolean(SPLASH_ENABLED, splashEnabled)
                 .putString(SPLASH_TEXT, splashText)
                 .putInt(SPLASH_DURATION, splashDuration)
+                .putString(LAST_ANNOUNCEMENT_ID, lastAnnouncementId)
                 .putString(SEARCH_HISTORY, searchHistory)
                 .putString(BLOCK_KEYWORDS, blockKeywords)
                 .apply();

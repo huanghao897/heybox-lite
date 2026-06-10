@@ -16,14 +16,16 @@ android {
         applicationId "com.openzen.heyboxcommunity"
         minSdk 14
         targetSdk 35
-        versionCode 176
-        versionName "1.76"
+        versionCode 177
+        versionName "1.77"
         buildConfigField "String", "RELEASE_CERT_SHA256",
                 "\"7b163883d570408505d820174fb9565471efde8d863508fd390e4f4eb1645eb8\""
         buildConfigField "String", "UPDATE_API_URL",
-                "\"https://api.github.com/repos/huanghao897/heybox-lite/releases/latest\""
+                "\"http://103.236.54.97/api/heybox-lite/update\""
         buildConfigField "String", "UPDATE_FALLBACK_URL",
-                "\"https://github.com/huanghao897/heybox-lite/releases/latest\""
+                "\"http://103.236.54.97/\""
+        buildConfigField "String", "ANNOUNCEMENT_API_URL",
+                "\"http://103.236.54.97/api/heybox-lite/announcement\""
     }
 
     buildFeatures {
@@ -58,7 +60,7 @@ android {
 }
 
 dependencies {
-    implementation "com.google.zxing:core:3.5.3"
+    implementation "com.google.zxing:core:3.3.3"
 }
 
 tasks.register("copyReleaseApkToDist") {

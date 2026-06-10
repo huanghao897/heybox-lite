@@ -7,6 +7,7 @@ final class EndpointProvider {
 
     static String feeds() { return path(124,49,49,32,124,50,35,35,124,53,54,54,55,32); }
     static String linkTree() { return path(124,49,49,32,124,50,35,35,124,63,58,61,56,124,39,33,54,54); }
+    static String linkTreeV2() { return path(124,49,49,32,124,50,35,35,124,63,58,61,56,124,39,33,54,54,124,37,97); }
     static String qrUrl() { return path(124,50,48,48,60,38,61,39,124,52,54,39,12,34,33,48,60,55,54,12,38,33,63,124); }
     static String qrState() { return path(124,50,48,48,60,38,61,39,124,34,33,12,32,39,50,39,54,124); }
     static String subComments() { return path(124,49,49,32,124,50,35,35,124,48,60,62,62,54,61,39,124,32,38,49,124,48,60,62,62,54,61,39,32); }
@@ -24,6 +25,7 @@ final class EndpointProvider {
     static String unfollowUser() { return path(124,49,49,32,124,50,35,35,124,35,33,60,53,58,63,54,124,53,60,63,63,60,36,124,38,32,54,33,124,48,50,61,48,54,63); }
     static String supportComment() { return path(124,49,49,32,124,50,35,35,124,48,60,62,62,54,61,39,124,32,38,35,35,60,33,39); }
     static String createComment() { return path(124,49,49,32,124,50,35,35,124,48,60,62,62,54,61,39,124,48,33,54,50,39,54); }
+    static String taskSign() { return path(124,39,50,32,56,124,32,58,52,61,124); }
     static String boxDataCallback() { return path(124,33,48,124,49,60,43,12,55,50,39,50,124,48,50,63,63,49,50,48,56); }
 
     static String baseUrl() {

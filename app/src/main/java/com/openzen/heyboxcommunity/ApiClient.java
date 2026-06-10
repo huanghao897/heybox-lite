@@ -91,7 +91,7 @@ final class ApiClient {
                     ? connection.getInputStream() : connection.getErrorStream();
             String text = read(stream);
             if (status < 200 || status >= 300) {
-                throw new IllegalStateException("HTTP " + status + ": " + trim(text));
+                throw new IllegalStateException(httpErrorMessage(status, text));
             }
             JSONObject json = new JSONObject(text);
             Object apiStatus = json.opt("status");
@@ -176,6 +176,20 @@ final class ApiClient {
 
     private static String trim(String value) {
         return value.length() > 240 ? value.substring(0, 240) : value;
+    }
+
+    private static String httpErrorMessage(int status, String text) {
+        if (status == 403) return "HTTP 403：请求过于频繁或被接口限制，请稍后重试";
+        if (status == 404) return "HTTP 404：接口不存在或暂不可用";
+        String compact = text == null ? "" : text
+                .replaceAll("(?is)<script.*?</script>", " ")
+                .replaceAll("(?is)<style.*?</style>", " ")
+                .replaceAll("(?s)<[^>]+>", " ")
+                .replace("&nbsp;", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (compact.isEmpty()) compact = "请求失败";
+        return "HTTP " + status + "：" + trim(compact);
     }
 
     private static String statusMessage(Object status) {

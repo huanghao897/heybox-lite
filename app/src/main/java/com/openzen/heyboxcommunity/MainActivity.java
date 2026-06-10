@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
@@ -21,6 +22,7 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.AbsListView;
@@ -70,6 +72,10 @@ public final class MainActivity extends Activity {
 
     private static final int REPLY_PREVIEW_COUNT = 2;
     private static final int REPLY_PAGE_SIZE = 5;
+    private static final int NAV_BAR_HEIGHT_DP = 30;
+    private static final int NAV_ICON_SIZE_DP = 20;
+    private static final String TRANSITION_OVERLAY_TAG = "shell_transition_overlay";
+    private static final String WELCOME_ANNOUNCEMENT_ID = "welcome-heybox-lite-1.77";
     private static final String[] THEME_NAMES = {
             "默认蓝", "红色", "粉色", "紫色", "绿色", "青色",
             "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"
@@ -108,6 +114,8 @@ public final class MainActivity extends Activity {
     private SessionStore session;
     private ApiClient api;
     private WriteTokenProvider writeTokenProvider;
+    private SignInManager signInManager;
+    private LinearLayout shellRoot;
     private FrameLayout content;
     private LinearLayout bottom;
     private TextView title;
@@ -118,10 +126,14 @@ public final class MainActivity extends Activity {
     private ListView cachedFeedListView;
     private TextView feedFooter;
     private ScrollView detailScroll;
+    private DetailPager detailPager;
+    private boolean shellAnimating;
     private LocalCache localCache;
     private final Map<View, Integer> searchBarHeights = new HashMap<>();
     private final Map<View, Boolean> searchBarStates = new HashMap<>();
     private final Map<String, LikeState> linkLikeOverrides = new HashMap<>();
+    private final Map<String, Bitmap> screenSnapshots = new HashMap<>();
+    private final Map<String, Bitmap> fullScreenSnapshots = new HashMap<>();
     private String screen = "feed";
     private String qrKey;
     private boolean pollingQr;
@@ -139,6 +151,7 @@ public final class MainActivity extends Activity {
     private String currentLinkHsrc = "";
     private String currentAuthCode = "";
     private FeedItem currentDetailItem;
+    private int detailRequestToken;
     private String lastDetailDiagnostics = "";
 
     @Override
@@ -162,17 +175,29 @@ public final class MainActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
         api = new ApiClient(session);
         writeTokenProvider = new WriteTokenProvider(this, session, api);
+        signInManager = new SignInManager(session, api, message -> {
+            if (localCache != null) localCache.log(message);
+        });
         buildShell();
         if (session.isLoggedIn()) {
             EmojiStore.load(api, () -> {
                 if ("feed".equals(screen) && feedAdapter != null) feedAdapter.notifyDataSetChanged();
             });
-            showFeed();
         }
-        else showLogin();
+        showFeed();
         if (session.autoUpdateCheck()) {
             handler.postDelayed(this::checkUpdateOnLaunch, 650);
         }
+        handler.postDelayed(this::checkAnnouncementOnLaunch, 950);
+        handler.postDelayed(this::autoSignInOnLaunch, 1250);
+    }
+
+    private void autoSignInOnLaunch() {
+        if (isFinishing() || signInManager == null || !session.isLoggedIn()) return;
+        signInManager.autoSignInIfNeeded(result -> {
+            if (isFinishing()) return;
+            if ("profile".equals(screen)) showProfile();
+        });
     }
 
     private void checkUpdateOnLaunch() {
@@ -197,6 +222,83 @@ public final class MainActivity extends Activity {
                 // 启动检查失败时保持安静，避免网络不稳定影响正常使用。
             }
         });
+    }
+
+    private void checkAnnouncementOnLaunch() {
+        AnnouncementChecker.load(new AnnouncementChecker.Callback() {
+            @Override public void onResult(List<AnnouncementChecker.Item> items) {
+                if (isFinishing()) return;
+                AnnouncementChecker.Item item = firstEnabledAnnouncement(
+                        withWelcomeAnnouncement(items));
+                if (item == null) return;
+                if (!item.id.isEmpty() && item.id.equals(session.lastAnnouncementId())) return;
+                if (!item.id.isEmpty()) session.setLastAnnouncementId(item.id);
+                showAnnouncementDialog(item);
+            }
+
+            @Override public void onError(String message) {
+                if (isFinishing()) return;
+                AnnouncementChecker.Item item = welcomeAnnouncement();
+                if (!item.id.equals(session.lastAnnouncementId())) {
+                    session.setLastAnnouncementId(item.id);
+                    showAnnouncementDialog(item);
+                }
+            }
+        });
+    }
+
+    private List<AnnouncementChecker.Item> withWelcomeAnnouncement(
+            List<AnnouncementChecker.Item> items) {
+        List<AnnouncementChecker.Item> result = new ArrayList<>();
+        result.add(welcomeAnnouncement());
+        if (items != null) {
+            for (AnnouncementChecker.Item item : items) {
+                if (item == null || WELCOME_ANNOUNCEMENT_ID.equals(item.id)) continue;
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
+    private AnnouncementChecker.Item welcomeAnnouncement() {
+        return new AnnouncementChecker.Item(
+                WELCOME_ANNOUNCEMENT_ID,
+                "欢迎使用 heybox Lite",
+                "欢迎使用 heybox Lite。这里会放版本公告和重要提醒。\n\n"
+                        + "遇到 bug 或有建议，可以加入反馈群：781941517。\n\n"
+                        + "本项目仅用于学习、研究与个人使用，请在遵守平台规则的前提下使用。",
+                "normal",
+                appVersion(),
+                true);
+    }
+
+    private AnnouncementChecker.Item firstEnabledAnnouncement(
+            List<AnnouncementChecker.Item> items) {
+        if (items == null) return null;
+        for (AnnouncementChecker.Item item : items) {
+            if (item != null && item.enabled
+                    && (!item.title.isEmpty() || !item.content.isEmpty())) return item;
+        }
+        return null;
+    }
+
+    private void showAnnouncementDialog(AnnouncementChecker.Item item) {
+        if (item == null || isFinishing()) return;
+        String titleValue = TextUtils.isEmpty(item.title) ? "\u516c\u544a" : item.title;
+        StringBuilder message = new StringBuilder();
+        if (!TextUtils.isEmpty(item.updatedAt)) {
+            message.append(item.updatedAt).append("\n\n");
+        }
+        message.append(item.content);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(titleValue)
+                .setMessage(message.toString())
+                .setPositiveButton("\u77e5\u9053\u4e86", null);
+        if (WELCOME_ANNOUNCEMENT_ID.equals(item.id)) {
+            builder.setNeutralButton("群二维码",
+                    (dialog, which) -> showFeedbackGroupQr());
+        }
+        builder.show();
     }
 
     private void showUpdateDialog(UpdateChecker.Result result) {
@@ -225,11 +327,12 @@ public final class MainActivity extends Activity {
     private String limitUpdateNotes(String notes) {
         int max = 1800;
         if (notes.length() <= max) return notes;
-        return notes.substring(0, max) + "\n\n内容较长，完整更新日志请打开 GitHub 发布页查看。";
+        return notes.substring(0, max) + "\n\n内容较长，完整更新日志请打开更新页面查看。";
     }
 
     private void buildShell() {
         LinearLayout root = vertical(BG);
+        shellRoot = root;
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(4), 0, dp(6), 0);
@@ -245,6 +348,9 @@ public final class MainActivity extends Activity {
         title = text("heybox Lite", 15, TEXT);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setGravity(Gravity.CENTER_VERTICAL);
+        title.setOnClickListener(view -> {
+            if (canHeaderBack()) onBackPressed();
+        });
         bar.addView(title, new LinearLayout.LayoutParams(0, dp(38), 1));
 
         TextView clock = text("", 12, MUTED);
@@ -256,14 +362,14 @@ public final class MainActivity extends Activity {
         setIcon(action, R.drawable.ic_refresh, TEXT, 19);
         bar.addView(action, new LinearLayout.LayoutParams(dp(38), dp(38)));
 
-        content = new FrameLayout(this);
+        content = new BackSwipeFrameLayout(this);
         root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
 
         bottom = new LinearLayout(this);
         bottom.setGravity(Gravity.CENTER);
-        bottom.setBackgroundColor(session.darkMode()
-                ? Color.rgb(20, 20, 20) : Color.rgb(232, 234, 237));
-        root.addView(bottom, new LinearLayout.LayoutParams(-1, dp(42)));
+        bottom.setPadding(0, 0, 0, 0);
+        bottom.setBackgroundColor(BG);
+        root.addView(bottom, new LinearLayout.LayoutParams(-1, dp(NAV_BAR_HEIGHT_DP)));
         addNav("社区", "feed", R.drawable.ic_home, this::showFeed);
         addNav("搜索", "search", R.drawable.ic_search, this::showSearch);
         addNav("我的", "profile", R.drawable.ic_person, this::showProfile);
@@ -304,13 +410,171 @@ public final class MainActivity extends Activity {
     }
 
     private void addNav(String label, String key, int drawable, Runnable click) {
-        TextView item = text(label, 10, MUTED);
-        item.setGravity(Gravity.CENTER);
-        setIcon(item, drawable, MUTED, 17);
-        item.setCompoundDrawablePadding(dp(1));
+        ImageView item = new ImageView(this);
+        item.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        item.setPadding(0, dp(4), 0, dp(4));
+        item.setAdjustViewBounds(false);
+        item.setImageDrawable(navIcon(drawable, MUTED));
+        item.setColorFilter(MUTED);
+        item.setContentDescription(label);
         item.setTag(key);
         item.setOnClickListener(view -> click.run());
-        bottom.addView(item, new LinearLayout.LayoutParams(0, dp(42), 1));
+        bottom.addView(item, new LinearLayout.LayoutParams(0, dp(NAV_BAR_HEIGHT_DP), 1));
+    }
+
+    private Drawable navIcon(int drawable, int color) {
+        Drawable icon = Compat.tintedDrawable(this, drawable, color);
+        if (icon != null) icon.setBounds(0, 0, dp(NAV_ICON_SIZE_DP), dp(NAV_ICON_SIZE_DP));
+        return icon;
+    }
+
+    private boolean canHeaderBack() {
+        if ("detail".equals(screen)) return true;
+        if ("saved".equals(screen)) return true;
+        if ("announcement_board".equals(screen)) return true;
+        if ("settings_home".equals(screen)) return true;
+        return "display_preview".equals(screen)
+                || "display_settings".equals(screen)
+                || "startup_settings".equals(screen)
+                || "app_settings".equals(screen)
+                || "about".equals(screen);
+    }
+
+    private int topLevelIndex() {
+        if ("feed".equals(screen)) return 0;
+        if ("search".equals(screen)) return 1;
+        if ("profile".equals(screen)) return 2;
+        return -1;
+    }
+
+    private void showTopLevel(int index) {
+        if (index == 0) showFeed();
+        else if (index == 1) showSearch();
+        else if (index == 2) showProfile();
+    }
+
+    private String screenKeyForTopLevel(int index) {
+        if (index == 0) return "feed";
+        if (index == 1) return "search";
+        if (index == 2) return "profile";
+        return "";
+    }
+
+    private String backTargetScreenKey() {
+        if ("detail".equals(screen)) return detailReturn;
+        if ("saved".equals(screen)) return "profile";
+        if ("announcement_board".equals(screen)) return "about";
+        if ("display_preview".equals(screen)) return "display_settings";
+        if ("display_settings".equals(screen)
+                || "startup_settings".equals(screen)
+                || "app_settings".equals(screen)
+                || "about".equals(screen)) return "settings_home";
+        if ("settings_home".equals(screen)) return "profile";
+        return "feed";
+    }
+
+    private void captureShellSnapshot(String key, View view) {
+        captureSnapshot(screenSnapshots, 8, key, view);
+    }
+
+    private void captureFullScreenSnapshot(String key) {
+        captureSnapshot(fullScreenSnapshots, 4, key, shellRoot);
+    }
+
+    private void captureSnapshot(Map<String, Bitmap> target, int maxCount,
+                                 String key, View view) {
+        if (key == null || key.isEmpty() || view == null) return;
+        int width = view.getWidth();
+        int height = view.getHeight();
+        if (width <= 1 || height <= 1) return;
+        try {
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565);
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawColor(BG);
+            view.draw(canvas);
+            Bitmap old = target.put(key, bitmap);
+            if (old != null && old != bitmap && !old.isRecycled()) old.recycle();
+            trimSnapshots(target, maxCount);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private Bitmap screenSnapshot(String key) {
+        if (key == null || key.isEmpty()) return null;
+        return screenSnapshots.get(key);
+    }
+
+    private Bitmap fullScreenSnapshot(String key) {
+        if (key == null || key.isEmpty()) return null;
+        return fullScreenSnapshots.get(key);
+    }
+
+    private void trimScreenSnapshots() {
+        trimSnapshots(screenSnapshots, 8);
+    }
+
+    private void trimSnapshots(Map<String, Bitmap> target, int maxCount) {
+        if (target.size() <= maxCount) return;
+        Iterator<String> iterator = target.keySet().iterator();
+        if (iterator.hasNext()) {
+            String key = iterator.next();
+            Bitmap bitmap = target.get(key);
+            if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+            iterator.remove();
+        }
+    }
+
+    private ImageView installFullScreenTransitionOverlay(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) return null;
+        ViewGroup root = getWindow() == null ? null
+                : getWindow().getDecorView().findViewById(android.R.id.content);
+        if (root == null) return null;
+        ImageView overlay = new ImageView(this);
+        overlay.setTag(TRANSITION_OVERLAY_TAG);
+        overlay.setBackgroundColor(BG);
+        overlay.setScaleType(ImageView.ScaleType.FIT_XY);
+        overlay.setImageBitmap(bitmap);
+        overlay.setAlpha(1f);
+        root.addView(overlay, new ViewGroup.LayoutParams(-1, -1));
+        overlay.bringToFront();
+        return overlay;
+    }
+
+    private void fadeFullScreenTransitionOverlay(ImageView overlay) {
+        if (overlay == null) return;
+        overlay.post(() -> overlay.postDelayed(() -> overlay.animate()
+                .alpha(0f)
+                .setStartDelay(40)
+                .setDuration(210)
+                .setInterpolator(new DecelerateInterpolator())
+                .setListener(new android.animation.AnimatorListenerAdapter() {
+                    @Override public void onAnimationEnd(android.animation.Animator animation) {
+                        if (overlay.getParent() instanceof ViewGroup) {
+                            ((ViewGroup) overlay.getParent()).removeView(overlay);
+                        }
+                    }
+                }), 32));
+    }
+
+    private void showShellTransitionOverlay(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled() || content == null) return;
+        ImageView overlay = new ImageView(this);
+        overlay.setTag(TRANSITION_OVERLAY_TAG);
+        overlay.setBackgroundColor(BG);
+        overlay.setScaleType(ImageView.ScaleType.FIT_XY);
+        overlay.setImageBitmap(bitmap);
+        overlay.setAlpha(1f);
+        content.addView(overlay, match());
+        overlay.bringToFront();
+        overlay.animate().alpha(0f).setStartDelay(35).setDuration(150)
+                .setInterpolator(new DecelerateInterpolator())
+                .setListener(new android.animation.AnimatorListenerAdapter() {
+                    @Override public void onAnimationEnd(android.animation.Animator animation) {
+                        if (overlay.getParent() instanceof ViewGroup) {
+                            ((ViewGroup) overlay.getParent()).removeView(overlay);
+                        }
+                    }
+                });
     }
 
     private void activate(String key) {
@@ -321,13 +585,373 @@ public final class MainActivity extends Activity {
         int activeColor = TEXT;
         int inactiveColor = MUTED;
         for (int i = 0; i < bottom.getChildCount(); i++) {
-            TextView item = (TextView) bottom.getChildAt(i);
+            View item = bottom.getChildAt(i);
             boolean active = key.equals(item.getTag());
             item.setAlpha(active ? 1f : 0.62f);
-            item.setTextColor(active ? activeColor : inactiveColor);
-            item.setTypeface(Typeface.DEFAULT, active ? Typeface.BOLD : Typeface.NORMAL);
-            Drawable icon = item.getCompoundDrawables()[1];
-            Compat.tintDrawable(icon, active ? activeColor : inactiveColor);
+            if (item instanceof ImageView) {
+                ((ImageView) item).setColorFilter(active ? activeColor : inactiveColor);
+            } else if (item instanceof TextView) {
+                TextView textItem = (TextView) item;
+                textItem.setTextColor(active ? activeColor : inactiveColor);
+                textItem.setTypeface(Typeface.DEFAULT, active ? Typeface.BOLD : Typeface.NORMAL);
+            }
+        }
+    }
+
+    private void animateShellChange(Runnable change, int direction) {
+        if (shellAnimating) return;
+        View oldChild = content == null || content.getChildCount() == 0
+                ? null : content.getChildAt(0);
+        int width = content == null ? 0 : Math.max(1, content.getWidth());
+        if (oldChild == null || width <= 1) {
+            change.run();
+            return;
+        }
+        shellAnimating = true;
+        animateShellView(oldChild, 0f, -direction * width, 1f, 0.35f, 145, () -> {
+            oldChild.setTranslationX(0f);
+            oldChild.setAlpha(1f);
+            change.run();
+            View newChild = content.getChildCount() == 0 ? null : content.getChildAt(0);
+            if (newChild == null) {
+                shellAnimating = false;
+                return;
+            }
+            animateShellView(newChild, direction * width, 0f, 0.35f, 1f, 185,
+                    () -> shellAnimating = false);
+        });
+    }
+
+    private void animateShellView(View view, float fromX, float toX, float fromAlpha,
+                                  float toAlpha, int duration, Runnable end) {
+        if (view == null) {
+            if (end != null) end.run();
+            return;
+        }
+        view.setTranslationX(fromX);
+        view.setAlpha(fromAlpha);
+        android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        animator.setDuration(duration);
+        animator.setInterpolator(new DecelerateInterpolator());
+        animator.addUpdateListener(value -> {
+            float progress = (Float) value.getAnimatedValue();
+            view.setTranslationX(fromX + (toX - fromX) * progress);
+            view.setAlpha(fromAlpha + (toAlpha - fromAlpha) * progress);
+        });
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                view.setTranslationX(toX);
+                view.setAlpha(toAlpha);
+                if (end != null) end.run();
+            }
+        });
+        animator.start();
+    }
+
+    private void navigateTopLevelSwipe(int direction) {
+        int index = topLevelIndex();
+        if (index < 0) return;
+        int next = index + direction;
+        if (next < 0 || next > 2) return;
+        animateShellChange(() -> showTopLevel(next), direction);
+    }
+
+    private void backWithShellAnimation() {
+        if (!canHeaderBack() || "detail".equals(screen)) return;
+        animateShellChange(this::onBackPressed, -1);
+    }
+
+    private final class BackSwipeFrameLayout extends FrameLayout {
+        private static final int MODE_NONE = 0;
+        private static final int MODE_TOP_LEVEL = 1;
+        private static final int MODE_BACK = 2;
+
+        private final int touchSlop;
+        private float startX;
+        private float startY;
+        private long startTime;
+        private boolean tracking;
+        private boolean dragging;
+        private int gestureMode = MODE_NONE;
+        private int gestureDirection;
+        private View dragChild;
+        private ImageView previewChild;
+        private String displayedScreenKey = "";
+        private android.animation.ValueAnimator swipeAnimator;
+
+        BackSwipeFrameLayout(android.content.Context context) {
+            super(context);
+            touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        }
+
+        @Override public void addView(View child, int index, ViewGroup.LayoutParams params) {
+            super.addView(child, index, params);
+            if (child != previewChild) displayedScreenKey = screen;
+        }
+
+        @Override public void removeAllViews() {
+            captureShellSnapshot(displayedScreenKey, currentShellChild());
+            captureFullScreenSnapshot(displayedScreenKey);
+            super.removeAllViews();
+            previewChild = null;
+        }
+
+        @Override public boolean onInterceptTouchEvent(MotionEvent event) {
+            if (!canUseShellSwipe()) return false;
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    cancelSwipeAnimator();
+                    startX = event.getX();
+                    startY = event.getY();
+                    startTime = event.getEventTime();
+                    tracking = true;
+                    dragging = false;
+                    gestureMode = MODE_NONE;
+                    dragChild = null;
+                    return false;
+                case MotionEvent.ACTION_MOVE: {
+                    if (!tracking) return false;
+                    float dx = event.getX() - startX;
+                    float dy = event.getY() - startY;
+                    if (startShellDragIfReady(dx, dy)) {
+                        dragShellTo(dx);
+                        getParent().requestDisallowInterceptTouchEvent(true);
+                        return true;
+                    }
+                    return false;
+                }
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    tracking = false;
+                    dragging = false;
+                    return false;
+                default:
+                    return false;
+            }
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            if (!dragging && !canUseShellSwipe()) return false;
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    cancelSwipeAnimator();
+                    startX = event.getX();
+                    startY = event.getY();
+                    startTime = event.getEventTime();
+                    tracking = true;
+                    dragging = false;
+                    gestureMode = MODE_NONE;
+                    dragChild = null;
+                    return true;
+                case MotionEvent.ACTION_MOVE: {
+                    float dx = event.getX() - startX;
+                    float dy = event.getY() - startY;
+                    if (!dragging && !startShellDragIfReady(dx, dy)) return true;
+                    dragShellTo(dx);
+                    return true;
+                }
+                case MotionEvent.ACTION_UP:
+                    if (dragging) finishShellSwipe(event);
+                    else performClick();
+                    tracking = false;
+                    dragging = false;
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    if (dragging) settleShellDrag(0f, this::resetShellDrag);
+                    tracking = false;
+                    dragging = false;
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
+        private boolean canUseShellSwipe() {
+            return !shellAnimating && !"detail".equals(screen) && !"login".equals(screen);
+        }
+
+        private boolean hasShellSwipeTarget(float dx) {
+            int index = topLevelIndex();
+            if (index >= 0) {
+                int next = index + (dx < 0 ? 1 : -1);
+                return next >= 0 && next <= 2;
+            }
+            return canHeaderBack() && dx > 0;
+        }
+
+        private boolean startShellDragIfReady(float dx, float dy) {
+            if (!tracking) return false;
+            if (Math.abs(dy) > touchSlop * 2 && Math.abs(dy) > Math.abs(dx)) {
+                tracking = false;
+                return false;
+            }
+            if (Math.abs(dx) <= touchSlop * 2
+                    || Math.abs(dx) <= Math.abs(dy) * 1.18f
+                    || !hasShellSwipeTarget(dx)) {
+                return false;
+            }
+            int index = topLevelIndex();
+            gestureMode = index >= 0 ? MODE_TOP_LEVEL : MODE_BACK;
+            gestureDirection = index >= 0 ? (dx < 0 ? 1 : -1) : -1;
+            dragChild = currentShellChild();
+            if (dragChild == null) return false;
+            installShellPreview(targetScreenKeyForGesture());
+            cancelSwipeAnimator();
+            shellAnimating = true;
+            dragging = true;
+            return true;
+        }
+
+        private View currentShellChild() {
+            for (int i = getChildCount() - 1; i >= 0; i--) {
+                View child = getChildAt(i);
+                if (child != previewChild
+                        && !TRANSITION_OVERLAY_TAG.equals(child.getTag())) return child;
+            }
+            return null;
+        }
+
+        private String targetScreenKeyForGesture() {
+            if (gestureMode == MODE_TOP_LEVEL) {
+                return screenKeyForTopLevel(topLevelIndex() + gestureDirection);
+            }
+            return backTargetScreenKey();
+        }
+
+        private void installShellPreview(String targetKey) {
+            removeShellPreview();
+            previewChild = new ImageView(getContext());
+            previewChild.setBackgroundColor(BG);
+            previewChild.setScaleType(ImageView.ScaleType.FIT_XY);
+            Bitmap bitmap = screenSnapshot(targetKey);
+            if (bitmap != null && !bitmap.isRecycled()) previewChild.setImageBitmap(bitmap);
+            super.addView(previewChild, 0, new FrameLayout.LayoutParams(-1, -1));
+        }
+
+        private void removeShellPreview() {
+            if (previewChild != null) {
+                super.removeView(previewChild);
+                previewChild = null;
+            }
+        }
+
+        private void dragShellTo(float dx) {
+            if (dragChild == null) return;
+            int width = Math.max(1, getWidth());
+            float exitSign = -gestureDirection;
+            float offset;
+            if (exitSign < 0) offset = Math.max(-width, Math.min(0f, dx));
+            else offset = Math.max(0f, Math.min(width, dx));
+            float progress = Math.min(1f, Math.abs(offset) / width);
+            dragChild.setTranslationX(offset);
+            dragChild.setAlpha(1f - 0.08f * progress);
+        }
+
+        private void finishShellSwipe(MotionEvent event) {
+            float dx = event.getX() - startX;
+            float dy = event.getY() - startY;
+            long duration = Math.max(1L, event.getEventTime() - startTime);
+            float velocity = dx * 1000f / duration;
+            float offset = dragChild == null ? 0f : dragChild.getTranslationX();
+            boolean enoughDistance = Math.abs(offset) > Math.max(dp(52), getWidth() * 0.24f);
+            boolean enoughVelocity = -gestureDirection * velocity > dp(300);
+            if (Math.abs(dx) <= Math.abs(dy) * 1.10f || (!enoughDistance && !enoughVelocity)) {
+                settleShellDrag(0f, this::resetShellDrag);
+                return;
+            }
+            settleShellDrag(-gestureDirection * Math.max(1, getWidth()),
+                    this::completeShellSwipe);
+        }
+
+        private void settleShellDrag(float targetX, Runnable end) {
+            if (dragChild == null) {
+                resetShellDrag();
+                if (end != null) end.run();
+                return;
+            }
+            cancelSwipeAnimator();
+            float fromX = dragChild.getTranslationX();
+            if (Math.abs(fromX - targetX) < dp(1)) {
+                dragChild.setTranslationX(targetX);
+                if (end != null) end.run();
+                return;
+            }
+            int distance = Math.round(Math.abs(fromX - targetX));
+            int duration = Math.max(120, Math.min(260, distance / 3));
+            swipeAnimator = android.animation.ValueAnimator.ofFloat(fromX, targetX);
+            swipeAnimator.setDuration(duration);
+            swipeAnimator.setInterpolator(new DecelerateInterpolator());
+            swipeAnimator.addUpdateListener(value -> {
+                float x = (Float) value.getAnimatedValue();
+                int width = Math.max(1, getWidth());
+                float progress = Math.min(1f, Math.abs(x) / width);
+                if (dragChild != null) {
+                    dragChild.setTranslationX(x);
+                    dragChild.setAlpha(1f - 0.08f * progress);
+                }
+            });
+            swipeAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) {
+                    swipeAnimator = null;
+                    if (end != null) end.run();
+                }
+            });
+            swipeAnimator.start();
+        }
+
+        private void completeShellSwipe() {
+            int direction = gestureDirection;
+            int mode = gestureMode;
+            String targetKey = targetScreenKeyForGesture();
+            Bitmap overlay = screenSnapshot(targetKey);
+            if (dragChild != null) {
+                dragChild.setTranslationX(0f);
+                dragChild.setAlpha(1f);
+            }
+            Runnable change;
+            if (mode == MODE_TOP_LEVEL) {
+                int next = topLevelIndex() + direction;
+                change = () -> showTopLevel(next);
+            } else {
+                change = MainActivity.this::onBackPressed;
+            }
+            change.run();
+            showShellTransitionOverlay(overlay);
+            View newChild = currentShellChild();
+            if (newChild == null) {
+                resetShellDrag();
+                return;
+            }
+            dragChild = newChild;
+            newChild.setTranslationX(0f);
+            newChild.setAlpha(1f);
+            resetShellDrag();
+        }
+
+        private void resetShellDrag() {
+            cancelSwipeAnimator();
+            if (dragChild != null) {
+                dragChild.setTranslationX(0f);
+                dragChild.setAlpha(1f);
+            }
+            removeShellPreview();
+            dragChild = null;
+            gestureMode = MODE_NONE;
+            gestureDirection = 0;
+            dragging = false;
+            shellAnimating = false;
+        }
+
+        private void cancelSwipeAnimator() {
+            if (swipeAnimator != null) {
+                swipeAnimator.removeAllListeners();
+                swipeAnimator.cancel();
+                swipeAnimator = null;
+            }
+        }
+
+        @Override public boolean performClick() {
+            return super.performClick();
         }
     }
 
@@ -371,12 +995,20 @@ public final class MainActivity extends Activity {
         Button retry = button("重新获取", R.drawable.ic_refresh);
         retry.setOnClickListener(view -> requestQr());
         page.addView(retry, new LinearLayout.LayoutParams(dp(150), dp(38)));
+
+        Button guest = button("游客浏览", R.drawable.ic_home);
+        guest.setOnClickListener(view -> showFeed());
+        LinearLayout.LayoutParams guestParams = new LinearLayout.LayoutParams(dp(150), dp(38));
+        guestParams.topMargin = dp(7);
+        page.addView(guest, guestParams);
         content.addView(page, match());
         requestQr();
     }
 
     private void requestQr() {
         stopQrPolling();
+        ImageView oldImage = content.findViewWithTag("qr_image");
+        if (oldImage != null) oldImage.setImageDrawable(null);
         setQrStatus("正在获取二维码…", MUTED);
         Map<String, String> params = new HashMap<>();
         params.put("app", "web");
@@ -404,9 +1036,16 @@ public final class MainActivity extends Activity {
             }
 
             @Override public void onError(String message) {
-                setQrStatus("获取失败：" + message, PRIMARY);
+                setQrStatus("获取失败：" + qrErrorMessage(message), PRIMARY);
             }
         });
+    }
+
+    private String qrErrorMessage(String message) {
+        if (message == null || message.isEmpty()) return "请稍后重试";
+        if (message.contains("HTTP 403")) return "请求过于频繁，请稍后重试";
+        String compact = message.replace('\n', ' ').trim();
+        return compact.length() > 28 ? compact.substring(0, 28) + "…" : compact;
     }
 
     private void pollQr() {
@@ -459,10 +1098,6 @@ public final class MainActivity extends Activity {
     }
 
     private void showFeed() {
-        if (!session.isLoggedIn()) {
-            showLogin();
-            return;
-        }
         activate("feed");
         title.setText("社区");
         action.setText("");
@@ -637,10 +1272,6 @@ public final class MainActivity extends Activity {
     }
 
     private void showSearch() {
-        if (!session.isLoggedIn()) {
-            showLogin();
-            return;
-        }
         ensureEmojiCatalog(() -> {});
         activate("search");
         title.setText("搜索");
@@ -937,7 +1568,10 @@ public final class MainActivity extends Activity {
         if (feedListView == null || feed.isEmpty()) return;
         final int position = Math.max(0, Math.min(feedFirstVisible, feed.size() - 1));
         final int top = feedFirstTop;
-        feedListView.post(() -> feedListView.setSelectionFromTop(position, top));
+        feedListView.post(() -> {
+            feedListView.setSelectionFromTop(position, top);
+            feedListView.post(() -> feedListView.setSelectionFromTop(position, top));
+        });
     }
 
     private void invalidateFeedView() {
@@ -952,6 +1586,10 @@ public final class MainActivity extends Activity {
         stopQrPolling();
         ensureEmojiCatalog(() -> {});
         if ("feed".equals(screen)) saveFeedScroll();
+        View sourceChild = content == null || content.getChildCount() == 0
+                ? null : content.getChildAt(0);
+        captureShellSnapshot(screen, sourceChild);
+        captureFullScreenSnapshot(screen);
         if (!"detail".equals(screen)) detailReturn = screen;
         screen = "detail";
         currentLinkId = item.id;
@@ -960,37 +1598,182 @@ public final class MainActivity extends Activity {
         currentDetailItem = item;
         bottom.setVisibility(View.GONE);
         leading.setVisibility(View.VISIBLE);
-        leading.setOnClickListener(view -> returnFromDetail());
-        title.setText("正文");
+        leading.setOnClickListener(view -> returnFromDetailSmooth());
+        title.setText("\u6b63\u6587");
         action.setVisibility(View.INVISIBLE);
         content.removeAllViews();
         showLoading();
-        Map<String, String> params = new HashMap<>();
-        params.put("link_id", item.id);
-        params.put("page", "1");
-        params.put("limit", "30");
-        params.put("index", "1");
-        params.put("is_first", "1");
-        params.put("owner_only", "0");
-        api.get(EndpointProvider.linkTree(), params, new ApiClient.Callback() {
+        int requestToken = ++detailRequestToken;
+        api.get(EndpointProvider.linkTree(), detailParams(item), new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
+                if (!isCurrentDetailRequest(item, requestToken)) return;
                 hideLoading();
+                String blocked = detailBlockedMessage(body);
+                if (!blocked.isEmpty()) {
+                    requestDetailV2(item, requestToken, blocked);
+                    return;
+                }
+                if (!hasDetailLink(body)) {
+                    requestDetailV2(item, requestToken, "\u8be6\u60c5\u6570\u636e\u4e3a\u7a7a");
+                    if (isCurrentDetailRequest(item, requestToken)) return;
+                    handleDetailFailure(item, "详情数据为空");
+                    return;
+                }
                 localCache.saveDetail(item.id, body);
                 renderDetail(body, item);
             }
 
             @Override public void onError(String message) {
+                if (!isCurrentDetailRequest(item, requestToken)) return;
                 hideLoading();
-                localCache.log("detail failed " + item.id + ": " + message);
-                JSONObject cached = localCache.detail(item.id);
-                if (cached != null) {
-                    toast("已显示离线缓存");
-                    renderDetail(cached, item);
-                    return;
-                }
-                showMessage("详情加载失败\n" + message);
+                requestDetailV2(item, requestToken, message);
+                if (isCurrentDetailRequest(item, requestToken)) return;
+                handleDetailFailure(item, message);
             }
         });
+    }
+
+    private void requestDetailV2(FeedItem item, int requestToken, String fallbackMessage) {
+        if (!isCurrentDetailRequest(item, requestToken)) return;
+        showLoading();
+        api.get(EndpointProvider.linkTreeV2(), detailParams(item), new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) {
+                if (!isCurrentDetailRequest(item, requestToken)) return;
+                hideLoading();
+                String blocked = detailBlockedMessage(body);
+                if (!blocked.isEmpty()) {
+                    handleDetailFailure(item, blocked);
+                    return;
+                }
+                if (!hasDetailLink(body)) {
+                    handleDetailFailure(item, first(fallbackMessage,
+                            "\u8be6\u60c5\u6570\u636e\u4e3a\u7a7a"));
+                    return;
+                }
+                localCache.saveDetail(item.id, body);
+                renderDetail(body, item);
+            }
+
+            @Override public void onError(String message) {
+                if (!isCurrentDetailRequest(item, requestToken)) return;
+                hideLoading();
+                handleDetailFailure(item, first(message, fallbackMessage));
+            }
+        });
+    }
+
+    private boolean isCurrentDetailRequest(FeedItem item, int requestToken) {
+        return "detail".equals(screen)
+                && item != null
+                && item.id.equals(currentLinkId)
+                && requestToken == detailRequestToken;
+    }
+
+    private Map<String, String> detailParams(FeedItem item) {
+        Map<String, String> params = new HashMap<>();
+        params.put("link_id", item.id);
+        params.put("page", "1");
+        params.put("limit", "20");
+        params.put("index", "1");
+        params.put("is_first", "1");
+        params.put("owner_only", "0");
+        if (item.hsrc != null && !item.hsrc.isEmpty()) params.put("h_src", item.hsrc);
+        return params;
+    }
+
+    private void handleDetailFailure(FeedItem item, String message) {
+        localCache.log("detail failed " + item.id + ": " + message);
+        JSONObject cached = localCache.detail(item.id);
+        if (cached != null && detailBlockedMessage(cached).isEmpty()
+                && hasDetailLink(cached)) {
+            toast("已显示离线缓存");
+            renderDetail(cached, item);
+            return;
+        }
+        if (renderFallbackDetail(item, message)) {
+            toast("已显示游客摘要");
+            return;
+        }
+        showMessage("详情加载失败\n" + message);
+    }
+
+    private boolean renderFallbackDetail(FeedItem item, String reason) {
+        if (item == null) return false;
+        try {
+            String notice = fallbackDetailNotice(reason);
+            JSONObject link = item.toJson();
+            if (link.optString("title").isEmpty()) link.put("title", "帖子摘要暂不可用");
+            if (link.optString("description").isEmpty() && link.optString("text").isEmpty()) {
+                link.put("description", notice + " 当前列表没有返回正文摘要，登录后可查看完整详情。");
+            }
+            JSONObject result = new JSONObject();
+            result.put("link", link);
+            result.put("comments", new JSONArray());
+            JSONObject body = new JSONObject();
+            body.put("result", result);
+            body.put("_fallback_notice", notice);
+            renderDetail(body, item);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private String fallbackDetailNotice(String reason) {
+        if (reason == null) reason = "";
+        if (reason.contains("验证") || reason.contains("captcha")
+                || reason.contains("403") || reason.contains("限制")) {
+            return "游客模式：完整详情需要验证，已显示首页摘要。";
+        }
+        return "详情接口暂不可用，已显示首页摘要。";
+    }
+
+    private String detailBlockedMessage(JSONObject body) {
+        if (body == null) return "详情数据为空";
+        String direct = detailBlockedMessageFrom(body);
+        if (!direct.isEmpty()) return direct;
+        JSONObject result = body.optJSONObject("result");
+        return result == null ? "" : detailBlockedMessageFrom(result);
+    }
+
+    private boolean hasDetailLink(JSONObject body) {
+        if (body == null) return false;
+        JSONObject result = body.optJSONObject("result");
+        return result != null && result.optJSONObject("link") != null;
+    }
+
+    private String detailBlockedMessageFrom(JSONObject object) {
+        String status = object.optString("status");
+        String code = object.optString("code");
+        String message = first(object.optString("msg"), object.optString("message"));
+        if (isVerificationStatus(status) || isVerificationStatus(code)) {
+            return first(message, status, code, "需要完成验证后才能继续");
+        }
+        if (isVerificationText(message)) return message;
+        return "";
+    }
+
+    private boolean isVerificationStatus(String value) {
+        if (value == null) return false;
+        String lower = value.toLowerCase(Locale.US);
+        return lower.contains("captcha")
+                || lower.contains("verify")
+                || lower.contains("verification")
+                || lower.contains("name_verify")
+                || lower.contains("need_alipay_verify")
+                || lower.contains("need_bind_phone")
+                || lower.contains("need_phone_code");
+    }
+
+    private boolean isVerificationText(String value) {
+        if (value == null) return false;
+        String lower = value.toLowerCase(Locale.US);
+        return lower.contains("captcha")
+                || lower.contains("verify")
+                || value.contains("需要完成验证")
+                || value.contains("验证后")
+                || value.contains("接口限制")
+                || value.contains("请求过于频繁");
     }
 
     private void renderDetail(JSONObject body, FeedItem fallback) {
@@ -1001,12 +1784,16 @@ public final class MainActivity extends Activity {
         if (authCode.isEmpty() && result != null) authCode = result.optString("auth_code");
         if (authCode.isEmpty()) authCode = body.optString("auth_code");
         if (!authCode.isEmpty()) currentAuthCode = authCode;
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(BG);
+        DetailPager pager = new DetailPager(this);
+        pager.setBackgroundColor(BG);
+        detailPager = pager;
+
+        ScrollView articleScroll = new ScrollView(this);
+        articleScroll.setBackgroundColor(BG);
         LinearLayout page = vertical(BG);
         int pagePadding = Math.max(dp(10), dp(session.pagePadding()));
         page.setPadding(pagePadding, dp(8), pagePadding, dp(18));
-        scroll.addView(page);
+        articleScroll.addView(page);
 
         LinearLayout article = vertical(BG);
         article.setPadding(dp(2), dp(4), dp(2), dp(12));
@@ -1018,6 +1805,17 @@ public final class MainActivity extends Activity {
         headline.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         headline.setLineSpacing(dp(1), 1.04f);
         addTop(article, headline, 14);
+        String notice = body.optString("_fallback_notice");
+        if (!notice.isEmpty()) {
+            TextView fallbackNotice = text(notice, 11, SECONDARY);
+            fallbackNotice.setLineSpacing(0, 1.16f);
+            GradientDrawable noticeBg = round(
+                    blend(PANEL, SECONDARY, session.darkMode() ? 0.22f : 0.12f), 7);
+            noticeBg.setStroke(dp(1), blend(SECONDARY, TEXT, session.darkMode() ? 0.20f : 0.12f));
+            fallbackNotice.setPadding(dp(8), dp(6), dp(8), dp(6));
+            Compat.setBackground(fallbackNotice, noticeBg);
+            addTop(article, fallbackNotice, 7);
+        }
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
         lastDetailDiagnostics = buildDetailDiagnostics(body, fallback, link, fallbackImages);
         localCache.log("detail diagnostics captured link="
@@ -1026,88 +1824,256 @@ public final class MainActivity extends Activity {
         addRichContent(article, link, fallback.description, fallbackImages);
         addDetailActions(article, fallback, link);
         page.addView(article);
+        addDetailCommentSection(page, result == null ? null : result.optJSONArray("comments"));
 
+        ScrollView commentScroll = new ScrollView(this);
+        commentScroll.setBackgroundColor(BG);
+        LinearLayout commentPage = vertical(BG);
+        commentPage.setPadding(pagePadding, dp(8), pagePadding, dp(18));
+        commentScroll.addView(commentPage);
+
+        addDetailCommentSection(commentPage, result == null ? null : result.optJSONArray("comments"));
+        pager.setPages(articleScroll, commentScroll);
+        content.addView(pager, match());
+        detailScroll = articleScroll;
+        int savedScroll = localCache.scroll(currentLinkId);
+        if (savedScroll > 0) {
+            articleScroll.postDelayed(() -> articleScroll.scrollTo(0, savedScroll), 80);
+        }
+    }
+
+    private void addDetailCommentSection(LinearLayout page, JSONArray commentArray) {
         View section = new View(this);
         section.setBackgroundColor(blend(PANEL, SECONDARY, session.darkMode() ? 0.20f : 0.12f));
         addTop(page, section, 10);
         section.getLayoutParams().height = dp(1);
 
-        TextView commentTitle = text("评论", 14, TEXT);
+        TextView commentTitle = text("\u8bc4\u8bba", 14, TEXT);
         commentTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         commentTitle.setPadding(dp(2), dp(10), dp(2), dp(5));
         page.addView(commentTitle);
         LinearLayout comments = vertical(BG);
         page.addView(comments);
-        int count = addComments(comments, result == null ? null : result.optJSONArray("comments"));
+        int count = addComments(comments, commentArray);
         if (count == 0) {
-            TextView empty = text("暂无评论", 13, MUTED);
+            TextView empty = text("\u6682\u65e0\u8bc4\u8bba", 13, MUTED);
             empty.setPadding(dp(4), dp(8), dp(4), dp(12));
             comments.addView(empty);
         }
-        content.addView(scroll, match());
-        detailScroll = scroll;
-        installCommentSwipe(scroll, commentTitle);
-        int savedScroll = localCache.scroll(currentLinkId);
-        if (savedScroll > 0) {
-            scroll.postDelayed(() -> scroll.scrollTo(0, savedScroll), 80);
-        }
     }
 
-    private void installCommentSwipe(ScrollView scroll, View commentAnchor) {
-        final float[] startX = new float[1];
-        final float[] startY = new float[1];
-        final long[] startTime = new long[1];
-        final boolean[] tracking = new boolean[1];
-        scroll.setOnTouchListener((view, event) -> {
+    private final class DetailPager extends FrameLayout {
+        private static final int PAGE_ARTICLE = 0;
+        private static final int PAGE_COMMENTS = 1;
+        private final int touchSlop;
+        private float startX;
+        private float startY;
+        private long startTime;
+        private int startScrollX;
+        private int currentPage = PAGE_ARTICLE;
+        private boolean dragging;
+        private boolean returning;
+        private ImageView returnPreview;
+        private android.animation.ValueAnimator settleAnimator;
+
+        DetailPager(android.content.Context context) {
+            super(context);
+            touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        }
+
+        void setPages(View article, View comments) {
+            removeAllViews();
+            returnPreview = new ImageView(getContext());
+            returnPreview.setBackgroundColor(BG);
+            returnPreview.setScaleType(ImageView.ScaleType.FIT_XY);
+            Bitmap bitmap = screenSnapshot(backTargetScreenKey());
+            if (bitmap != null && !bitmap.isRecycled()) returnPreview.setImageBitmap(bitmap);
+            addView(returnPreview, new FrameLayout.LayoutParams(-1, -1));
+            addView(article, new FrameLayout.LayoutParams(-1, -1));
+            addView(comments, new FrameLayout.LayoutParams(-1, -1));
+            currentPage = PAGE_ARTICLE;
+            post(() -> scrollTo(pageScrollX(currentPage), 0));
+        }
+
+        boolean showingComments() {
+            return currentPage == PAGE_COMMENTS;
+        }
+
+        void showArticle(boolean animate) {
+            settleToPage(PAGE_ARTICLE, animate);
+        }
+
+        @Override protected void onLayout(boolean changed, int left, int top,
+                                          int right, int bottom) {
+            int width = right - left;
+            int height = bottom - top;
+            if (returnPreview != null) {
+                returnPreview.layout(-width, 0, 0, height);
+            }
+            if (getChildCount() > 1) {
+                getChildAt(1).layout(0, 0, width, height);
+            }
+            if (getChildCount() > 2) {
+                getChildAt(2).layout(width, 0, width * 2, height);
+            }
+            if (changed) post(() -> scrollTo(pageScrollX(currentPage), 0));
+        }
+
+        @Override public boolean onInterceptTouchEvent(MotionEvent event) {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    startX[0] = event.getX();
-                    startY[0] = event.getY();
-                    startTime[0] = event.getEventTime();
-                    tracking[0] = true;
+                    cancelSettle();
+                    startX = event.getX();
+                    startY = event.getY();
+                    startTime = event.getEventTime();
+                    startScrollX = getScrollX();
+                    dragging = false;
+                    returning = false;
                     return false;
                 case MotionEvent.ACTION_MOVE: {
-                    if (!tracking[0]) return false;
-                    float dx = event.getX() - startX[0];
-                    float dy = event.getY() - startY[0];
-                    if (Math.abs(dy) > dp(28) && Math.abs(dy) > Math.abs(dx)) {
-                        tracking[0] = false;
-                    }
-                    return false;
-                }
-                case MotionEvent.ACTION_UP: {
-                    if (!tracking[0]) return false;
-                    tracking[0] = false;
-                    float dx = event.getX() - startX[0];
-                    float dy = event.getY() - startY[0];
-                    long duration = event.getEventTime() - startTime[0];
-                    if (isCommentSwipe(dx, dy, duration)) {
-                        smoothScrollToComments(scroll, commentAnchor);
+                    float dx = event.getX() - startX;
+                    float dy = event.getY() - startY;
+                    if (Math.abs(dx) > touchSlop * 2
+                            && Math.abs(dx) > Math.abs(dy) * 1.15f) {
+                        dragging = true;
+                        getParent().requestDisallowInterceptTouchEvent(true);
                         return true;
                     }
                     return false;
                 }
+                case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
-                    tracking[0] = false;
+                    dragging = false;
+                    returning = false;
                     return false;
                 default:
                     return false;
             }
-        });
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    cancelSettle();
+                    startX = event.getX();
+                    startY = event.getY();
+                    startTime = event.getEventTime();
+                    startScrollX = getScrollX();
+                    dragging = true;
+                    returning = false;
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    dragTo(event.getX() - startX);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    finishHorizontalDrag(event);
+                    performClick();
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    settleToPage(currentPage, true);
+                    dragging = false;
+                    returning = false;
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
+        private void dragTo(float dx) {
+            int width = Math.max(1, getWidth());
+            int min = currentPage == PAGE_ARTICLE ? -width : 0;
+            int next = Math.max(min, Math.min(width, startScrollX - Math.round(dx)));
+            scrollTo(next, 0);
+        }
+
+        private void finishHorizontalDrag(MotionEvent event) {
+            int width = Math.max(1, getWidth());
+            float dx = event.getX() - startX;
+            long duration = Math.max(1L, event.getEventTime() - startTime);
+            float velocity = dx * 1000f / duration;
+            if (currentPage == PAGE_ARTICLE && getScrollX() < 0) {
+                boolean enoughDistance = Math.abs(getScrollX()) > Math.max(dp(52), width * 0.24f);
+                boolean enoughVelocity = velocity > dp(320);
+                dragging = false;
+                if (enoughDistance || enoughVelocity) settleToReturn();
+                else settleToPage(PAGE_ARTICLE, true);
+                return;
+            }
+            int target = getScrollX() > width / 2 ? PAGE_COMMENTS : PAGE_ARTICLE;
+            if (Math.abs(velocity) > dp(360)) {
+                target = velocity < 0 ? PAGE_COMMENTS : PAGE_ARTICLE;
+            }
+            dragging = false;
+            settleToPage(target, true);
+        }
+
+        private void settleToPage(int page, boolean animate) {
+            cancelSettle();
+            currentPage = page;
+            updateDetailPagerTitle();
+            int destination = pageScrollX(page);
+            if (!animate) {
+                scrollTo(destination, 0);
+                return;
+            }
+            int fromX = getScrollX();
+            int distance = Math.abs(destination - fromX);
+            if (distance < dp(2)) {
+                scrollTo(destination, 0);
+                return;
+            }
+            int duration = Math.max(160, Math.min(300, distance / 3));
+            settleAnimator = android.animation.ValueAnimator.ofInt(fromX, destination);
+            settleAnimator.setDuration(duration);
+            settleAnimator.setInterpolator(new DecelerateInterpolator());
+            settleAnimator.addUpdateListener(value ->
+                    scrollTo((Integer) value.getAnimatedValue(), 0));
+            settleAnimator.start();
+        }
+
+        private int pageScrollX(int page) {
+            return page == PAGE_COMMENTS ? Math.max(0, getWidth()) : 0;
+        }
+
+        private void settleToReturn() {
+            cancelSettle();
+            returning = true;
+            int fromX = getScrollX();
+            int destination = -Math.max(1, getWidth());
+            int distance = Math.abs(destination - fromX);
+            int duration = Math.max(150, Math.min(280, distance / 3));
+            settleAnimator = android.animation.ValueAnimator.ofInt(fromX, destination);
+            settleAnimator.setDuration(duration);
+            settleAnimator.setInterpolator(new DecelerateInterpolator());
+            settleAnimator.addUpdateListener(value ->
+                    scrollTo((Integer) value.getAnimatedValue(), 0));
+            settleAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) {
+                    settleAnimator = null;
+                    if (!returning) return;
+                    returning = false;
+                    returnFromDetailSmooth();
+                }
+            });
+            settleAnimator.start();
+        }
+
+        private void cancelSettle() {
+            if (settleAnimator != null) {
+                returning = false;
+                settleAnimator.cancel();
+                settleAnimator = null;
+            }
+        }
+
+        @Override public boolean performClick() {
+            return super.performClick();
+        }
     }
 
-    private boolean isCommentSwipe(float dx, float dy, long durationMs) {
-        int distance = durationMs < 260 ? dp(52) : dp(72);
-        return dx > distance && Math.abs(dx) > Math.abs(dy) * 1.35f;
-    }
-
-    private void smoothScrollToComments(ScrollView scroll, View commentAnchor) {
-        if (scroll == null || commentAnchor == null) return;
-        scroll.post(() -> {
-            int target = Math.max(0, commentAnchor.getTop() - dp(8));
-            if (scroll.getScrollY() + dp(24) >= target) return;
-            scroll.smoothScrollTo(0, target);
-        });
+    private void updateDetailPagerTitle() {
+        if (!"detail".equals(screen) || title == null || detailPager == null) return;
+        title.setText(detailPager.showingComments() ? "\u8bc4\u8bba" : "\u6b63\u6587");
     }
 
     private void addDetailActions(LinearLayout article, FeedItem item, JSONObject link) {
@@ -1259,7 +2225,14 @@ public final class MainActivity extends Activity {
         return fallback;
     }
 
+    private boolean requireLogin(String actionName) {
+        if (session != null && session.isLoggedIn()) return true;
+        toast("游客模式可浏览，登录后可" + actionName);
+        return false;
+    }
+
     private void toggleLinkLike(FeedItem item, TextView view) {
+        if (!requireLogin("点赞")) return;
         if (item == null || item.id.isEmpty()) return;
         boolean beforeLiked = item.liked;
         int beforeLikes = Math.max(0, item.likes);
@@ -1290,6 +2263,7 @@ public final class MainActivity extends Activity {
     }
 
     private void toggleFeedLike(FeedItem item) {
+        if (!requireLogin("点赞")) return;
         if (item == null || item.id.isEmpty()) return;
         boolean beforeLiked = item.liked;
         int beforeLikes = Math.max(0, item.likes);
@@ -1318,6 +2292,7 @@ public final class MainActivity extends Activity {
     }
 
     private void toggleFavorite(FeedItem item, TextView view) {
+        if (!requireLogin("收藏")) return;
         if (item == null || item.id.isEmpty()) return;
         Object tag = view.getTag();
         boolean favored = tag instanceof Boolean && (Boolean) tag;
@@ -1588,6 +2563,7 @@ public final class MainActivity extends Activity {
 
     private void toggleFollow(TextView follow, JSONObject link, JSONObject user,
                               String targetUserId) {
+        if (!requireLogin("关注")) return;
         if (targetUserId == null || targetUserId.isEmpty()) {
             toast("没有获取到用户 ID");
             return;
@@ -2159,6 +3135,7 @@ public final class MainActivity extends Activity {
     }
 
     private void toggleCommentLike(JSONObject comment, TextView view) {
+        if (!requireLogin("评论点赞")) return;
         String id = commentId(comment);
         if (id.isEmpty()) {
             toast("没有获取到评论 ID");
@@ -2217,6 +3194,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showCommentDialog(JSONObject replyTo) {
+        if (!requireLogin(replyTo == null ? "评论" : "回复评论")) return;
         if (currentLinkId == null || currentLinkId.isEmpty()) {
             toast("没有打开的帖子");
             return;
@@ -2409,7 +3387,7 @@ public final class MainActivity extends Activity {
 
     private void showProfile() {
         if (!session.isLoggedIn()) {
-            showLogin();
+            showGuestProfile();
             return;
         }
         activate("profile");
@@ -2434,6 +3412,36 @@ public final class MainActivity extends Activity {
                 renderProfile(new JSONObject());
             }
         });
+    }
+
+    private void showGuestProfile() {
+        activate("profile");
+        title.setText("我的");
+        action.setVisibility(View.INVISIBLE);
+        content.removeAllViews();
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout page = vertical(BG);
+        page.setPadding(dp(8), dp(8), dp(8), dp(12));
+        scroll.addView(page);
+
+        LinearLayout profile = card();
+        TextView name = text("游客模式", 20, TEXT);
+        name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        profile.addView(name);
+        TextView hint = text("可以浏览社区、搜索帖子和查看详情。点赞、收藏、评论、关注等互动需要二维码登录。",
+                12, MUTED);
+        hint.setLineSpacing(0, 1.18f);
+        addTop(profile, hint, 8);
+        Button login = button("二维码登录", R.drawable.ic_logout);
+        login.setOnClickListener(view -> showLogin());
+        addTop(profile, login, 10);
+        page.addView(profile);
+        animateIn(profile);
+
+        addSignInCard(page);
+        addSettingsMenu(page);
+        content.addView(scroll, match());
     }
 
     private void renderProfile(JSONObject body) {
@@ -2468,6 +3476,7 @@ public final class MainActivity extends Activity {
         page.addView(profile);
         animateIn(profile);
 
+        addSignInCard(page);
         LinearLayout shortcuts = new LinearLayout(this);
         Button favorites = button("收藏", R.drawable.ic_bookmark);
         favorites.setOnClickListener(view -> showFavorites());
@@ -2487,6 +3496,58 @@ public final class MainActivity extends Activity {
 
         addSettingsMenu(page);
         content.addView(scroll, match());
+    }
+
+    private void addSignInCard(LinearLayout page) {
+        LinearLayout panel = card();
+        TextView heading = text("每日签到", 15, TEXT);
+        heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        panel.addView(heading);
+
+        SignInManager.Result state = signInManager == null
+                ? SignInManager.Result.pending() : signInManager.currentState();
+        int statusColor = state.success ? SECONDARY : (state.loggedIn ? TEXT : MUTED);
+        TextView status = text(state.message, 13, statusColor);
+        status.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        addTop(panel, status, 6);
+
+        TextView summary = text(state.summary, 11, MUTED);
+        summary.setLineSpacing(0, 1.18f);
+        addTop(panel, summary, 4);
+
+        Button actionButton = button(signInButtonText(state),
+                state.loggedIn ? R.drawable.ic_thumb_up : R.drawable.ic_logout);
+        if (state.success) {
+            int fg = contrast(SECONDARY);
+            actionButton.setTextColor(fg);
+            setLeftIcon(actionButton, R.drawable.ic_thumb_up, fg, 17);
+            Compat.setBackground(actionButton, round(SECONDARY, 8));
+        }
+        actionButton.setEnabled(!state.inFlight && !state.success);
+        actionButton.setOnClickListener(view -> {
+            if (!session.isLoggedIn()) {
+                showLogin();
+                return;
+            }
+            if (signInManager == null) return;
+            actionButton.setEnabled(false);
+            actionButton.setText("正在签到");
+            signInManager.signIn(result -> {
+                if (isFinishing()) return;
+                toast(result.message);
+                if ("profile".equals(screen)) showProfile();
+            });
+        });
+        addTop(panel, actionButton, 9);
+        addTop(page, panel, 8);
+        animateIn(panel);
+    }
+
+    private String signInButtonText(SignInManager.Result state) {
+        if (state == null || !state.loggedIn) return "去登录";
+        if (state.inFlight) return "签到中";
+        if (state.success) return "已签到";
+        return "签到";
     }
 
     private void addSettingsMenu(LinearLayout page) {
@@ -3501,6 +4562,82 @@ public final class MainActivity extends Activity {
         animation.run();
     }
 
+    private void showAnnouncements() {
+        stopQrPolling();
+        screen = "announcement_board";
+        bottom.setVisibility(View.GONE);
+        leading.setVisibility(View.VISIBLE);
+        leading.setOnClickListener(view -> showAbout());
+        title.setText("\u516c\u544a\u5217\u8868");
+        action.setText("");
+        setIcon(action, R.drawable.ic_refresh, TEXT, 18);
+        action.setVisibility(View.VISIBLE);
+        action.setOnClickListener(view -> showAnnouncements());
+        content.removeAllViews();
+        showLoading();
+        AnnouncementChecker.load(new AnnouncementChecker.Callback() {
+            @Override public void onResult(List<AnnouncementChecker.Item> items) {
+                if (isFinishing() || !"announcement_board".equals(screen)) return;
+                renderAnnouncementList(items);
+            }
+
+            @Override public void onError(String message) {
+                if (isFinishing() || !"announcement_board".equals(screen)) return;
+                toast("公告加载失败，已显示本地欢迎公告");
+                renderAnnouncementList(Collections.singletonList(welcomeAnnouncement()));
+            }
+        });
+    }
+
+    private void renderAnnouncementList(List<AnnouncementChecker.Item> items) {
+        hideLoading();
+        content.removeAllViews();
+        items = withWelcomeAnnouncement(items);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(BG);
+        LinearLayout page = vertical(BG);
+        page.setPadding(dp(8), dp(8), dp(8), dp(14));
+        scroll.addView(page);
+        if (items == null || items.isEmpty()) {
+            TextView empty = text("\u6682\u65e0\u516c\u544a", 13, MUTED);
+            empty.setGravity(Gravity.CENTER);
+            page.addView(empty, new LinearLayout.LayoutParams(-1, dp(88)));
+        } else {
+            boolean added = false;
+            for (AnnouncementChecker.Item item : items) {
+                if (item == null || !item.enabled) continue;
+                LinearLayout card = card();
+                TextView itemTitle = text(TextUtils.isEmpty(item.title)
+                        ? "\u516c\u544a" : item.title, 14, TEXT);
+                itemTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                card.addView(itemTitle);
+                if (!TextUtils.isEmpty(item.updatedAt)) {
+                    addTop(card, text(item.updatedAt, 10, MUTED), 4);
+                }
+                TextView preview = text(announcementPreview(item.content), 12, MUTED);
+                preview.setLineSpacing(0, 1.18f);
+                addTop(card, preview, 6);
+                card.setOnClickListener(view -> showAnnouncementDialog(item));
+                addTop(page, card, 8);
+                added = true;
+            }
+            if (!added) {
+                TextView empty = text("\u6682\u65e0\u516c\u544a", 13, MUTED);
+                empty.setGravity(Gravity.CENTER);
+                page.addView(empty, new LinearLayout.LayoutParams(-1, dp(88)));
+            }
+        }
+        content.addView(scroll, match());
+        animateIn(scroll);
+    }
+
+    private String announcementPreview(String value) {
+        if (value == null) return "";
+        String clean = value.replace('\r', '\n').replace("\n\n", "\n").trim();
+        int max = 92;
+        return clean.length() <= max ? clean : clean.substring(0, max) + "...";
+    }
+
     private void showAbout() {
         LinearLayout page = settingsPage("about", "关于");
         LinearLayout panel = card();
@@ -3531,7 +4668,11 @@ public final class MainActivity extends Activity {
         feedbackQr.setOnClickListener(view -> showFeedbackGroupQr());
         addTop(panel, feedbackQr, 8);
 
-        TextView updateStatus = text("可从 GitHub 检查最新版本", 12, MUTED);
+        Button announcements = button("\u516c\u544a\u5217\u8868", R.drawable.ic_info);
+        announcements.setOnClickListener(view -> showAnnouncements());
+        addTop(panel, announcements, 8);
+
+        TextView updateStatus = text("\u4ece\u81ea\u5efa\u670d\u52a1\u5668\u68c0\u67e5\u6700\u65b0\u7248\u672c", 12, MUTED);
         addTop(panel, updateStatus, 12);
         Button update = button("检查更新", R.drawable.ic_refresh);
         update.setOnClickListener(view -> {
@@ -3686,9 +4827,14 @@ public final class MainActivity extends Activity {
     private void updateDisplayPreview(LinearLayout preview, TextView heading, TextView body,
                                       TextView actionView, int ui, int textValue, int padding) {
         if (ui >= 0) {
+            preview.setScaleX(1f);
+            preview.setScaleY(1f);
             float scale = ui / 100f;
-            preview.setScaleX(scale);
-            preview.setScaleY(scale);
+            int vertical = Math.max(5, Math.round(7 * scale));
+            preview.setPadding(preview.getPaddingLeft(), dp(vertical),
+                    preview.getPaddingRight(), dp(vertical));
+            actionView.setMinHeight(dp(Math.max(24, Math.round(28 * scale))));
+            actionView.setPadding(dp(8), 0, dp(8), 0);
         }
         if (textValue >= 0) {
             float scale = textValue / 100f;
@@ -3698,7 +4844,8 @@ public final class MainActivity extends Activity {
         }
         if (padding >= 0) {
             int value = Math.round(padding * getResources().getDisplayMetrics().density);
-            preview.setPadding(value, dp(7), value, dp(7));
+            preview.setPadding(value, preview.getPaddingTop(),
+                    value, preview.getPaddingBottom());
         }
     }
 
@@ -4096,24 +5243,39 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if ("detail".equals(screen)) {
-            returnFromDetail();
+            if (detailPager != null && detailPager.showingComments()) {
+                detailPager.showArticle(true);
+                return;
+            }
+            returnFromDetailSmooth();
         }
         else if ("saved".equals(screen)) showProfile();
+        else if ("announcement_board".equals(screen)) showAbout();
         else if ("display_preview".equals(screen)) showDisplaySettings();
         else if ("display_settings".equals(screen)
                 || "startup_settings".equals(screen)
                 || "app_settings".equals(screen)
                 || "about".equals(screen)) showSettingsHome();
         else if ("settings_home".equals(screen)) showProfile();
-        else if (!"feed".equals(screen) && session.isLoggedIn()) showFeed();
+        else if (!"feed".equals(screen)) showFeed();
         else super.onBackPressed();
     }
 
     private void returnFromDetail() {
         saveCurrentDetailProgress();
+        detailRequestToken++;
+        detailPager = null;
+        detailScroll = null;
         if ("saved".equals(detailReturn)) showProfile();
         else if ("search".equals(detailReturn)) showSearch();
         else showFeed();
+    }
+
+    private void returnFromDetailSmooth() {
+        String targetKey = backTargetScreenKey();
+        Bitmap overlay = screenSnapshot(targetKey);
+        returnFromDetail();
+        showShellTransitionOverlay(overlay);
     }
 
     private void saveCurrentDetailProgress() {

@@ -4,6 +4,10 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.net.URLDecoder;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 final class FeedItem {
     final String id;
@@ -12,6 +16,7 @@ final class FeedItem {
     final String description;
     final String author;
     final String image;
+    final String[] images;
     final int comments;
     int likes;
     final boolean article;
@@ -19,13 +24,14 @@ final class FeedItem {
 
     private FeedItem(String id, String title, String description, String author,
                      String image, int comments, int likes, boolean article, boolean liked,
-                     String hsrc) {
+                     String hsrc, String[] images) {
         this.id = id;
         this.hsrc = hsrc;
         this.title = title;
         this.description = description;
         this.author = author;
         this.image = image;
+        this.images = images == null ? new String[0] : images;
         this.comments = comments;
         this.likes = likes;
         this.article = article;
@@ -35,15 +41,18 @@ final class FeedItem {
     static FeedItem from(JSONObject json) {
         JSONObject user = json.optJSONObject("user");
         JSONArray thumbs = json.optJSONArray("thumbs");
-        JSONArray images = json.optJSONArray("imgs");
-        String image = first(thumbs);
-        if (image.isEmpty()) image = first(images);
+        JSONArray imageArray = json.optJSONArray("imgs");
+        String image = firstImage(thumbs);
+        if (image.isEmpty()) image = firstImage(imageArray);
         if (image.isEmpty()) image = json.optString("image");
         if (image.isEmpty()) image = json.optString("thumb");
-        String title = json.optString("title");
+        String[] detailImages = images(imageArray, thumbs, image,
+                json.optString("image"), json.optString("thumb"));
+        String title = first(json.optString("title"), json.optString("subject"),
+                json.optString("name"));
         if (title.isEmpty()) title = json.optString("content");
-        String description = json.optString("description");
-        if (description.isEmpty()) description = json.optString("text");
+        String description = first(json.optString("description"), json.optString("summary"),
+                json.optString("brief"), json.optString("text"), json.optString("content"));
         String author = user == null ? "" : user.optString("username",
                 user.optString("nickname", user.optString("name")));
         if (author.isEmpty()) {
@@ -66,7 +75,8 @@ final class FeedItem {
                 isArticle(json),
                 json.optBoolean("is_award", json.optBoolean("liked",
                         json.optBoolean("is_liked", json.optInt("has_award") == 1))),
-                hsrc(json)
+                hsrc(json),
+                detailImages
         );
     }
 
@@ -78,6 +88,15 @@ final class FeedItem {
             json.put("title", title);
             json.put("description", description);
             json.put("image", image);
+            if (images.length > 0) {
+                JSONArray values = new JSONArray();
+                for (String value : images) values.put(value);
+                json.put("imgs", values);
+            } else if (!image.isEmpty()) {
+                JSONArray values = new JSONArray();
+                values.put(image);
+                json.put("imgs", values);
+            }
             json.put("comment_num", comments);
             json.put("link_award_num", likes);
             json.put("use_concept_type", article ? 0 : 1);
@@ -114,8 +133,50 @@ final class FeedItem {
         }
     }
 
-    private static String first(JSONArray array) {
-        return array == null || array.length() == 0 ? "" : array.optString(0);
+    private static String firstImage(JSONArray array) {
+        if (array == null || array.length() == 0) return "";
+        for (int i = 0; i < array.length(); i++) {
+            String value = imageValue(array.opt(i));
+            if (!value.isEmpty()) return value;
+        }
+        return "";
+    }
+
+    private static String[] images(JSONArray primary, JSONArray secondary, String... extra) {
+        List<String> values = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        addImages(values, seen, primary);
+        addImages(values, seen, secondary);
+        if (extra != null) {
+            for (String value : extra) addImage(values, seen, value);
+        }
+        return values.toArray(new String[values.size()]);
+    }
+
+    private static void addImages(List<String> values, Set<String> seen, JSONArray array) {
+        if (array == null) return;
+        for (int i = 0; i < array.length(); i++) {
+            addImage(values, seen, imageValue(array.opt(i)));
+        }
+    }
+
+    private static void addImage(List<String> values, Set<String> seen, String value) {
+        if (value == null) return;
+        String clean = value.trim();
+        if (clean.isEmpty() || !seen.add(clean)) return;
+        values.add(clean);
+    }
+
+    private static String imageValue(Object raw) {
+        if (raw == null || raw == JSONObject.NULL) return "";
+        if (raw instanceof JSONObject) {
+            JSONObject object = (JSONObject) raw;
+            return first(object.optString("url"), object.optString("src"),
+                    object.optString("original"), object.optString("origin"),
+                    object.optString("image"), object.optString("image_url"),
+                    object.optString("thumb"), object.optString("thumbnail"));
+        }
+        return String.valueOf(raw);
     }
 
     private static String first(String... values) {

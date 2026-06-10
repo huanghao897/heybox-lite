@@ -56,38 +56,29 @@ final class UpdateChecker {
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(4000);
             connection.setReadTimeout(5000);
-            connection.setRequestProperty("Accept", "application/vnd.github+json");
+            connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("User-Agent", "heybox-Lite/" + currentVersion);
             int status = connection.getResponseCode();
             InputStream stream = status >= 200 && status < 300
                     ? connection.getInputStream() : connection.getErrorStream();
             String text = read(stream);
             if (status < 200 || status >= 300) {
-                throw new IllegalStateException("GitHub HTTP " + status);
+                throw new IllegalStateException("Update server HTTP " + status);
             }
-            JSONObject release = new JSONObject(text);
-            String tag = release.optString("tag_name");
-            String latest = normalize(tag);
-            String title = release.optString("name");
-            String notes = cleanNotes(release.optString("body"));
-            String releaseUrl = release.optString("html_url");
-            String downloadUrl = "";
-            JSONArray assets = release.optJSONArray("assets");
-            if (assets != null) {
-                for (int i = 0; i < assets.length(); i++) {
-                    JSONObject asset = assets.optJSONObject(i);
-                    if (asset == null) continue;
-                    String name = asset.optString("name").toLowerCase(Locale.US);
-                    if (name.endsWith(".apk")) {
-                        downloadUrl = asset.optString("browser_download_url");
-                        break;
-                    }
-                }
-            }
+
+            JSONObject payload = new JSONObject(text);
+            String latest = latestVersion(payload);
+            String title = firstNonEmpty(payload.optString("title"), payload.optString("name"));
+            String notes = cleanNotes(notes(payload));
+            String releaseUrl = firstNonEmpty(payload.optString("releaseUrl"),
+                    payload.optString("html_url"), BuildConfig.UPDATE_FALLBACK_URL);
+            String downloadUrl = firstNonEmpty(payload.optString("downloadUrl"),
+                    payload.optString("apkUrl"), githubAssetUrl(payload));
+
             Result result = new Result(compare(latest, normalize(currentVersion)) > 0,
                     latest, title, notes, releaseUrl, downloadUrl);
             if (result.updateAvailable && downloadUrl.isEmpty()) {
-                throw new IllegalStateException("未找到匹配的 APK 资源，可打开发布页手动下载");
+                throw new IllegalStateException("未找到匹配的 APK 资源，可打开备用地址手动下载。");
             }
             MAIN.post(() -> callback.onResult(result));
         } catch (Exception error) {
@@ -96,7 +87,8 @@ final class UpdateChecker {
             String lowerMessage = message.toLowerCase(Locale.US);
             if (lowerMessage.contains("ssl")
                     || lowerMessage.contains("handshake")) {
-                message = "当前系统 TLS 过旧或网络不兼容，请打开发布页检查：" + BuildConfig.UPDATE_FALLBACK_URL;
+                message = "当前系统 TLS 过旧或网络不兼容，请打开备用地址检查："
+                        + BuildConfig.UPDATE_FALLBACK_URL;
             }
             final String finalMessage = message;
             MAIN.post(() -> callback.onError(finalMessage));
@@ -115,6 +107,40 @@ final class UpdateChecker {
             while ((count = reader.read(buffer)) >= 0) result.append(buffer, 0, count);
         }
         return result.toString();
+    }
+
+    private static String latestVersion(JSONObject payload) {
+        return normalize(firstNonEmpty(payload.optString("versionName"),
+                payload.optString("version"), payload.optString("tag_name")));
+    }
+
+    private static String notes(JSONObject payload) {
+        JSONArray changelog = payload.optJSONArray("changelog");
+        if (changelog != null && changelog.length() > 0) {
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0; i < changelog.length(); i++) {
+                String line = changelog.optString(i).trim();
+                if (line.isEmpty()) continue;
+                if (builder.length() > 0) builder.append('\n');
+                builder.append(line);
+            }
+            if (builder.length() > 0) return builder.toString();
+        }
+        return firstNonEmpty(payload.optString("notes"), payload.optString("body"));
+    }
+
+    private static String githubAssetUrl(JSONObject payload) {
+        JSONArray assets = payload.optJSONArray("assets");
+        if (assets == null) return "";
+        for (int i = 0; i < assets.length(); i++) {
+            JSONObject asset = assets.optJSONObject(i);
+            if (asset == null) continue;
+            String name = asset.optString("name").toLowerCase(Locale.US);
+            if (name.endsWith(".apk")) {
+                return asset.optString("browser_download_url");
+            }
+        }
+        return "";
     }
 
     private static String cleanNotes(String notes) {
@@ -150,5 +176,13 @@ final class UpdateChecker {
         } catch (Exception ignored) {
             return 0;
         }
+    }
+
+    private static String firstNonEmpty(String... values) {
+        if (values == null) return "";
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) return value.trim();
+        }
+        return "";
     }
 }
