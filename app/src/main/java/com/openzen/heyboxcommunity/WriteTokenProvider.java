@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 final class WriteTokenProvider {
     interface Callback {
@@ -30,6 +31,7 @@ final class WriteTokenProvider {
     }
 
     private static final int TIMEOUT_MS = 25000;
+    private static final String TOKEN_BASE_URL = "https://www.xiaoheihe.cn/";
 
     private final Activity activity;
     private final SessionStore session;
@@ -40,6 +42,7 @@ final class WriteTokenProvider {
     private WebView webView;
     private boolean fetching;
     private Runnable timeoutTask;
+    private String promptNonce = "";
 
     WriteTokenProvider(Activity activity, SessionStore session, ApiClient api) {
         this.activity = activity;
@@ -56,7 +59,6 @@ final class WriteTokenProvider {
     }
 
     void refresh(Callback callback) {
-        session.removeCookieValue(SecureStrings.xXhhTokenId());
         fetch(true, callback);
     }
 
@@ -82,6 +84,7 @@ final class WriteTokenProvider {
     @SuppressLint("SetJavaScriptEnabled")
     private void startWebView() {
         destroyWebView();
+        promptNonce = UUID.randomUUID().toString();
         webView = new WebView(activity);
         webView.setVisibility(View.GONE);
         webView.setBackgroundColor(Color.TRANSPARENT);
@@ -92,7 +95,11 @@ final class WriteTokenProvider {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         }
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return !isTrustedPromptUrl(url);
+            }
+        });
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onJsPrompt(WebView view, String url, String message,
@@ -109,14 +116,15 @@ final class WriteTokenProvider {
         if (decor instanceof ViewGroup) {
             ((ViewGroup) decor).addView(webView, new ViewGroup.LayoutParams(1, 1));
         }
-        webView.loadDataWithBaseURL("https://www.xiaoheihe.cn/", tokenHtml(),
+        webView.loadDataWithBaseURL(TOKEN_BASE_URL, tokenHtml(),
                 "text/html", "UTF-8", null);
     }
 
     private String tokenHtml() {
         return "<!doctype html><html><head><meta charset='utf-8'></head><body>"
                 + "<script>"
-                + "function send(t,v){prompt('heyboxlite:'+t+':'+encodeURIComponent(String(v||'')),'');}"
+                + "var NONCE='" + promptNonce + "';"
+                + "function send(t,v){prompt('heyboxlite:'+NONCE+':'+t+':'+encodeURIComponent(String(v||'')),'');}"
                 + "function fail(v){send('error',v&&v.message?v.message:v);}"
                 + "window._smConf={organization:'0yD85BjYvGFAvHaSQ1mc',appId:'heybox_website',"
                 + "publicKey:'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCXj9exmI4nQjmT52iwr+yf7hAQ06bfSZHTAHUfRBYiagCf/whhd8es0R79wBigpiHLd28TKA8b8mGR8OiiI1hV+qfynCWihvp3mdj8MiiH6SU3lhro2hkfYzImZB0RmWr2zE4Xt1+A6Oyp6bf+W7JSxYUXHw3nNv7Td4jw4jEFKQIDAQAB',"
@@ -133,12 +141,16 @@ final class WriteTokenProvider {
     }
 
     private void handlePrompt(String message) {
-        String[] parts = message.split(":", 3);
-        if (parts.length < 3) return;
-        String type = parts[1];
-        String value = decode(parts[2]);
+        String[] parts = message.split(":", 4);
+        if (parts.length < 4 || !promptNonce.equals(parts[1])) return;
+        String type = parts[2];
+        String value = decode(parts[3]);
         if ("device".equals(type)) handleDeviceId(value);
         else if ("error".equals(type)) finishError(value.isEmpty() ? "SMSdk 获取失败" : value);
+    }
+
+    private boolean isTrustedPromptUrl(String url) {
+        return TOKEN_BASE_URL.equals(url);
     }
 
     private void handleDeviceId(String value) {
@@ -255,6 +267,7 @@ final class WriteTokenProvider {
         } catch (Exception ignored) {
         }
         webView = null;
+        promptNonce = "";
     }
 
     private static String decode(String value) {

@@ -26,6 +26,8 @@ final class HeyboxSigner {
         ANDROID,
         PLAIN,
         OLD_MD5,
+        OLD_MD5_NONCE,
+        PLAIN_NONCE,
         LEGACY_KEY,
         WEB_KEY,
         ANDROID_KEY,
@@ -47,7 +49,9 @@ final class HeyboxSigner {
         if (algorithm == Algorithm.WEB) return signWeb(path);
         if (algorithm == Algorithm.ANDROID) return signAndroid(path);
         if (algorithm == Algorithm.PLAIN) return signPlain(path);
+        if (algorithm == Algorithm.PLAIN_NONCE) return signPlainNonce(path);
         if (algorithm == Algorithm.OLD_MD5) return signOldMd5(path);
+        if (algorithm == Algorithm.OLD_MD5_NONCE) return signOldMd5Nonce(path);
         long now = nowSeconds();
         String nonce = createNonce(now);
         String signature = buildSignature(path, now + 1, nonce);
@@ -105,6 +109,14 @@ final class HeyboxSigner {
         return values;
     }
 
+    private static Map<String, String> signPlainNonce(String path) throws Exception {
+        long now = nowSeconds();
+        String nonce = createNonce(now);
+        Map<String, String> values = signPlain(path);
+        values.put(SecureStrings.nonce(), nonce);
+        return values;
+    }
+
     private static Map<String, String> signOldMd5(String path) throws Exception {
         long now = nowSeconds();
         String normalized = normalizeNoTrailingSlash(path);
@@ -113,6 +125,20 @@ final class HeyboxSigner {
         String signature = md5Hex(first.replace("a", "app").replace("0", "app"));
         Map<String, String> values = new HashMap<>();
         values.put(SecureStrings.time(), String.valueOf(now));
+        values.put(SecureStrings.hkey(), signature.substring(0, Math.min(10, signature.length())));
+        return values;
+    }
+
+    private static Map<String, String> signOldMd5Nonce(String path) throws Exception {
+        long now = nowSeconds();
+        String nonce = createNonce(now);
+        String normalized = normalizeNoTrailingSlash(path);
+        String first = md5Hex(normalized + "/" + oldMd5Salt()
+                + SecureStrings.time() + "=" + now);
+        String signature = md5Hex(first.replace("a", "app").replace("0", "app"));
+        Map<String, String> values = new HashMap<>();
+        values.put(SecureStrings.time(), String.valueOf(now));
+        values.put(SecureStrings.nonce(), nonce);
         values.put(SecureStrings.hkey(), signature.substring(0, Math.min(10, signature.length())));
         return values;
     }

@@ -54,7 +54,7 @@ final class AnnouncementChecker {
     private static void request(Callback callback) {
         HttpURLConnection connection = null;
         try {
-            URL url = new URL(BuildConfig.ANNOUNCEMENT_API_URL);
+            URL url = new URL(UpdateChecker.requireTrustedUrl(BuildConfig.ANNOUNCEMENT_API_URL));
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(4000);
             connection.setReadTimeout(5000);

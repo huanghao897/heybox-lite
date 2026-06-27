@@ -5,6 +5,8 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import android.util.Base64;
@@ -12,6 +14,7 @@ import android.util.Base64;
 import org.json.JSONObject;
 import org.json.JSONArray;
 
+import java.net.URLDecoder;
 import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -19,6 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 
@@ -34,6 +39,9 @@ final class SessionStore {
     private static final String UI_SCALE = "ui_scale";
     private static final String TEXT_SCALE = "text_scale";
     private static final String PAGE_PADDING = "page_padding";
+    private static final String ROUND_SCREEN = "round_screen";
+    private static final String SCREEN_PADDING_H_PERCENT = "screen_padding_h_percent";
+    private static final String SCREEN_PADDING_V_PERCENT = "screen_padding_v_percent";
     private static final String DARK_MODE = "dark_mode";
     private static final String ORIGINAL_IMAGES = "original_images";
     private static final String ACCENT_COLOR = "accent_color";
@@ -48,11 +56,35 @@ final class SessionStore {
     private static final String SPLASH_ENABLED = "splash_enabled";
     private static final String SPLASH_TEXT = "splash_text";
     private static final String SPLASH_DURATION = "splash_duration";
+    private static final String SHELL_BACK_SWIPE = "shell_back_swipe";
+    private static final String REMEMBER_DETAIL_SCROLL = "remember_detail_scroll";
+    private static final String DOUBLE_TAP_COMMENT_REPLY = "double_tap_comment_reply";
     private static final String LAST_ANNOUNCEMENT_ID = "last_announcement_id";
     private static final String SEEN_ANNOUNCEMENT_IDS = "seen_announcement_ids";
     private static final String LAST_SIGN_ATTEMPT_DATE = "last_sign_attempt_date";
     private static final String LAST_SIGN_SUCCESS_DATE = "last_sign_success_date";
     private static final String SIGN_SUMMARY = "sign_summary";
+    private static final String NATIVE_RND_CODE = "native_rnd_code";
+    private static final String NATIVE_RND_VERSION = "native_rnd_version";
+    private static final String OFFICIAL_PROVIDER_AUTH_IMPORTED = "official_provider_auth_imported";
+    private static final String SIGNIN_MOBILE_USER_ID = "signin_mobile_user_id";
+    private static final String SIGNIN_MOBILE_PKEY = "signin_mobile_pkey";
+    private static final String SIGNIN_MOBILE_TOKEN = "signin_mobile_token";
+    private static final String SIGNIN_MOBILE_DEVICE_ID = "signin_mobile_device_id";
+    private static final String SIGNIN_MOBILE_DEVICE_INFO = "signin_mobile_device_info";
+    private static final String SIGNIN_MOBILE_OS_VERSION = "signin_mobile_os_version";
+    private static final String SIGNIN_MOBILE_VERSION = "signin_mobile_version";
+    private static final String SIGNIN_MOBILE_BUILD = "signin_mobile_build";
+    private static final String SIGNIN_MOBILE_DW = "signin_mobile_dw";
+    private static final String SIGNIN_MOBILE_CHANNEL = "signin_mobile_channel";
+    private static final String SIGNIN_MOBILE_X_APP = "signin_mobile_x_app";
+    private static final String SIGNIN_MOBILE_SOURCE = "signin_mobile_source";
+    private static final String SIGNIN_MOBILE_IMPORTED_AT = "signin_mobile_imported_at";
+    private static final String SIGNIN_REPLAY_METHOD = "signin_replay_method";
+    private static final String SIGNIN_REPLAY_URL = "signin_replay_url";
+    private static final String SIGNIN_REPLAY_COOKIE = "signin_replay_cookie";
+    private static final String SIGNIN_REPLAY_USER_AGENT = "signin_replay_user_agent";
+    private static final String SIGNIN_REPLAY_REFERER = "signin_replay_referer";
     private static final String SEARCH_HISTORY = "search_history";
     private static final String BLOCK_KEYWORDS = "block_keywords";
     static final String DEFAULT_SPLASH_TEXT = "方寸之间，看见热爱";
@@ -152,6 +184,30 @@ final class SessionStore {
 
     void setPagePadding(int value) {
         prefs.edit().putInt(PAGE_PADDING, value).apply();
+    }
+
+    boolean roundScreen() {
+        return prefs.getBoolean(ROUND_SCREEN, false);
+    }
+
+    void setRoundScreen(boolean value) {
+        prefs.edit().putBoolean(ROUND_SCREEN, value).apply();
+    }
+
+    int screenPaddingHPercent() {
+        return prefs.getInt(SCREEN_PADDING_H_PERCENT, 0);
+    }
+
+    void setScreenPaddingHPercent(int value) {
+        prefs.edit().putInt(SCREEN_PADDING_H_PERCENT, clampPercent(value)).apply();
+    }
+
+    int screenPaddingVPercent() {
+        return prefs.getInt(SCREEN_PADDING_V_PERCENT, 0);
+    }
+
+    void setScreenPaddingVPercent(int value) {
+        prefs.edit().putInt(SCREEN_PADDING_V_PERCENT, clampPercent(value)).apply();
     }
 
     boolean darkMode() {
@@ -265,6 +321,30 @@ final class SessionStore {
         prefs.edit().putInt(SPLASH_DURATION, value).apply();
     }
 
+    boolean shellBackSwipe() {
+        return prefs.getBoolean(SHELL_BACK_SWIPE, true);
+    }
+
+    void setShellBackSwipe(boolean value) {
+        prefs.edit().putBoolean(SHELL_BACK_SWIPE, value).apply();
+    }
+
+    boolean rememberDetailScroll() {
+        return prefs.getBoolean(REMEMBER_DETAIL_SCROLL, true);
+    }
+
+    void setRememberDetailScroll(boolean value) {
+        prefs.edit().putBoolean(REMEMBER_DETAIL_SCROLL, value).apply();
+    }
+
+    boolean doubleTapCommentReply() {
+        return prefs.getBoolean(DOUBLE_TAP_COMMENT_REPLY, true);
+    }
+
+    void setDoubleTapCommentReply(boolean value) {
+        prefs.edit().putBoolean(DOUBLE_TAP_COMMENT_REPLY, value).apply();
+    }
+
     String lastAnnouncementId() {
         return prefs.getString(LAST_ANNOUNCEMENT_ID, "");
     }
@@ -339,6 +419,350 @@ final class SessionStore {
 
     void setSignSummary(String value) {
         prefs.edit().putString(SIGN_SUMMARY, sanitizeSignSummary(value)).apply();
+    }
+
+    boolean saveNativeRndConfig(JSONObject body) {
+        if (body == null) return false;
+        JSONObject result = body.optJSONObject("result");
+        if (result == null) return false;
+        return saveNativeRndConfig(result.optString("code"), result.optInt("version", -1));
+    }
+
+    boolean saveNativeRndConfig(String code, int version) {
+        String clean = code == null ? "" : code.trim();
+        if (clean.isEmpty() || version < 0) return false;
+        prefs.edit()
+                .putString(NATIVE_RND_CODE, clean)
+                .putInt(NATIVE_RND_VERSION, version)
+                .apply();
+        return true;
+    }
+
+    String nativeRndCode() {
+        return prefs.getString(NATIVE_RND_CODE, "");
+    }
+
+    int nativeRndVersion() {
+        return prefs.getInt(NATIVE_RND_VERSION, -1);
+    }
+
+    boolean hasSignInCredentials() {
+        return !signInPkey().isEmpty();
+    }
+
+    String signInUserId() {
+        String value = prefs.getString(SIGNIN_MOBILE_USER_ID, "");
+        return value == null ? "" : value.trim();
+    }
+
+    String signInPkey() {
+        String value = prefs.getString(SIGNIN_MOBILE_PKEY, "");
+        return value == null ? "" : value.trim();
+    }
+
+    String signInXhhToken() {
+        String value = prefs.getString(SIGNIN_MOBILE_TOKEN, "");
+        return value == null ? "" : value.trim();
+    }
+
+    String signInDeviceId() {
+        String value = prefs.getString(SIGNIN_MOBILE_DEVICE_ID, "");
+        return value == null ? "" : value.trim();
+    }
+
+    String importSignInCredentialsFromText(String text) {
+        Map<String, String> values = extractCredentialText(text);
+        Map<String, String> replay = extractSignInReplayRequest(text);
+        if (values.isEmpty() && replay.isEmpty()) return "manual=empty";
+        String id = firstValue(values, SecureStrings.heyboxId(), "heybox_id",
+                SecureStrings.userid(), SecureStrings.userId(), "userid", "user_id");
+        String pkey = firstValue(values, officialPkeyKey(), "pkey",
+                SecureStrings.userPkey(), SecureStrings.xPkey(), "user_pkey", "x_pkey");
+        String token = firstValue(values, SecureStrings.xXhhTokenId(), "x_xhh_tokenid");
+        String deviceId = firstValue(values, "imei", SecureStrings.deviceId(), "device_id");
+        if (pkey.isEmpty() && replay.isEmpty()) return "manual=no-pkey keys=" + values.keySet();
+        SharedPreferences.Editor editor = prefs.edit()
+                .putString(SIGNIN_MOBILE_SOURCE, "manual")
+                .putLong(SIGNIN_MOBILE_IMPORTED_AT, System.currentTimeMillis());
+        putIfPresent(editor, SIGNIN_MOBILE_PKEY, pkey);
+        putIfPresent(editor, SIGNIN_MOBILE_USER_ID, id);
+        putIfPresent(editor, SIGNIN_MOBILE_TOKEN, token);
+        putIfPresent(editor, SIGNIN_MOBILE_DEVICE_ID, deviceId);
+        putIfPresent(editor, SIGNIN_MOBILE_DEVICE_INFO, firstValue(values, "device_info"));
+        putIfPresent(editor, SIGNIN_MOBILE_OS_VERSION, firstValue(values, "os_version"));
+        putIfPresent(editor, SIGNIN_MOBILE_VERSION, firstValue(values, "version"));
+        putIfPresent(editor, SIGNIN_MOBILE_BUILD, firstValue(values, "build"));
+        putIfPresent(editor, SIGNIN_MOBILE_DW, firstValue(values, "dw"));
+        putIfPresent(editor, SIGNIN_MOBILE_CHANNEL, firstValue(values, "channel"));
+        putIfPresent(editor, SIGNIN_MOBILE_X_APP, firstValue(values, "x_app"));
+        putIfPresent(editor, SIGNIN_REPLAY_METHOD, first(replay.get("method"), "GET"));
+        putIfPresent(editor, SIGNIN_REPLAY_URL, replay.get("url"));
+        putIfPresent(editor, SIGNIN_REPLAY_COOKIE, replay.get("cookie"));
+        putIfPresent(editor, SIGNIN_REPLAY_USER_AGENT, replay.get("user-agent"));
+        putIfPresent(editor, SIGNIN_REPLAY_REFERER, replay.get("referer"));
+        editor.apply();
+        return "manual=ok-isolated idLen=" + id.length()
+                + " pkeyLen=" + pkey.length()
+                + " tokenLen=" + token.length()
+                + " deviceLen=" + deviceId.length()
+                + " replay=" + (!replay.isEmpty())
+                + " keys=" + values.keySet();
+    }
+
+    String signInCredentialSummaryForLog() {
+        return "source=" + prefs.getString(SIGNIN_MOBILE_SOURCE, "none")
+                + " userIdLen=" + signInUserId().length()
+                + " pkeyLen=" + signInPkey().length()
+                + " tokenLen=" + signInXhhToken().length()
+                + " deviceLen=" + signInDeviceId().length()
+                + " replay=" + hasSignInReplayRequest()
+                + " modelLen=" + signInValue(SIGNIN_MOBILE_DEVICE_INFO).length()
+                + " version=" + safeLogValue(signInValue(SIGNIN_MOBILE_VERSION))
+                + " build=" + safeLogValue(signInValue(SIGNIN_MOBILE_BUILD))
+                + " channel=" + safeLogValue(signInValue(SIGNIN_MOBILE_CHANNEL))
+                + " xApp=" + safeLogValue(signInValue(SIGNIN_MOBILE_X_APP))
+                + " importedAt=" + prefs.getLong(SIGNIN_MOBILE_IMPORTED_AT, 0L);
+    }
+
+    void clearSignInCredentials() {
+        prefs.edit()
+                .remove(SIGNIN_MOBILE_USER_ID)
+                .remove(SIGNIN_MOBILE_PKEY)
+                .remove(SIGNIN_MOBILE_TOKEN)
+                .remove(SIGNIN_MOBILE_DEVICE_ID)
+                .remove(SIGNIN_MOBILE_DEVICE_INFO)
+                .remove(SIGNIN_MOBILE_OS_VERSION)
+                .remove(SIGNIN_MOBILE_VERSION)
+                .remove(SIGNIN_MOBILE_BUILD)
+                .remove(SIGNIN_MOBILE_DW)
+                .remove(SIGNIN_MOBILE_CHANNEL)
+                .remove(SIGNIN_MOBILE_X_APP)
+                .remove(SIGNIN_MOBILE_SOURCE)
+                .remove(SIGNIN_MOBILE_IMPORTED_AT)
+                .remove(SIGNIN_REPLAY_METHOD)
+                .remove(SIGNIN_REPLAY_URL)
+                .remove(SIGNIN_REPLAY_COOKIE)
+                .remove(SIGNIN_REPLAY_USER_AGENT)
+                .remove(SIGNIN_REPLAY_REFERER)
+                .apply();
+    }
+
+    boolean hasSignInReplayRequest() {
+        String url = signInReplayUrl();
+        return url.startsWith("https://api.xiaoheihe.cn/")
+                && url.contains("/task/sign");
+    }
+
+    String signInReplayUrl() {
+        String value = prefs.getString(SIGNIN_REPLAY_URL, "");
+        return value == null ? "" : value.trim();
+    }
+
+    Map<String, String> signInReplayHeaders() {
+        Map<String, String> headers = new LinkedHashMap<>();
+        String cookie = signInValue(SIGNIN_REPLAY_COOKIE);
+        String userAgent = signInValue(SIGNIN_REPLAY_USER_AGENT);
+        String referer = signInValue(SIGNIN_REPLAY_REFERER);
+        if (cookie.isEmpty()) cookie = signInOfficialMinimalCookie(false);
+        if (userAgent.isEmpty()) {
+            userAgent = "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) "
+                    + "Chrome/41.0.2272.118 Safari/537.36 ApiMaxJia/1.0";
+        }
+        if (referer.isEmpty()) referer = "http://api.maxjia.com/";
+        if (!cookie.isEmpty()) headers.put("Cookie", cookie);
+        if (!userAgent.isEmpty()) headers.put("User-Agent", userAgent);
+        if (!referer.isEmpty()) headers.put("Referer", referer);
+        headers.put("Accept", "application/json,text/plain,*/*");
+        headers.put("X-Requested-With", "com.max.xiaoheihe");
+        return headers;
+    }
+
+    String importOfficialProviderAuthForSignInLog() {
+        Cursor cursor = null;
+        try {
+            String usedUri = "";
+            for (String uri : officialProviderUris()) {
+                if (cursor != null) {
+                    cursor.close();
+                    cursor = null;
+                }
+                try {
+                    Uri providerUri = Uri.parse(uri);
+                    cursor = context.getContentResolver().query(providerUri,
+                            null, null, null, null);
+                    if (cursor != null && cursor.moveToFirst()) {
+                        usedUri = uri;
+                        break;
+                    }
+                } catch (Throwable ignored) {
+                    cursor = null;
+                }
+            }
+            if (cursor == null || usedUri.isEmpty()) {
+                return "provider=null";
+            }
+            String id = cursorValue(cursor, SecureStrings.heyboxId());
+            String pkey = cursorValue(cursor, officialPkeyKey());
+            String deviceId = cursorValue(cursor, SecureStrings.deviceId());
+            String token = cursorValue(cursor, SecureStrings.xXhhTokenId());
+            if (id.isEmpty() && pkey.isEmpty() && token.isEmpty()) {
+                return "provider=empty-auth uri=" + providerUriName(usedUri)
+                        + " columns=" + cursorColumnsForLog(cursor);
+            }
+            SharedPreferences.Editor editor = prefs.edit();
+            if (!id.isEmpty()) editor.putString(SIGNIN_MOBILE_USER_ID, id);
+            if (!pkey.isEmpty()) editor.putString(SIGNIN_MOBILE_PKEY, pkey);
+            if (!token.isEmpty()) editor.putString(SIGNIN_MOBILE_TOKEN, token);
+            if (!deviceId.isEmpty()) editor.putString(SIGNIN_MOBILE_DEVICE_ID, deviceId);
+            editor.putString(SIGNIN_MOBILE_SOURCE, "official-provider:"
+                            + providerUriName(usedUri))
+                    .putLong(SIGNIN_MOBILE_IMPORTED_AT, System.currentTimeMillis())
+                    .apply();
+            return "provider=ok-isolated uri=" + providerUriName(usedUri)
+                    + " idLen=" + id.length()
+                    + " pkeyLen=" + pkey.length()
+                    + " tokenLen=" + token.length()
+                    + " deviceLen=" + deviceId.length();
+        } catch (Throwable error) {
+            return "provider=error " + error.getClass().getSimpleName();
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+    }
+
+    String importCurrentSessionForSignInLog() {
+        try {
+            Map<String, String> values = cookieMap(getCookie());
+            String pkey = officialPkey(values);
+            String token = firstCookieValue(values, SecureStrings.xXhhTokenId());
+            String id = firstCookieValue(values, SecureStrings.xHeyboxId(),
+                    SecureStrings.userHeyboxId(), SecureStrings.heyboxId(),
+                    SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
+            if (id.isEmpty()) id = userId();
+            String deviceId = deviceIdentifier();
+            if (pkey.isEmpty()) {
+                return "session=no-pkey cookieKeys=" + authCookieKeysForLog();
+            }
+            SharedPreferences.Editor editor = prefs.edit()
+                    .putString(SIGNIN_MOBILE_PKEY, pkey)
+                    .putString(SIGNIN_MOBILE_SOURCE, "lite-session-copy")
+                    .putLong(SIGNIN_MOBILE_IMPORTED_AT, System.currentTimeMillis());
+            if (!id.isEmpty()) editor.putString(SIGNIN_MOBILE_USER_ID, id);
+            if (!token.isEmpty()) editor.putString(SIGNIN_MOBILE_TOKEN, token);
+            if (!deviceId.isEmpty()) editor.putString(SIGNIN_MOBILE_DEVICE_ID, deviceId);
+            editor.apply();
+            return "session=ok-isolated idLen=" + id.length()
+                    + " pkeyLen=" + pkey.length()
+                    + " tokenLen=" + token.length()
+                    + " deviceLen=" + deviceId.length()
+                    + " cookieKeys=" + authCookieKeysForLog();
+        } catch (Throwable error) {
+            return "session=error " + error.getClass().getSimpleName();
+        }
+    }
+
+    Map<String, String> signInOfficialMobileParams(boolean includeDeviceParams) {
+        if (!hasSignInCredentials()) return officialMobileParams(includeDeviceParams);
+        Map<String, String> result = new LinkedHashMap<>();
+        String id = signInUserId();
+        if (id.isEmpty()) id = userId();
+        String safeId = id.isEmpty() ? "-1" : id;
+        result.put(SecureStrings.heyboxId(), safeId);
+        if (!id.isEmpty()) {
+            result.put(SecureStrings.userid(), id);
+            result.put(SecureStrings.userId(), id);
+        }
+        if (!includeDeviceParams) return result;
+        String deviceId = signInDeviceId();
+        if (deviceId.isEmpty()) deviceId = androidDeviceIdentifier();
+        result.put("app", "heybox");
+        result.put(SecureStrings.deviceId(), deviceId);
+        result.put("imei", deviceId);
+        result.put("device_info", first(signInValue(SIGNIN_MOBILE_DEVICE_INFO),
+                Build.MODEL == null ? "" : Build.MODEL.trim()));
+        result.put("os_type", "Android");
+        result.put("os_version", first(signInValue(SIGNIN_MOBILE_OS_VERSION),
+                Build.VERSION.RELEASE == null ? "" : Build.VERSION.RELEASE.trim()));
+        result.put("x_os_type", "Android");
+        result.put("x_client_type", "mobile");
+        result.put("x_app", first(signInValue(SIGNIN_MOBILE_X_APP), "heybox"));
+        result.put("version", first(signInValue(SIGNIN_MOBILE_VERSION),
+                com.max.xiaoheihe.utils.f.B0()));
+        result.put("build", first(signInValue(SIGNIN_MOBILE_BUILD),
+                com.max.xiaoheihe.utils.f.buildCode()));
+        result.put("time_zone", TimeZone.getDefault().getID());
+        result.put("dw", first(signInValue(SIGNIN_MOBILE_DW), com.max.xiaoheihe.utils.i.e()));
+        result.put("channel", first(signInValue(SIGNIN_MOBILE_CHANNEL), "heybox_oppo"));
+        return result;
+    }
+
+    String signInOfficialMobileCookie(boolean addClientKey) {
+        if (!hasSignInCredentials()) return officialMobileCookie(addClientKey);
+        Map<String, String> values = signInCookieMap();
+        List<String> parts = new ArrayList<>();
+        appendCookiePart(parts, officialPkeyKey(), signInPkey());
+        if (addClientKey) appendCookiePart(parts, SecureStrings.xPkey(), signInPkey());
+        appendCookiePart(parts, SecureStrings.xXhhTokenId(), signInXhhToken());
+        if (addClientKey) {
+            appendCookiePart(parts, SecureStrings.xHeyboxId(), signInUserId());
+            appendCookiePart(parts, SecureStrings.userHeyboxId(), signInUserId());
+        }
+        appendRestCookies(parts, values);
+        return joinCookieParts(parts);
+    }
+
+    String signInOfficialBridgeCookie(boolean includeClientKeys) {
+        if (!hasSignInCredentials()) return officialBridgeCookie(includeClientKeys);
+        Map<String, String> values = signInCookieMap();
+        List<String> parts = new ArrayList<>();
+        appendCookiePart(parts, officialPkeyKey(), signInPkey());
+        if (includeClientKeys) appendCookiePart(parts, SecureStrings.xPkey(), signInPkey());
+        appendCookiePart(parts, SecureStrings.xXhhTokenId(), signInXhhToken());
+        if (includeClientKeys) {
+            appendCookiePart(parts, SecureStrings.xHeyboxId(), signInUserId());
+            appendCookiePart(parts, SecureStrings.userHeyboxId(), signInUserId());
+        }
+        appendRestCookies(parts, values);
+        return joinCookieParts(parts);
+    }
+
+    String signInOfficialMinimalCookie(boolean includeClientKeys) {
+        if (!hasSignInCredentials()) return officialMinimalCookie(includeClientKeys);
+        List<String> parts = new ArrayList<>();
+        appendCookiePart(parts, officialPkeyKey(), signInPkey());
+        if (includeClientKeys) appendCookiePart(parts, SecureStrings.xPkey(), signInPkey());
+        appendCookiePart(parts, SecureStrings.xXhhTokenId(), signInXhhToken());
+        if (includeClientKeys) {
+            appendCookiePart(parts, SecureStrings.xHeyboxId(), signInUserId());
+            appendCookiePart(parts, SecureStrings.userHeyboxId(), signInUserId());
+        }
+        return joinCookieParts(parts);
+    }
+
+    String signInOfficialRawCookie() {
+        if (!hasSignInCredentials()) return getCookie();
+        return joinCookies(signInCookieMap());
+    }
+
+    private Map<String, String> signInCookieMap() {
+        Map<String, String> values = new LinkedHashMap<>();
+        String pkey = signInPkey();
+        String id = signInUserId();
+        String token = signInXhhToken();
+        if (!pkey.isEmpty()) {
+            values.put(officialPkeyKey(), pkey);
+            values.put(SecureStrings.userPkey(), pkey);
+            values.put(SecureStrings.xPkey(), pkey);
+        }
+        if (!id.isEmpty()) {
+            values.put(SecureStrings.userHeyboxId(), id);
+            values.put(SecureStrings.xHeyboxId(), id);
+            values.put(SecureStrings.heyboxId(), id);
+            values.put(SecureStrings.userid(), id);
+            values.put(SecureStrings.userId(), id);
+        }
+        if (!token.isEmpty()) values.put(SecureStrings.xXhhTokenId(), token);
+        return values;
     }
 
     private String sanitizeSignSummary(String value) {
@@ -419,6 +843,9 @@ final class SessionStore {
                 .putInt(UI_SCALE, 100)
                 .putInt(TEXT_SCALE, 100)
                 .putInt(PAGE_PADDING, 8)
+                .putBoolean(ROUND_SCREEN, false)
+                .putInt(SCREEN_PADDING_H_PERCENT, 0)
+                .putInt(SCREEN_PADDING_V_PERCENT, 0)
                 .putString(PRIMARY_COLOR, "#2479B8")
                 .putString(SECONDARY_COLOR, "#73B8E6")
                 .remove(ACCENT_COLOR)
@@ -454,6 +881,10 @@ final class SessionStore {
         return result;
     }
 
+    String deviceIdentifier() {
+        return prefs.getString(SecureStrings.deviceId(), "");
+    }
+
     Map<String, String> officialMobileParams(boolean includeDeviceParams) {
         Map<String, String> result = new LinkedHashMap<>();
         String id = userId();
@@ -467,15 +898,17 @@ final class SessionStore {
         String release = Build.VERSION.RELEASE == null ? "" : Build.VERSION.RELEASE;
         String model = Build.MODEL == null ? "" : Build.MODEL;
         result.put("app", "heybox");
-        result.put(SecureStrings.deviceId(), prefs.getString(SecureStrings.deviceId(), ""));
+        String androidId = androidDeviceIdentifier();
+        result.put(SecureStrings.deviceId(), androidId);
+        result.put("imei", androidId);
         result.put("device_info", model.trim());
         result.put("os_type", "Android");
         result.put("os_version", release.trim());
         result.put("x_os_type", "Android");
         result.put("x_client_type", "mobile");
         result.put("x_app", "heybox");
-        result.put("version", "1.3.379");
-        result.put("build", "1055");
+        result.put("version", com.max.xiaoheihe.utils.f.B0());
+        result.put("build", com.max.xiaoheihe.utils.f.buildCode());
         result.put("time_zone", TimeZone.getDefault().getID());
         result.put(SecureStrings.time(), String.valueOf(System.currentTimeMillis() / 1000L));
         result.put("channel", "heybox");
@@ -485,8 +918,8 @@ final class SessionStore {
     String officialMobileCookie(boolean addClientKey) {
         Map<String, String> values = cookieMap(getCookie());
         List<String> parts = new ArrayList<>();
-        String pkey = firstCookieValue(values, SecureStrings.userPkey(), SecureStrings.xPkey());
-        appendCookiePart(parts, SecureStrings.userPkey(), pkey);
+        String pkey = officialPkey(values);
+        appendCookiePart(parts, officialPkeyKey(), pkey);
         if (addClientKey) appendCookiePart(parts, SecureStrings.xPkey(), pkey);
         appendCookiePart(parts, SecureStrings.xXhhTokenId(),
                 values.get(SecureStrings.xXhhTokenId()));
@@ -500,14 +933,259 @@ final class SessionStore {
         StringBuilder cookie = new StringBuilder();
         for (String part : parts) {
             if (part == null || part.isEmpty()) continue;
-            if (cookie.length() > 0) cookie.append("; ");
+            if (cookie.length() > 0) cookie.append(';');
             cookie.append(part);
         }
         return cookie.toString();
     }
 
+    String officialRequestCookie(boolean includeClientKeys) {
+        Map<String, String> values = cookieMap(getCookie());
+        List<String> parts = new ArrayList<>();
+        String pkey = officialPkey(values);
+        appendCookiePart(parts, officialPkeyKey(), pkey);
+        if (includeClientKeys) appendCookiePart(parts, SecureStrings.xPkey(), pkey);
+        appendCookiePart(parts, SecureStrings.xXhhTokenId(),
+                values.get(SecureStrings.xXhhTokenId()));
+        appendRawCookiePart(parts, getCookie());
+        if (includeClientKeys) {
+            String id = firstCookieValue(values, SecureStrings.xHeyboxId(),
+                    SecureStrings.userHeyboxId(), SecureStrings.heyboxId(),
+                    SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
+            appendCookiePart(parts, SecureStrings.xHeyboxId(), id);
+        }
+        return joinCookieParts(parts);
+    }
+
+    String officialMinimalCookie(boolean includeClientKeys) {
+        Map<String, String> values = cookieMap(getCookie());
+        List<String> parts = new ArrayList<>();
+        String pkey = officialPkey(values);
+        appendCookiePart(parts, officialPkeyKey(), pkey);
+        if (includeClientKeys) appendCookiePart(parts, SecureStrings.xPkey(), pkey);
+        appendCookiePart(parts, SecureStrings.xXhhTokenId(),
+                values.get(SecureStrings.xXhhTokenId()));
+        if (includeClientKeys) {
+            String id = firstCookieValue(values, SecureStrings.xHeyboxId(),
+                    SecureStrings.userHeyboxId(), SecureStrings.heyboxId(),
+                    SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
+            appendCookiePart(parts, SecureStrings.xHeyboxId(), id);
+        }
+        return joinCookieParts(parts);
+    }
+
+    String officialBridgeCookie(boolean includeClientKeys) {
+        try {
+            String raw = getCookie();
+            Map<String, String> values = cookieMap(raw);
+            com.max.xiaoheihe.utils.m0.init(userId(), officialPkey(values));
+            com.max.xiaoheihe.utils.i.init(firstCookieValue(values,
+                    SecureStrings.xXhhTokenId()));
+            okhttp3.a0 request = new okhttp3.a0.a()
+                    .a(SecureStrings.cookieHeader(), raw)
+                    .b();
+            String cookie = new com.max.xiaoheihe.router.serviceimpl.k()
+                    .a(includeClientKeys, request);
+            return cookie == null || cookie.trim().isEmpty()
+                    ? officialRequestCookie(includeClientKeys) : cookie.trim();
+        } catch (Throwable ignored) {
+            return officialRequestCookie(includeClientKeys);
+        }
+    }
+
+    String officialPkey() {
+        return officialPkey(cookieMap(getCookie()));
+    }
+
+    String officialXhhToken() {
+        Map<String, String> values = cookieMap(getCookie());
+        return firstCookieValue(values, SecureStrings.xXhhTokenId());
+    }
+
+    boolean hasOfficialProviderAuth() {
+        return prefs.getBoolean(OFFICIAL_PROVIDER_AUTH_IMPORTED, false);
+    }
+
+    String importOfficialProviderAuthForLog() {
+        Cursor cursor = null;
+        try {
+            String usedUri = "";
+            for (String uri : officialProviderUris()) {
+                if (cursor != null) {
+                    cursor.close();
+                    cursor = null;
+                }
+                try {
+                    Uri providerUri = Uri.parse(uri);
+                    if (!OfficialAppVerifier.isProviderTrusted(context, providerUri)) {
+                        continue;
+                    }
+                    cursor = context.getContentResolver().query(
+                            providerUri, null, null, null, null);
+                    if (cursor == null) continue;
+                    if (!cursor.moveToFirst()) continue;
+                    usedUri = uri;
+                    break;
+                } catch (Throwable ignored) {
+                    if (cursor != null) {
+                        cursor.close();
+                        cursor = null;
+                    }
+                }
+            }
+            if (cursor == null) {
+                setOfficialProviderAuthImported(false);
+                return "provider=null";
+            }
+            if (usedUri.isEmpty()) {
+                setOfficialProviderAuthImported(false);
+                return "provider=empty";
+            }
+            String id = cursorValue(cursor, SecureStrings.heyboxId());
+            String pkey = cursorValue(cursor, officialPkeyKey());
+            String deviceId = cursorValue(cursor, SecureStrings.deviceId());
+            String token = cursorValue(cursor, SecureStrings.xXhhTokenId());
+            if (id.isEmpty() && pkey.isEmpty() && token.isEmpty()) {
+                setOfficialProviderAuthImported(false);
+                return "provider=empty-auth uri=" + providerUriName(usedUri)
+                        + " columns=" + cursorColumnsForLog(cursor);
+            }
+            Map<String, String> values = cookieMap(getCookie());
+            if (!pkey.isEmpty()) {
+                values.put(SecureStrings.userPkey(), pkey);
+                values.put(SecureStrings.xPkey(), pkey);
+            }
+            if (!token.isEmpty()) values.put(SecureStrings.xXhhTokenId(), token);
+            if (!id.isEmpty()) {
+                values.put(SecureStrings.heyboxId(), id);
+                values.put(SecureStrings.userHeyboxId(), id);
+                values.put(SecureStrings.xHeyboxId(), id);
+            }
+            normalizeAuthCookies(values);
+            saveCookie(joinCookies(values));
+            SharedPreferences.Editor editor = prefs.edit();
+            if (!id.isEmpty()) editor.putString(SecureStrings.userId(), id);
+            if (!deviceId.isEmpty()) editor.putString(SecureStrings.deviceId(), deviceId);
+            editor.putBoolean(OFFICIAL_PROVIDER_AUTH_IMPORTED, true);
+            editor.apply();
+            return "provider=ok uri=" + providerUriName(usedUri)
+                    + " idLen=" + id.length()
+                    + " pkeyLen=" + pkey.length()
+                    + " tokenLen=" + token.length()
+                    + " deviceLen=" + deviceId.length();
+        } catch (Throwable error) {
+            setOfficialProviderAuthImported(false);
+            return "provider=error " + error.getClass().getSimpleName();
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+    }
+
+    private static String[] officialProviderUris() {
+        return new String[] {
+                "content://com.max.xiaoheihe.statusprovider/login",
+                "content://com.max.xiaoheihe.statusprovider/login/",
+                "content://com.max.xiaoheihe.statusprovider",
+                "content://com.max.xiaoheihe.statusprovider/",
+                "content://com.max.xiaoheihe.statusprovider.login"
+        };
+    }
+
+    private static String providerUriName(String uri) {
+        if (uri == null) return "";
+        int index = uri.indexOf("statusprovider");
+        if (index < 0) return "custom";
+        String tail = uri.substring(index + "statusprovider".length());
+        if (tail.isEmpty()) return "root";
+        return tail.replace('/', '_').replace(':', '_');
+    }
+
+    private static String cursorColumnsForLog(Cursor cursor) {
+        if (cursor == null) return "none";
+        try {
+            String[] names = cursor.getColumnNames();
+            if (names == null || names.length == 0) return "none";
+            StringBuilder out = new StringBuilder();
+            for (String name : names) {
+                if (name == null || name.trim().isEmpty()) continue;
+                if (out.length() > 0) out.append(',');
+                out.append(name.trim());
+                if (out.length() > 180) {
+                    out.append("...");
+                    break;
+                }
+            }
+            return out.length() == 0 ? "none" : out.toString();
+        } catch (Throwable ignored) {
+            return "unavailable";
+        }
+    }
+
+    private void setOfficialProviderAuthImported(boolean imported) {
+        prefs.edit().putBoolean(OFFICIAL_PROVIDER_AUTH_IMPORTED, imported).apply();
+    }
+
+    private String officialPkey(Map<String, String> values) {
+        return firstCookieValue(values, officialPkeyKey(),
+                SecureStrings.userPkey(), SecureStrings.xPkey());
+    }
+
+    private static String cursorValue(Cursor cursor, String column) {
+        if (cursor == null || column == null || column.isEmpty()) return "";
+        try {
+            int index = cursor.getColumnIndex(column);
+            if (index < 0) return "";
+            String value = cursor.getString(index);
+            return value == null ? "" : value.trim();
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private String androidDeviceIdentifier() {
+        String imported = deviceIdentifier();
+        if (imported != null && !imported.trim().isEmpty()) return imported.trim();
+        try {
+            String value = Settings.Secure.getString(context.getContentResolver(),
+                    Settings.Secure.ANDROID_ID);
+            if (value != null && !value.trim().isEmpty()) return value.trim();
+        } catch (Throwable ignored) {
+        }
+        return deviceIdentifier();
+    }
+
     String officialMobileCookieKeysForLog(boolean addClientKey) {
         Map<String, String> values = cookieMap(officialMobileCookie(addClientKey));
+        StringBuilder result = new StringBuilder();
+        for (String key : values.keySet()) {
+            if (result.length() > 0) result.append(',');
+            result.append(key);
+        }
+        return result.length() == 0 ? "none" : result.toString();
+    }
+
+    String officialRequestCookieKeysForLog(boolean includeClientKeys) {
+        Map<String, String> values = cookieMap(officialRequestCookie(includeClientKeys));
+        StringBuilder result = new StringBuilder();
+        for (String key : values.keySet()) {
+            if (result.length() > 0) result.append(',');
+            result.append(key);
+        }
+        return result.length() == 0 ? "none" : result.toString();
+    }
+
+    String officialMinimalCookieKeysForLog(boolean includeClientKeys) {
+        Map<String, String> values = cookieMap(officialMinimalCookie(includeClientKeys));
+        StringBuilder result = new StringBuilder();
+        for (String key : values.keySet()) {
+            if (result.length() > 0) result.append(',');
+            result.append(key);
+        }
+        return result.length() == 0 ? "none" : result.toString();
+    }
+
+    String officialBridgeCookieKeysForLog(boolean includeClientKeys) {
+        Map<String, String> values = cookieMap(officialBridgeCookie(includeClientKeys));
         StringBuilder result = new StringBuilder();
         for (String key : values.keySet()) {
             if (result.length() > 0) result.append(',');
@@ -614,6 +1292,24 @@ final class SessionStore {
         parts.add(key + "=" + value);
     }
 
+    private void appendRawCookiePart(List<String> parts, String value) {
+        if (parts == null || value == null) return;
+        String clean = value.trim();
+        if (clean.isEmpty()) return;
+        parts.add(clean);
+    }
+
+    private String joinCookieParts(List<String> parts) {
+        StringBuilder cookie = new StringBuilder();
+        if (parts == null) return "";
+        for (String part : parts) {
+            if (part == null || part.trim().isEmpty()) continue;
+            if (cookie.length() > 0) cookie.append(';');
+            cookie.append(part.trim());
+        }
+        return cookie.toString();
+    }
+
     private void appendRestCookies(List<String> parts, Map<String, String> values) {
         if (parts == null || values == null || values.isEmpty()) return;
         for (Map.Entry<String, String> entry : values.entrySet()) {
@@ -626,7 +1322,8 @@ final class SessionStore {
     }
 
     private boolean isOfficialAuthCookie(String key) {
-        return SecureStrings.userPkey().equals(key)
+        return officialPkeyKey().equals(key)
+                || SecureStrings.userPkey().equals(key)
                 || SecureStrings.xPkey().equals(key)
                 || SecureStrings.userHeyboxId().equals(key)
                 || SecureStrings.xHeyboxId().equals(key)
@@ -648,10 +1345,154 @@ final class SessionStore {
         return "";
     }
 
+    private Map<String, String> extractCredentialText(String text) {
+        Map<String, String> values = new LinkedHashMap<>();
+        String input = text == null ? "" : text;
+        collectPairs(values, input, "([A-Za-z_][A-Za-z0-9_]*)(?:=|%3D)([^&;\\s\"'<>\\\\]+)");
+        collectPairs(values, input, "\"([A-Za-z_][A-Za-z0-9_]*)\"\\s*:\\s*\"([^\"]*)\"");
+        collectPairs(values, input, "'([A-Za-z_][A-Za-z0-9_]*)'\\s*:\\s*'([^']*)'");
+        return values;
+    }
+
+    private Map<String, String> extractSignInReplayRequest(String text) {
+        Map<String, String> replay = extractReplayFromHar(text);
+        if (!replay.isEmpty()) return replay;
+        return extractReplayFromPlainText(text);
+    }
+
+    private Map<String, String> extractReplayFromHar(String text) {
+        Map<String, String> replay = new LinkedHashMap<>();
+        if (text == null || text.trim().isEmpty()) return replay;
+        try {
+            JSONObject root = new JSONObject(text);
+            JSONObject log = root.optJSONObject("log");
+            JSONArray entries = log == null ? null : log.optJSONArray("entries");
+            if (entries == null) return replay;
+            for (int i = 0; i < entries.length(); i++) {
+                JSONObject request = entries.optJSONObject(i) == null
+                        ? null : entries.optJSONObject(i).optJSONObject("request");
+                if (request == null) continue;
+                String url = request.optString("url", "");
+                if (!isReplaySignUrl(url)) continue;
+                replay.put("url", url.trim());
+                replay.put("method", first(request.optString("method", ""), "GET"));
+                JSONArray headers = request.optJSONArray("headers");
+                if (headers != null) {
+                    for (int j = 0; j < headers.length(); j++) {
+                        JSONObject header = headers.optJSONObject(j);
+                        if (header == null) continue;
+                        putReplayHeader(replay, header.optString("name", ""),
+                                header.optString("value", ""));
+                    }
+                }
+                break;
+            }
+        } catch (Exception ignored) {
+        }
+        return hasReplayUrl(replay) ? replay : new LinkedHashMap<>();
+    }
+
+    private Map<String, String> extractReplayFromPlainText(String text) {
+        Map<String, String> replay = new LinkedHashMap<>();
+        String input = text == null ? "" : text;
+        Matcher urlMatcher = Pattern.compile("(https://api\\.xiaoheihe\\.cn/[^\\s\"'<>\\\\]*task/sign[^\\s\"'<>\\\\]*)")
+                .matcher(input);
+        if (urlMatcher.find()) replay.put("url", decodePart(urlMatcher.group(1)));
+        putReplayHeader(replay, "cookie", matchFirst(input, "(?im)^\\s*cookie\\s*:\\s*(.+)$"));
+        putReplayHeader(replay, "user-agent", matchFirst(input, "(?im)^\\s*user-agent\\s*:\\s*(.+)$"));
+        putReplayHeader(replay, "referer", matchFirst(input, "(?im)^\\s*referer\\s*:\\s*(.+)$"));
+        return hasReplayUrl(replay) ? replay : new LinkedHashMap<>();
+    }
+
+    private void putReplayHeader(Map<String, String> replay, String name, String value) {
+        if (replay == null || name == null || value == null) return;
+        String key = name.trim().toLowerCase();
+        String clean = value.trim();
+        if (clean.isEmpty()) return;
+        if ("cookie".equals(key)) replay.put("cookie", clean);
+        if ("user-agent".equals(key)) replay.put("user-agent", clean);
+        if ("referer".equals(key)) replay.put("referer", clean);
+    }
+
+    private boolean hasReplayUrl(Map<String, String> replay) {
+        return replay != null && isReplaySignUrl(replay.get("url"));
+    }
+
+    private boolean isReplaySignUrl(String url) {
+        return url != null
+                && url.startsWith("https://api.xiaoheihe.cn/")
+                && url.contains("/task/sign");
+    }
+
+    private String matchFirst(String input, String pattern) {
+        Matcher matcher = Pattern.compile(pattern).matcher(input == null ? "" : input);
+        return matcher.find() ? matcher.group(1).trim() : "";
+    }
+
+    private void collectPairs(Map<String, String> values, String input, String pattern) {
+        Matcher matcher = Pattern.compile(pattern).matcher(input);
+        while (matcher.find()) {
+            String key = decodePart(matcher.group(1));
+            String value = decodePart(matcher.group(2));
+            if (!key.isEmpty() && !value.isEmpty() && !values.containsKey(key)) {
+                values.put(key, value);
+            }
+        }
+    }
+
+    private String firstValue(Map<String, String> values, String... keys) {
+        if (values == null || keys == null) return "";
+        for (String key : keys) {
+            if (key == null || key.isEmpty()) continue;
+            String value = values.get(key);
+            if (value != null && !value.trim().isEmpty()) return value.trim();
+        }
+        return "";
+    }
+
+    private String first(String... values) {
+        if (values == null) return "";
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) return value.trim();
+        }
+        return "";
+    }
+
+    private void putIfPresent(SharedPreferences.Editor editor, String key, String value) {
+        if (editor == null || key == null || key.isEmpty()
+                || value == null || value.trim().isEmpty()) return;
+        editor.putString(key, value.trim());
+    }
+
+    private String signInValue(String key) {
+        String value = prefs.getString(key, "");
+        return value == null ? "" : value.trim();
+    }
+
+    private String safeLogValue(String value) {
+        if (value == null || value.isEmpty()) return "";
+        return value.length() <= 24 ? value : value.substring(0, 24);
+    }
+
+    private String decodePart(String value) {
+        if (value == null) return "";
+        String clean = value.trim();
+        try {
+            return URLDecoder.decode(clean, "UTF-8").trim();
+        } catch (Exception ignored) {
+            return clean;
+        }
+    }
+
     private void normalizeAuthCookies(Map<String, String> values) {
         if (values == null || values.isEmpty()) return;
-        mirrorCookie(values, SecureStrings.userPkey(), SecureStrings.xPkey());
-        mirrorCookie(values, SecureStrings.xPkey(), SecureStrings.userPkey());
+        String pkey = firstCookieValue(values, officialPkeyKey(),
+                SecureStrings.userPkey(), SecureStrings.xPkey());
+        if (!pkey.isEmpty()) {
+            putCookieIfMissing(values, officialPkeyKey(), pkey);
+            putCookieIfMissing(values, SecureStrings.userPkey(), pkey);
+            putCookieIfMissing(values, SecureStrings.xPkey(), pkey);
+        }
 
         String id = firstCookieValue(values, SecureStrings.userHeyboxId(),
                 SecureStrings.xHeyboxId(), SecureStrings.heyboxId(),
@@ -672,6 +1513,10 @@ final class SessionStore {
         if (key == null || key.isEmpty() || value == null || value.isEmpty()) return;
         String existing = values.get(key);
         if (existing == null || existing.isEmpty()) values.put(key, value);
+    }
+
+    private static String officialPkeyKey() {
+        return com.max.xiaoheihe.utils.p0.M();
     }
 
     private String normalizeCookie(String cookie) {
@@ -810,6 +1655,9 @@ final class SessionStore {
         int uiScale = uiScale();
         int textScale = textScale();
         int pagePadding = pagePadding();
+        boolean roundScreen = roundScreen();
+        int screenPaddingHPercent = screenPaddingHPercent();
+        int screenPaddingVPercent = screenPaddingVPercent();
         boolean darkMode = darkMode();
         boolean originalImages = originalImages();
         String primaryColor = primaryColor();
@@ -823,16 +1671,24 @@ final class SessionStore {
         boolean splashEnabled = splashEnabled();
         String splashText = splashText();
         int splashDuration = splashDuration();
+        boolean shellBackSwipe = shellBackSwipe();
+        boolean rememberDetailScroll = rememberDetailScroll();
+        boolean doubleTapCommentReply = doubleTapCommentReply();
         String lastAnnouncementId = lastAnnouncementId();
         String seenAnnouncementIds = prefs.getString(SEEN_ANNOUNCEMENT_IDS, "[]");
         String searchHistory = prefs.getString(SEARCH_HISTORY, "[]");
         String blockKeywords = blockKeywords();
+        String nativeRndCode = nativeRndCode();
+        int nativeRndVersion = nativeRndVersion();
         prefs.edit().clear()
                 .putString(SecureStrings.deviceId(), deviceId)
                 .putBoolean(NO_IMAGE, noImage)
                 .putInt(UI_SCALE, uiScale)
                 .putInt(TEXT_SCALE, textScale)
                 .putInt(PAGE_PADDING, pagePadding)
+                .putBoolean(ROUND_SCREEN, roundScreen)
+                .putInt(SCREEN_PADDING_H_PERCENT, screenPaddingHPercent)
+                .putInt(SCREEN_PADDING_V_PERCENT, screenPaddingVPercent)
                 .putBoolean(DARK_MODE, darkMode)
                 .putBoolean(ORIGINAL_IMAGES, originalImages)
                 .putString(PRIMARY_COLOR, primaryColor)
@@ -846,10 +1702,19 @@ final class SessionStore {
                 .putBoolean(SPLASH_ENABLED, splashEnabled)
                 .putString(SPLASH_TEXT, splashText)
                 .putInt(SPLASH_DURATION, splashDuration)
+                .putBoolean(SHELL_BACK_SWIPE, shellBackSwipe)
+                .putBoolean(REMEMBER_DETAIL_SCROLL, rememberDetailScroll)
+                .putBoolean(DOUBLE_TAP_COMMENT_REPLY, doubleTapCommentReply)
                 .putString(LAST_ANNOUNCEMENT_ID, lastAnnouncementId)
                 .putString(SEEN_ANNOUNCEMENT_IDS, seenAnnouncementIds)
                 .putString(SEARCH_HISTORY, searchHistory)
                 .putString(BLOCK_KEYWORDS, blockKeywords)
+                .putString(NATIVE_RND_CODE, nativeRndCode)
+                .putInt(NATIVE_RND_VERSION, nativeRndVersion)
                 .apply();
+    }
+
+    private static int clampPercent(int value) {
+        return Math.max(0, Math.min(30, value));
     }
 }

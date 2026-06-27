@@ -1,12 +1,17 @@
 package com.openzen.heyboxcommunity;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.LruCache;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
 
 import java.io.BufferedInputStream;
@@ -14,6 +19,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -43,6 +49,7 @@ final class ImageLoader {
             };
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(2);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final WeakHashMap<ImageView, ValueAnimator> REVEAL_ANIMATORS = new WeakHashMap<>();
 
     static void into(ImageView view, String sourceUrl, int targetPx) {
         into(view, sourceUrl, targetPx, null);
@@ -54,10 +61,38 @@ final class ImageLoader {
                 callback == null ? null : (success, bitmap) -> callback.onComplete(success));
     }
 
+    static void intoPlain(ImageView view, String sourceUrl, int targetPx) {
+        String url = thumbnailUrl(sourceUrl, targetPx);
+        loadInto(view, url, url, targetPx, true, false, null);
+    }
+
+    static void intoStable(ImageView view, String sourceUrl, int targetPx) {
+        String url = thumbnailUrl(sourceUrl, targetPx);
+        loadInto(view, url, url, targetPx, false, false, null);
+    }
+
     static void intoMeasured(ImageView view, String sourceUrl, int targetPx,
                              IntoBitmapCallback callback) {
         String url = thumbnailUrl(sourceUrl, targetPx);
-        loadInto(view, url, url, targetPx, true, callback);
+        loadInto(view, url, url, originalUrl(sourceUrl), targetPx, true, true, callback);
+    }
+
+    static void intoMeasuredStable(ImageView view, String sourceUrl, int targetPx,
+                                   IntoBitmapCallback callback) {
+        String url = thumbnailUrl(sourceUrl, targetPx);
+        loadInto(view, url, url, originalUrl(sourceUrl), targetPx, false, false, callback);
+    }
+
+    static void intoMeasuredRevealStable(ImageView view, String sourceUrl, int targetPx,
+                                         IntoBitmapCallback callback) {
+        String url = thumbnailUrl(sourceUrl, targetPx);
+        loadInto(view, url, url, originalUrl(sourceUrl), targetPx, false, true, callback);
+    }
+
+    static void intoOriginalMeasured(ImageView view, String sourceUrl, int targetPx,
+                                     IntoBitmapCallback callback) {
+        String url = originalUrl(sourceUrl);
+        loadInto(view, url, url, Math.min(targetPx, MAX_BITMAP_SIDE), true, false, callback);
     }
 
     static void intoOriginal(ImageView view, String sourceUrl, int targetPx) {
@@ -67,6 +102,18 @@ final class ImageLoader {
 
     private static void loadInto(ImageView view, String cacheKey, String url,
                                  int targetPx, boolean clearBefore, IntoBitmapCallback callback) {
+        loadInto(view, cacheKey, url, targetPx, clearBefore, true, callback);
+    }
+
+    private static void loadInto(ImageView view, String cacheKey, String url,
+                                 int targetPx, boolean clearBefore, boolean animate,
+                                 IntoBitmapCallback callback) {
+        loadInto(view, cacheKey, url, null, targetPx, clearBefore, animate, callback);
+    }
+
+    private static void loadInto(ImageView view, String cacheKey, String url, String fallbackUrl,
+                                 int targetPx, boolean clearBefore, boolean animate,
+                                 IntoBitmapCallback callback) {
         Object current = view.getTag();
         if (url.equals(current) && view.getDrawable() != null) {
             Bitmap cached = CACHE.get(url);
@@ -82,6 +129,7 @@ final class ImageLoader {
         if (cached == null) cached = CACHE.get(cacheKey);
         if (cached != null) {
             CACHE.put(url, cached);
+            clearReveal(view);
             view.setImageBitmap(cached);
             view.setAlpha(1f);
             view.setScaleX(1f);
@@ -89,14 +137,27 @@ final class ImageLoader {
             if (callback != null) callback.onComplete(true, cached);
             return;
         }
-        if (clearBefore && view.getDrawable() == null) view.setImageDrawable(null);
+        if (clearBefore) view.setImageDrawable(null);
         EXECUTOR.execute(() -> {
-            Bitmap bitmap = download(url, safeTarget(targetPx));
+            Bitmap downloaded = download(url, safeTarget(targetPx));
+            if (downloaded == null && fallbackUrl != null && !fallbackUrl.isEmpty()
+                    && !fallbackUrl.equals(url)) {
+                downloaded = download(fallbackUrl, safeTarget(targetPx));
+            }
+            final Bitmap bitmap = downloaded;
             MAIN.post(() -> {
                 if (url.equals(view.getTag())) {
                     if (bitmap != null) {
                         if (!cacheKey.isEmpty()) CACHE.put(cacheKey, bitmap);
-                        showLoaded(view, bitmap);
+                        if (animate) showLoaded(view, bitmap);
+                        else {
+                            view.animate().cancel();
+                            clearReveal(view);
+                            view.setAlpha(1f);
+                            view.setScaleX(1f);
+                            view.setScaleY(1f);
+                            view.setImageBitmap(bitmap);
+                        }
                     }
                     if (callback != null) callback.onComplete(bitmap != null, bitmap);
                 }
@@ -106,16 +167,61 @@ final class ImageLoader {
 
     private static void showLoaded(ImageView view, Bitmap bitmap) {
         view.animate().cancel();
-        view.setAlpha(0f);
-        view.setScaleX(0.985f);
-        view.setScaleY(0.985f);
+        clearReveal(view);
+        view.setAlpha(1f);
+        view.setScaleX(1f);
+        view.setScaleY(1f);
         view.setImageBitmap(bitmap);
-        view.animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(180)
-                .start();
+        Object marker = view.getTag();
+        if (view.getWidth() <= 0 || view.getHeight() <= 0) {
+            view.post(() -> {
+                if (marker == view.getTag()) startReveal(view);
+            });
+            return;
+        }
+        startReveal(view);
+    }
+
+    private static void startReveal(ImageView view) {
+        int width = view.getWidth();
+        int height = view.getHeight();
+        if (width <= 0 || height <= 0) {
+            view.setClipBounds(null);
+            return;
+        }
+        ValueAnimator animator = ValueAnimator.ofInt(0, height);
+        REVEAL_ANIMATORS.put(view, animator);
+        animator.setDuration(260);
+        animator.setInterpolator(new DecelerateInterpolator());
+        animator.addUpdateListener(animation -> {
+            int bottom = (Integer) animation.getAnimatedValue();
+            view.setClipBounds(new Rect(0, 0, width, bottom));
+        });
+        animator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (REVEAL_ANIMATORS.get(view) == animation) {
+                    REVEAL_ANIMATORS.remove(view);
+                    view.setClipBounds(null);
+                }
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                if (REVEAL_ANIMATORS.get(view) == animation) {
+                    REVEAL_ANIMATORS.remove(view);
+                    view.setClipBounds(null);
+                }
+            }
+        });
+        view.setClipBounds(new Rect(0, 0, width, 0));
+        animator.start();
+    }
+
+    private static void clearReveal(ImageView view) {
+        ValueAnimator animator = REVEAL_ANIMATORS.remove(view);
+        if (animator != null) animator.cancel();
+        view.setClipBounds(null);
     }
 
     static void load(String sourceUrl, int targetPx, Callback callback) {
@@ -153,7 +259,10 @@ final class ImageLoader {
     }
 
     static void cancel(ImageView view) {
-        if (view != null) view.setTag(null);
+        if (view != null) {
+            clearReveal(view);
+            view.setTag(null);
+        }
     }
 
     static void cancelTree(View view) {

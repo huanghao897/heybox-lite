@@ -13,7 +13,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 
 public final class DiagnosticsProvider extends ContentProvider {
-    static final String AUTHORITY = "com.openzen.heyboxcommunity.diagnostics";
+    static final String AUTHORITY = "com.ronan.heyboxlite.preview.diagnostics";
 
     @Override public boolean onCreate() {
         return true;

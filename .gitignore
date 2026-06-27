@@ -22,3 +22,24 @@ Thumbs.db
 # Captures and local secrets
 *.har
 *.log
+*logcat*.txt
+official-*.txt
+adb-*.txt
+frida-*.txt
+tombstone*.txt
+events-session*.txt
+native-sign*.txt
+*.pid
+*.apk
+*.xz
+
+# Root-level device/debug artifacts
+/adb-*.png
+/adb-*.xml
+/adb-*/
+/window*.xml
+/official-*
+/heybox-*.png
+/hot-main-list-sample.json
+/tmp-official-*
+/frida-*

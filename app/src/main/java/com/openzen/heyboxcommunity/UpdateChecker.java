@@ -10,6 +10,8 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URLEncoder;
 import java.net.URL;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -52,7 +54,8 @@ final class UpdateChecker {
     private static void request(String currentVersion, Callback callback) {
         HttpURLConnection connection = null;
         try {
-            URL url = new URL(BuildConfig.UPDATE_API_URL);
+            String endpoint = buildEndpoint(requireTrustedUrl(BuildConfig.UPDATE_API_URL));
+            URL url = new URL(endpoint);
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(4000);
             connection.setReadTimeout(5000);
@@ -70,12 +73,14 @@ final class UpdateChecker {
             String latest = latestVersion(payload);
             String title = firstNonEmpty(payload.optString("title"), payload.optString("name"));
             String notes = cleanNotes(notes(payload));
-            String releaseUrl = firstNonEmpty(payload.optString("releaseUrl"),
-                    payload.optString("html_url"), BuildConfig.UPDATE_FALLBACK_URL);
-            String downloadUrl = firstNonEmpty(payload.optString("downloadUrl"),
-                    payload.optString("apkUrl"), githubAssetUrl(payload));
+            String releaseUrl = trustedUrlOrEmpty(firstNonEmpty(payload.optString("releaseUrl"),
+                    payload.optString("html_url"), BuildConfig.UPDATE_FALLBACK_URL));
+            String downloadUrl = trustedUrlOrEmpty(firstNonEmpty(payload.optString("downloadUrl"),
+                    payload.optString("apkUrl"), payload.optString("latestApkUrl"),
+                    githubAssetUrl(payload)));
+            if (releaseUrl.isEmpty()) releaseUrl = requireTrustedUrl(BuildConfig.UPDATE_FALLBACK_URL);
 
-            Result result = new Result(compare(latest, normalize(currentVersion)) > 0,
+            Result result = new Result(isUpdateAvailable(payload, latest, currentVersion),
                     latest, title, notes, releaseUrl, downloadUrl);
             if (result.updateAvailable && downloadUrl.isEmpty()) {
                 throw new IllegalStateException("未找到匹配的 APK 资源，可打开备用地址手动下载。");
@@ -97,6 +102,25 @@ final class UpdateChecker {
         }
     }
 
+    private static String buildEndpoint(String endpoint) throws Exception {
+        String separator = endpoint.contains("?") ? "&" : "?";
+        return endpoint + separator
+                + "versionCode=" + BuildConfig.VERSION_CODE
+                + "&currentVersionCode=" + BuildConfig.VERSION_CODE
+                + "&versionName=" + URLEncoder.encode(BuildConfig.VERSION_NAME, "UTF-8")
+                + "&currentVersion=" + URLEncoder.encode(BuildConfig.VERSION_NAME, "UTF-8");
+    }
+
+    private static boolean isUpdateAvailable(JSONObject payload, String latest,
+                                             String currentVersion) {
+        if (payload.has("hasUpdate")) return payload.optBoolean("hasUpdate", false);
+        if (payload.has("updateAvailable")) return payload.optBoolean("updateAvailable", false);
+        int latestCode = payload.optInt("versionCode", 0);
+        if (latestCode <= 0) latestCode = payload.optInt("version_code", 0);
+        if (latestCode > 0) return latestCode > BuildConfig.VERSION_CODE;
+        return compare(latest, normalize(currentVersion)) > 0;
+    }
+
     private static String read(InputStream stream) throws Exception {
         if (stream == null) return "";
         StringBuilder result = new StringBuilder();
@@ -115,6 +139,11 @@ final class UpdateChecker {
     }
 
     private static String notes(JSONObject payload) {
+        String changelogText = payload.optString("changelog");
+        if (changelogText != null && !changelogText.trim().isEmpty()
+                && !"null".equalsIgnoreCase(changelogText.trim())) {
+            return changelogText;
+        }
         JSONArray changelog = payload.optJSONArray("changelog");
         if (changelog != null && changelog.length() > 0) {
             StringBuilder builder = new StringBuilder();
@@ -126,7 +155,8 @@ final class UpdateChecker {
             }
             if (builder.length() > 0) return builder.toString();
         }
-        return firstNonEmpty(payload.optString("notes"), payload.optString("body"));
+        return firstNonEmpty(payload.optString("notes"), payload.optString("body"),
+                payload.optString("content"), payload.optString("description"));
     }
 
     private static String githubAssetUrl(JSONObject payload) {
@@ -184,5 +214,54 @@ final class UpdateChecker {
             if (value != null && !value.trim().isEmpty()) return value.trim();
         }
         return "";
+    }
+
+    static String trustedUrlOrEmpty(String value) {
+        try {
+            return requireTrustedUrl(value);
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    static String requireTrustedUrl(String value) {
+        if (value == null) throw new IllegalArgumentException("empty url");
+        String clean = value.trim();
+        if (clean.isEmpty()) throw new IllegalArgumentException("empty url");
+        try {
+            URI uri = new URI(clean);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (host == null) {
+                throw new IllegalArgumentException("untrusted update url");
+            }
+            String normalizedHost = host.toLowerCase(Locale.US);
+            if ("https".equalsIgnoreCase(scheme) && isAllowedUpdateHost(normalizedHost)) {
+                return clean;
+            }
+            if ("http".equalsIgnoreCase(scheme) && isAllowedCleartextUpdateHost(normalizedHost)) {
+                return clean;
+            }
+        } catch (IllegalArgumentException error) {
+            throw error;
+        } catch (Exception ignored) {
+            // Fall through to the common error below.
+        }
+        throw new IllegalArgumentException("untrusted update url");
+    }
+
+    private static boolean isAllowedUpdateHost(String host) {
+        return "github.com".equals(host)
+                || "api.github.com".equals(host)
+                || "raw.githubusercontent.com".equals(host)
+                || "objects.githubusercontent.com".equals(host)
+                || "github-releases.githubusercontent.com".equals(host)
+                || "8.138.134.236".equals(host)
+                || "103.236.54.97".equals(host);
+    }
+
+    private static boolean isAllowedCleartextUpdateHost(String host) {
+        return "8.138.134.236".equals(host)
+                || "103.236.54.97".equals(host);
     }
 }

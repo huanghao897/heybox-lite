@@ -13,19 +13,19 @@ android {
     compileSdk 36
 
     defaultConfig {
-        applicationId "com.openzen.heyboxcommunity"
+        applicationId "com.ronan.heyboxlite.preview"
         minSdk 14
         targetSdk 35
-        versionCode 181
-        versionName "1.81"
+        versionCode 205
+        versionName "2.0.2"
         buildConfigField "String", "RELEASE_CERT_SHA256",
                 "\"7b163883d570408505d820174fb9565471efde8d863508fd390e4f4eb1645eb8\""
         buildConfigField "String", "UPDATE_API_URL",
-                "\"http://103.236.54.97/api/heybox-lite/update\""
+                "\"http://8.138.134.236/api/heybox-lite/update\""
         buildConfigField "String", "UPDATE_FALLBACK_URL",
-                "\"http://103.236.54.97/\""
+                "\"http://8.138.134.236/\""
         buildConfigField "String", "ANNOUNCEMENT_API_URL",
-                "\"http://103.236.54.97/api/heybox-lite/announcement\""
+                "\"http://8.138.134.236/api/heybox-lite/announcement\""
     }
 
     buildFeatures {
@@ -34,7 +34,16 @@ android {
 
     signingConfigs {
         release {
-            if (signingPropertiesFile.exists()) {
+            def envStoreFile = System.getenv("HEYBOX_RELEASE_STORE_FILE")
+            def envStorePassword = System.getenv("HEYBOX_RELEASE_STORE_PASSWORD")
+            def envKeyAlias = System.getenv("HEYBOX_RELEASE_KEY_ALIAS")
+            def envKeyPassword = System.getenv("HEYBOX_RELEASE_KEY_PASSWORD")
+            if (envStoreFile && envStorePassword && envKeyAlias && envKeyPassword) {
+                storeFile file(envStoreFile)
+                storePassword envStorePassword
+                keyAlias envKeyAlias
+                keyPassword envKeyPassword
+            } else if (signingPropertiesFile.exists()) {
                 storeFile rootProject.file(signingProperties["storeFile"])
                 storePassword signingProperties["storePassword"]
                 keyAlias signingProperties["keyAlias"]
@@ -48,7 +57,11 @@ android {
             debuggable = false
             minifyEnabled = true
             shrinkResources = true
-            signingConfig = signingConfigs.release
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig = signingConfigs.release
+            } else if (android.defaultConfig.applicationId.endsWith(".preview")) {
+                signingConfig = signingConfigs.debug
+            }
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }
@@ -57,6 +70,48 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+}
+
+tasks.register("verifyTextEncoding") {
+    group = "verification"
+    description = "Fail the build when source files contain common mojibake markers."
+
+    doLast {
+        def roots = [
+                file("src/main/java"),
+                file("src/main/res")
+        ]
+        def extensions = [".java", ".xml", ".txt", ".json", ".properties"]
+        def markers = [
+                "\uFFFD", "锟斤拷", "鍥", "瑙", "鐢", "绛", "缇", "閬", "杩",
+                "Ã", "Â", "æ", "ç", "å"
+        ]
+        def offenders = []
+        roots.findAll { it.exists() }.each { root ->
+            fileTree(root).matching {
+                include extensions.collect { "**/*${it}" }
+            }.files.each { source ->
+                String text = source.getText("UTF-8")
+                if (markers.any { text.contains(it) }) {
+                    offenders << rootProject.relativePath(source)
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    "Detected possible garbled text in:\n"
+                            + offenders.unique().sort().join("\n")
+                            + "\nPlease save files as UTF-8 and fix the displayed text before building.")
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    dependsOn("verifyTextEncoding")
 }
 
 dependencies {
@@ -70,7 +125,7 @@ tasks.register("copyReleaseApkToDist") {
     doLast {
         File source = layout.buildDirectory.file("outputs/apk/release/app-release.apk").get().asFile
         if (!source.exists()) {
-            throw new GradleException("Release APK not found: " + source)
+            throw new GradleException("Signed release APK not found: " + source)
         }
 
         File distDir = rootProject.file("dist")

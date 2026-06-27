@@ -18,14 +18,22 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 final class LocalCache {
     private static final String PREFS = "heybox_local_cache";
     private static final String FEED_ITEMS = "feed_items";
     private static final String FEED_SAVED_AT = "feed_saved_at";
     private static final String SCROLL_PREFIX = "scroll_";
+    private static final String OFFICIAL_NATIVE_DISABLED_CODE = "official_native_disabled_code";
+    private static final String OFFICIAL_NATIVE_DISABLED_REASON = "official_native_disabled_reason";
+    private static final int OFFICIAL_NATIVE_ATTEMPT_REVISION = 34;
     private static final int MAX_DETAIL_FILES = 80;
     private static final int MAX_LOG_BYTES = 96 * 1024;
+    private static final Object SESSION_LOCK = new Object();
+    private static String processSessionId;
+    private static long processSessionStartedAt;
+    private static boolean processSessionLogPrepared;
 
     private final Context context;
     private final SharedPreferences prefs;
@@ -33,6 +41,8 @@ final class LocalCache {
     private final File detailDir;
     private final File savedDir;
     private final File diagnosticsDir;
+    private final String sessionId;
+    private final long sessionStartedAt;
 
     LocalCache(Context context) {
         this.context = context.getApplicationContext();
@@ -45,6 +55,19 @@ final class LocalCache {
         detailDir.mkdirs();
         savedDir.mkdirs();
         diagnosticsDir.mkdirs();
+        synchronized (SESSION_LOCK) {
+            if (processSessionId == null || processSessionId.isEmpty()) {
+                processSessionId = UUID.randomUUID().toString();
+                processSessionStartedAt = System.currentTimeMillis();
+                processSessionLogPrepared = false;
+            }
+            this.sessionId = processSessionId;
+            this.sessionStartedAt = processSessionStartedAt;
+            if (!processSessionLogPrepared) {
+                resetSessionLogLocked();
+                processSessionLogPrepared = true;
+            }
+        }
     }
 
     void saveFeed(List<FeedItem> items) {
@@ -107,17 +130,101 @@ final class LocalCache {
 
     void log(String message) {
         String line = timestamp() + "  " + (message == null ? "" : message) + "\n";
-        File file = logFile();
-        String previous = read(file);
-        String next = previous + line;
-        if (next.length() > MAX_LOG_BYTES) {
-            next = next.substring(Math.max(0, next.length() - MAX_LOG_BYTES));
+        synchronized (SESSION_LOCK) {
+            File file = logFile();
+            String previous = read(file);
+            String next = previous + line;
+            if (next.length() > MAX_LOG_BYTES) {
+                next = next.substring(Math.max(0, next.length() - MAX_LOG_BYTES));
+            }
+            write(file, next);
         }
-        write(file, next);
     }
 
     String recentLog() {
-        return read(logFile());
+        synchronized (SESSION_LOCK) {
+            return read(logFile());
+        }
+    }
+
+    String previousLog() {
+        synchronized (SESSION_LOCK) {
+            return read(previousLogFile());
+        }
+    }
+
+    String crashLog() {
+        synchronized (SESSION_LOCK) {
+            return read(crashLogFile());
+        }
+    }
+
+    String previousCrashLog() {
+        synchronized (SESSION_LOCK) {
+            return read(previousCrashLogFile());
+        }
+    }
+
+    String nativeSignLog() {
+        synchronized (SESSION_LOCK) {
+            return read(nativeSignLogFile());
+        }
+    }
+
+    static void appendNativeSignLog(Context context, String message) {
+        if (context == null) return;
+        synchronized (SESSION_LOCK) {
+            Context app = context.getApplicationContext();
+            File external = app.getExternalFilesDir(null);
+            File dir = new File(external == null
+                    ? new File(app.getFilesDir(), "offline-cache") : external, "diagnostics");
+            File file = new File(dir, "native-sign.log");
+            String line = timestampNow() + "  " + (message == null ? "" : message) + "\n";
+            String previous = readStatic(file);
+            String next = previous + line;
+            if (next.length() > MAX_LOG_BYTES) {
+                next = next.substring(Math.max(0, next.length() - MAX_LOG_BYTES));
+            }
+            writeStatic(file, next);
+        }
+    }
+
+    static boolean isOfficialNativeDisabled(Context context) {
+        if (context == null) return false;
+        SharedPreferences prefs = context.getApplicationContext()
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        return prefs.getInt(OFFICIAL_NATIVE_DISABLED_CODE, -1) == officialNativeAttemptCode();
+    }
+
+    static String officialNativeDisabledReason(Context context) {
+        if (context == null) return "";
+        SharedPreferences prefs = context.getApplicationContext()
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        return prefs.getString(OFFICIAL_NATIVE_DISABLED_REASON, "");
+    }
+
+    static void disableOfficialNative(Context context, String reason) {
+        if (context == null) return;
+        context.getApplicationContext()
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putInt(OFFICIAL_NATIVE_DISABLED_CODE, officialNativeAttemptCode())
+                .putString(OFFICIAL_NATIVE_DISABLED_REASON, reason == null ? "" : reason)
+                .apply();
+        appendNativeSignLog(context, "official native disabled for this version: "
+                + (reason == null ? "" : reason));
+    }
+
+    private static int officialNativeAttemptCode() {
+        return BuildConfig.VERSION_CODE * 100 + OFFICIAL_NATIVE_ATTEMPT_REVISION;
+    }
+
+    String sessionId() {
+        return sessionId;
+    }
+
+    long sessionStartedAt() {
+        return sessionStartedAt;
     }
 
     File writeDiagnostics(String text) {
@@ -155,7 +262,36 @@ final class LocalCache {
     }
 
     private File logFile() {
-        return new File(diagnosticsDir, "events.log");
+        return new File(diagnosticsDir, "events-session.log");
+    }
+
+    private File previousLogFile() {
+        return new File(diagnosticsDir, "events-previous-session.log");
+    }
+
+    private File crashLogFile() {
+        return new File(diagnosticsDir, "crash-latest.log");
+    }
+
+    private File previousCrashLogFile() {
+        return new File(diagnosticsDir, "crash-previous.log");
+    }
+
+    private File nativeSignLogFile() {
+        return new File(diagnosticsDir, "native-sign.log");
+    }
+
+    private void resetSessionLogLocked() {
+        String previous = read(logFile());
+        if (!previous.trim().isEmpty()) {
+            write(previousLogFile(), previous);
+        }
+        write(logFile(), "sessionId: " + sessionId + "\n"
+                + "sessionStartedLocal: " + timestamp(sessionStartedAt) + "\n"
+                + "sessionStartedMillis: " + sessionStartedAt + "\n");
+        write(nativeSignLogFile(), "sessionId: " + sessionId + "\n"
+                + "sessionStartedLocal: " + timestamp(sessionStartedAt) + "\n"
+                + "sessionStartedMillis: " + sessionStartedAt + "\n");
     }
 
     private File file(File dir, String name) {
@@ -169,6 +305,10 @@ final class LocalCache {
     }
 
     private void write(File file, String value) {
+        writeStatic(file, value);
+    }
+
+    private static void writeStatic(File file, String value) {
         try {
             File parent = file.getParentFile();
             if (parent != null) parent.mkdirs();
@@ -180,6 +320,10 @@ final class LocalCache {
     }
 
     private String read(File file) {
+        return readStatic(file);
+    }
+
+    private static String readStatic(File file) {
         if (file == null || !file.exists()) return "";
         try (FileInputStream input = new FileInputStream(file);
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -219,7 +363,15 @@ final class LocalCache {
     }
 
     private String timestamp() {
+        return timestamp(System.currentTimeMillis());
+    }
+
+    private static String timestampNow() {
         return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date());
+    }
+
+    private String timestamp(long millis) {
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date(millis));
     }
 
     private String timestampFile() {
