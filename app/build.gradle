@@ -7,6 +7,7 @@ def signingPropertiesFile = rootProject.file("release-signing.properties")
 if (signingPropertiesFile.exists()) {
     signingProperties.load(new FileInputStream(signingPropertiesFile))
 }
+def previewReleaseCertSha256 = "fbd5642c3c1b5882545f6f1227cf2dc38a54bcd18609203935eedbef408d1382"
 
 android {
     namespace "com.openzen.heyboxcommunity"
@@ -147,8 +148,75 @@ tasks.register("copyReleaseApkToDist") {
     }
 }
 
+tasks.register("verifyReleaseApkSignature") {
+    group = "verification"
+    description = "Verify that the release APK keeps the expected signing certificate."
+
+    doLast {
+        File apk = layout.buildDirectory.file("outputs/apk/release/app-release.apk").get().asFile
+        if (!apk.exists()) {
+            throw new GradleException("Release APK not found: " + apk)
+        }
+
+        String expected = android.defaultConfig.applicationId.endsWith(".preview")
+                ? previewReleaseCertSha256
+                : android.defaultConfig.buildConfigFields["RELEASE_CERT_SHA256"].value.replace("\"", "")
+        String actual = certificateSha256(apk)
+        if (!expected.equalsIgnoreCase(actual)) {
+            throw new GradleException(
+                    "Unexpected release signing certificate.\n"
+                            + "Expected: " + expected + "\n"
+                            + "Actual:   " + actual + "\n"
+                            + "Refusing to publish an APK with a different signature.")
+        }
+        println "Release APK signing certificate verified: " + actual
+    }
+}
+
 afterEvaluate {
+    tasks.named("copyReleaseApkToDist") {
+        dependsOn("verifyReleaseApkSignature")
+    }
     tasks.named("assembleRelease") {
         finalizedBy("copyReleaseApkToDist")
     }
+}
+
+private String certificateSha256(File apk) {
+    File buildTools = new File(androidSdkDirectory(), "build-tools")
+    File signer = buildTools.listFiles()
+            .sort { a, b -> b.name <=> a.name }
+            .collect { new File(it, isWindows() ? "apksigner.bat" : "apksigner") }
+            .find { it.exists() }
+    if (signer == null) {
+        throw new GradleException("apksigner not found under " + buildTools)
+    }
+    ByteArrayOutputStream output = new ByteArrayOutputStream()
+    project.exec {
+        commandLine signer.absolutePath, "verify", "--print-certs", apk.absolutePath
+        standardOutput = output
+    }
+    String text = output.toString("UTF-8")
+    def matcher = text =~ /Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]+)/
+    if (!matcher.find()) {
+        throw new GradleException("No signing certificate found in APK")
+    }
+    return matcher.group(1).toLowerCase(Locale.US)
+}
+
+private static File androidSdkDirectory() {
+    String sdk = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+    if (sdk) return new File(sdk)
+    Properties local = new Properties()
+    File localProperties = new File("local.properties")
+    if (localProperties.exists()) {
+        localProperties.withInputStream { local.load(it) }
+        String path = local.getProperty("sdk.dir")
+        if (path) return new File(path)
+    }
+    throw new GradleException("Android SDK path is not configured")
+}
+
+private static boolean isWindows() {
+    return System.getProperty("os.name").toLowerCase(Locale.US).contains("windows")
 }
