@@ -2,6 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <queries>
+        <package android:name="com.max.xiaoheihe" />
+        <provider android:authorities="com.max.xiaoheihe.statusprovider" />
+    </queries>
 
     <application
         android:allowBackup="false"
@@ -30,9 +39,18 @@
             android:name=".ImageViewerActivity"
             android:exported="false"
             android:theme="@style/ImageViewerTheme" />
+        <service
+            android:name=".NativeSignService"
+            android:exported="false"
+            android:process=":native_signer" />
         <provider
             android:name=".DiagnosticsProvider"
-            android:authorities="com.openzen.heyboxcommunity.diagnostics"
+            android:authorities="com.ronan.heyboxlite.preview.diagnostics"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <provider
+            android:name=".UpdateApkProvider"
+            android:authorities="com.ronan.heyboxlite.preview.updateapk"
             android:exported="false"
             android:grantUriPermissions="true" />
     </application>

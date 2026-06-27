@@ -3,6 +3,8 @@ package com.openzen.heyboxcommunity;
 import java.net.HttpURLConnection;
 
 final class HeaderProvider {
+    private static final String OFFICIAL_REFERER = "http://api.maxjia.com/";
+
     private HeaderProvider() {}
 
     static void apply(HttpURLConnection connection, SessionStore session) {
@@ -22,10 +24,64 @@ final class HeaderProvider {
 
     static void applyOfficialMobile(HttpURLConnection connection, SessionStore session,
                                     boolean addClientKey) {
-        connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("Referer", "http://api.maxjia.com/");
+        connection.setRequestProperty("Referer", OFFICIAL_REFERER);
         connection.setRequestProperty("User-Agent", mobileUserAgent());
         String cookie = session.officialMobileCookie(addClientKey);
+        if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
+    }
+
+    static void applySignInOfficialMobile(HttpURLConnection connection, SessionStore session,
+                                          boolean addClientKey) {
+        connection.setRequestProperty("Referer", OFFICIAL_REFERER);
+        connection.setRequestProperty("User-Agent", mobileUserAgent());
+        String cookie = session.signInOfficialMobileCookie(addClientKey);
+        if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
+    }
+
+    static void applyOfficialRequest(HttpURLConnection connection, SessionStore session,
+                                     boolean includeClientKeys) {
+        connection.setRequestProperty("Referer", OFFICIAL_REFERER);
+        connection.setRequestProperty("User-Agent", mobileUserAgent());
+        String cookie = session.officialBridgeCookie(includeClientKeys);
+        if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
+    }
+
+    static void applySignInOfficialRequest(HttpURLConnection connection, SessionStore session,
+                                           boolean includeClientKeys) {
+        connection.setRequestProperty("Referer", OFFICIAL_REFERER);
+        connection.setRequestProperty("User-Agent", mobileUserAgent());
+        String cookie = session.signInOfficialBridgeCookie(includeClientKeys);
+        if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
+    }
+
+    static void applyOfficialMinimalRequest(HttpURLConnection connection, SessionStore session,
+                                            boolean includeClientKeys) {
+        connection.setRequestProperty("Referer", OFFICIAL_REFERER);
+        connection.setRequestProperty("User-Agent", mobileUserAgent());
+        String cookie = session.officialMinimalCookie(includeClientKeys);
+        if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
+    }
+
+    static void applySignInOfficialMinimalRequest(HttpURLConnection connection, SessionStore session,
+                                                  boolean includeClientKeys) {
+        connection.setRequestProperty("Referer", OFFICIAL_REFERER);
+        connection.setRequestProperty("User-Agent", mobileUserAgent());
+        String cookie = session.signInOfficialMinimalCookie(includeClientKeys);
+        if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
+    }
+
+    static void applyOfficialMobileRawCookie(HttpURLConnection connection, SessionStore session) {
+        connection.setRequestProperty("Referer", OFFICIAL_REFERER);
+        connection.setRequestProperty("User-Agent", mobileUserAgent());
+        String cookie = session.getCookie();
+        if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
+    }
+
+    static void applySignInOfficialMobileRawCookie(HttpURLConnection connection,
+                                                   SessionStore session) {
+        connection.setRequestProperty("Referer", OFFICIAL_REFERER);
+        connection.setRequestProperty("User-Agent", mobileUserAgent());
+        String cookie = session.signInOfficialRawCookie();
         if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
     }
 

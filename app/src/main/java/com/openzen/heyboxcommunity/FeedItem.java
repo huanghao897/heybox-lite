@@ -15,26 +15,37 @@ final class FeedItem {
     final String title;
     final String description;
     final String author;
+    final String authorId;
+    final String authorAvatar;
+    final String topicName;
     final String image;
     final String[] images;
     final int comments;
+    final int clicks;
     int likes;
     final boolean article;
+    final boolean pinned;
     boolean liked;
 
     private FeedItem(String id, String title, String description, String author,
-                     String image, int comments, int likes, boolean article, boolean liked,
-                     String hsrc, String[] images) {
+                     String authorId, String authorAvatar,
+                     String topicName, String image, int comments, int clicks, int likes, boolean article, boolean liked,
+                     boolean pinned, String hsrc, String[] images) {
         this.id = id;
         this.hsrc = hsrc;
         this.title = title;
         this.description = description;
         this.author = author;
+        this.authorId = authorId == null ? "" : authorId;
+        this.authorAvatar = authorAvatar == null ? "" : authorAvatar;
+        this.topicName = topicName == null ? "" : topicName;
         this.image = image;
         this.images = images == null ? new String[0] : images;
         this.comments = comments;
+        this.clicks = clicks;
         this.likes = likes;
         this.article = article;
+        this.pinned = pinned;
         this.liked = liked;
     }
 
@@ -59,14 +70,21 @@ final class FeedItem {
             author = first(json.optString("author_name"), json.optString("username"),
                     json.optString("nickname"), json.optString("author"));
         }
+        String authorId = first(userId(user), userId(json));
+        String authorAvatar = user == null ? "" : user.optString("avatar", user.optString("avartar"));
+        String topicName = topicName(json);
         return new FeedItem(
                 json.optString("linkid", json.optString("link_id")),
                 title,
                 description,
                 author,
+                authorId,
+                authorAvatar,
+                topicName,
                 image,
                 firstInt(json, "comment_num", "comment_count", "reply_num",
                         "reply_count", "comments"),
+                firstInt(json, "click", "click_num", "read_num", "view_num", "views"),
                 json.optInt("link_award_num",
                         json.optInt("like_num",
                                 json.optInt("award_num",
@@ -75,6 +93,7 @@ final class FeedItem {
                 isArticle(json),
                 json.optBoolean("is_award", json.optBoolean("liked",
                         json.optBoolean("is_liked", json.optInt("has_award") == 1))),
+                pinned(json),
                 hsrc(json),
                 detailImages
         );
@@ -98,12 +117,23 @@ final class FeedItem {
                 json.put("imgs", values);
             }
             json.put("comment_num", comments);
+            json.put("click", clicks);
             json.put("link_award_num", likes);
             json.put("use_concept_type", article ? 0 : 1);
+            json.put("is_top", pinned);
             json.put("is_liked", liked);
             JSONObject user = new JSONObject();
             user.put("username", author);
+            user.put("userid", authorId);
+            user.put("avatar", authorAvatar);
             json.put("user", user);
+            if (!topicName.isEmpty()) {
+                JSONArray topics = new JSONArray();
+                JSONObject topic = new JSONObject();
+                topic.put("name", topicName);
+                topics.put(topic);
+                json.put("topics", topics);
+            }
         } catch (Exception ignored) {
         }
         return json;
@@ -140,6 +170,32 @@ final class FeedItem {
             if (!value.isEmpty()) return value;
         }
         return "";
+    }
+
+    private static boolean pinned(JSONObject json) {
+        return json.optBoolean("is_top", json.optBoolean("top",
+                json.optBoolean("is_sticky", json.optInt("sticky") == 1)))
+                || json.optInt("is_top", 0) == 1
+                || json.optInt("is_sticky", 0) == 1;
+    }
+
+    private static String userId(JSONObject json) {
+        if (json == null) return "";
+        return first(json.optString("userid"), json.optString("user_id"),
+                json.optString("heybox_id"), json.optString("heyboxid"),
+                json.optString("uid"), json.optString("account_id"), json.optString("id"));
+    }
+
+    private static String topicName(JSONObject json) {
+        JSONArray topics = json.optJSONArray("topics");
+        if (topics != null && topics.length() > 0) {
+            JSONObject topic = topics.optJSONObject(0);
+            if (topic != null) return topic.optString("name");
+        }
+        JSONObject topic = json.optJSONObject("topic");
+        if (topic != null) return topic.optString("name");
+        return first(json.optString("topic_name"), json.optString("tag_name"),
+                json.optString("category"));
     }
 
     private static String[] images(JSONArray primary, JSONArray secondary, String... extra) {

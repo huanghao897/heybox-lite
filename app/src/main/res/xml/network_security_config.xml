@@ -4,6 +4,7 @@
     <base-config cleartextTrafficPermitted="false" />
     <!-- Temporary self-hosted update server. Remove this after binding a HTTPS domain. -->
     <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">8.138.134.236</domain>
         <domain includeSubdomains="false">103.236.54.97</domain>
     </domain-config>
 </network-security-config>

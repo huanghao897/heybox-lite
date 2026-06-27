@@ -22,6 +22,7 @@ public final class SplashActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        CrashReporter.install(this);
         session = new SessionStore(this);
         if (!session.splashEnabled()) {
             openMain();

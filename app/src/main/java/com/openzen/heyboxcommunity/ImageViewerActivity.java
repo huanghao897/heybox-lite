@@ -1,6 +1,7 @@
 package com.openzen.heyboxcommunity;
 
 import android.app.Activity;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -27,6 +28,13 @@ public final class ImageViewerActivity extends Activity {
     private boolean closing;
     private boolean destroyed;
     private SessionStore session;
+    private static String pendingPreviewUrl;
+    private static Bitmap pendingPreviewBitmap;
+
+    static void preparePreview(String sourceUrl, Bitmap bitmap) {
+        pendingPreviewUrl = sourceUrl;
+        pendingPreviewBitmap = bitmap;
+    }
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -68,7 +76,9 @@ public final class ImageViewerActivity extends Activity {
         root.addView(progress, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
         setContentView(root);
         prepareEnterAnimation();
-        loadPreview();
+        if (!showPreparedPreview()) {
+            loadPreview();
+        }
     }
 
     private void prepareEnterAnimation() {
@@ -107,6 +117,26 @@ public final class ImageViewerActivity extends Activity {
                     .start();
             progress.postDelayed(() -> progress.setVisibility(View.GONE), 100);
         });
+    }
+
+    private boolean showPreparedPreview() {
+        Bitmap bitmap = null;
+        if (url != null && url.equals(pendingPreviewUrl)) {
+            bitmap = pendingPreviewBitmap;
+        }
+        pendingPreviewUrl = null;
+        pendingPreviewBitmap = null;
+        if (bitmap == null || bitmap.isRecycled()) {
+            return false;
+        }
+        progress.setVisibility(View.GONE);
+        image.animate().cancel();
+        image.setAlpha(1f);
+        image.setScaleX(1f);
+        image.setScaleY(1f);
+        image.setImageBitmap(bitmap);
+        image.post(image::fitImage);
+        return true;
     }
 
     private void loadOriginal() {
