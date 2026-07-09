@@ -11,6 +11,15 @@
 
 需要 JDK 17 + Android SDK（`local.properties` 指定路径）。
 
+## 修改与提交规则
+
+- 每次更新项目或修改代码后，都必须构建签名 Release APK，确认构建和签名校验通过。
+- 构建成功后，只提交本次相关改动，并推送到当前 GitHub 分支。
+- 默认只推送代码提交，不创建 GitHub Release，也不上传 APK 附件；只有用户明确要求发布版本时才操作 Release。
+- 如果构建失败，不得推送未验证的代码；应先修复或明确说明阻塞原因。
+- 只有用户明确说“先别传”或“不用上传”时，才暂停 GitHub 提交与推送。
+- 发布到应用更新服务器仍需用户明确授权，不能因为已推送 GitHub 而自动发布。
+
 ## 关键模块（`app/src/main/java/com/openzen/heyboxcommunity/`）
 
 | 类 | 职责 |
