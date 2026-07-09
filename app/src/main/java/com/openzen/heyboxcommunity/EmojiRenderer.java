@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -30,6 +31,12 @@ final class EmojiRenderer {
             };
     private static final Set<String> LOADING = new HashSet<>();
     private static final Map<String, List<Waiter>> WAITERS = new HashMap<>();
+    private static final Map<TextView, Decorator> DECORATORS = new WeakHashMap<>();
+
+    /** 在每次 setText 前对最终 Spannable 追加额外样式（颜色等），emoji 异步刷新时也会重新应用。 */
+    interface Decorator {
+        void apply(Spannable span);
+    }
 
     private EmojiRenderer() {}
 
@@ -44,10 +51,19 @@ final class EmojiRenderer {
     }
 
     static void set(TextView view, String source) {
-        set(view, source, false);
+        set(view, source, false, null);
     }
 
     static void set(TextView view, String source, boolean darkMode) {
+        set(view, source, darkMode, null);
+    }
+
+    static void set(TextView view, String source, boolean darkMode, Decorator decorator) {
+        if (decorator != null) {
+            DECORATORS.put(view, decorator);
+        } else {
+            DECORATORS.remove(view);
+        }
         String value = source == null ? "" : source;
         view.setTag(value);
         render(view, value, darkMode);
@@ -97,6 +113,13 @@ final class EmojiRenderer {
                     LOADING.remove(cacheKey);
                     notifyWaiters(cacheKey, loaded != null);
                 });
+            }
+        }
+        Decorator decorator = DECORATORS.get(view);
+        if (decorator != null) {
+            try {
+                decorator.apply(styled);
+            } catch (RuntimeException ignored) {
             }
         }
         view.setText(styled);

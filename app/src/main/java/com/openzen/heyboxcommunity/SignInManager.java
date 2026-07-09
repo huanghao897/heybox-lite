@@ -20,6 +20,9 @@ import java.util.Locale;
 import java.util.Map;
 
 final class SignInManager {
+    // 签到功能已暂时禁用（服务端风控，第三方客户端无法通过签名校验）。改回 true 即可恢复全部逻辑。
+    private static final boolean ENABLED = false;
+
     interface Callback {
         void onResult(Result result);
     }
@@ -54,6 +57,12 @@ final class SignInManager {
             return new Result(false, false, false, false,
                     "\u767b\u5f55\u540e\u53ef\u4ee5\u7b7e\u5230",
                     "\u626b\u7801\u767b\u5f55\u540e\u53ef\u4f7f\u7528\u6bcf\u65e5\u7b7e\u5230");
+        }
+
+        static Result disabled() {
+            return new Result(true, false, false, false,
+                    "\u7b7e\u5230\u5df2\u6682\u505c",
+                    "\u7b7e\u5230\u529f\u80fd\u5df2\u6682\u65f6\u5173\u95ed");
         }
 
         static Result pending() {
@@ -199,6 +208,7 @@ final class SignInManager {
     }
 
     Result currentState() {
+        if (!ENABLED) return Result.disabled();
         if (!session.isLoggedIn()) return Result.loggedOut();
         if (inFlight) return Result.running();
         String today = today();
@@ -212,6 +222,10 @@ final class SignInManager {
     }
 
     void autoSignInIfNeeded(Callback callback) {
+        if (!ENABLED) {
+            dispatch(callback, Result.disabled());
+            return;
+        }
         if (!session.isLoggedIn()) {
             dispatch(callback, Result.loggedOut());
             return;
@@ -226,6 +240,10 @@ final class SignInManager {
     }
 
     void signIn(Callback callback) {
+        if (!ENABLED) {
+            dispatch(callback, Result.disabled());
+            return;
+        }
         if (!session.isLoggedIn()) {
             dispatch(callback, Result.loggedOut());
             return;

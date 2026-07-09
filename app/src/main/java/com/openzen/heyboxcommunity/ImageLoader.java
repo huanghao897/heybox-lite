@@ -258,6 +258,51 @@ final class ImageLoader {
         });
     }
 
+    /** 详情页动图：拉原始 GIF 字节，后台解码，成功后替换已显示的静态缩略图。 */
+    static void intoGif(ImageView view, String sourceUrl) {
+        String url = originalUrl(sourceUrl);
+        if (view == null || url.isEmpty()) return;
+        final String tag = "gif:" + url;
+        view.setTag(tag);
+        EXECUTOR.execute(() -> {
+            byte[] bytes = downloadBytes(url, GifSupport.MAX_GIF_BYTES);
+            android.graphics.drawable.Drawable drawable = GifSupport.decode(bytes);
+            if (drawable == null) return;
+            MAIN.post(() -> {
+                if (tag.equals(view.getTag())) {
+                    GifSupport.apply(view, drawable);
+                }
+            });
+        });
+    }
+
+    private static byte[] downloadBytes(String url, int maxBytes) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(15000);
+            connection.setUseCaches(true);
+            HeaderProvider.applyPublic(connection);
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) return null;
+            try (InputStream input = new BufferedInputStream(connection.getInputStream());
+                 ByteArrayOutputStream output = new ByteArrayOutputStream(64 * 1024)) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = input.read(buffer)) >= 0) {
+                    if (output.size() + count > maxBytes) return null;
+                    output.write(buffer, 0, count);
+                }
+                return output.toByteArray();
+            }
+        } catch (Throwable ignored) {
+            return null;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
     static void cancel(ImageView view) {
         if (view != null) {
             clearReveal(view);

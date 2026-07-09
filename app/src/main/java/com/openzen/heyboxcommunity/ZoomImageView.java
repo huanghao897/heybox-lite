@@ -12,6 +12,8 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
 
 final class ZoomImageView extends ImageView {
+    private static final float MIN_DOUBLE_TAP_ZOOM = 2.35f;
+    private static final float MAX_ZOOM = 12f;
     private final Matrix matrix = new Matrix();
     private final float[] startValues = new float[9];
     private final float[] endValues = new float[9];
@@ -41,7 +43,7 @@ final class ZoomImageView extends ImageView {
                     @Override public boolean onScale(ScaleGestureDetector detector) {
                         cancelMatrixAnimation();
                         float factor = detector.getScaleFactor();
-                        float next = Math.max(1f, Math.min(6f, scale * factor));
+                        float next = Math.max(1f, Math.min(MAX_ZOOM, scale * factor));
                         factor = next / scale;
                         scale = next;
                         tapZoomLevel = 0;
@@ -154,24 +156,35 @@ final class ZoomImageView extends ImageView {
     }
 
     private void toggleDoubleTap(float x, float y) {
+        float widthZoom = widthFillZoom();
         if (tapZoomLevel <= 0 || scale <= 1.05f) {
             tapZoomLevel = 1;
-            animateZoomTo(2.35f, x, y);
+            animateZoomTo(Math.max(MIN_DOUBLE_TAP_ZOOM, widthZoom), x, y);
         } else if (tapZoomLevel == 1) {
             tapZoomLevel = 2;
-            animateZoomTo(4.0f, x, y);
+            animateZoomTo(Math.max(4.0f, Math.min(MAX_ZOOM, widthZoom * 1.55f)), x, y);
         } else {
             animateFitImage();
         }
     }
 
     private void animateZoomTo(float target, float x, float y) {
-        target = Math.max(1f, Math.min(6f, target));
+        target = Math.max(1f, Math.min(MAX_ZOOM, target));
         Matrix targetMatrix = new Matrix(matrix);
         float factor = target / Math.max(0.001f, scale);
         targetMatrix.postScale(factor, factor, x, y);
         correctBounds(targetMatrix);
         animateMatrixTo(targetMatrix, target, 220);
+    }
+
+    private float widthFillZoom() {
+        Drawable drawable = getDrawable();
+        if (drawable == null || getWidth() == 0 || getHeight() == 0) return MIN_DOUBLE_TAP_ZOOM;
+        float sx = getWidth() / (float) drawable.getIntrinsicWidth();
+        float sy = getHeight() / (float) drawable.getIntrinsicHeight();
+        float fit = Math.min(sx, sy);
+        if (fit <= 0f) return MIN_DOUBLE_TAP_ZOOM;
+        return Math.min(MAX_ZOOM, sx / fit);
     }
 
     private void animateFitImage() {

@@ -59,6 +59,7 @@ final class SessionStore {
     private static final String SHELL_BACK_SWIPE = "shell_back_swipe";
     private static final String REMEMBER_DETAIL_SCROLL = "remember_detail_scroll";
     private static final String DOUBLE_TAP_COMMENT_REPLY = "double_tap_comment_reply";
+    private static final String PLAY_GIF = "play_gif";
     private static final String LAST_ANNOUNCEMENT_ID = "last_announcement_id";
     private static final String SEEN_ANNOUNCEMENT_IDS = "seen_announcement_ids";
     private static final String LAST_SIGN_ATTEMPT_DATE = "last_sign_attempt_date";
@@ -335,6 +336,14 @@ final class SessionStore {
 
     void setRememberDetailScroll(boolean value) {
         prefs.edit().putBoolean(REMEMBER_DETAIL_SCROLL, value).apply();
+    }
+
+    boolean playGif() {
+        return prefs.getBoolean(PLAY_GIF, true);
+    }
+
+    void setPlayGif(boolean value) {
+        prefs.edit().putBoolean(PLAY_GIF, value).apply();
     }
 
     boolean doubleTapCommentReply() {
@@ -1674,6 +1683,7 @@ final class SessionStore {
         boolean shellBackSwipe = shellBackSwipe();
         boolean rememberDetailScroll = rememberDetailScroll();
         boolean doubleTapCommentReply = doubleTapCommentReply();
+        boolean playGif = playGif();
         String lastAnnouncementId = lastAnnouncementId();
         String seenAnnouncementIds = prefs.getString(SEEN_ANNOUNCEMENT_IDS, "[]");
         String searchHistory = prefs.getString(SEARCH_HISTORY, "[]");
@@ -1705,6 +1715,7 @@ final class SessionStore {
                 .putBoolean(SHELL_BACK_SWIPE, shellBackSwipe)
                 .putBoolean(REMEMBER_DETAIL_SCROLL, rememberDetailScroll)
                 .putBoolean(DOUBLE_TAP_COMMENT_REPLY, doubleTapCommentReply)
+                .putBoolean(PLAY_GIF, playGif)
                 .putString(LAST_ANNOUNCEMENT_ID, lastAnnouncementId)
                 .putString(SEEN_ANNOUNCEMENT_IDS, seenAnnouncementIds)
                 .putString(SEARCH_HISTORY, searchHistory)

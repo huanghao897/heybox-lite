@@ -18,16 +18,28 @@ import java.util.regex.Pattern;
 
 final class RichContent {
     static final class Block {
+        static final int TEXT = 0;
+        static final int IMAGE = 1;
+        static final int HEADING = 2;
+        static final int CAPTION = 3;
+        static final int QUOTE = 4;
+
         final boolean image;
+        final int kind;
         final String value;
 
-        private Block(boolean image, String value) {
-            this.image = image;
+        private Block(int kind, String value) {
+            this.kind = kind;
+            this.image = kind == IMAGE;
             this.value = value;
         }
     }
 
     private static final Pattern IMAGE = Pattern.compile("(?is)<img\\b[^>]*>");
+    private static final Pattern HEADING_TAG = Pattern.compile(
+            "(?is)<(h[1-6]|figcaption)\\b[^>]*>(.*?)</\\1>");
+    private static final Pattern BLOCKQUOTE_TAG = Pattern.compile(
+            "(?is)<blockquote\\b[^>]*>(.*?)</blockquote>");
     private static final Pattern INLINE_EMOJI = Pattern.compile(
             "(?is)<a\\b([^>]*(?:icon[-_]?url|icon[-_]?dark[-_]?url)[^>]*)>(.*?)</a>");
     private static final Pattern INLINE_IMAGE_EMOJI = Pattern.compile("(?is)<img\\b([^>]*)>");
@@ -252,10 +264,23 @@ final class RichContent {
         String type = item.optString("type").toLowerCase(Locale.ROOT);
         if (isImageType(type) || type.contains("video")) {
             addImage(result.blocks, result.imageUrls, detailImage(item));
+            addCaption(result.blocks, imageCaption(item));
             return;
         }
         String text = firstText(item);
         boolean hasText = !text.isEmpty();
+        if (hasText && isCaptionType(type)) {
+            addCaption(result.blocks, text);
+            return;
+        }
+        if (hasText && isHeadingType(type)) {
+            addHeading(result.blocks, text);
+            return;
+        }
+        if (hasText && isQuoteType(type)) {
+            addQuote(result.blocks, text);
+            return;
+        }
         if (!text.isEmpty()) {
             addArticleHtml(result.blocks, result.imageUrls, text);
         }
@@ -304,7 +329,7 @@ final class RichContent {
         for (Block block : result.blocks) {
             if (!block.image && value.equals(block.value)) return;
         }
-        result.blocks.add(new Block(false, value));
+        result.blocks.add(new Block(Block.TEXT, value));
     }
 
     private static int imageCount(List<Block> blocks) {
@@ -394,11 +419,24 @@ final class RichContent {
         String image = firstImage(item);
         if (!image.isEmpty() && (isImageType(type) || !hasReadableContent(item))) {
             addImage(blocks, imageUrls, image);
+            if (isImageType(type)) addCaption(blocks, imageCaption(item));
         }
 
         if (!isImageType(type)) {
             String text = firstText(item);
             if (!text.isEmpty()) {
+                if (isCaptionType(type)) {
+                    addCaption(blocks, text);
+                    return;
+                }
+                if (isHeadingType(type)) {
+                    addHeading(blocks, text);
+                    return;
+                }
+                if (isQuoteType(type)) {
+                    addQuote(blocks, text);
+                    return;
+                }
                 addHtml(blocks, imageUrls, text);
                 if (isSelfContainedTextType(type)) return;
             }
@@ -461,6 +499,28 @@ final class RichContent {
     private static boolean isImageType(String type) {
         return type.contains("img") || type.contains("image")
                 || type.contains("picture") || type.contains("photo");
+    }
+
+    private static boolean isHeadingType(String type) {
+        if (type == null || type.isEmpty()) return false;
+        return type.matches("h[1-6]") || type.contains("header")
+                || type.contains("heading");
+    }
+
+    private static boolean isCaptionType(String type) {
+        if (type == null || type.isEmpty()) return false;
+        return "h4".equals(type) || type.contains("caption");
+    }
+
+    private static boolean isQuoteType(String type) {
+        return type != null && type.contains("quote");
+    }
+
+    private static String imageCaption(JSONObject item) {
+        String caption = first(item.optString("caption"), item.optString("desc"),
+                item.optString("description"), item.optString("title"));
+        if (looksImageUrl(caption)) return "";
+        return caption;
     }
 
     private static boolean hasReadableContent(JSONObject item) {
@@ -629,6 +689,41 @@ final class RichContent {
         return value.toString().trim();
     }
 
+    static String commentText(String... sources) {
+        String best = "";
+        int bestScore = -1;
+        for (String source : sources) {
+            if (source == null || source.isEmpty()) continue;
+            String value = inlineText(source);
+            int score = inlineScore(value);
+            if (score > bestScore) {
+                best = value;
+                bestScore = score;
+            }
+        }
+        return best;
+    }
+
+    private static String inlineText(String source) {
+        List<Block> blocks = parse(source, null);
+        StringBuilder value = new StringBuilder();
+        for (Block block : blocks) {
+            if (block.image || block.value.isEmpty()) continue;
+            if (value.length() > 0) value.append(' ');
+            value.append(block.value);
+        }
+        return value.toString()
+                .replace('\u00a0', ' ')
+                .replaceAll("[ \\t]*\\n[ \\t]*", " ")
+                .replaceAll("\\s{2,}", " ")
+                .trim();
+    }
+
+    private static int inlineScore(String value) {
+        if (value == null || value.isEmpty()) return 0;
+        return value.replaceAll("\\s+", "").length();
+    }
+
     private static void addHtml(List<Block> blocks, Set<String> imageUrls, String html) {
         addArticleHtml(blocks, imageUrls, html);
     }
@@ -640,11 +735,71 @@ final class RichContent {
         Matcher matcher = IMAGE.matcher(html);
         int start = 0;
         while (matcher.find()) {
-            addArticleText(blocks, html.substring(start, matcher.start()));
+            addArticleSegment(blocks, html.substring(start, matcher.start()));
             addImage(blocks, imageUrls, imageFromTag(matcher.group()));
+            addCaption(blocks, captionFromTag(matcher.group()));
+            start = matcher.end();
+        }
+        addArticleSegment(blocks, html.substring(start));
+    }
+
+    /** 先拆 blockquote（引用块），再拆 h1-h6 / figcaption，保留正文层级。 */
+    private static void addArticleSegment(List<Block> blocks, String html) {
+        if (html == null || html.isEmpty()) return;
+        Matcher matcher = BLOCKQUOTE_TAG.matcher(html);
+        int start = 0;
+        while (matcher.find()) {
+            addHeadingSegment(blocks, html.substring(start, matcher.start()));
+            addQuote(blocks, matcher.group(1));
+            start = matcher.end();
+        }
+        addHeadingSegment(blocks, html.substring(start));
+    }
+
+    private static void addHeadingSegment(List<Block> blocks, String html) {
+        if (html == null || html.isEmpty()) return;
+        Matcher matcher = HEADING_TAG.matcher(html);
+        int start = 0;
+        while (matcher.find()) {
+            addArticleText(blocks, html.substring(start, matcher.start()));
+            String tag = matcher.group(1).toLowerCase(Locale.ROOT);
+            // 官方编辑器：h2/h3 是标题，h4 是图注（hb_editor.css 里 h4 = 12px 灰色居中）
+            if (tag.startsWith("f") || "h4".equals(tag)) {
+                addCaption(blocks, matcher.group(2));
+            } else {
+                addHeading(blocks, matcher.group(2));
+            }
             start = matcher.end();
         }
         addArticleText(blocks, html.substring(start));
+    }
+
+    /** 引用块：保留内部换行，剥掉其余标签，渲染端显示为左竖线灰字。 */
+    private static void addQuote(List<Block> blocks, String html) {
+        if (html == null || html.isEmpty()) return;
+        String value = html
+                .replaceAll("(?is)<br\\s*/?>", "\n")
+                .replaceAll("(?is)<li\\b[^>]*>", "\n- ")
+                .replaceAll("(?is)</(?:p|div|li|h[1-6])>", "\n")
+                .replaceAll("(?is)<[^>]+>", "");
+        value = decodeHtml(value)
+                .replace('\u00a0', ' ')
+                .replaceAll("[ \\t]+\\n", "\n")
+                .replaceAll("\\n{3,}", "\n\n")
+                .trim();
+        if (value.isEmpty() || isStructuredNoise(value)) return;
+        blocks.add(new Block(Block.QUOTE, value));
+    }
+
+    /** 图片标签上直接携带的图注（编辑器写入的描述属性）。 */
+    private static String captionFromTag(String tag) {
+        if (tag == null || tag.isEmpty()) return "";
+        String attrs = tag.replaceFirst("(?is)^\\s*<img\\b", "")
+                .replaceFirst("(?is)/?>\\s*$", "");
+        return first(attribute(attrs, "desc"),
+                attribute(attrs, "data-desc"),
+                attribute(attrs, "data-caption"),
+                attribute(attrs, "caption"));
     }
 
     private static String imageFromTag(String tag) {
@@ -711,14 +866,22 @@ final class RichContent {
         while (matcher.find()) {
             String attrs = matcher.group(1);
             EmojiUrls urls = extractEmojiUrls(attrs);
-            String label = first(attribute(attrs, "alt"), attribute(attrs, "data-name"),
-                    attribute(attrs, "title"), attribute(attrs, "name"));
+            String label = first(attribute(attrs, "alt"),
+                    attribute(attrs, "data-name"),
+                    attribute(attrs, "data-code"),
+                    attribute(attrs, "data-key"),
+                    attribute(attrs, "data-emoji-name"),
+                    attribute(attrs, "data-emoji"),
+                    attribute(attrs, "title"),
+                    attribute(attrs, "name"));
             String light = first(urls.light, attribute(attrs, "src"),
-                    attribute(attrs, "data-src"), attribute(attrs, "data-original"));
+                    attribute(attrs, "data-src"), attribute(attrs, "data-original"),
+                    imageFromTag("<img " + attrs + ">"));
             if (!looksEmojiUrl(light) && !looksEmojiUrl(urls.dark)
                     && !attrs.toLowerCase(Locale.ROOT).contains("emoji")) {
                 continue;
             }
+            if (label.isEmpty()) label = emojiLabelFromUrl(light);
             if (label.isEmpty()) label = "表情";
             String token = token(decodeHtml(label));
             EmojiStore.register(token, light, urls.dark);
@@ -765,7 +928,23 @@ final class RichContent {
         if (url == null) return false;
         String value = url.toLowerCase(Locale.ROOT);
         return value.contains("/emoji/") || value.contains("emoji")
-                || value.contains("icon-url");
+                || value.contains("icon-url")
+                || value.contains("cube_")
+                || value.contains("heygirl_");
+    }
+
+    private static String emojiLabelFromUrl(String url) {
+        if (url == null || url.isEmpty()) return "";
+        String value = decodeHtml(url).replace("\\/", "/");
+        int query = value.indexOf('?');
+        if (query >= 0) value = value.substring(0, query);
+        int hash = value.indexOf('#');
+        if (hash >= 0) value = value.substring(0, hash);
+        int slash = value.lastIndexOf('/');
+        String name = slash >= 0 ? value.substring(slash + 1) : value;
+        int dot = name.lastIndexOf('.');
+        if (dot > 0) name = name.substring(0, dot);
+        return name.matches("(?i)(cube|heygirl)[-_].+") ? name : "";
     }
 
     private static boolean looksImageUrl(String url) {
@@ -823,7 +1002,32 @@ final class RichContent {
         for (Block block : blocks) {
             if (!block.image && value.equals(block.value)) return;
         }
-        blocks.add(new Block(false, value));
+        blocks.add(new Block(Block.TEXT, value));
+    }
+
+    /** 文章小标题（h1-h6 / 富文本 header 类型），渲染端会加粗放大显示。 */
+    private static void addHeading(List<Block> blocks, String value) {
+        String clean = cleanInlineText(value);
+        if (clean.isEmpty() || clean.length() > 64 || isStructuredNoise(clean)) return;
+        blocks.add(new Block(Block.HEADING, clean));
+    }
+
+    /** 图片图注，渲染端以灰色小字居中显示在图片下方。官方图注可以很长（几百字的翻译），不能按长度丢弃。 */
+    private static void addCaption(List<Block> blocks, String value) {
+        String clean = cleanInlineText(value);
+        if (clean.isEmpty() || isStructuredNoise(clean)) return;
+        if (looksImageUrl(clean)) return;
+        // 异常超长的当正文段落兜底，正常长图注保留图注样式
+        blocks.add(new Block(clean.length() > 800 ? Block.TEXT : Block.CAPTION, clean));
+    }
+
+    private static String cleanInlineText(String value) {
+        if (value == null || value.isEmpty()) return "";
+        String stripped = value.replaceAll("(?is)<[^>]+>", " ");
+        return decodeHtml(stripped)
+                .replace('\u00a0', ' ')
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 
     private static String stripStructuredNoise(String source) {
@@ -876,7 +1080,7 @@ final class RichContent {
         if (value.regionMatches(true, 0, "http:", 0, 5)) value = "https:" + value.substring(5);
         if (value.regionMatches(true, 0, "imgheybox", 0, 9)) value = "https://" + value;
         if (!value.startsWith("https://")) return;
-        if (imageUrls.add(imageKey(value))) blocks.add(new Block(true, value));
+        if (imageUrls.add(imageKey(value))) blocks.add(new Block(Block.IMAGE, value));
     }
 
     private static String imageKey(String value) {
@@ -1014,7 +1218,10 @@ final class RichContent {
                 out.append("IMG key=").append(brief(imageKey(block.value), 180))
                         .append(" url=").append(brief(block.value, 220));
             } else {
-                out.append("TXT len=")
+                String label = block.kind == Block.HEADING ? "HEAD"
+                        : block.kind == Block.CAPTION ? "CAP"
+                        : block.kind == Block.QUOTE ? "QUOTE" : "TXT";
+                out.append(label).append(" len=")
                         .append(block.value == null ? 0 : block.value.length())
                         .append(" value=").append(brief(block.value, 220));
             }
