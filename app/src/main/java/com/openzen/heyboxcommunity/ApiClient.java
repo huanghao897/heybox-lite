@@ -74,13 +74,6 @@ final class ApiClient {
     }
 
     void getSigned(String path, Map<String, String> extra,
-                   HeyboxSigner.Algorithm algorithm, boolean mobile, Callback callback) {
-        if (closed) return;
-        executor.execute(() -> request("GET", path, extra, null, algorithm,
-                mobile ? RequestProfile.MOBILE : RequestProfile.WEB, callback));
-    }
-
-    void getSigned(String path, Map<String, String> extra,
                    HeyboxSigner.Algorithm algorithm, RequestProfile profile,
                    Callback callback) {
         if (closed) return;
@@ -634,10 +627,6 @@ final class ApiClient {
         return EndpointProvider.baseUrl();
     }
 
-    private Map<String, String> baseParams(RequestProfile profile) {
-        return baseParams(profile, false);
-    }
-
     private Map<String, String> baseParams(RequestProfile profile,
                                            boolean useSignInCredentials) {
         if (profile == RequestProfile.MOBILE) return session.mobileCommonParams();
@@ -659,10 +648,6 @@ final class ApiClient {
             return session.officialMobileParams(false);
         }
         return session.commonParams();
-    }
-
-    private void applyHeaders(HttpURLConnection connection, RequestProfile profile) {
-        applyHeaders(connection, profile, false);
     }
 
     private void applyHeaders(HttpURLConnection connection, RequestProfile profile,
@@ -758,15 +743,6 @@ final class ApiClient {
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_RAW_COOKIE;
-    }
-
-    private static boolean isV3SignSubmitPath(String path) {
-        if (path == null) return false;
-        String clean = normalizePath(path);
-        while (clean.endsWith("/") && clean.length() > 1) {
-            clean = clean.substring(0, clean.length() - 1);
-        }
-        return EndpointProvider.taskSignV3().equals(clean);
     }
 
     private static boolean isNativeSecurityParam(String key) {

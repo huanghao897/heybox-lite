@@ -104,12 +104,10 @@ final class FeedAdapter extends BaseAdapter {
             titleLine.setGravity(Gravity.CENTER_VERTICAL);
             copy.addView(titleLine, new LinearLayout.LayoutParams(-1, -1));
 
-            TextView badge = label(9, contrast(secondaryColor));
-            badge.setText("文");
+            TextView badge = label(9, tokens.text);
             badge.setGravity(Gravity.CENTER);
             badge.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             badge.setText("文章");
-            badge.setTextColor(tokens.text);
             Compat.setBackground(badge, UiComponents.softPill(context, tokens, uiScale));
             LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(34), dp(20));
             badgeParams.rightMargin = dp(6);

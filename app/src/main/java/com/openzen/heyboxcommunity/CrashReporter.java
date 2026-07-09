@@ -77,7 +77,9 @@ final class CrashReporter {
             return value.length() > MAX_BYTES ? value.substring(value.length() - MAX_BYTES) : value;
         }
         if (bytes.length <= MAX_BYTES) return value;
-        int start = Math.max(0, value.length() - MAX_BYTES);
+        // 按字节预算换算保留的字符数（UTF-8 中文最多 3 字节/字），避免截完仍超预算
+        int keepChars = Math.max(1, MAX_BYTES / 3);
+        int start = Math.max(0, value.length() - keepChars);
         return value.substring(start);
     }
 

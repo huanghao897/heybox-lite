@@ -8073,123 +8073,88 @@ public final class MainActivity extends Activity {
         HttpURLConnection connection = null;
         File output = null;
         try {
-            try {
-                URL target = new URL(url);
-                HttpURLConnection connection2 = (HttpURLConnection) target.openConnection();
-                connection2.setConnectTimeout(5000);
-                connection2.setReadTimeout(12000);
-                connection2.setRequestProperty("Accept", "application/vnd.android.package-archive,*/*");
-                connection2.setRequestProperty("User-Agent", "heybox-Lite/" + appVersion());
-                int status = connection2.getResponseCode();
-                if (status < 200 || status >= 300) {
-                    throw new IllegalStateException("下载失败，HTTP " + status);
-                }
-                int length = connection2.getContentLength();
-                File dir = new File(getCacheDir(), "updates");
-                if (!dir.exists() && !dir.mkdirs()) {
-                    throw new IllegalStateException("无法创建更新缓存目录");
-                }
-                File output2 = new File(dir, "heybox-Lite-update-" + appVersion() + "-" + System.currentTimeMillis() + ".apk");
-                long written = 0;
-                byte[] buffer = new byte[16384];
-                InputStream in = connection2.getInputStream();
-                try {
-                    FileOutputStream out = new FileOutputStream(output2);
-                    while (true) {
-                        try {
-                            int count = in.read(buffer);
-                            if (count < 0) {
-                                break;
+            connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(12000);
+            connection.setRequestProperty("Accept", "application/vnd.android.package-archive,*/*");
+            connection.setRequestProperty("User-Agent", "heybox-Lite/" + appVersion());
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) {
+                throw new IllegalStateException("下载失败，HTTP " + status);
+            }
+            int length = connection.getContentLength();
+            File dir = new File(getCacheDir(), "updates");
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw new IllegalStateException("无法创建更新缓存目录");
+            }
+            output = new File(dir, "heybox-Lite-update-" + appVersion() + "-" + System.currentTimeMillis() + ".apk");
+            long written = 0;
+            byte[] buffer = new byte[16384];
+            try (InputStream in = connection.getInputStream();
+                 FileOutputStream out = new FileOutputStream(output)) {
+                int count;
+                while ((count = in.read(buffer)) >= 0) {
+                    out.write(buffer, 0, count);
+                    written += count;
+                    if (length > 0) {
+                        int percent = Math.max(0, Math.min(100, (int) ((written * 100) / length)));
+                        this.handler.post(() -> {
+                            if (isFinishing()) {
+                                return;
                             }
-                            out.write(buffer, 0, count);
-                            written += (long) count;
-                            if (length > 0) {
-                                int percent = Math.max(0, Math.min(100, (int) ((written * 100) / ((long) length))));
-                                this.handler.post(() -> {
-                                    if (isFinishing()) {
-                                        return;
-                                    }
-                                    progress.setIndeterminate(false);
-                                    progress.setProgress(percent);
-                                    state.setText("已下载" + percent + "%");
-                                });
-                            } else {
-                                this.handler.post(() -> {
-                                    if (isFinishing()) {
-                                        return;
-                                    }
-                                    progress.setIndeterminate(true);
-                                    state.setText("正在下载...");
-                                });
+                            progress.setIndeterminate(false);
+                            progress.setProgress(percent);
+                            state.setText("已下载" + percent + "%");
+                        });
+                    } else {
+                        this.handler.post(() -> {
+                            if (isFinishing()) {
+                                return;
                             }
-                        } catch (Throwable th) {
-                            try {
-                                out.close();
-                            } catch (Throwable th2) {
-                                th.addSuppressed(th2);
-                            }
-                            throw th;
-                        }
+                            progress.setIndeterminate(true);
+                            state.setText("正在下载...");
+                        });
                     }
-                    out.close();
-                    if (in != null) {
-                        in.close();
-                    }
-                    if (written < 131072) {
-                        throw new IllegalStateException("下载内容异常，未得到有效 APK");
-                    }
-                    this.handler.post(() -> {
-                        if (isFinishing()) {
-                            return;
-                        }
-                        progress.setIndeterminate(false);
-                        progress.setProgress(100);
-                        state.setText("下载完成，正在打开安装器...");
-                        if (dialog != null && dialog.isShowing()) {
-                            dialog.dismiss();
-                        }
-                        installDownloadedUpdate(output2);
-                    });
-                    if (connection2 != null) {
-                        connection2.disconnect();
-                    }
-                } catch (Throwable th3) {
-                    if (in != null) {
-                        try {
-                            in.close();
-                        } catch (Throwable th4) {
-                            th3.addSuppressed(th4);
-                        }
-                    }
-                    throw th3;
-                }
-            } catch (Exception error) {
-                if (0 != 0 && output.exists()) {
-                    output.delete();
-                }
-                String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-                if (this.localCache != null) {
-                    this.localCache.log("update download failed: " + message);
-                }
-                this.handler.post(() -> {
-                    if (dialog != null && dialog.isShowing()) {
-                        dialog.dismiss();
-                    }
-                    if (!isFinishing()) {
-                        showLiteDialog("下载失败", message, "打开浏览器下载", () -> {
-                            openUrl(url);
-                        }, "知道了", null, null, null);
-                    }
-                });
-                if (0 != 0) {
-                    connection.disconnect();
                 }
             }
-        } catch (Throwable th5) {
-            if (0 != 0) {
+            if (written < 131072) {
+                throw new IllegalStateException("下载内容异常，未得到有效 APK");
+            }
+            final File ready = output;
+            this.handler.post(() -> {
+                if (isFinishing()) {
+                    return;
+                }
+                progress.setIndeterminate(false);
+                progress.setProgress(100);
+                state.setText("下载完成，正在打开安装器...");
+                if (dialog != null && dialog.isShowing()) {
+                    dialog.dismiss();
+                }
+                installDownloadedUpdate(ready);
+            });
+        } catch (Exception error) {
+            if (output != null && output.exists()) {
+                output.delete();
+            }
+            String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+            if (this.localCache != null) {
+                this.localCache.log("update download failed: " + message);
+            }
+            this.handler.post(() -> {
+                if (dialog != null && dialog.isShowing()) {
+                    dialog.dismiss();
+                }
+                if (!isFinishing()) {
+                    showLiteDialog("下载失败", message, "打开浏览器下载", () -> {
+                        openUrl(url);
+                    }, "知道了", null, null, null);
+                }
+            });
+        } finally {
+            if (connection != null) {
                 connection.disconnect();
             }
-            throw th5;
         }
     }
 
