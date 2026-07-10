@@ -4,33 +4,18 @@ import android.view.View;
 import android.view.ViewGroup;
 
 /**
- * 全局动效等级与通用动画工具。
- * 等级由 SessionStore 持久化（首启按设备内存一次性判定），启动时注入到这里；
- * 所有动画只操作 alpha/translation/scale 这类 GPU 友好属性，关闭挡位时立即到位。
+ * 通用动画工具。动效恒为完整挡（三挡调节已移除），
+ * 所有动画只操作 alpha/translation/scale 这类 GPU 友好属性。
  */
 final class Motions {
-    static final int LEVEL_OFF = 0;
-    static final int LEVEL_LITE = 1;
-    static final int LEVEL_FULL = 2;
-
-    private static volatile int level = LEVEL_LITE;
-
     private Motions() {}
 
-    static void setLevel(int value) {
-        level = Math.max(LEVEL_OFF, Math.min(LEVEL_FULL, value));
-    }
-
-    static int level() {
-        return level;
-    }
-
     static boolean off() {
-        return level == LEVEL_OFF;
+        return false;
     }
 
     static boolean full() {
-        return level == LEVEL_FULL;
+        return true;
     }
 
     /** 取消 View 上的属性动画并复位常用变换，防止复用时状态污染。 */

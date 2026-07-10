@@ -170,6 +170,7 @@ public final class MainActivity extends Activity {
     private final Map<View, Integer> searchBarHeights = new HashMap();
     private final Map<View, Boolean> searchBarStates = new HashMap();
     private boolean pendingBackTransition;
+    private boolean pendingLateralPush;
     private String lastSearchKeyword = "";
     private final List<FeedItem> searchResultItems = new ArrayList();
     private int searchOffset;
@@ -268,7 +269,6 @@ public final class MainActivity extends Activity {
                 this.localCache.log(message);
             }
         });
-        Motions.setLevel(this.session.motionLevel());
         this.writeTokenProvider = new WriteTokenProvider(this, this.session, this.api);
         this.signInManager = new SignInManager(this.session, this.api, this.writeTokenProvider, message2 -> {
             if (this.localCache != null) {
@@ -1249,6 +1249,7 @@ public final class MainActivity extends Activity {
             if (this.dragChild == null) {
                 return false;
             }
+            MainActivity.this.ensurePageBackdrop(this.dragChild);
             installShellPreview(targetScreenKeyForGesture());
             cancelSwipeAnimator();
             MainActivity.this.shellAnimating = true;
@@ -1291,6 +1292,7 @@ public final class MainActivity extends Activity {
                 }
                 this.previewChild = image;
             }
+            MainActivity.this.ensurePageBackdrop(this.previewChild);
             this.previewChild.setTranslationX(this.gestureDirection * Math.max(MODE_TOP_LEVEL, getWidth()));
             super.addView(this.previewChild, 0, new FrameLayout.LayoutParams(-1, -1));
         }
@@ -1809,9 +1811,10 @@ public final class MainActivity extends Activity {
     }
 
     private void showFeed() {
-        // 底部导航从“我的”切回社区：feed 在左侧，用返回方向的转场
+        // 底部导航从“我的”切回社区：feed 在左侧，双页整体向右平移
         if ("profile".equals(this.screen)) {
             this.pendingBackTransition = true;
+            this.pendingLateralPush = true;
         }
         activate("feed");
         this.title.setText("社区");
@@ -6046,6 +6049,10 @@ public final class MainActivity extends Activity {
     }
 
     private void showProfile() {
+        // 底部导航从社区切到“我的”：双页整体向左平移
+        if ("feed".equals(this.screen)) {
+            this.pendingLateralPush = true;
+        }
         if (!this.session.isLoggedIn()) {
             showGuestProfile();
             return;
@@ -6284,7 +6291,7 @@ public final class MainActivity extends Activity {
         return scroll;
     }
 
-    private void addSettingEntry(LinearLayout parent, String name, String description, int icon, Runnable action) {
+    private TextView addSettingEntry(LinearLayout parent, String name, String description, int icon, Runnable action) {
         if (parent.getChildCount() > 0) {
             View divider = new View(this);
             divider.setBackgroundColor(this.session.darkMode()
@@ -6313,9 +6320,12 @@ public final class MainActivity extends Activity {
         TextView titleView = text(name, 14.5f, this.TEXT);
         titleView.setTypeface(appRegularTypeface(), 1);
         copy.addView(titleView);
-        TextView descView = text(description, 11.0f, this.MUTED);
-        descView.setPadding(0, dp(1), 0, 0);
-        copy.addView(descView);
+        TextView descView = null;
+        if (description != null && !description.isEmpty()) {
+            descView = text(description, 11.0f, this.MUTED);
+            descView.setPadding(0, dp(1), 0, 0);
+            copy.addView(descView);
+        }
         if ("阅读时长".equals(name)) {
             this.readingTodayView = descView;
         }
@@ -6332,6 +6342,7 @@ public final class MainActivity extends Activity {
             runWithPressFeedback(view, action);
         });
         parent.addView(row);
+        return descView;
     }
 
     private int settingIconColor(String name, int icon) {
@@ -6343,6 +6354,11 @@ public final class MainActivity extends Activity {
         if (icon == R.drawable.il_bookmark) return Color.rgb(221, 91, 133);
         if (icon == R.drawable.il_history) return Color.rgb(168, 96, 232);
         if (icon == R.drawable.il_calendar) return Color.rgb(228, 88, 88);
+        if (icon == R.drawable.il_eye) return Color.rgb(47, 169, 196);
+        if (icon == R.drawable.il_cleanup) return Color.rgb(245, 154, 35);
+        if (icon == R.drawable.il_update) return Color.rgb(61, 123, 255);
+        if (icon == R.drawable.il_qr) return Color.rgb(47, 181, 102);
+        if (icon == R.drawable.ic_logout) return Color.rgb(228, 88, 88);
         return Color.rgb(124, 131, 140);
     }
 
@@ -7406,50 +7422,6 @@ public final class MainActivity extends Activity {
         return page;
     }
 
-    /** 动画效果三挡选择：关闭 / 精简 / 完整。切换立即生效并结算进行中的转场。 */
-    private View motionLevelRow() {
-        LinearLayout wrap = new LinearLayout(this);
-        wrap.setOrientation(1);
-        TextView label = text("动画效果", 12.0f, this.MUTED);
-        wrap.addView(label);
-        LinearLayout seg = new LinearLayout(this);
-        seg.setOrientation(0);
-        final String[] names = {"关闭", "精简", "完整"};
-        final Button[] buttons = new Button[names.length];
-        final Runnable refresh = () -> {
-            int current = this.session.motionLevel();
-            ThemeTokens tokens = this.themeTokens != null ? this.themeTokens
-                    : ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY);
-            float scale = this.session.uiScale() / 100.0f;
-            for (int i = 0; i < buttons.length; i++) {
-                boolean selected = i == current;
-                Compat.setBackground(buttons[i], selected
-                        ? UiComponents.primaryButton(this, tokens, scale)
-                        : UiComponents.ghostButton(this, tokens, scale));
-                buttons[i].setTextColor(selected ? tokens.onPrimary : tokens.text);
-            }
-        };
-        for (int i = 0; i < names.length; i++) {
-            final int level = i;
-            Button item = secondaryButton(names[i], 0);
-            buttons[i] = item;
-            item.setOnClickListener(view -> {
-                this.session.setMotionLevel(level);
-                Motions.setLevel(level);
-                cancelAllMotion();
-                refresh.run();
-            });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(34), 1.0f);
-            if (i > 0) {
-                params.leftMargin = dp(6);
-            }
-            seg.addView(item, params);
-        }
-        refresh.run();
-        addTop(wrap, seg, 5);
-        return wrap;
-    }
-
     private View settingsTopCard(String pageTitle) {
         LinearLayout box = new LinearLayout(this);
         box.setGravity(16);
@@ -7473,12 +7445,12 @@ public final class MainActivity extends Activity {
         addTop(panel, toggleRow("夜间模式", dark[0], value -> {
             dark[0] = value;
         }), 0);
-        Button fullPreview = secondaryButton("查看界面预览", R.drawable.il_eye);
-        fullPreview.setOnClickListener(view -> {
-            showDisplayPreview();
-        });
-        addTop(panel, fullPreview, 6);
-        LinearLayout livePreview = vertical(this.PANEL);
+        addSettingEntry(panel, "查看界面预览", "在真实布局里检查当前参数", R.drawable.il_eye,
+                this::showDisplayPreview);
+        LinearLayout livePreview = vertical(0);
+        livePreview.setPadding(dp(10), dp(8), dp(10), dp(8));
+        Compat.setBackground(livePreview, roundStroke(this.themeTokens.panelElevated, 12,
+                this.themeTokens.hairline, 1));
         TextView previewTitle = text("显示效果预览", 14.0f, this.TEXT);
         previewTitle.setTypeface(appRegularTypeface(), 1);
         TextView previewBody = text("帖子正文会跟随下方设置实时变化。\n第二段用于预览段落间距", 13.0f, this.TEXT);
@@ -7499,7 +7471,6 @@ public final class MainActivity extends Activity {
         ScaleControl padding = settingSlider(panel, "左右边距", "dp", 0, NAV_BAR_HEIGHT_DP, this.session.pagePadding(), value4 -> {
             updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, -1, -1, value4);
         });
-        addTop(panel, motionLevelRow(), REPLY_PAGE_SIZE);
         linearLayout.addView(panel);
         panel = card();
         TextView roundTitle = text("手表屏幕适配", 13.0f, this.TEXT);
@@ -7608,8 +7579,7 @@ public final class MainActivity extends Activity {
             toast("显示设置已保存");
         });
         addTop(panel, save, 10);
-        Button reset = secondaryButton("恢复默认设置", R.drawable.il_refresh);
-        reset.setOnClickListener(view3 -> {
+        addSettingEntry(panel, "恢复默认设置", "主题、字体、间距与界面大小全部还原", R.drawable.il_refresh, () -> {
             showLiteDialog("恢复默认显示设置", "主题、字体、间距和界面大小都将恢复为默认值", "恢复", () -> {
                 this.session.resetDisplaySettings();
                 applyPalette();
@@ -7619,7 +7589,6 @@ public final class MainActivity extends Activity {
                 toast("已恢复默认显示设置");
             }, "取消", null, null, null);
         });
-        addTop(panel, reset, 7);
         linearLayout.addView(panel);
     }
 
@@ -7745,7 +7714,7 @@ public final class MainActivity extends Activity {
         SessionStore sessionStore3 = this.session;
         Objects.requireNonNull(sessionStore3);
         addTop(panel, toggleRow("记住帖子阅读位置", zRememberDetailScroll, sessionStore3::setRememberDetailScroll), 0);
-        addTop(panel, toggleRow("自动清理", "30 天", "关",
+        addTop(panel, toggleRow("自动清理", "开启后自动清理 30 天前的离线缓存",
                 this.session.autoOfflineCleanup(), value -> {
                     this.session.setAutoOfflineCleanup(value);
                     if (value) pruneOfflineCache(null);
@@ -7767,48 +7736,44 @@ public final class MainActivity extends Activity {
             toast("内容过滤已保存");
         });
         addTop(panel, saveFilter, 7);
-        TextView offlineInfo = text("离线缓存 " + formatCacheMb(this.localCache.offlineBytes()) + " / 已缓存帖子" + this.localCache.detailCount(), 11.0f, this.MUTED);
-        addTop(panel, offlineInfo, 8);
-        Button pruneOffline = secondaryButton("清理过期离线内容", R.drawable.il_cleanup);
-        pruneOffline.setOnClickListener(view -> {
-            pruneOffline.setEnabled(false);
-            pruneOfflineCache(() -> {
-                offlineInfo.setText("离线缓存 " + formatCacheMb(this.localCache.offlineBytes())
-                        + " / 已缓存帖子" + this.localCache.detailCount());
-                pruneOffline.setEnabled(true);
-                toast("过期离线内容已清理");
-            });
-        });
-        addTop(panel, pruneOffline, 7);
-        Button diagnostics = secondaryButton("导出日志", R.drawable.il_scroll);
-        diagnostics.setOnClickListener(view2 -> {
-            exportDiagnostics();
-        });
-        addTop(panel, diagnostics, 7);
-        Button clearCache = secondaryButton("清除缓存 " + formatCacheMb(cacheBytes()), R.drawable.il_cleanup);
-        clearCache.setOnClickListener(view3 -> {
-            long before = tempCacheBytes();
-            long imageBefore = ((long) ImageLoader.cacheSizeKb()) * 1024;
-            clearTempCacheFiles(getCacheDir());
-            EmojiRenderer.clear();
-            ImageLoader.clear();
-            clearCache.setText("清除缓存 " + formatCacheMb(cacheBytes()));
-            toast("已清除缓存 " + formatCacheMb(before + imageBefore));
-        });
-        addTop(panel, clearCache, 10);
-        Button login = button(this.session.isLoggedIn() ? "退出登录" : "二维码登录",
-                this.session.isLoggedIn() ? R.drawable.ic_logout : R.drawable.il_qr);
-        login.setOnClickListener(view5 -> {
-            if (this.session.isLoggedIn()) {
-                this.session.clearSession();
-                this.feed.clear();
-                invalidateFeedView();
-                toast("已退出登录");
-            }
-            showLogin();
-        });
-        addTop(panel, login, 7);
+        final TextView[] pruneDesc = new TextView[1];
+        pruneDesc[0] = addSettingEntry(panel, "清理过期离线内容", offlineSummary(), R.drawable.il_cleanup, () ->
+                pruneOfflineCache(() -> {
+                    if (pruneDesc[0] != null) pruneDesc[0].setText(offlineSummary());
+                    toast("过期离线内容已清理");
+                }));
+        addSettingEntry(panel, "导出日志", "生成诊断文件用于反馈问题", R.drawable.il_scroll,
+                this::exportDiagnostics);
+        final TextView[] cacheDesc = new TextView[1];
+        cacheDesc[0] = addSettingEntry(panel, "清除缓存", "临时文件与图片缓存 " + formatCacheMb(cacheBytes()),
+                R.drawable.il_cleanup, () -> {
+                    long before = tempCacheBytes();
+                    long imageBefore = ((long) ImageLoader.cacheSizeKb()) * 1024;
+                    clearTempCacheFiles(getCacheDir());
+                    EmojiRenderer.clear();
+                    ImageLoader.clear();
+                    if (cacheDesc[0] != null) {
+                        cacheDesc[0].setText("临时文件与图片缓存 " + formatCacheMb(cacheBytes()));
+                    }
+                    toast("已清除缓存 " + formatCacheMb(before + imageBefore));
+                });
+        addSettingEntry(panel, this.session.isLoggedIn() ? "退出登录" : "二维码登录",
+                this.session.isLoggedIn() ? "当前账号 ID " + this.session.userId() : "扫码登录小黑盒账号",
+                this.session.isLoggedIn() ? R.drawable.ic_logout : R.drawable.il_qr, () -> {
+                    if (this.session.isLoggedIn()) {
+                        this.session.clearSession();
+                        this.feed.clear();
+                        invalidateFeedView();
+                        toast("已退出登录");
+                    }
+                    showLogin();
+                });
         page.addView(panel);
+    }
+
+    private String offlineSummary() {
+        return "离线缓存 " + formatCacheMb(this.localCache.offlineBytes())
+                + " · 已缓存帖子 " + this.localCache.detailCount();
     }
 
     private void showStartupSettings() {
@@ -7825,11 +7790,9 @@ public final class MainActivity extends Activity {
         EditText splashText = textField(panel, "开屏文字", this.session.splashText());
         ScaleControl duration = settingSlider(panel, "开屏时长", "ms", 500, 2600, this.session.splashDuration(), value3 -> {
         });
-        Button preview = secondaryButton("预览开屏动画", R.drawable.il_eye);
-        preview.setOnClickListener(view -> {
-            showSplashPreview(splashText.getText().toString().trim(), parseNumber(duration.input, 500, 2600));
-        });
-        addTop(panel, preview, 8);
+        addSettingEntry(panel, "预览开屏动画", "试运行一次当前开屏效果", R.drawable.il_eye, () ->
+                showSplashPreview(splashText.getText().toString().trim(),
+                        parseNumber(duration.input, 500, 2600)));
         Button save = button("保存启动设置", R.drawable.ic_save);
         save.setOnClickListener(view2 -> {
             Integer durationValue = parseNumber(duration.input, 500, 2600);
@@ -8157,68 +8120,58 @@ public final class MainActivity extends Activity {
         TextView disclaimer = text("免责声明：本项目仅用于学习、研究与个人使用，不代表小黑盒、HeyWear 或相关官方立场。本项目基于 HeyWear 进行二次开发与适配，开发者不对因使用本项目造成的账号、数据、设备或其他风险承担额外责任。请在遵守相关法律法规及平台规则的前提下使用", 11.0f, this.MUTED);
         disclaimer.setLineSpacing(0.0f, 1.22f);
         addTop(panel, disclaimer, 10);
-        TextView feedbackTitle = text("交流群", 13.0f, this.TEXT);
-        feedbackTitle.setTypeface(appRegularTypeface(), 1);
-        addTop(panel, feedbackTitle, 12);
-        addTop(panel, text("QQ群：781941517", 12.0f, this.TEXT), REPLY_PAGE_SIZE);
-        addTop(panel, text("遇到问题可以扫码进交流群。", 11.0f, this.MUTED), 3);
-        Button feedbackQr = secondaryButton("群二维码", R.drawable.il_qr);
-        feedbackQr.setOnClickListener(view -> {
-            showFeedbackGroupQr();
-        });
-        addTop(panel, feedbackQr, 8);
-        Button announcements = secondaryButton("公告列表", R.drawable.il_info);
-        announcements.setOnClickListener(view2 -> {
-            showAnnouncementsV2();
-        });
-        addTop(panel, announcements, 8);
-        TextView updateStatus = text("", 12.0f, this.MUTED);
-        updateStatus.setVisibility(8);
-        addTop(panel, updateStatus, 8);
-        Button update = secondaryButton("检查更新", R.drawable.il_update);
-        update.setOnClickListener(view3 -> {
-            update.setEnabled(false);
-            update.setText("检查中");
-            UpdateChecker.check(appVersion(), new UpdateChecker.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.34
-                @Override // com.openzen.heyboxcommunity.UpdateChecker.Callback
-                public void onResult(UpdateChecker.Result result) {
-                    if (MainActivity.this.isFinishing()) {
-                        return;
-                    }
-                    update.setEnabled(true);
-                    updateStatus.setVisibility(0);
-                    if (result.updateAvailable) {
-                        MainActivity.this.showUpdateDialog(result);
-                        updateStatus.setText("发现新版" + result.version);
-                        update.setText("前往下载 " + result.version);
-                        update.setOnClickListener(button -> {
-                            MainActivity.this.openUpdateUrl(result.downloadUrl.isEmpty() ? result.releaseUrl : result.downloadUrl);
-                        });
-                        return;
-                    }
-                    updateStatus.setText("当前已是最新版");
-                    update.setText("重新检查");
-                }
-
-                @Override // com.openzen.heyboxcommunity.UpdateChecker.Callback
-                public void onError(String message) {
-                    if (MainActivity.this.isFinishing()) {
-                        return;
-                    }
-                    update.setEnabled(true);
-                    updateStatus.setVisibility(0);
-                    update.setText("重新检查");
-                    updateStatus.setText("检查失败：" + message);
-                }
-            });
-        });
-        addTop(panel, update, 8);
-        Button repository = secondaryButton("打开 GitHub 项目", R.drawable.il_globe);
-        repository.setOnClickListener(view4 -> {
-            openUrl("https://github.com/huanghao897/heybox-lite");
-        });
-        addTop(panel, repository, 7);
         page.addView(panel);
+        LinearLayout actions = settingsList();
+        addSettingEntry(actions, "群二维码", "QQ 群 781941517，扫码进交流群", R.drawable.il_qr,
+                this::showFeedbackGroupQr);
+        addSettingEntry(actions, "公告列表", "历史公告与更新说明", R.drawable.il_info,
+                this::showAnnouncementsV2);
+        final UpdateChecker.Result[] found = {null};
+        final boolean[] checking = {false};
+        final TextView[] updateDesc = new TextView[1];
+        updateDesc[0] = addSettingEntry(actions, "检查更新", "当前版本 " + appVersion(),
+                R.drawable.il_update, () -> {
+                    if (found[0] != null) {
+                        openUpdateUrl(found[0].downloadUrl.isEmpty()
+                                ? found[0].releaseUrl : found[0].downloadUrl);
+                        return;
+                    }
+                    if (checking[0]) {
+                        return;
+                    }
+                    checking[0] = true;
+                    if (updateDesc[0] != null) updateDesc[0].setText("正在检查更新…");
+                    UpdateChecker.check(appVersion(), new UpdateChecker.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.34
+                        @Override // com.openzen.heyboxcommunity.UpdateChecker.Callback
+                        public void onResult(UpdateChecker.Result result) {
+                            if (MainActivity.this.isFinishing()) {
+                                return;
+                            }
+                            checking[0] = false;
+                            if (result.updateAvailable) {
+                                found[0] = result;
+                                MainActivity.this.showUpdateDialog(result);
+                                if (updateDesc[0] != null) {
+                                    updateDesc[0].setText("发现新版 " + result.version + "，点按前往下载");
+                                }
+                                return;
+                            }
+                            if (updateDesc[0] != null) updateDesc[0].setText("当前已是最新版");
+                        }
+
+                        @Override // com.openzen.heyboxcommunity.UpdateChecker.Callback
+                        public void onError(String message) {
+                            if (MainActivity.this.isFinishing()) {
+                                return;
+                            }
+                            checking[0] = false;
+                            if (updateDesc[0] != null) updateDesc[0].setText("检查失败：" + message);
+                        }
+                    });
+                });
+        addSettingEntry(actions, "打开 GitHub 项目", "huanghao897/heybox-lite", R.drawable.il_globe, () ->
+                openUrl("https://github.com/huanghao897/heybox-lite"));
+        addTop(page, actions, 8);
     }
 
     private void showFeedbackGroupQr() {
@@ -8255,10 +8208,11 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout toggleRow(String label, boolean initial, ToggleListener listener) {
-        return toggleRow(label, "开", "关", initial, listener);
+        return toggleRow(label, "", initial, listener);
     }
 
-    private LinearLayout toggleRow(String label, String onText, String offText,
+    /** 统一行式开关：图标芯片 + 标题（可带副标题）+ 滑块，底部带缩进分隔线。 */
+    private LinearLayout toggleRow(String label, String description,
                                    boolean initial, ToggleListener listener) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(1);
@@ -8268,45 +8222,62 @@ public final class MainActivity extends Activity {
 
         ImageView icon = new ImageView(this);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        icon.setPadding(dp(6), dp(6), dp(6), dp(6));
+        icon.setPadding(dp(5), dp(5), dp(5), dp(5));
         Drawable drawable = Compat.tintedDrawable(this, settingToggleIcon(label), Color.WHITE);
         if (drawable != null) {
             icon.setImageDrawable(drawable);
         }
         Compat.setBackground(icon, UiComponents.iconChip(this, settingToggleColor(label),
                 this.session.uiScale() / 100.0f));
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(32), dp(32));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(27), dp(27));
         iconParams.rightMargin = dp(12);
         content.addView(icon, iconParams);
 
+        LinearLayout copy = vertical(0);
         TextView title = text(label, 13.5f, this.TEXT);
         title.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        content.addView(title, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
-        TextView state = text("", 11.0f, this.TEXT);
-        state.setGravity(17);
-        state.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        state.setPadding(dp(9), 0, dp(9), 0);
-        content.addView(state, new LinearLayout.LayoutParams(-2, dp(30)));
-        row.addView(content, new LinearLayout.LayoutParams(-1, dp(54)));
+        copy.addView(title);
+        if (description != null && !description.isEmpty()) {
+            TextView desc = text(description, 10.5f, this.MUTED);
+            desc.setPadding(0, dp(1), 0, 0);
+            copy.addView(desc);
+        }
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        copyParams.rightMargin = dp(8);
+        content.addView(copy, copyParams);
+
+        boolean[] value = {initial};
+        FrameLayout toggle = new FrameLayout(this);
+        View thumb = new View(this);
+        Compat.setBackground(thumb, round(Color.WHITE, 9));
+        FrameLayout.LayoutParams thumbParams = new FrameLayout.LayoutParams(dp(18), dp(18), 16);
+        thumbParams.leftMargin = dp(4);
+        toggle.addView(thumb, thumbParams);
+        final int travel = dp(16);
+        Runnable paintTrack = () -> Compat.setBackground(toggle, round(value[0]
+                ? this.themeTokens.accent
+                : (this.session.darkMode() ? Color.rgb(58, 62, 70) : Color.rgb(203, 208, 214)), 13));
+        paintTrack.run();
+        thumb.setTranslationX(value[0] ? travel : 0.0f);
+        content.addView(toggle, new LinearLayout.LayoutParams(dp(42), dp(26)));
+        content.setMinimumHeight(dp(50));
+        row.addView(content, new LinearLayout.LayoutParams(-1, -2));
 
         View divider = new View(this);
-        divider.setBackgroundColor(this.themeTokens.hairline);
-        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, Math.max(1, dp(1)));
+        divider.setBackgroundColor(this.session.darkMode()
+                ? Color.argb(26, 255, 255, 255) : Color.argb(20, 0, 0, 0));
+        LinearLayout.LayoutParams dividerParams =
+                new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
+        dividerParams.leftMargin = dp(45);
         row.addView(divider, dividerParams);
-        boolean[] value = {initial};
-        Runnable render = () -> {
-            state.setText(value[0] ? onText : offText);
-            int foreground = value[0] ? contrast(this.themeTokens.accent) : this.MUTED;
-            int background = value[0] ? this.themeTokens.accent
-                    : (this.session.darkMode() ? Color.rgb(55, 59, 66) : Color.rgb(224, 227, 231));
-            state.setTextColor(foreground);
-            Compat.setBackground(state, round(background, 14));
-        };
-        render.run();
         content.setOnClickListener(view -> {
-            UiComponents.press(view);
             value[0] = !value[0];
-            render.run();
+            paintTrack.run();
+            thumb.animate().cancel();
+            thumb.animate().translationX(value[0] ? travel : 0.0f)
+                    .setDuration(MotionSpec.ENTER_MS)
+                    .setInterpolator(MotionSpec.EASE_OUT)
+                    .start();
             listener.onChanged(value[0]);
         });
         return row;
@@ -8347,7 +8318,7 @@ public final class MainActivity extends Activity {
         SeekBar slider = new SeekBar(this);
         slider.setMax(max - min);
         slider.setProgress(Math.max(0, Math.min(max - min, current - min)));
-        Compat.tint(slider, this.PRIMARY);
+        Compat.tint(slider, this.themeTokens.accent);
         row.addView(slider, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
         final EditText input = new EditText(this);
         input.setSingleLine(true);
@@ -8356,8 +8327,13 @@ public final class MainActivity extends Activity {
         input.setTextColor(this.TEXT);
         input.setGravity(17);
         input.setInputType(REPLY_PREVIEW_COUNT);
-        Compat.tint(input, this.PRIMARY);
-        row.addView(input, new LinearLayout.LayoutParams(dp(48), dp(38)));
+        Compat.tint(input, this.themeTokens.accent);
+        input.setPadding(dp(4), dp(4), dp(4), dp(4));
+        Compat.setBackground(input, roundStroke(this.themeTokens.panelElevated, 8,
+                this.themeTokens.hairline, 1));
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(dp(48), dp(30));
+        inputParams.leftMargin = dp(4);
+        row.addView(input, inputParams);
         TextView suffix = text(unit, 10.0f, this.MUTED);
         suffix.setGravity(17);
         row.addView(suffix, new LinearLayout.LayoutParams(dp(24), dp(38)));
@@ -9007,8 +8983,13 @@ public final class MainActivity extends Activity {
         input.setGravity(17);
         input.setSingleLine(true);
         input.setSelectAllOnFocus(true);
-        Compat.tint(input, this.PRIMARY);
-        row.addView(input, new LinearLayout.LayoutParams(dp(96), dp(40)));
+        Compat.tint(input, this.themeTokens.accent);
+        input.setPadding(dp(8), dp(4), dp(8), dp(4));
+        Compat.setBackground(input, roundStroke(this.themeTokens.panelElevated, 8,
+                this.themeTokens.hairline, 1));
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(dp(96), -2);
+        inputParams.leftMargin = dp(6);
+        row.addView(input, inputParams);
         addTop(parent, row, 3);
         return input;
     }
@@ -9232,6 +9213,7 @@ public final class MainActivity extends Activity {
         }
         this.screen = this.detailReturn;
         configureDetailReturnChrome();
+        ensurePageBackdrop(view);
         if (animate) this.pageTransitions.run(this.content, view, false);
         else {
             this.content.removeAllViews();
@@ -9332,14 +9314,27 @@ public final class MainActivity extends Activity {
             this.readingTimeTracker.pause();
         }
         boolean back = this.pendingBackTransition;
+        boolean push = this.pendingLateralPush;
         this.pendingBackTransition = false;
+        this.pendingLateralPush = false;
+        ensurePageBackdrop(next);
         if (this.shellAnimating) {
             this.pageTransitions.finishNow();
             this.content.removeAllViews();
             this.content.addView(next, match());
             return;
         }
-        this.pageTransitions.run(this.content, next, !back);
+        this.pageTransitions.run(this.content, next, !back, push);
+    }
+
+    /** 页面不满屏时下半截透明，转场重叠期会透出旧页并在结束时闪变，这里统一兜底成不透明底色。 */
+    private void ensurePageBackdrop(View view) {
+        if (view == null) return;
+        Drawable bg = view.getBackground();
+        if (bg == null || (bg instanceof ColorDrawable
+                && Color.alpha(((ColorDrawable) bg).getColor()) == 0)) {
+            view.setBackgroundColor(this.BG);
+        }
     }
 
     private void cancelAllMotion() {

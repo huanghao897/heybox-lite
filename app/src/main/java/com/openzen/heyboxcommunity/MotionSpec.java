@@ -13,9 +13,8 @@ final class MotionSpec {
     static final long DIALOG_MS = 150L;
     static final long STAGGER_MS = 24L;
     static final long TRANSITION_FULL_MS = 220L;
-    static final long TRANSITION_LITE_MS = 140L;
     static final Interpolator EASE_OUT = new DecelerateInterpolator(1.7f);
-    /** 轻微回弹，只用于“完整”动效等级的收尾。 */
+    /** 轻微回弹，用于按压等动画的收尾。 */
     static final Interpolator SPRING = new OvershootInterpolator(1.12f);
 
     private MotionSpec() {}

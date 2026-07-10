@@ -26,6 +26,11 @@ final class PageTransitionController {
     }
 
     void run(FrameLayout container, View next, boolean forward) {
+        run(container, next, forward, false);
+    }
+
+    /** push=true 时新旧页面同速整宽平移（顶层左右切换）；否则层级式覆盖推入/滑出。 */
+    void run(FrameLayout container, View next, boolean forward, boolean push) {
         if (container == null || next == null) return;
         finishNow();
         Motions.reset(next);
@@ -33,12 +38,7 @@ final class PageTransitionController {
                 ? null : container.getChildAt(container.getChildCount() - 1);
         boolean oldIsLoading = old != null && ("loading".equals(old.getTag())
                 || "detail_loading".equals(old.getTag()));
-        if (Motions.off() || old == null || old == next || container.getWidth() <= 0) {
-            container.removeAllViews();
-            container.addView(next, params());
-            return;
-        }
-        if (oldIsLoading) {
+        if (old == null || old == next || oldIsLoading || container.getWidth() <= 0) {
             container.removeAllViews();
             container.addView(next, params());
             return;
@@ -65,34 +65,40 @@ final class PageTransitionController {
         };
 
         int width = container.getWidth();
-        if (Motions.full()) {
-            next.setTranslationX(forward ? width : -width * 0.30f);
-            next.setAlpha(forward ? 1.0f : 0.88f);
+        if (push) {
+            next.setTranslationX(forward ? width : -width);
+            next.setAlpha(1.0f);
             next.post(() -> {
                 if (current != transition) return;
-                next.animate().translationX(0.0f).alpha(1.0f)
+                next.animate().translationX(0.0f)
                         .setDuration(MotionSpec.TRANSITION_FULL_MS)
                         .setInterpolator(MotionSpec.EASE_OUT)
                         .withEndAction(end)
                         .start();
                 oldView.animate()
-                        .translationX(forward ? -width * 0.30f : width)
-                        .alpha(forward ? 0.72f : 1.0f)
+                        .translationX(forward ? -width : width)
                         .setDuration(MotionSpec.TRANSITION_FULL_MS)
                         .setInterpolator(MotionSpec.EASE_OUT)
                         .start();
             });
-        } else {
-            next.setAlpha(0.0f);
-            next.post(() -> {
-                if (current != transition) return;
-                next.animate().alpha(1.0f)
-                        .setDuration(MotionSpec.TRANSITION_LITE_MS)
-                        .setInterpolator(MotionSpec.EASE_OUT)
-                        .withEndAction(end)
-                        .start();
-            });
+            return;
         }
+        next.setTranslationX(forward ? width : -width * 0.30f);
+        next.setAlpha(forward ? 1.0f : 0.88f);
+        next.post(() -> {
+            if (current != transition) return;
+            next.animate().translationX(0.0f).alpha(1.0f)
+                    .setDuration(MotionSpec.TRANSITION_FULL_MS)
+                    .setInterpolator(MotionSpec.EASE_OUT)
+                    .withEndAction(end)
+                    .start();
+            oldView.animate()
+                    .translationX(forward ? -width * 0.30f : width)
+                    .alpha(forward ? 0.72f : 1.0f)
+                    .setDuration(MotionSpec.TRANSITION_FULL_MS)
+                    .setInterpolator(MotionSpec.EASE_OUT)
+                    .start();
+        });
     }
 
     private static FrameLayout.LayoutParams params() {
