@@ -20,6 +20,8 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -91,6 +93,7 @@ public final class MainActivity extends Activity {
     private static final String WELCOME_ANNOUNCEMENT_ID = "welcome-heybox-lite-1.77";
     private static final int MAX_WRITE_FALLBACK_ATTEMPTS = 2;
     private static final long WRITE_FALLBACK_DELAY_MS = 1300L;
+    private static final long OFFLINE_MAX_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
     private static final String[] THEME_NAMES = {"默认蓝", "红色", "粉色", "紫色", "绿色", "青色", "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"};
     private static final int[][] THEME_COLORS = {new int[]{-14386760, -9193242}, new int[]{-3982790, -1083529}, new int[]{-2597743, -1006399}, new int[]{-9022795, -4744481}, new int[]{-14185897, -9320552}, new int[]{-15299695, -9713717}, new int[]{-2921692, -1007516}, new int[]{-3958250, -995480}, new int[]{-7894890, -5327686}, new int[]{-15253642, -10646588}, new int[]{-15263977, -3102658}, new int[]{-13530253, -7808833}};
     private static final String TITLE_FAVORITES = "我的收藏";
@@ -126,6 +129,7 @@ public final class MainActivity extends Activity {
     private boolean cachedProfileLoggedIn;
     private TextView feedFooter;
     private ScrollView detailScroll;
+    private ScrollView detailCommentScroll;
     private DetailPager detailPager;
     private boolean shellAnimating;
     private LocalCache localCache;
@@ -182,6 +186,7 @@ public final class MainActivity extends Activity {
     private String currentLinkHsrc = "";
     private String currentAuthCode = "";
     private String lastDetailDiagnostics = "";
+    private JSONObject currentDetailBody;
 
     /* JADX INFO: loaded from: MainActivity$IntListener.class */
     private interface IntListener {
@@ -243,6 +248,10 @@ public final class MainActivity extends Activity {
         }
         this.session = new SessionStore(this);
         this.localCache = new LocalCache(this);
+        ImageLoader.init(this);
+        if (this.session.autoOfflineCleanup()) {
+            pruneOfflineCache(null);
+        }
         applyPalette();
         Compat.colorSystemBars(getWindow(), this.BG);
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
@@ -272,6 +281,55 @@ public final class MainActivity extends Activity {
             this.handler.postDelayed(this::checkUpdateOnLaunch, 650L);
         }
         this.handler.postDelayed(this::checkAnnouncementOnLaunch, 950L);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (event != null && event.getActionMasked() == MotionEvent.ACTION_SCROLL) {
+            float axis = event.getAxisValue(MotionEvent.AXIS_SCROLL);
+            if (axis == 0.0f) axis = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            if (axis != 0.0f && scrollWithCrown(-Math.round(axis * dp(44)))) return true;
+        }
+        return super.dispatchGenericMotionEvent(event);
+    }
+
+    private boolean scrollWithCrown(int distance) {
+        if (distance == 0) return false;
+        View target;
+        if ("detail".equals(this.screen)) {
+            target = this.detailPager != null && this.detailPager.showingComments()
+                    ? this.detailCommentScroll : this.detailScroll;
+        } else if ("feed".equals(this.screen)) {
+            target = this.feedListView;
+        } else if ("search".equals(this.screen)) {
+            target = this.searchListView;
+        } else {
+            target = findScrollableView(this.content, distance > 0 ? 1 : -1);
+        }
+        if (target instanceof ScrollView) {
+            ((ScrollView) target).smoothScrollBy(0, distance);
+            return true;
+        }
+        if (target instanceof AbsListView) {
+            ((AbsListView) target).smoothScrollBy(distance, 90);
+            return true;
+        }
+        return false;
+    }
+
+    private View findScrollableView(View view, int direction) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return null;
+        if ((view instanceof ScrollView || view instanceof AbsListView)
+                && (view.canScrollVertically(direction) || view.canScrollVertically(-direction))) {
+            return view;
+        }
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = group.getChildCount() - 1; i >= 0; i--) {
+            View target = findScrollableView(group.getChildAt(i), direction);
+            if (target != null) return target;
+        }
+        return null;
     }
 
     private void autoSignInOnLaunch() {
@@ -2529,6 +2587,7 @@ public final class MainActivity extends Activity {
         this.currentLinkHsrc = item.hsrc;
         this.currentAuthCode = "";
         this.currentDetailItem = item;
+        this.currentDetailBody = null;
         if (this.shellBar != null) {
             this.shellBar.setVisibility(8);
         }
@@ -2543,6 +2602,11 @@ public final class MainActivity extends Activity {
         showLoading();
         final int requestToken = this.detailRequestToken + 1;
         this.detailRequestToken = requestToken;
+        if (!isNetworkConnected()) {
+            hideLoading();
+            handleDetailFailure(item, "当前无网络");
+            return;
+        }
         this.api.get(EndpointProvider.linkTree(), detailParams(item), new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.13
             @Override // com.openzen.heyboxcommunity.ApiClient.Callback
             public void onSuccess(JSONObject body) {
@@ -2561,8 +2625,7 @@ public final class MainActivity extends Activity {
                         MainActivity.this.handleDetailFailure(item, "详情数据为空");
                         return;
                     }
-                    MainActivity.this.localCache.saveDetail(item.id, body);
-                    MainActivity.this.renderDetail(body, item);
+                    MainActivity.this.cacheDetailAndRender(item, body);
                 }
             }
 
@@ -2594,8 +2657,7 @@ public final class MainActivity extends Activity {
                         } else if (!MainActivity.this.hasDetailLink(body)) {
                             MainActivity.this.handleDetailFailure(item, MainActivity.first(fallbackMessage, "详情数据为空"));
                         } else {
-                            MainActivity.this.localCache.saveDetail(item.id, body);
-                            MainActivity.this.renderDetail(body, item);
+                            MainActivity.this.cacheDetailAndRender(item, body);
                         }
                     }
                 }
@@ -2615,6 +2677,14 @@ public final class MainActivity extends Activity {
         return "detail".equals(this.screen) && item != null && item.id.equals(this.currentLinkId) && requestToken == this.detailRequestToken;
     }
 
+    private void cacheDetailAndRender(FeedItem item, JSONObject body) {
+        this.localCache.saveDetail(item.id, body);
+        if (this.localCache.isWatchLater(item.id)) {
+            refreshWatchLaterOffline(item, body, null);
+        }
+        renderDetail(body, item);
+    }
+
     private Map<String, String> detailParams(FeedItem item) {
         Map<String, String> params = new HashMap<>();
         params.put("link_id", item.id);
@@ -2627,6 +2697,17 @@ public final class MainActivity extends Activity {
             params.put("h_src", item.hsrc);
         }
         return params;
+    }
+
+    private boolean isNetworkConnected() {
+        try {
+            ConnectivityManager manager = (ConnectivityManager)
+                    getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkInfo info = manager == null ? null : manager.getActiveNetworkInfo();
+            return info != null && info.isConnected();
+        } catch (Exception ignored) {
+            return true;
+        }
     }
 
     private void handleDetailFailure(FeedItem item, String message) {
@@ -2717,6 +2798,7 @@ public final class MainActivity extends Activity {
     }
 
     private void renderDetail(JSONObject body, FeedItem fallback) {
+        this.currentDetailBody = body;
         JSONObject result = body.optJSONObject("result");
         JSONObject link = result == null ? null : result.optJSONObject("link");
         String[] strArr = new String[3];
@@ -2779,6 +2861,7 @@ public final class MainActivity extends Activity {
         pager.setPages(articleScroll, commentScroll);
         this.content.addView(pager, match());
         this.detailScroll = articleScroll;
+        this.detailCommentScroll = commentScroll;
         int savedScroll = this.session.rememberDetailScroll() ? this.localCache.scroll(this.currentLinkId) : 0;
         if (savedScroll > 0) {
             articleScroll.postDelayed(() -> {
@@ -3066,14 +3149,86 @@ public final class MainActivity extends Activity {
         favorite.setOnClickListener(view2 -> {
             toggleFavorite(item, favorite);
         });
+        TextView watchLater = actionPill("", R.drawable.ic_history);
+        updateWatchLaterView(watchLater, this.localCache.isWatchLater(item.id), false);
+        watchLater.setOnClickListener(view3 -> toggleWatchLater(item, watchLater));
         TextView comment = actionPill("评论", R.drawable.ic_comment);
         LinearLayout.LayoutParams commentParams = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
         commentParams.leftMargin = dp(6);
         row.addView(comment, commentParams);
-        comment.setOnClickListener(view3 -> {
+        comment.setOnClickListener(view4 -> {
             showCommentDialog(null);
         });
         addTop(article, row, 10);
+        addTop(article, watchLater, 6);
+        watchLater.getLayoutParams().height = dp(34);
+    }
+
+    private void toggleWatchLater(FeedItem item, TextView button) {
+        if (item == null || item.id.isEmpty()) return;
+        if (this.localCache.isWatchLater(item.id)) {
+            this.localCache.removeWatchLater(item.id);
+            updateWatchLaterView(button, false, false);
+            toast("已从稍后看移除");
+            return;
+        }
+        this.localCache.addWatchLater(item);
+        updateWatchLaterView(button, true, true);
+        JSONObject body = this.currentDetailBody != null
+                ? this.currentDetailBody : this.localCache.detail(item.id);
+        if (body == null) {
+            List<String> images = detailImageUrls(item, null);
+            this.localCache.updateWatchLater(item, images);
+            ImageLoader.prefetchOffline(this, images, 260, bytes -> {
+                if (!isFinishing() && this.localCache.isWatchLater(item.id)) {
+                    updateWatchLaterView(button, true, false);
+                }
+            });
+        } else {
+            refreshWatchLaterOffline(item, body, () -> {
+                if (!isFinishing() && this.localCache.isWatchLater(item.id)) {
+                    updateWatchLaterView(button, true, false);
+                }
+            });
+        }
+        toast("已加入稍后看");
+    }
+
+    private void updateWatchLaterView(TextView view, boolean saved, boolean loading) {
+        if (view == null) return;
+        view.setText(loading ? "缓存中" : saved ? "已缓存" : "稍后看");
+        int background = saved
+                ? activeActionBackground(this.SECONDARY)
+                : blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.2f : 0.1f);
+        int foreground = saved ? contrast(background) : this.TEXT;
+        updatePill(view, background, foreground, R.drawable.ic_history);
+    }
+
+    private void refreshWatchLaterOffline(FeedItem item, JSONObject body, Runnable complete) {
+        List<String> images = detailImageUrls(item, body);
+        this.localCache.updateWatchLater(item, images);
+        if (!TextUtils.isEmpty(item.image)) {
+            ImageLoader.prefetchOffline(this, Collections.singletonList(item.image), 260, null);
+        }
+        ImageLoader.prefetchOffline(this, images, detailImageTargetPx(), bytes -> {
+            if (complete != null) complete.run();
+        });
+    }
+
+    private List<String> detailImageUrls(FeedItem item, JSONObject body) {
+        Set<String> values = new HashSet<>();
+        if (item != null) {
+            if (!TextUtils.isEmpty(item.image)) values.add(item.image);
+            Collections.addAll(values, item.images);
+        }
+        JSONObject result = body == null ? null : body.optJSONObject("result");
+        JSONObject link = result == null ? null : result.optJSONObject("link");
+        JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
+        for (RichContent.Block block : RichContent.parse(link, fallbackImages)) {
+            if (block.image && !TextUtils.isEmpty(block.value)) values.add(block.value);
+            if (values.size() >= 48) break;
+        }
+        return new ArrayList<>(values);
     }
 
     private LinearLayout detailArticleSurface() {
@@ -6054,6 +6209,8 @@ public final class MainActivity extends Activity {
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
         LinearLayout panel = card();
+        addSettingEntry(panel, "稍后看", "本地保存的帖子与离线内容", R.drawable.il_history,
+                this::showWatchLater);
         addSettingEntry(panel, "收藏", "我收藏的帖子", R.drawable.il_bookmark, () -> {
             if (!this.session.isLoggedIn()) {
                 showLogin();
@@ -6082,6 +6239,66 @@ public final class MainActivity extends Activity {
                 this::showSettingsHome);
         addTop(page, panel, 8);
         animateIn(panel);
+    }
+
+    private void showWatchLater() {
+        prepareSavedPage("稍后看");
+        List<LocalCache.OfflineItem> items = this.localCache.watchLaterItems();
+        if (items.isEmpty()) {
+            showMessage("还没有稍后看的帖子\n打开帖子后点“稍后看”即可离线保存");
+            return;
+        }
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout page = vertical(this.BG);
+        page.setPadding(dp(7), dp(7), dp(7), dp(18));
+        scroll.addView(page);
+        for (LocalCache.OfflineItem entry : items) {
+            page.addView(watchLaterCard(entry));
+        }
+        addBottomNavSafeSpace(page);
+        this.content.addView(scroll, match());
+    }
+
+    private View watchLaterCard(LocalCache.OfflineItem entry) {
+        LinearLayout block = vertical(this.PANEL);
+        Compat.setBackground(block, round(this.PANEL, 6));
+        block.addView(userEventCard(entry.item));
+        View divider = new View(this);
+        divider.setBackgroundColor(this.themeTokens == null
+                ? blend(this.PANEL, this.MUTED, 0.14f) : this.themeTokens.hairline);
+        block.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
+        LinearLayout footer = new LinearLayout(this);
+        footer.setGravity(16);
+        footer.setPadding(dp(12), dp(7), dp(8), dp(7));
+        long bytes = entry.detailBytes + ImageLoader.offlineBytes(entry.imageUrls);
+        String size = bytes > 0L ? formatOfflineSize(bytes) : "缓存已过期";
+        TextView info = text(size + " · 更新于 " + formatOfflineTime(entry.updatedAt), 10.0f, this.MUTED);
+        footer.addView(info, new LinearLayout.LayoutParams(0, dp(28), 1.0f));
+        TextView remove = text("移除", 11.0f, this.SECONDARY);
+        remove.setGravity(17);
+        remove.setPadding(dp(10), 0, dp(10), 0);
+        remove.setOnClickListener(view -> {
+            this.localCache.removeWatchLater(entry.item.id);
+            showWatchLater();
+        });
+        footer.addView(remove, new LinearLayout.LayoutParams(-2, dp(28)));
+        block.addView(footer);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.bottomMargin = dp(7);
+        block.setLayoutParams(params);
+        return block;
+    }
+
+    private String formatOfflineSize(long bytes) {
+        if (bytes < 1024L * 1024L) {
+            return Math.max(1L, bytes / 1024L) + " KB";
+        }
+        return formatCacheMb(bytes);
+    }
+
+    private String formatOfflineTime(long millis) {
+        if (millis <= 0L) return "未知";
+        return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(new Date(millis));
     }
 
     private void showSignInDialog() {
@@ -6682,7 +6899,7 @@ public final class MainActivity extends Activity {
         FrameLayout frameLayout = new FrameLayout(this);
         frameLayout.setBackgroundColor(this.BG);
         final EditText search = new EditText(this);
-        search.setHint("搜索历史：标题、摘要或作");
+        search.setHint("搜索历史：标题、摘要或作者");
         search.setHintTextColor(this.MUTED);
         search.setTextColor(this.TEXT);
         search.setSingleLine(true);
@@ -7334,6 +7551,11 @@ public final class MainActivity extends Activity {
         SessionStore sessionStore3 = this.session;
         Objects.requireNonNull(sessionStore3);
         addTop(panel, toggleRow("记住帖子阅读位置", zRememberDetailScroll, sessionStore3::setRememberDetailScroll), 4);
+        addTop(panel, toggleRow("自动清理 30 天前的离线内容",
+                this.session.autoOfflineCleanup(), value -> {
+                    this.session.setAutoOfflineCleanup(value);
+                    if (value) pruneOfflineCache(null);
+                }), 4);
         boolean zDoubleTapCommentReply = this.session.doubleTapCommentReply();
         SessionStore sessionStore4 = this.session;
         Objects.requireNonNull(sessionStore4);
@@ -7353,6 +7575,17 @@ public final class MainActivity extends Activity {
         addTop(panel, saveFilter, 7);
         TextView offlineInfo = text("离线缓存 " + formatCacheMb(this.localCache.offlineBytes()) + " / 已缓存帖子" + this.localCache.detailCount(), 11.0f, this.MUTED);
         addTop(panel, offlineInfo, 8);
+        Button pruneOffline = secondaryButton("清理过期离线内容", 0);
+        pruneOffline.setOnClickListener(view -> {
+            pruneOffline.setEnabled(false);
+            pruneOfflineCache(() -> {
+                offlineInfo.setText("离线缓存 " + formatCacheMb(this.localCache.offlineBytes())
+                        + " / 已缓存帖子" + this.localCache.detailCount());
+                pruneOffline.setEnabled(true);
+                toast("过期离线内容已清理");
+            });
+        });
+        addTop(panel, pruneOffline, 7);
         Button diagnostics = secondaryButton("导出日志", 0);
         diagnostics.setOnClickListener(view2 -> {
             exportDiagnostics();
@@ -8535,6 +8768,18 @@ public final class MainActivity extends Activity {
 
     private long tempCacheBytes() {
         return dirSize(getCacheDir()) + (((long) EmojiRenderer.cacheSizeKb()) * 1024);
+    }
+
+    private void pruneOfflineCache(Runnable complete) {
+        new Thread(() -> {
+            this.localCache.pruneExpired(OFFLINE_MAX_AGE_MS);
+            ImageLoader.pruneOffline(this, OFFLINE_MAX_AGE_MS);
+            if (complete != null) {
+                this.handler.post(() -> {
+                    if (!isFinishing()) complete.run();
+                });
+            }
+        }, "heybox-offline-cleanup").start();
     }
 
     private long cacheBytes() {

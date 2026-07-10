@@ -16,19 +16,23 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 final class LocalCache {
     private static final String PREFS = "heybox_local_cache";
     private static final String FEED_ITEMS = "feed_items";
     private static final String FEED_SAVED_AT = "feed_saved_at";
+    private static final String WATCH_LATER_FILE = "watch-later.json";
     private static final String SCROLL_PREFIX = "scroll_";
     private static final String OFFICIAL_NATIVE_DISABLED_CODE = "official_native_disabled_code";
     private static final String OFFICIAL_NATIVE_DISABLED_REASON = "official_native_disabled_reason";
     private static final int OFFICIAL_NATIVE_ATTEMPT_REVISION = 34;
     private static final int MAX_DETAIL_FILES = 80;
+    private static final int MAX_OFFLINE_COMMENTS = 10;
     private static final int MAX_LOG_BYTES = 96 * 1024;
     private static final Object SESSION_LOCK = new Object();
     private static String processSessionId;
@@ -43,6 +47,23 @@ final class LocalCache {
     private final File diagnosticsDir;
     private final String sessionId;
     private final long sessionStartedAt;
+
+    static final class OfflineItem {
+        final FeedItem item;
+        final long savedAt;
+        final long updatedAt;
+        final long detailBytes;
+        final List<String> imageUrls;
+
+        OfflineItem(FeedItem item, long savedAt, long updatedAt,
+                    long detailBytes, List<String> imageUrls) {
+            this.item = item;
+            this.savedAt = savedAt;
+            this.updatedAt = updatedAt;
+            this.detailBytes = detailBytes;
+            this.imageUrls = imageUrls;
+        }
+    }
 
     LocalCache(Context context) {
         this.context = context.getApplicationContext();
@@ -95,18 +116,143 @@ final class LocalCache {
 
     void saveDetail(String linkId, JSONObject body) {
         if (linkId == null || linkId.isEmpty() || body == null) return;
-        write(file(detailDir, linkId + ".json"), body.toString());
+        JSONObject cached = copyForOffline(body);
+        if (cached == null) return;
+        trimOfflineComments(cached);
+        write(file(detailDir, linkId + ".json"), cached.toString());
         prune(detailDir, MAX_DETAIL_FILES);
     }
 
     JSONObject detail(String linkId) {
-        String value = read(file(detailDir, linkId + ".json"));
+        File source = file(detailDir, linkId + ".json");
+        String value = read(source);
         if (value.isEmpty()) return null;
         try {
-            return new JSONObject(value);
+            JSONObject body = new JSONObject(value);
+            if (trimOfflineComments(body)) write(source, body.toString());
+            source.setLastModified(System.currentTimeMillis());
+            return body;
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private JSONObject copyForOffline(JSONObject body) {
+        try {
+            return new JSONObject(body.toString());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private boolean trimOfflineComments(JSONObject body) {
+        JSONObject result = body == null ? null : body.optJSONObject("result");
+        JSONArray comments = result == null ? null : result.optJSONArray("comments");
+        if (comments == null || comments.length() <= MAX_OFFLINE_COMMENTS) return false;
+        JSONArray limited = new JSONArray();
+        for (int i = 0; i < MAX_OFFLINE_COMMENTS; i++) limited.put(comments.opt(i));
+        try {
+            result.put("comments", limited);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    synchronized boolean isWatchLater(String linkId) {
+        if (linkId == null || linkId.isEmpty()) return false;
+        JSONArray items = watchLaterArray();
+        for (int i = 0; i < items.length(); i++) {
+            if (linkId.equals(watchLaterId(items.optJSONObject(i)))) return true;
+        }
+        return false;
+    }
+
+    synchronized void addWatchLater(FeedItem item) {
+        if (item == null || item.id.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        JSONArray current = watchLaterArray();
+        JSONArray next = new JSONArray();
+        JSONObject entry = watchLaterEntry(item, now, now, itemImageUrls(item));
+        next.put(entry);
+        for (int i = 0; i < current.length(); i++) {
+            JSONObject existing = current.optJSONObject(i);
+            if (!item.id.equals(watchLaterId(existing))) next.put(existing);
+        }
+        writeWatchLater(next);
+    }
+
+    synchronized void updateWatchLater(FeedItem item, List<String> imageUrls) {
+        if (item == null || item.id.isEmpty()) return;
+        JSONArray items = watchLaterArray();
+        boolean changed = false;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject entry = items.optJSONObject(i);
+            if (!item.id.equals(watchLaterId(entry))) continue;
+            try {
+                entry.put("item", item.toJson());
+                entry.put("updated_at", System.currentTimeMillis());
+                entry.put("images", encodeStrings(imageUrls));
+                changed = true;
+            } catch (Exception ignored) {
+            }
+            break;
+        }
+        if (changed) writeWatchLater(items);
+    }
+
+    synchronized void removeWatchLater(String linkId) {
+        if (linkId == null || linkId.isEmpty()) return;
+        JSONArray current = watchLaterArray();
+        JSONArray next = new JSONArray();
+        for (int i = 0; i < current.length(); i++) {
+            JSONObject entry = current.optJSONObject(i);
+            if (!linkId.equals(watchLaterId(entry))) next.put(entry);
+        }
+        writeWatchLater(next);
+    }
+
+    synchronized List<OfflineItem> watchLaterItems() {
+        List<OfflineItem> result = new ArrayList<>();
+        JSONArray items = watchLaterArray();
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject entry = items.optJSONObject(i);
+            JSONObject value = entry == null ? null : entry.optJSONObject("item");
+            if (value == null) continue;
+            FeedItem item = FeedItem.from(value);
+            if (item.id.isEmpty()) continue;
+            result.add(new OfflineItem(item,
+                    entry.optLong("saved_at", 0L),
+                    entry.optLong("updated_at", 0L),
+                    detailBytes(item.id),
+                    decodeStrings(entry.optJSONArray("images"))));
+        }
+        return result;
+    }
+
+    synchronized int pruneExpired(long maxAgeMs) {
+        if (maxAgeMs <= 0L) return 0;
+        long cutoff = System.currentTimeMillis() - maxAgeMs;
+        Set<String> active = new HashSet<>();
+        for (OfflineItem entry : watchLaterItems()) {
+            if (entry.updatedAt >= cutoff) active.add(safeName(entry.item.id) + ".json");
+        }
+        int removed = 0;
+        File[] files = detailDir.listFiles();
+        if (files == null) return removed;
+        for (File source : files) {
+            if (source.isFile() && source.lastModified() < cutoff
+                    && !active.contains(source.getName()) && source.delete()) {
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    long detailBytes(String linkId) {
+        if (linkId == null || linkId.isEmpty()) return 0L;
+        File source = file(detailDir, linkId + ".json");
+        return source.isFile() ? source.length() : 0L;
     }
 
     void saveScroll(String linkId, int scrollY) {
@@ -126,6 +272,67 @@ final class LocalCache {
     int detailCount() {
         File[] files = detailDir.listFiles();
         return files == null ? 0 : files.length;
+    }
+
+    private JSONObject watchLaterEntry(FeedItem item, long savedAt, long updatedAt,
+                                       List<String> imageUrls) {
+        JSONObject entry = new JSONObject();
+        try {
+            entry.put("item", item.toJson());
+            entry.put("saved_at", savedAt);
+            entry.put("updated_at", updatedAt);
+            entry.put("images", encodeStrings(imageUrls));
+        } catch (Exception ignored) {
+        }
+        return entry;
+    }
+
+    private JSONArray watchLaterArray() {
+        String value = read(file(savedDir, WATCH_LATER_FILE));
+        if (value.isEmpty()) return new JSONArray();
+        try {
+            return new JSONArray(value);
+        } catch (Exception ignored) {
+            return new JSONArray();
+        }
+    }
+
+    private void writeWatchLater(JSONArray items) {
+        write(file(savedDir, WATCH_LATER_FILE), items == null ? "[]" : items.toString());
+    }
+
+    private String watchLaterId(JSONObject entry) {
+        JSONObject item = entry == null ? null : entry.optJSONObject("item");
+        return item == null ? "" : item.optString("linkid", item.optString("link_id"));
+    }
+
+    private List<String> itemImageUrls(FeedItem item) {
+        List<String> urls = new ArrayList<>();
+        if (item == null) return urls;
+        if (item.image != null && !item.image.isEmpty()) urls.add(item.image);
+        for (String url : item.images) {
+            if (url != null && !url.isEmpty() && !urls.contains(url)) urls.add(url);
+        }
+        return urls;
+    }
+
+    private JSONArray encodeStrings(List<String> values) {
+        JSONArray array = new JSONArray();
+        if (values == null) return array;
+        for (String value : values) {
+            if (value != null && !value.isEmpty()) array.put(value);
+        }
+        return array;
+    }
+
+    private List<String> decodeStrings(JSONArray values) {
+        List<String> result = new ArrayList<>();
+        if (values == null) return result;
+        for (int i = 0; i < values.length(); i++) {
+            String value = values.optString(i);
+            if (!value.isEmpty() && !result.contains(value)) result.add(value);
+        }
+        return result;
     }
 
     void log(String message) {

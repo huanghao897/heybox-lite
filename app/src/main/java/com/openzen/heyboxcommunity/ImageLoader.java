@@ -3,6 +3,9 @@ package com.openzen.heyboxcommunity;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
+import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Rect;
@@ -16,9 +19,17 @@ import android.widget.ImageView;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,10 +47,17 @@ final class ImageLoader {
         void onComplete(boolean success, Bitmap bitmap);
     }
 
+    interface PrefetchCallback {
+        void onComplete(long bytes);
+    }
+
     private static final int CACHE_KB = 8 * 1024;
     private static final int MAX_DECODE_BYTES = 10 * 1024 * 1024;
     private static final int MAX_BITMAP_PIXELS = 5_000_000;
     private static final int MAX_BITMAP_SIDE = 2400;
+    private static final long MAX_OFFLINE_BYTES = 96L * 1024L * 1024L;
+    private static Context appContext;
+    private static File offlineDir;
     private static final LruCache<String, Bitmap> CACHE =
             new LruCache<String, Bitmap>(CACHE_KB) {
                 @Override
@@ -50,6 +68,15 @@ final class ImageLoader {
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(2);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final WeakHashMap<ImageView, ValueAnimator> REVEAL_ANIMATORS = new WeakHashMap<>();
+
+    static synchronized void init(Context context) {
+        if (context == null) return;
+        appContext = context.getApplicationContext();
+        if (offlineDir != null) return;
+        offlineDir = new File(appContext.getFilesDir(),
+                "offline-cache/images");
+        offlineDir.mkdirs();
+    }
 
     static void into(ImageView view, String sourceUrl, int targetPx) {
         into(view, sourceUrl, targetPx, null);
@@ -114,6 +141,7 @@ final class ImageLoader {
     private static void loadInto(ImageView view, String cacheKey, String url, String fallbackUrl,
                                  int targetPx, boolean clearBefore, boolean animate,
                                  IntoBitmapCallback callback) {
+        init(view == null ? null : view.getContext());
         Object current = view.getTag();
         if (url.equals(current) && view.getDrawable() != null) {
             Bitmap cached = CACHE.get(url);
@@ -241,6 +269,71 @@ final class ImageLoader {
         });
     }
 
+    static void prefetchOffline(Context context, List<String> sourceUrls, int targetPx,
+                                PrefetchCallback callback) {
+        init(context);
+        List<String> urls = uniqueUrls(sourceUrls);
+        EXECUTOR.execute(() -> {
+            long bytes = 0L;
+            for (String source : urls) {
+                String url = thumbnailUrl(source, targetPx);
+                if (url.isEmpty()) continue;
+                download(url, safeTarget(targetPx));
+                File file = exactOfflineFile(url);
+                if (file != null && file.isFile()) bytes += file.length();
+            }
+            long result = bytes;
+            if (callback != null) MAIN.post(() -> callback.onComplete(result));
+        });
+    }
+
+    static long offlineBytes(List<String> sourceUrls) {
+        File dir = offlineDir;
+        if (dir == null || sourceUrls == null || sourceUrls.isEmpty()) return 0L;
+        Set<String> prefixes = new HashSet<>();
+        for (String source : sourceUrls) {
+            String original = originalUrl(source);
+            if (!original.isEmpty()) prefixes.add(hash(original) + "-");
+        }
+        File[] files = dir.listFiles();
+        if (files == null) return 0L;
+        long total = 0L;
+        for (File file : files) {
+            for (String prefix : prefixes) {
+                if (file.getName().startsWith(prefix) && file.getName().endsWith(".img")) {
+                    total += file.length();
+                    break;
+                }
+            }
+        }
+        return total;
+    }
+
+    static void pruneOffline(Context context, long maxAgeMs) {
+        init(context);
+        File dir = offlineDir;
+        File[] files = dir == null ? null : dir.listFiles();
+        if (files == null) return;
+        long cutoff = System.currentTimeMillis() - Math.max(0L, maxAgeMs);
+        List<File> kept = new ArrayList<>();
+        long total = 0L;
+        for (File file : files) {
+            if (!file.isFile()) continue;
+            if (maxAgeMs > 0L && file.lastModified() < cutoff) {
+                file.delete();
+                continue;
+            }
+            kept.add(file);
+            total += file.length();
+        }
+        kept.sort((left, right) -> Long.compare(left.lastModified(), right.lastModified()));
+        for (File file : kept) {
+            if (total <= MAX_OFFLINE_BYTES) break;
+            long length = file.length();
+            if (file.delete()) total -= length;
+        }
+    }
+
     static void loadOriginal(String sourceUrl, int targetPx, Callback callback) {
         String url = originalUrl(sourceUrl);
         if (url.isEmpty()) {
@@ -331,6 +424,13 @@ final class ImageLoader {
     private static Bitmap download(String url, int targetPx) {
         Bitmap cached = CACHE.get(url);
         if (cached != null) return cached;
+        byte[] exact = readOffline(exactOfflineFile(url));
+        Bitmap stored = decode(exact, targetPx);
+        if (stored != null) {
+            CACHE.put(url, stored);
+            return stored;
+        }
+        if (!isNetworkConnected()) return offlineFallback(url, targetPx);
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(url).openConnection();
@@ -339,37 +439,140 @@ final class ImageLoader {
             connection.setUseCaches(true);
             HeaderProvider.applyPublic(connection);
             int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) return null;
+            if (status < 200 || status >= 300) return offlineFallback(url, targetPx);
             byte[] bytes;
             try (InputStream input = new BufferedInputStream(connection.getInputStream());
                  ByteArrayOutputStream output = new ByteArrayOutputStream(48 * 1024)) {
                 byte[] buffer = new byte[8192];
                 int count;
                 while ((count = input.read(buffer)) >= 0) {
-                    if (output.size() + count > MAX_DECODE_BYTES) return null;
+                    if (output.size() + count > MAX_DECODE_BYTES) {
+                        return offlineFallback(url, targetPx);
+                    }
                     output.write(buffer, 0, count);
                 }
                 bytes = output.toByteArray();
             }
 
-            BitmapFactory.Options bounds = new BitmapFactory.Options();
-            bounds.inJustDecodeBounds = true;
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-            options.inSampleSize = sampleSize(bounds, targetPx);
-            options.inPurgeable = true;
-            options.inInputShareable = true;
-            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+            writeOffline(url, bytes);
+            Bitmap bitmap = decode(bytes, targetPx);
             if (bitmap != null) CACHE.put(url, bitmap);
             return bitmap;
         } catch (OutOfMemoryError error) {
             CACHE.evictAll();
             return null;
         } catch (Exception ignored) {
-            return null;
+            return offlineFallback(url, targetPx);
         } finally {
             if (connection != null) connection.disconnect();
+        }
+    }
+
+    private static Bitmap offlineFallback(String url, int targetPx) {
+        Bitmap fallback = decode(readOffline(fallbackOfflineFile(url)), targetPx);
+        if (fallback != null) CACHE.put(url, fallback);
+        return fallback;
+    }
+
+    private static boolean isNetworkConnected() {
+        Context context = appContext;
+        if (context == null) return true;
+        try {
+            ConnectivityManager manager = (ConnectivityManager)
+                    context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkInfo info = manager == null ? null : manager.getActiveNetworkInfo();
+            return info != null && info.isConnected();
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
+
+    private static Bitmap decode(byte[] bytes, int targetPx) {
+        if (bytes == null || bytes.length == 0) return null;
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        options.inSampleSize = sampleSize(bounds, targetPx);
+        options.inPurgeable = true;
+        options.inInputShareable = true;
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+    }
+
+    private static List<String> uniqueUrls(List<String> values) {
+        List<String> result = new ArrayList<>();
+        if (values == null) return result;
+        Set<String> seen = new HashSet<>();
+        for (String value : values) {
+            String url = originalUrl(value);
+            if (!url.isEmpty() && seen.add(url)) result.add(url);
+        }
+        return result;
+    }
+
+    private static File exactOfflineFile(String url) {
+        File dir = offlineDir;
+        String original = originalUrl(url);
+        if (dir == null || original.isEmpty()) return null;
+        return new File(dir, hash(original) + "-" + hash(url).substring(0, 12) + ".img");
+    }
+
+    private static File fallbackOfflineFile(String url) {
+        File exact = exactOfflineFile(url);
+        if (exact == null || exact.exists()) return exact;
+        File dir = offlineDir;
+        String original = originalUrl(url);
+        File[] files = dir == null ? null : dir.listFiles();
+        if (files == null || original.isEmpty()) return null;
+        String prefix = hash(original) + "-";
+        File best = null;
+        for (File file : files) {
+            if (!file.getName().startsWith(prefix) || !file.getName().endsWith(".img")) continue;
+            if (best == null || file.lastModified() > best.lastModified()) best = file;
+        }
+        return best;
+    }
+
+    private static byte[] readOffline(File file) {
+        if (file == null || !file.isFile() || file.length() <= 0L
+                || file.length() > MAX_DECODE_BYTES) return null;
+        try (FileInputStream input = new FileInputStream(file);
+             ByteArrayOutputStream output = new ByteArrayOutputStream((int) file.length())) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
+            file.setLastModified(System.currentTimeMillis());
+            return output.toByteArray();
+        } catch (Exception ignored) {
+            file.delete();
+            return null;
+        }
+    }
+
+    private static synchronized void writeOffline(String url, byte[] bytes) {
+        File target = exactOfflineFile(url);
+        if (target == null || bytes == null || bytes.length == 0) return;
+        File temp = new File(target.getParentFile(), target.getName() + ".tmp");
+        try (FileOutputStream output = new FileOutputStream(temp, false)) {
+            output.write(bytes);
+            output.flush();
+            if (target.exists()) target.delete();
+            if (!temp.renameTo(target)) temp.delete();
+        } catch (Exception ignored) {
+            temp.delete();
+        }
+    }
+
+    private static String hash(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes("UTF-8"));
+            StringBuilder out = new StringBuilder(digest.length * 2);
+            for (byte item : digest) out.append(String.format("%02x", item & 0xff));
+            return out.toString();
+        } catch (Exception ignored) {
+            return Integer.toHexString(value.hashCode()) + "000000000000";
         }
     }
 

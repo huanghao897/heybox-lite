@@ -58,6 +58,7 @@ final class SessionStore {
     private static final String SPLASH_DURATION = "splash_duration";
     private static final String SHELL_BACK_SWIPE = "shell_back_swipe";
     private static final String REMEMBER_DETAIL_SCROLL = "remember_detail_scroll";
+    private static final String AUTO_OFFLINE_CLEANUP = "auto_offline_cleanup";
     private static final String DOUBLE_TAP_COMMENT_REPLY = "double_tap_comment_reply";
     private static final String PLAY_GIF = "play_gif";
     private static final String LAST_ANNOUNCEMENT_ID = "last_announcement_id";
@@ -336,6 +337,14 @@ final class SessionStore {
 
     void setRememberDetailScroll(boolean value) {
         prefs.edit().putBoolean(REMEMBER_DETAIL_SCROLL, value).apply();
+    }
+
+    boolean autoOfflineCleanup() {
+        return prefs.getBoolean(AUTO_OFFLINE_CLEANUP, true);
+    }
+
+    void setAutoOfflineCleanup(boolean value) {
+        prefs.edit().putBoolean(AUTO_OFFLINE_CLEANUP, value).apply();
     }
 
     boolean playGif() {
@@ -1682,6 +1691,7 @@ final class SessionStore {
         int splashDuration = splashDuration();
         boolean shellBackSwipe = shellBackSwipe();
         boolean rememberDetailScroll = rememberDetailScroll();
+        boolean autoOfflineCleanup = autoOfflineCleanup();
         boolean doubleTapCommentReply = doubleTapCommentReply();
         boolean playGif = playGif();
         String lastAnnouncementId = lastAnnouncementId();
@@ -1714,6 +1724,7 @@ final class SessionStore {
                 .putInt(SPLASH_DURATION, splashDuration)
                 .putBoolean(SHELL_BACK_SWIPE, shellBackSwipe)
                 .putBoolean(REMEMBER_DETAIL_SCROLL, rememberDetailScroll)
+                .putBoolean(AUTO_OFFLINE_CLEANUP, autoOfflineCleanup)
                 .putBoolean(DOUBLE_TAP_COMMENT_REPLY, doubleTapCommentReply)
                 .putBoolean(PLAY_GIF, playGif)
                 .putString(LAST_ANNOUNCEMENT_ID, lastAnnouncementId)

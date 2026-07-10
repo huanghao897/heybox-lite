@@ -38,6 +38,7 @@ public final class ImageViewerActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        ImageLoader.init(this);
         Compat.colorSystemBars(getWindow(), Color.rgb(26, 28, 31));
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
         session = new SessionStore(this);
