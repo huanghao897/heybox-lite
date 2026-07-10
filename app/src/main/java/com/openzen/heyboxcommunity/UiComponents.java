@@ -14,14 +14,8 @@ final class UiComponents {
         return drawable;
     }
 
-    static GradientDrawable feedCard(Context context, ThemeTokens tokens, float scale) {
-        GradientDrawable drawable = round(context, tokens.panel, 10, scale);
-        drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.glassStroke);
-        return drawable;
-    }
-
     static GradientDrawable softPill(Context context, ThemeTokens tokens, float scale) {
-        GradientDrawable drawable = round(context, tokens.softAccent(), 14, scale);
+        GradientDrawable drawable = round(context, tokens.softAccent(), 18, scale);
         drawable.setStroke(Math.max(1, dp(context, 1, scale)),
                 ThemeTokens.blend(tokens.hairline, tokens.accent, tokens.dark ? 0.45f : 0.24f));
         return drawable;
@@ -32,7 +26,7 @@ final class UiComponents {
     }
 
     static GradientDrawable dock(Context context, ThemeTokens tokens, float scale) {
-        GradientDrawable drawable = round(context, tokens.panelElevated, 16, scale);
+        GradientDrawable drawable = round(context, tokens.panelElevated, 21, scale);
         drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.glassStroke);
         return drawable;
     }

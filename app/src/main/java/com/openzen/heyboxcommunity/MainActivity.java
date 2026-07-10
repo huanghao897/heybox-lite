@@ -1891,7 +1891,7 @@ public final class MainActivity extends Activity {
         row.setGravity(16);
         row.setPadding(dp(8), 0, dp(REPLY_PAGE_SIZE), 0);
         ThemeTokens tokens = this.themeTokens == null ? ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY) : this.themeTokens;
-        Compat.setBackground(row, roundStroke(tokens.panelElevated, 18, tokens.glassStroke, 1));
+        Compat.setBackground(row, roundStroke(tokens.panelElevated, 21, tokens.glassStroke, 1));
         wrap.addView(row, new LinearLayout.LayoutParams(-1, dp(42)));
         TextView search = text("搜索帖子、作者或关键词", 12.0f, this.MUTED);
         search.setGravity(16);
@@ -3175,9 +3175,9 @@ public final class MainActivity extends Activity {
     private void addDetailActions(LinearLayout article, FeedItem item, JSONObject link) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
-        row.setPadding(dp(3), dp(3), dp(3), dp(3));
         Compat.setBackground(row, UiComponents.dock(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
+        Compat.clipToOutline(row);
         TextView like = actionPill("", R.drawable.ic_thumb_up);
         LikeState state = linkLikeState(link, item);
         boolean liked = state.liked;
@@ -3214,11 +3214,9 @@ public final class MainActivity extends Activity {
         if (divider) {
             View line = new View(this);
             line.setBackgroundColor(this.themeTokens.hairline);
-            LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(dp(1), dp(22));
-            lineParams.gravity = 16;
-            dock.addView(line, lineParams);
+            dock.addView(line, new LinearLayout.LayoutParams(dp(1), -1));
         }
-        dock.addView(item, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+        dock.addView(item, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
     }
 
     private void toggleWatchLater(FeedItem item, TextView button) {
@@ -3316,7 +3314,8 @@ public final class MainActivity extends Activity {
     private void updateDockItem(TextView view, boolean active, int icon) {
         int color = active ? this.themeTokens.accent : this.MUTED;
         view.setTextColor(color);
-        Compat.setBackground(view, active ? round(this.themeTokens.softAccent(), 10) : null);
+        // 激活段整段铺主题色柔和底，靠操作坞的圆角轮廓裁切两端
+        Compat.setBackground(view, active ? round(this.themeTokens.softAccent(), 0) : null);
         setLeftIcon(view, icon, color, 15);
     }
 
@@ -3896,7 +3895,7 @@ public final class MainActivity extends Activity {
         follow.setText(following ? "已关注" : "+ 关注");
         follow.setTextColor(this.themeTokens.accent);
         GradientDrawable drawable = round(following
-                ? this.themeTokens.softAccent() : Color.TRANSPARENT, 8);
+                ? this.themeTokens.softAccent() : Color.TRANSPARENT, 15);
         drawable.setStroke(dp(1), this.themeTokens.accent);
         Compat.setBackground(follow, drawable);
     }
@@ -5285,8 +5284,8 @@ public final class MainActivity extends Activity {
                     LinearLayout replySection = new LinearLayout(this);
                     replySection.setOrientation(1);
                     replySection.setPadding(dp(8), dp(3), dp(8), dp(3));
-                    Compat.setBackground(replySection, roundStroke(this.themeTokens.panelElevated,
-                            14, this.themeTokens.hairline, 1));
+                    Compat.setBackground(replySection, roundStroke(this.themeTokens.faintAccent(),
+                            12, this.themeTokens.hairline, 1));
                     LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(-1, -2);
                     sectionParams.topMargin = dp(5);
                     sectionParams.leftMargin = dp(44);
@@ -6207,7 +6206,7 @@ public final class MainActivity extends Activity {
         }
         marker.setPadding(dp(5), dp(5), dp(5), dp(5));
         Compat.setBackground(marker, UiComponents.iconChip(this,
-                settingIconColor(icon), this.session.uiScale() / 100.0f));
+                settingIconColor(name, icon), this.session.uiScale() / 100.0f));
         LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(27), dp(27));
         markerParams.rightMargin = dp(12);
         row.addView(marker, markerParams);
@@ -6233,15 +6232,16 @@ public final class MainActivity extends Activity {
         parent.addView(row);
     }
 
-    private int settingIconColor(int icon) {
-        if (icon == R.drawable.il_palette) return Color.rgb(78, 137, 236);
-        if (icon == R.drawable.il_refresh) return Color.rgb(56, 174, 116);
-        if (icon == R.drawable.il_globe) return Color.rgb(235, 145, 55);
+    private int settingIconColor(String name, int icon) {
+        // 「霁蓝」方案色板；浏览历史与稍后看共用图标，按名称区分成青/紫
+        if (name != null && name.startsWith("浏览历史")) return Color.rgb(47, 169, 196);
+        if (icon == R.drawable.il_palette) return Color.rgb(61, 123, 255);
+        if (icon == R.drawable.il_refresh) return Color.rgb(245, 154, 35);
+        if (icon == R.drawable.il_globe) return Color.rgb(47, 181, 102);
         if (icon == R.drawable.il_bookmark) return Color.rgb(221, 91, 133);
-        if (icon == R.drawable.il_history) return Color.rgb(126, 105, 224);
-        if (icon == R.drawable.il_calendar) return Color.rgb(230, 124, 66);
-        if (icon == R.drawable.il_settings) return Color.rgb(65, 163, 196);
-        return Color.rgb(110, 119, 132);
+        if (icon == R.drawable.il_history) return Color.rgb(168, 96, 232);
+        if (icon == R.drawable.il_calendar) return Color.rgb(228, 88, 88);
+        return Color.rgb(124, 131, 140);
     }
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
@@ -8220,13 +8220,13 @@ public final class MainActivity extends Activity {
     }
 
     private int settingToggleColor(String label) {
-        if (label.contains("夜间") || label.contains("无图")) return Color.rgb(92, 141, 235);
-        if (label.contains("动图") || label.contains("更新")) return Color.rgb(80, 181, 112);
-        if (label.contains("原图") || label.contains("开屏")) return Color.rgb(133, 106, 218);
-        if (label.contains("清理")) return Color.rgb(220, 103, 83);
-        if (label.contains("评论")) return Color.rgb(214, 96, 145);
-        if (label.contains("圆屏") || label.contains("阅读")) return Color.rgb(55, 165, 190);
-        return Color.rgb(224, 143, 60);
+        if (label.contains("夜间") || label.contains("无图")) return Color.rgb(61, 123, 255);
+        if (label.contains("动图") || label.contains("更新")) return Color.rgb(47, 181, 102);
+        if (label.contains("原图") || label.contains("开屏")) return Color.rgb(168, 96, 232);
+        if (label.contains("清理")) return Color.rgb(228, 88, 88);
+        if (label.contains("评论")) return Color.rgb(221, 91, 133);
+        if (label.contains("圆屏") || label.contains("阅读")) return Color.rgb(47, 169, 196);
+        return Color.rgb(245, 154, 35);
     }
 
     private ScaleControl settingSlider(LinearLayout parent, String label, String unit, final int min, int max, int current, final IntListener listener) {

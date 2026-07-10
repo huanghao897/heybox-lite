@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -76,16 +77,17 @@ final class FeedAdapter extends BaseAdapter {
             LinearLayout card = new LinearLayout(context);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(12), dp(10), dp(12), dp(9));
-            Compat.setBackground(card, UiComponents.feedCard(context, tokens, uiScale));
+            Compat.setBackground(card, UiComponents.card(context, tokens, uiScale));
             outer.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
             LinearLayout content = new LinearLayout(context);
             content.setGravity(Gravity.CENTER_VERTICAL);
-            card.addView(content, new LinearLayout.LayoutParams(-1, dp(70)));
+            content.setMinimumHeight(dp(70));
+            card.addView(content, new LinearLayout.LayoutParams(-1, -2));
 
             LinearLayout copy = new LinearLayout(context);
             copy.setOrientation(LinearLayout.VERTICAL);
-            content.addView(copy, new LinearLayout.LayoutParams(0, -1, 1));
+            content.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
 
             LinearLayout titleLine = new LinearLayout(context);
             titleLine.setGravity(Gravity.TOP);
@@ -94,7 +96,8 @@ final class FeedAdapter extends BaseAdapter {
             TextView badge = label(9, tokens.accent);
             badge.setGravity(Gravity.CENTER);
             badge.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(34), dp(19));
+            badge.setPadding(dp(6), 0, dp(6), 0);
+            LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(-2, dp(19));
             badgeParams.rightMargin = dp(5);
             titleLine.addView(badge, badgeParams);
 
@@ -105,15 +108,15 @@ final class FeedAdapter extends BaseAdapter {
             titleLine.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
             TextView description = label(11, tokens.muted);
-            description.setMaxLines(2);
-            description.setLineSpacing(dp(1), 1.06f);
+            description.setSingleLine(true);
+            description.setEllipsize(TextUtils.TruncateAt.END);
             LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(-1, -2);
             descriptionParams.topMargin = dp(4);
             copy.addView(description, descriptionParams);
 
             ImageView cover = new ImageView(context);
             cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            Compat.setBackground(cover, rounded(tokens.panelElevated, 10));
+            Compat.setBackground(cover, rounded(tokens.panelElevated, 11));
             Compat.clipToOutline(cover);
             LinearLayout.LayoutParams coverParams = new LinearLayout.LayoutParams(dp(64), dp(64));
             coverParams.leftMargin = dp(10);
@@ -160,7 +163,7 @@ final class FeedAdapter extends BaseAdapter {
         boolean showImage = !noImage && !item.image.isEmpty();
         holder.cover.setVisibility(showImage ? View.VISIBLE : View.GONE);
         if (showImage) {
-            Compat.setBackground(holder.cover, rounded(tokens.panelElevated, 10));
+            Compat.setBackground(holder.cover, rounded(tokens.panelElevated, 11));
             ImageLoader.intoPlain(holder.cover, item.image, 256);
         } else {
             ImageLoader.cancel(holder.cover);
