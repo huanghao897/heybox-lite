@@ -9,15 +9,25 @@ final class UiComponents {
     private UiComponents() {}
 
     static GradientDrawable card(Context context, ThemeTokens tokens, float scale) {
-        GradientDrawable drawable = round(context, tokens.panel, 10, scale);
-        drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.hairline);
+        GradientDrawable drawable = round(context, tokens.panel, 16, scale);
+        drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.glassStroke);
         return drawable;
     }
 
     static GradientDrawable softPill(Context context, ThemeTokens tokens, float scale) {
         GradientDrawable drawable = round(context, tokens.softAccent(), 14, scale);
         drawable.setStroke(Math.max(1, dp(context, 1, scale)),
-                ThemeTokens.blend(tokens.hairline, tokens.secondary, tokens.dark ? 0.45f : 0.24f));
+                ThemeTokens.blend(tokens.hairline, tokens.accent, tokens.dark ? 0.45f : 0.24f));
+        return drawable;
+    }
+
+    static GradientDrawable iconChip(Context context, int color, float scale) {
+        return round(context, color, 8, scale);
+    }
+
+    static GradientDrawable dock(Context context, ThemeTokens tokens, float scale) {
+        GradientDrawable drawable = round(context, tokens.panelElevated, 16, scale);
+        drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.glassStroke);
         return drawable;
     }
 

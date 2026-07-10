@@ -13,7 +13,9 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 final class FeedAdapter extends BaseAdapter {
     interface Listener {
@@ -24,6 +26,8 @@ final class FeedAdapter extends BaseAdapter {
         void onLike(FeedItem item);
     }
 
+    private static final int ENTER_LIMIT = 6;
+
     private final Context context;
     private final List<FeedItem> items;
     private final Listener listener;
@@ -32,16 +36,8 @@ final class FeedAdapter extends BaseAdapter {
     private final float uiScale;
     private final float textScale;
     private final boolean darkMode;
-    private final int textColor;
-    private final int mutedColor;
-    private final int cardColor;
-    private final int primaryColor;
-    private final int secondaryColor;
     private final ThemeTokens tokens;
-    private static final int ENTER_LIMIT = 6;
-    /** 本轮已入场的帖子 ID；配合预算保证每个 adapter 实例只有首批条目播入场动画。 */
-    private final java.util.Set<String> enteredIds = new java.util.HashSet<>();
-    private int enterBudget = ENTER_LIMIT;
+    private final Set<String> enteredIds = new HashSet<>();
 
     FeedAdapter(Context context, List<FeedItem> items, boolean noImage,
                 float uiScale, float textScale, boolean darkMode,
@@ -60,14 +56,9 @@ final class FeedAdapter extends BaseAdapter {
         this.uiScale = uiScale;
         this.textScale = textScale;
         this.darkMode = darkMode;
-        this.primaryColor = primaryColor;
-        this.secondaryColor = secondaryColor;
         this.listener = listener;
         this.likeListener = likeListener;
-        tokens = ThemeTokens.of(darkMode, primaryColor, secondaryColor);
-        textColor = tokens.text;
-        mutedColor = tokens.muted;
-        cardColor = tokens.panel;
+        this.tokens = ThemeTokens.of(darkMode, primaryColor, secondaryColor);
         if (!EmojiStore.isLoaded()) EmojiStore.whenReady(this::notifyDataSetChanged);
     }
 
@@ -85,55 +76,48 @@ final class FeedAdapter extends BaseAdapter {
             LinearLayout card = new LinearLayout(context);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(12), dp(10), dp(12), dp(9));
-            Compat.setBackground(card, cardBackground());
+            Compat.setBackground(card, UiComponents.card(context, tokens, uiScale));
             outer.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
-            LinearLayout body = new LinearLayout(context);
-            body.setGravity(Gravity.CENTER_VERTICAL);
-            card.addView(body, new LinearLayout.LayoutParams(-1, dp(74)));
-
-            ImageView cover = new ImageView(context);
-            cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            Compat.setBackground(cover, round(coverPlaceholderColor(), 8));
-            Compat.clipToOutline(cover);
-            body.addView(cover, new LinearLayout.LayoutParams(dp(102), dp(66)));
+            LinearLayout content = new LinearLayout(context);
+            content.setGravity(Gravity.CENTER_VERTICAL);
+            card.addView(content, new LinearLayout.LayoutParams(-1, dp(70)));
 
             LinearLayout copy = new LinearLayout(context);
             copy.setOrientation(LinearLayout.VERTICAL);
-            LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, dp(66), 1);
-            copyParams.leftMargin = dp(10);
-            body.addView(copy, copyParams);
+            content.addView(copy, new LinearLayout.LayoutParams(0, -1, 1));
 
             LinearLayout titleLine = new LinearLayout(context);
-            titleLine.setGravity(Gravity.CENTER_VERTICAL);
-            copy.addView(titleLine, new LinearLayout.LayoutParams(-1, -1));
+            titleLine.setGravity(Gravity.TOP);
+            copy.addView(titleLine, new LinearLayout.LayoutParams(-1, -2));
 
-            TextView badge = label(9, tokens.text);
+            TextView badge = label(9, tokens.accent);
             badge.setGravity(Gravity.CENTER);
             badge.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            badge.setText("文章");
-            Compat.setBackground(badge, UiComponents.softPill(context, tokens, uiScale));
-            LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(34), dp(20));
-            badgeParams.rightMargin = dp(6);
+            LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(34), dp(19));
+            badgeParams.rightMargin = dp(5);
             titleLine.addView(badge, badgeParams);
 
-            TextView title = label(14, textColor);
+            TextView title = label(14, tokens.text);
             title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            title.setMaxLines(3);
+            title.setMaxLines(2);
             title.setLineSpacing(0, 1.08f);
             titleLine.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
-            TextView description = label(11, darkMode
-                    ? Color.rgb(203, 205, 207) : Color.rgb(63, 67, 72));
+            TextView description = label(11, tokens.muted);
             description.setMaxLines(2);
-            description.setLineSpacing(dp(1), 1.08f);
-            card.addView(description);
+            description.setLineSpacing(dp(1), 1.06f);
+            LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(-1, -2);
+            descriptionParams.topMargin = dp(4);
+            copy.addView(description, descriptionParams);
 
-            View divider = new View(context);
-            divider.setBackgroundColor(tokens.hairline);
-            LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1));
-            dividerParams.topMargin = dp(7);
-            card.addView(divider, dividerParams);
+            ImageView cover = new ImageView(context);
+            cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            Compat.setBackground(cover, rounded(tokens.panelElevated, 10));
+            Compat.clipToOutline(cover);
+            LinearLayout.LayoutParams coverParams = new LinearLayout.LayoutParams(dp(64), dp(64));
+            coverParams.leftMargin = dp(10);
+            content.addView(cover, coverParams);
 
             LinearLayout meta = new LinearLayout(context);
             meta.setGravity(Gravity.CENTER_VERTICAL);
@@ -141,54 +125,48 @@ final class FeedAdapter extends BaseAdapter {
             metaParams.topMargin = dp(5);
             card.addView(meta, metaParams);
 
-            TextView author = label(10, mutedColor);
+            TextView author = label(10, tokens.muted);
             author.setSingleLine(true);
             meta.addView(author, new LinearLayout.LayoutParams(0, -2, 1));
             TextView likes = stat(R.drawable.ic_thumb_up);
-            meta.addView(likes, new LinearLayout.LayoutParams(dp(48), dp(24)));
+            meta.addView(likes, new LinearLayout.LayoutParams(dp(48), -1));
             TextView comments = stat(R.drawable.ic_comment);
-            meta.addView(comments, new LinearLayout.LayoutParams(dp(48), dp(24)));
+            meta.addView(comments, new LinearLayout.LayoutParams(dp(48), -1));
 
-            holder = new Holder(card, copy, badge, title, description, author, likes, comments, cover);
+            holder = new Holder(card, cover, badge, title, description, author, likes, comments);
             outer.setTag(holder);
             reusable = outer;
         } else {
             holder = (Holder) reusable.getTag();
         }
-        // 绑定前先复位变换，防止复用带出上一条的动画状态；
-        // 入场只对“本轮首批”条目按 ID 播一次，滚动复用/加载更多不重播
+
         Motions.reset(reusable);
-        FeedItem entering = getItem(position);
-        if (!Motions.off() && this.enterBudget > 0 && entering.id != null
-                && !entering.id.isEmpty() && this.enteredIds.add(entering.id)) {
-            int order = ENTER_LIMIT - this.enterBudget;
-            this.enterBudget--;
-            Motions.listEnter(reusable, order, dp(8));
+        FeedItem item = getItem(position);
+        if (!Motions.off() && position < ENTER_LIMIT && item.id != null
+                && !item.id.isEmpty() && enteredIds.add(item.id)) {
+            Motions.listEnter(reusable, position, dp(8));
         }
 
-        FeedItem item = getItem(position);
         String title = RichContent.plainText(item.title);
         String description = RichContent.plainText(item.description);
         EmojiRenderer.set(holder.title, title.isEmpty() ? "无标题内容" : title, darkMode);
-        holder.badge.setVisibility(item.article ? View.VISIBLE : View.GONE);
         EmojiRenderer.set(holder.description, description, darkMode);
         holder.description.setVisibility(description.isEmpty() ? View.GONE : View.VISIBLE);
         holder.author.setText(item.author.isEmpty() ? "小黑盒社区" : item.author);
-        updateStatView(holder.likes, item.likes, item.liked, R.drawable.ic_thumb_up);
-        updateStatView(holder.comments, item.comments, false, R.drawable.ic_comment);
+        updateBadge(holder.badge, item);
+        updateStat(holder.likes, item.likes, item.liked, R.drawable.ic_thumb_up);
+        updateStat(holder.comments, item.comments, false, R.drawable.ic_comment);
+
         boolean showImage = !noImage && !item.image.isEmpty();
         holder.cover.setVisibility(showImage ? View.VISIBLE : View.GONE);
-        LinearLayout.LayoutParams copyParams =
-                (LinearLayout.LayoutParams) holder.copy.getLayoutParams();
-        copyParams.leftMargin = showImage ? dp(10) : 0;
-        holder.copy.setLayoutParams(copyParams);
         if (showImage) {
-            Compat.setBackground(holder.cover, round(coverPlaceholderColor(), 8));
-            ImageLoader.intoPlain(holder.cover, item.image, 320);
+            Compat.setBackground(holder.cover, rounded(tokens.panelElevated, 10));
+            ImageLoader.intoPlain(holder.cover, item.image, 256);
         } else {
             ImageLoader.cancel(holder.cover);
             holder.cover.setImageDrawable(null);
         }
+
         View.OnClickListener open = view -> listener.onOpen(item);
         reusable.setOnClickListener(open);
         holder.card.setOnClickListener(view -> {
@@ -198,7 +176,7 @@ final class FeedAdapter extends BaseAdapter {
         holder.likes.setOnClickListener(view -> {
             if (likeListener == null) listener.onOpen(item);
             else {
-                UiComponents.press(holder.likes);
+                UiComponents.press(view);
                 likeListener.onLike(item);
                 notifyDataSetChanged();
             }
@@ -206,40 +184,45 @@ final class FeedAdapter extends BaseAdapter {
         return reusable;
     }
 
+    private void updateBadge(TextView badge, FeedItem item) {
+        if (!item.pinned && !item.article) {
+            badge.setVisibility(View.GONE);
+            return;
+        }
+        badge.setVisibility(View.VISIBLE);
+        if (item.pinned) {
+            int red = Color.rgb(232, 88, 105);
+            badge.setText("置顶");
+            badge.setTextColor(red);
+            Compat.setBackground(badge, rounded(ThemeTokens.blend(tokens.panel, red, 0.18f), 7));
+        } else {
+            badge.setText("文章");
+            badge.setTextColor(tokens.accent);
+            Compat.setBackground(badge, rounded(tokens.softAccent(), 7));
+        }
+    }
+
     private TextView stat(int icon) {
-        TextView view = label(10, mutedColor);
+        TextView view = label(10, tokens.muted);
         view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(4), 0, dp(4), 0);
-        setStatIcon(view, icon, mutedColor, 14);
+        setStatIcon(view, icon, tokens.muted, 14);
         return view;
     }
 
-    private void updateStatView(TextView view, int count, boolean active, int icon) {
-        int bg = active ? activeStatBackground() : Color.TRANSPARENT;
-        int fg = active ? contrast(bg) : mutedColor;
+    private void updateStat(TextView view, int count, boolean active, int icon) {
+        int color = active ? tokens.accent : tokens.muted;
         view.setText(String.valueOf(Math.max(0, count)));
-        view.setTextColor(fg);
-        GradientDrawable drawable = round(bg, 8);
-        drawable.setStroke(dp(1), active ? blend(bg, fg, 0.24f) : Color.TRANSPARENT);
-        Compat.setBackground(view, drawable);
-        setStatIcon(view, icon, fg, active ? 16 : 14);
-    }
-
-    private int activeStatBackground() {
-        return darkMode ? tokens.text : tokens.primary;
-    }
-
-    private int coverPlaceholderColor() {
-        return darkMode ? Color.rgb(42, 43, 45) : Color.rgb(232, 234, 236);
+        view.setTextColor(color);
+        Compat.setBackground(view, active ? rounded(tokens.softAccent(), 10) : null);
+        setStatIcon(view, icon, color, active ? 15 : 14);
     }
 
     private void setStatIcon(TextView view, int icon, int color, int size) {
         Drawable drawable = Compat.tintedDrawable(context, icon, color);
-        if (drawable != null) {
-            drawable.setBounds(0, 0, dp(size), dp(size));
-            view.setCompoundDrawables(drawable, null, null, null);
-            view.setCompoundDrawablePadding(dp(3));
-        }
+        if (drawable == null) return;
+        drawable.setBounds(0, 0, dp(size), dp(size));
+        view.setCompoundDrawables(drawable, null, null, null);
+        view.setCompoundDrawablePadding(dp(3));
     }
 
     private TextView label(float size, int color) {
@@ -250,29 +233,11 @@ final class FeedAdapter extends BaseAdapter {
         return view;
     }
 
-    private GradientDrawable round(int color, int radius) {
+    private GradientDrawable rounded(int color, int radius) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color);
         drawable.setCornerRadius(dp(radius));
         return drawable;
-    }
-
-    private GradientDrawable cardBackground() {
-        return UiComponents.card(context, tokens, uiScale);
-    }
-
-    private static int contrast(int color) {
-        int luminance = (Color.red(color) * 299 + Color.green(color) * 587
-                + Color.blue(color) * 114) / 1000;
-        return luminance >= 150 ? Color.BLACK : Color.WHITE;
-    }
-
-    private static int blend(int base, int overlay, float amount) {
-        float keep = 1f - amount;
-        return Color.rgb(
-                Math.round(Color.red(base) * keep + Color.red(overlay) * amount),
-                Math.round(Color.green(base) * keep + Color.green(overlay) * amount),
-                Math.round(Color.blue(base) * keep + Color.blue(overlay) * amount));
     }
 
     private int dp(int value) {
@@ -281,27 +246,25 @@ final class FeedAdapter extends BaseAdapter {
 
     private static final class Holder {
         final LinearLayout card;
-        final LinearLayout copy;
+        final ImageView cover;
         final TextView badge;
         final TextView title;
         final TextView description;
         final TextView author;
         final TextView likes;
         final TextView comments;
-        final ImageView cover;
 
-        Holder(LinearLayout card, LinearLayout copy, TextView badge,
-               TextView title, TextView description,
-               TextView author, TextView likes, TextView comments, ImageView cover) {
+        Holder(LinearLayout card, ImageView cover, TextView badge, TextView title,
+               TextView description, TextView author, TextView likes,
+               TextView comments) {
             this.card = card;
-            this.copy = copy;
+            this.cover = cover;
             this.badge = badge;
             this.title = title;
             this.description = description;
             this.author = author;
             this.likes = likes;
             this.comments = comments;
-            this.cover = cover;
         }
     }
 }

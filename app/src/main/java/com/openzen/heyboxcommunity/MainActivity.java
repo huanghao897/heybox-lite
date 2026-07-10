@@ -638,7 +638,10 @@ public final class MainActivity extends Activity {
         this.bottom.setGravity(17);
         this.bottom.setPadding(dp(10), 0, dp(10), 0);
         if (Build.VERSION.SDK_INT >= 21) this.bottom.setElevation(dp(10));
-        int navFill = this.session.darkMode() ? Color.argb(210, 28, 29, 31) : Color.argb(218, 255, 255, 255);
+        int navFill = Color.argb(this.session.darkMode() ? 232 : 224,
+                Color.red(this.themeTokens.panelElevated),
+                Color.green(this.themeTokens.panelElevated),
+                Color.blue(this.themeTokens.panelElevated));
         Compat.setBackground(this.bottom, round(navFill, 22));
         this.bottom.setVisibility(8);
         this.bottom.setAlpha(0.0f);
@@ -698,8 +701,8 @@ public final class MainActivity extends Activity {
     }
 
     private void applyPalette() {
-        this.PRIMARY = parseThemeColor(this.session.primaryColor(), this.session.darkMode() ? -1 : Color.rgb(NAV_ICON_SIZE_DP, 21, 23));
-        this.SECONDARY = parseThemeColor(this.session.secondaryColor(), this.session.darkMode() ? Color.rgb(196, 198, 201) : Color.rgb(87, 91, 96));
+        this.PRIMARY = parseThemeColor(this.session.primaryColor(), Color.rgb(36, 121, 184));
+        this.SECONDARY = parseThemeColor(this.session.secondaryColor(), Color.rgb(94, 158, 255));
         this.themeTokens = ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY);
         this.BG = this.themeTokens.background;
         this.PANEL = this.themeTokens.panel;
@@ -727,7 +730,9 @@ public final class MainActivity extends Activity {
         item.setOnClickListener(view -> {
             runWithPressFeedback(item, click);
         });
-        this.bottom.addView(item, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
+        params.setMargins(dp(3), dp(3), dp(3), dp(3));
+        this.bottom.addView(item, params);
     }
 
     private void setBottomNavVisible(boolean visible) {
@@ -1008,13 +1013,13 @@ public final class MainActivity extends Activity {
         this.leading.setVisibility(0);
         this.action.setVisibility(4);
         if ("settings_home".equals(key)) {
-            this.title.setText("设置");
+            this.title.setText("设置中心");
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showProfile();
             });
         } else if ("display_settings".equals(key)) {
-            this.title.setText("显示");
+            this.title.setText("显示与主题");
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showSettingsHome();
@@ -1032,7 +1037,7 @@ public final class MainActivity extends Activity {
                 showSettingsHome();
             });
         } else if ("app_settings".equals(key)) {
-            this.title.setText("内容与缓存");
+            this.title.setText("内容与网络");
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showSettingsHome();
@@ -1054,7 +1059,7 @@ public final class MainActivity extends Activity {
         }
         setBottomNavVisible(true);
         this.leading.setVisibility(4);
-        int activeColor = this.TEXT;
+        int activeColor = this.themeTokens.accent;
         int inactiveColor = this.MUTED;
         for (int i = 0; i < this.bottom.getChildCount(); i++) {
             View item = this.bottom.getChildAt(i);
@@ -1062,6 +1067,9 @@ public final class MainActivity extends Activity {
             item.setAlpha(active ? 1.0f : 0.62f);
             if (item instanceof ImageView) {
                 ((ImageView) item).setColorFilter(active ? activeColor : inactiveColor);
+                Compat.setBackground(item, active
+                        ? UiComponents.softPill(this, this.themeTokens,
+                        this.session.uiScale() / 100.0f) : null);
             } else if (item instanceof TextView) {
                 TextView textItem = (TextView) item;
                 textItem.setTextColor(active ? activeColor : inactiveColor);
@@ -1868,12 +1876,22 @@ public final class MainActivity extends Activity {
 
     private View feedTopBar() {
         LinearLayout wrap = vertical(this.BG);
-        wrap.setPadding(dp(7), dp(7), dp(7), dp(4));
+        wrap.setPadding(dp(7), dp(5), dp(7), dp(4));
+        LinearLayout heading = new LinearLayout(this);
+        heading.setGravity(16);
+        heading.setPadding(dp(4), 0, dp(4), 0);
+        TextView name = text("社区", 21.0f, this.TEXT);
+        name.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        heading.addView(name, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+        TextView time = text(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 10.5f, this.MUTED);
+        time.setGravity(21);
+        heading.addView(time, new LinearLayout.LayoutParams(dp(52), dp(38)));
+        wrap.addView(heading);
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
         row.setPadding(dp(8), 0, dp(REPLY_PAGE_SIZE), 0);
         ThemeTokens tokens = this.themeTokens == null ? ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY) : this.themeTokens;
-        Compat.setBackground(row, roundStroke(tokens.panel, 18, tokens.hairline, 1));
+        Compat.setBackground(row, roundStroke(tokens.panelElevated, 18, tokens.glassStroke, 1));
         wrap.addView(row, new LinearLayout.LayoutParams(-1, dp(42)));
         TextView search = text("搜索帖子、作者或关键词", 12.0f, this.MUTED);
         search.setGravity(16);
@@ -2843,7 +2861,7 @@ public final class MainActivity extends Activity {
         divider.setBackgroundColor(this.themeTokens == null ? blend(this.PANEL, this.SECONDARY, 0.18f) : this.themeTokens.hairline);
         addTop(page, divider, 10);
         divider.getLayoutParams().height = dp(1);
-        TextView commentTitle = text("评论", 14.0f, this.TEXT);
+        TextView commentTitle = text("评论 " + (commentArray == null ? 0 : commentArray.length()), 14.0f, this.TEXT);
         commentTitle.setTypeface(appRegularTypeface(), 1);
         commentTitle.setPadding(dp(REPLY_PREVIEW_COUNT), dp(10), dp(REPLY_PREVIEW_COUNT), dp(REPLY_PAGE_SIZE));
         page.addView(commentTitle);
@@ -3132,6 +3150,9 @@ public final class MainActivity extends Activity {
     private void addDetailActions(LinearLayout article, FeedItem item, JSONObject link) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
+        row.setPadding(dp(3), dp(3), dp(3), dp(3));
+        Compat.setBackground(row, UiComponents.dock(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
         TextView like = actionPill("", R.drawable.ic_thumb_up);
         LikeState state = linkLikeState(link, item);
         boolean liked = state.liked;
@@ -3143,29 +3164,36 @@ public final class MainActivity extends Activity {
         like.setOnClickListener(view -> {
             toggleLinkLike(item, like);
         });
-        row.addView(like, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
+        addDockItem(row, like, false);
         TextView favorite = actionPill("", R.drawable.ic_bookmark);
         boolean favored = linkFavored(link);
         updateFavoriteView(favorite, favored);
-        LinearLayout.LayoutParams favoriteParams = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
-        favoriteParams.leftMargin = dp(6);
-        row.addView(favorite, favoriteParams);
+        addDockItem(row, favorite, true);
         favorite.setOnClickListener(view2 -> {
             toggleFavorite(item, favorite);
         });
         TextView watchLater = actionPill("", R.drawable.ic_history);
         updateWatchLaterView(watchLater, this.localCache.isWatchLater(item.id), false);
         watchLater.setOnClickListener(view3 -> toggleWatchLater(item, watchLater));
-        TextView comment = actionPill("评论", R.drawable.ic_comment);
-        LinearLayout.LayoutParams commentParams = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
-        commentParams.leftMargin = dp(6);
-        row.addView(comment, commentParams);
+        addDockItem(row, watchLater, true);
+        TextView comment = actionPill(String.valueOf(Math.max(0, item.comments)), R.drawable.ic_comment);
+        comment.setContentDescription("评论");
+        addDockItem(row, comment, true);
         comment.setOnClickListener(view4 -> {
             showCommentDialog(null);
         });
         addTop(article, row, 10);
-        addTop(article, watchLater, 6);
-        watchLater.getLayoutParams().height = dp(34);
+    }
+
+    private void addDockItem(LinearLayout dock, View item, boolean divider) {
+        if (divider) {
+            View line = new View(this);
+            line.setBackgroundColor(this.themeTokens.hairline);
+            LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(dp(1), dp(22));
+            lineParams.gravity = 16;
+            dock.addView(line, lineParams);
+        }
+        dock.addView(item, new LinearLayout.LayoutParams(0, dp(36), 1.0f));
     }
 
     private void toggleWatchLater(FeedItem item, TextView button) {
@@ -3200,12 +3228,9 @@ public final class MainActivity extends Activity {
 
     private void updateWatchLaterView(TextView view, boolean saved, boolean loading) {
         if (view == null) return;
-        view.setText(loading ? "缓存中" : saved ? "已缓存" : "稍后看");
-        int background = saved
-                ? activeActionBackground(this.SECONDARY)
-                : blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.2f : 0.1f);
-        int foreground = saved ? contrast(background) : this.TEXT;
-        updatePill(view, background, foreground, R.drawable.ic_history);
+        view.setText(loading ? "缓存中" : saved ? "已缓存" : "稍后");
+        view.setContentDescription(saved ? "移出稍后看" : "稍后看");
+        updateDockItem(view, saved || loading, R.drawable.ic_history);
     }
 
     private void refreshWatchLaterOffline(FeedItem item, JSONObject body, Runnable complete) {
@@ -3242,47 +3267,32 @@ public final class MainActivity extends Activity {
     }
 
     private TextView actionPill(String label, int icon) {
-        TextView view = text(label, 12.0f, this.TEXT);
+        TextView view = text(label, 10.5f, this.MUTED);
         view.setGravity(17);
         view.setTypeface(appRegularTypeface(), 1);
-        view.setPadding(dp(7), 0, dp(7), 0);
-        updatePill(view, blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.2f : 0.1f), this.TEXT, icon);
+        view.setPadding(dp(4), 0, dp(4), 0);
+        updateDockItem(view, false, icon);
         return view;
     }
 
     private void updateLinkLikeView(TextView view, boolean liked, int likes) {
-        int iBlend;
-        if (liked) {
-            iBlend = activeActionBackground(this.PRIMARY);
-        } else {
-            iBlend = blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.2f : 0.1f);
-        }
-        int bg = iBlend;
-        int fg = liked ? contrast(bg) : this.TEXT;
         view.setText(String.valueOf(Math.max(0, likes)));
-        updatePill(view, bg, fg, R.drawable.ic_thumb_up);
+        view.setContentDescription(liked ? "取消点赞" : "点赞");
+        updateDockItem(view, liked, R.drawable.ic_thumb_up);
     }
 
     private void updateFavoriteView(TextView view, boolean favored) {
-        int iBlend;
         view.setTag(Boolean.valueOf(favored));
-        if (favored) {
-            iBlend = blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.48f : 0.22f);
-        } else {
-            iBlend = blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.2f : 0.1f);
-        }
-        int bg = iBlend;
-        int fg = favored ? this.SECONDARY : this.TEXT;
         view.setText(favored ? "已收藏" : "收藏");
-        updatePill(view, bg, fg, R.drawable.ic_bookmark);
+        view.setContentDescription(favored ? "取消收藏" : "收藏");
+        updateDockItem(view, favored, R.drawable.ic_bookmark);
     }
 
-    private void updatePill(TextView view, int bg, int fg, int icon) {
-        view.setTextColor(fg);
-        GradientDrawable drawable = round(bg, 10);
-        drawable.setStroke(dp(1), blend(bg, fg, 0.2f));
-        Compat.setBackground(view, drawable);
-        setLeftIcon(view, icon, fg, 15);
+    private void updateDockItem(TextView view, boolean active, int icon) {
+        int color = active ? this.themeTokens.accent : this.MUTED;
+        view.setTextColor(color);
+        Compat.setBackground(view, active ? round(this.themeTokens.softAccent(), 10) : null);
+        setLeftIcon(view, icon, color, 15);
     }
 
     private boolean linkLiked(JSONObject link, FeedItem fallback) {
@@ -3813,10 +3823,12 @@ public final class MainActivity extends Activity {
         nameRow.addView(name, new LinearLayout.LayoutParams(-2, -2));
         int level = userLevel(user);
         if (level > 0) {
-            TextView badge = text("Lv." + level, 8.0f, -1);
+            int levelColor = levelBadgeColor(level);
+            TextView badge = text("Lv." + level, 8.0f, levelColor);
             badge.setGravity(17);
             badge.setTypeface(appRegularTypeface(), 1);
-            Compat.setBackground(badge, round(Color.rgb(210, 72, 218), 3));
+            Compat.setBackground(badge, round(blend(this.PANEL, levelColor,
+                    this.session.darkMode() ? 0.30f : 0.14f), 4));
             LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(32), dp(15));
             badgeParams.leftMargin = dp(REPLY_PAGE_SIZE);
             nameRow.addView(badge, badgeParams);
@@ -3855,26 +3867,12 @@ public final class MainActivity extends Activity {
     }
 
     private void updateFollowView(TextView follow, boolean following) {
-        int iBlend;
-        int iBlend2;
         follow.setTag(Boolean.valueOf(following));
-        if (following) {
-            iBlend = activeFollowBackground();
-        } else {
-            iBlend = blend(this.PANEL, this.TEXT, this.session.darkMode() ? 0.12f : 0.06f);
-        }
-        int bg = iBlend;
-        int fg = following ? contrast(bg) : this.TEXT;
         follow.setText(following ? "已关注" : "+ 关注");
-        follow.setTextColor(fg);
-        GradientDrawable drawable = round(bg, 7);
-        int iDp = dp(1);
-        if (following) {
-            iBlend2 = blend(bg, fg, 0.26f);
-        } else {
-            iBlend2 = blend(bg, this.SECONDARY, this.session.darkMode() ? 0.32f : 0.18f);
-        }
-        drawable.setStroke(iDp, iBlend2);
+        follow.setTextColor(this.themeTokens.accent);
+        GradientDrawable drawable = round(following
+                ? this.themeTokens.softAccent() : Color.TRANSPARENT, 8);
+        drawable.setStroke(dp(1), this.themeTokens.accent);
         Compat.setBackground(follow, drawable);
     }
 
@@ -5267,9 +5265,7 @@ public final class MainActivity extends Activity {
                     LinearLayout replySection = new LinearLayout(this);
                     replySection.setOrientation(1);
                     replySection.setPadding(dp(8), dp(3), dp(8), dp(3));
-                    int replyBg = this.session.darkMode()
-                            ? Color.rgb(30, 32, 35) : Color.rgb(247, 248, 250);
-                    Compat.setBackground(replySection, round(replyBg, 8));
+                    Compat.setBackground(replySection, round(this.themeTokens.faintAccent(), 10));
                     LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(-1, -2);
                     sectionParams.topMargin = dp(5);
                     linearLayoutCard.addView(replySection, sectionParams);
@@ -5321,12 +5317,10 @@ public final class MainActivity extends Activity {
     }
 
     private TextView replyControl(String label, int icon) {
-        int background = this.session.darkMode() ? Color.rgb(34, 36, 39) : Color.rgb(244, 245, 247);
-        TextView control = text(label, 11.0f, this.MUTED);
+        TextView control = text(label, 11.0f, this.themeTokens.accent);
         control.setGravity(17);
         control.setPadding(dp(8), 0, dp(8), 0);
-        GradientDrawable drawable = round(background, 6);
-        Compat.setBackground(control, drawable);
+        Compat.setBackground(control, round(this.themeTokens.softAccent(), 13));
         return control;
     }
 
@@ -5447,13 +5441,13 @@ public final class MainActivity extends Activity {
     }
 
     private void updateCommentLikeView(TextView view, boolean liked, int likes) {
-        int bg = liked ? activeActionBackground(this.PRIMARY) : blend(this.BG, this.MUTED, this.session.darkMode() ? 0.12f : 0.08f);
-        int color = liked ? contrast(bg) : this.MUTED;
+        int color = liked ? this.themeTokens.accent : this.MUTED;
         view.setText(String.valueOf(Math.max(0, likes)));
         view.setTextColor(color);
         view.setPadding(dp(5), 0, dp(5), 0);
-        GradientDrawable drawable = round(bg, 14);
-        drawable.setStroke(dp(1), liked ? blend(bg, color, 0.24f) : blend(this.BG, this.MUTED, 0.18f));
+        GradientDrawable drawable = round(liked
+                ? this.themeTokens.softAccent() : Color.TRANSPARENT, 14);
+        drawable.setStroke(dp(1), liked ? this.themeTokens.accent : this.themeTokens.hairline);
         Compat.setBackground(view, drawable);
         setLeftIcon(view, R.drawable.ic_thumb_up, color, liked ? 14 : 13);
     }
@@ -5817,11 +5811,13 @@ public final class MainActivity extends Activity {
     private void addLevelBadge(LinearLayout row, JSONObject user, boolean small) {
         int level = userLevel(user);
         if (level <= 0) return;
-        TextView badge = text("Lv." + level, small ? 7.0f : 8.0f, -1);
+        int levelColor = levelBadgeColor(level);
+        TextView badge = text("Lv." + level, small ? 7.0f : 8.0f, levelColor);
         badge.setGravity(17);
         badge.setTypeface(appRegularTypeface(), 1);
         badge.setPadding(dp(4), 0, dp(4), 0);
-        Compat.setBackground(badge, round(levelBadgeColor(level), 3));
+        Compat.setBackground(badge, round(blend(this.PANEL, levelColor,
+                this.session.darkMode() ? 0.30f : 0.14f), 4));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(small ? 13 : 15));
         params.leftMargin = dp(4);
         params.rightMargin = dp(4);
@@ -6136,7 +6132,7 @@ public final class MainActivity extends Activity {
             this.pendingBackTransition = true;
             showProfile();
         });
-        this.title.setText("设置");
+        this.title.setText("设置中心");
         this.action.setVisibility(4);
         View settingsHome = buildSettingsHomeContent();
         this.retainedPages.put("settings_home", settingsHome);
@@ -6148,11 +6144,11 @@ public final class MainActivity extends Activity {
         LinearLayout page = vertical(this.BG);
         page.setPadding(dp(8), dp(8), dp(8), dp(14));
         scroll.addView(page);
-        page.addView(settingsTopCard("设置"));
+        page.addView(settingsTopCard("设置中心"));
         LinearLayout panel = settingsList();
-        addSettingEntry(panel, "显示", "", R.drawable.il_palette, this::showDisplaySettings);
-        addSettingEntry(panel, "启动与更新", this.session.autoUpdateCheck() ? "自动检查" : "手动检查", R.drawable.il_refresh, this::showStartupSettings);
-        addSettingEntry(panel, "内容与缓存", formatCacheMb(cacheBytes()), R.drawable.il_globe, this::showAppSettings);
+        addSettingEntry(panel, "显示与主题", "主题、字号、间距与界面预览", R.drawable.il_palette, this::showDisplaySettings);
+        addSettingEntry(panel, "启动与更新", "开屏动画、自动检查更新", R.drawable.il_refresh, this::showStartupSettings);
+        addSettingEntry(panel, "内容与网络", "图片、缓存与登录状态", R.drawable.il_globe, this::showAppSettings);
         addSettingEntry(panel, "关于", appVersion(), R.drawable.il_info, this::showAbout);
         page.addView(panel);
         return scroll;
@@ -6173,12 +6169,15 @@ public final class MainActivity extends Activity {
         row.setPadding(dp(6), dp(14), dp(6), dp(14));
         ImageView marker = new ImageView(this);
         marker.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        Drawable iconDrawable = Compat.tintedDrawable(this, icon, this.TEXT);
+        Drawable iconDrawable = Compat.tintedDrawable(this, icon, Color.WHITE);
         if (iconDrawable != null) {
             marker.setImageDrawable(iconDrawable);
         }
-        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(24), dp(24));
-        markerParams.rightMargin = dp(14);
+        marker.setPadding(dp(5), dp(5), dp(5), dp(5));
+        Compat.setBackground(marker, UiComponents.iconChip(this,
+                settingIconColor(icon), this.session.uiScale() / 100.0f));
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(27), dp(27));
+        markerParams.rightMargin = dp(12);
         row.addView(marker, markerParams);
         LinearLayout copy = vertical(0);
         TextView titleView = text(name, 14.5f, this.TEXT);
@@ -6202,18 +6201,29 @@ public final class MainActivity extends Activity {
         parent.addView(row);
     }
 
+    private int settingIconColor(int icon) {
+        if (icon == R.drawable.il_palette) return Color.rgb(78, 137, 236);
+        if (icon == R.drawable.il_refresh) return Color.rgb(56, 174, 116);
+        if (icon == R.drawable.il_globe) return Color.rgb(235, 145, 55);
+        if (icon == R.drawable.il_bookmark) return Color.rgb(221, 91, 133);
+        if (icon == R.drawable.il_history) return Color.rgb(126, 105, 224);
+        if (icon == R.drawable.il_calendar) return Color.rgb(230, 124, 66);
+        if (icon == R.drawable.il_settings) return Color.rgb(65, 163, 196);
+        return Color.rgb(110, 119, 132);
+    }
+
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
         LinearLayout panel = settingsList();
-        addSettingEntry(panel, "稍后看", String.valueOf(this.localCache.watchLaterItems().size()), R.drawable.il_history,
+        addSettingEntry(panel, "稍后看", this.localCache.watchLaterItems().size() + " 篇离线内容", R.drawable.il_history,
                 this::showWatchLater);
-        addSettingEntry(panel, "收藏", "", R.drawable.il_bookmark, () -> {
+        addSettingEntry(panel, "收藏", "我收藏的帖子", R.drawable.il_bookmark, () -> {
             if (!this.session.isLoggedIn()) {
                 showLogin();
                 return;
             }
             showFavorites();
         });
-        addSettingEntry(panel, "历史", "", R.drawable.il_history, () -> {
+        addSettingEntry(panel, "浏览历史", "最近看过的帖子", R.drawable.il_history, () -> {
             if (!this.session.isLoggedIn()) {
                 showLogin();
                 return;
@@ -6224,13 +6234,11 @@ public final class MainActivity extends Activity {
             params.put("no_more", "false");
             showSavedList("浏览历史", EndpointProvider.history(), params);
         });
-        SignInManager.Result state = this.signInManager == null
-                ? SignInManager.Result.loggedOut() : this.signInManager.currentState();
-        String signSub = state.message;
+        String signSub = "已暂停";
         addSettingEntry(panel, "每日签到", signSub, R.drawable.il_calendar, () -> {
             toast("签到功能已暂时关闭");
         });
-        addSettingEntry(panel, "设置", "", R.drawable.il_settings,
+        addSettingEntry(panel, "设置", "主题、缓存与关于", R.drawable.il_settings,
                 this::showSettingsHome);
         addTop(page, panel, 8);
     }
@@ -7309,17 +7317,17 @@ public final class MainActivity extends Activity {
         box.setGravity(16);
         box.setPadding(dp(4), 0, dp(4), 0);
         box.setBackgroundColor(this.BG);
-        TextView name = text(pageTitle, 15.0f, this.TEXT);
+        TextView name = text(pageTitle, 20.5f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
-        box.addView(name, new LinearLayout.LayoutParams(0, dp(34), 1.0f));
+        box.addView(name, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
         TextView time = text(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 12.0f, this.MUTED);
         time.setGravity(21);
-        box.addView(time, new LinearLayout.LayoutParams(dp(58), dp(34)));
+        box.addView(time, new LinearLayout.LayoutParams(dp(58), dp(42)));
         return box;
     }
 
     private void showDisplaySettings() {
-        LinearLayout linearLayout = settingsPage("display_settings", "显示");
+        LinearLayout linearLayout = settingsPage("display_settings", "显示与主题");
         LinearLayout panel = settingsList();
         boolean[] dark = {this.session.darkMode()};
         boolean[] bodyBold = {this.session.bodyBold()};
@@ -7573,7 +7581,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showAppSettings() {
-        LinearLayout page = settingsPage("app_settings", "内容与缓存");
+        LinearLayout page = settingsPage("app_settings", "内容与网络");
         LinearLayout panel = settingsList();
         addTop(panel, toggleRow("无图模式", this.session.noImage(), value -> {
             this.session.setNoImage(value);
@@ -8121,12 +8129,9 @@ public final class MainActivity extends Activity {
         boolean[] value = {initial};
         Runnable render = () -> {
             state.setText(value[0] ? onText : offText);
-            int foreground = value[0]
-                    ? (this.session.darkMode() ? Color.BLACK : Color.WHITE)
-                    : (this.session.darkMode() ? Color.WHITE : Color.BLACK);
-            int background = value[0]
-                    ? (this.session.darkMode() ? Color.WHITE : Color.BLACK)
-                    : (this.session.darkMode() ? Color.rgb(55, 57, 60) : Color.rgb(220, 222, 225));
+            int foreground = value[0] ? contrast(this.themeTokens.accent) : this.MUTED;
+            int background = value[0] ? this.themeTokens.accent
+                    : (this.session.darkMode() ? Color.rgb(55, 59, 66) : Color.rgb(224, 227, 231));
             state.setTextColor(foreground);
             Compat.setBackground(state, round(background, 14));
         };
@@ -9178,7 +9183,6 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout settingsList() {
-        // 回滚 GPT 的扁平化：设置页与资料菜单恢复为圆角卡片
         return card();
     }
 

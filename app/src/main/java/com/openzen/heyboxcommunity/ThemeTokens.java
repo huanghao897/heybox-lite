@@ -13,6 +13,8 @@ final class ThemeTokens {
     final int muted;
     final int subtle;
     final int hairline;
+    final int accent;
+    final int glassStroke;
     final int onPrimary;
 
     private ThemeTokens(boolean dark, int primary, int secondary) {
@@ -20,13 +22,13 @@ final class ThemeTokens {
         this.primary = primary;
         this.secondary = secondary;
         if (dark) {
-            background = Color.rgb(12, 13, 14);
-            panel = Color.rgb(25, 26, 28);
-            panelElevated = Color.rgb(32, 33, 35);
-            text = Color.rgb(244, 245, 246);
-            muted = Color.rgb(158, 162, 166);
+            background = Color.rgb(11, 12, 14);
+            panel = Color.rgb(23, 25, 29);
+            panelElevated = Color.rgb(29, 33, 39);
+            text = Color.rgb(243, 245, 247);
+            muted = Color.rgb(155, 164, 174);
             subtle = Color.rgb(104, 108, 112);
-            hairline = Color.rgb(48, 50, 53);
+            hairline = Color.rgb(43, 48, 56);
         } else {
             background = Color.rgb(245, 246, 247);
             panel = Color.rgb(255, 255, 255);
@@ -36,6 +38,8 @@ final class ThemeTokens {
             subtle = Color.rgb(154, 158, 162);
             hairline = Color.rgb(224, 226, 228);
         }
+        accent = secondary;
+        glassStroke = blend(hairline, text, dark ? 0.12f : 0.06f);
         onPrimary = contrast(primary);
     }
 
@@ -48,7 +52,11 @@ final class ThemeTokens {
     }
 
     int softAccent() {
-        return blend(panel, secondary, dark ? 0.22f : 0.10f);
+        return blend(panel, accent, dark ? 0.18f : 0.12f);
+    }
+
+    int faintAccent() {
+        return blend(panel, accent, dark ? 0.08f : 0.05f);
     }
 
     int pressedSurface() {
