@@ -14,6 +14,12 @@ final class UiComponents {
         return drawable;
     }
 
+    static GradientDrawable feedCard(Context context, ThemeTokens tokens, float scale) {
+        GradientDrawable drawable = round(context, tokens.panel, 10, scale);
+        drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.glassStroke);
+        return drawable;
+    }
+
     static GradientDrawable softPill(Context context, ThemeTokens tokens, float scale) {
         GradientDrawable drawable = round(context, tokens.softAccent(), 14, scale);
         drawable.setStroke(Math.max(1, dp(context, 1, scale)),

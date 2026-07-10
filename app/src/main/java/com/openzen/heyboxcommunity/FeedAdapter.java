@@ -76,7 +76,7 @@ final class FeedAdapter extends BaseAdapter {
             LinearLayout card = new LinearLayout(context);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(12), dp(10), dp(12), dp(9));
-            Compat.setBackground(card, UiComponents.card(context, tokens, uiScale));
+            Compat.setBackground(card, UiComponents.feedCard(context, tokens, uiScale));
             outer.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
             LinearLayout content = new LinearLayout(context);

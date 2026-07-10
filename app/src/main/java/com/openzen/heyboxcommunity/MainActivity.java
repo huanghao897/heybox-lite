@@ -2858,9 +2858,7 @@ public final class MainActivity extends Activity {
 
     private void addDetailCommentSection(LinearLayout page, JSONArray commentArray) {
         LinearLayout surface = vertical(0);
-        surface.setPadding(dp(12), dp(12), dp(12), dp(14));
-        Compat.setBackground(surface, roundStroke(this.themeTokens.background, 28,
-                this.themeTokens.glassStroke, 1));
+        surface.setPadding(0, dp(8), 0, dp(12));
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(16);
         TextView commentTitle = text("评论 " + (commentArray == null ? 0 : commentArray.length()), 14.0f, this.TEXT);
@@ -3288,10 +3286,8 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout detailArticleSurface() {
-        LinearLayout article = vertical(0);
-        article.setPadding(dp(14), dp(14), dp(14), dp(14));
-        Compat.setBackground(article, roundStroke(this.themeTokens.background, 28,
-                this.themeTokens.glassStroke, 1));
+        LinearLayout article = vertical(this.BG);
+        article.setPadding(dp(4), dp(8), dp(4), dp(12));
         return article;
     }
 
