@@ -5307,7 +5307,7 @@ public final class MainActivity extends Activity {
             });
         }
         if (shown > REPLY_PREVIEW_COUNT) {
-            TextView collapse = replyControl("收起回复", R.drawable.ic_arrow_back);
+            TextView collapse = replyControl("收起回复", R.drawable.ic_collapse);
             addTop(parent, collapse, 2);
             collapse.getLayoutParams().height = dp(26);
             collapse.setOnClickListener(view3 -> {
@@ -6095,10 +6095,10 @@ public final class MainActivity extends Activity {
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(0);
         actions.setPadding(0, dp(8), 0, 0);
-        Button cancel = button("取消", R.drawable.ic_logout);
+        Button cancel = button("取消", R.drawable.ic_close);
         cancel.setOnClickListener(view -> dialog.dismiss());
         actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
-        Button save = button("保存", R.drawable.ic_settings);
+        Button save = button("保存", R.drawable.ic_save);
         save.setOnClickListener(view -> {
             String result = this.session.importSignInCredentialsFromText(input.getText().toString());
             if (this.localCache != null) {
@@ -6361,7 +6361,7 @@ public final class MainActivity extends Activity {
         addTop(panel, credential, 4);
         LinearLayout advRow = new LinearLayout(this);
         advRow.setOrientation(0);
-        Button importCredential = button("导入", R.drawable.ic_refresh);
+        Button importCredential = button("导入", R.drawable.ic_import);
         importCredential.setOnClickListener(view -> {
             String result = this.session.importOfficialProviderAuthForSignInLog();
             if (!result.contains("ok-isolated")) {
@@ -6375,7 +6375,7 @@ public final class MainActivity extends Activity {
                     ? "签到环境：已保存" : "签到环境：未导入");
         });
         advRow.addView(importCredential, new LinearLayout.LayoutParams(0, dp(34), 1.0f));
-        Button pasteCredential = button("粘贴", R.drawable.ic_info);
+        Button pasteCredential = button("粘贴", R.drawable.ic_paste);
         pasteCredential.setOnClickListener(view -> {
             dialog.dismiss();
             showSignInCredentialImportDialog();
@@ -7335,7 +7335,7 @@ public final class MainActivity extends Activity {
         addTop(panel, toggleRow("夜间模式", dark[0], value -> {
             dark[0] = value;
         }), 0);
-        Button fullPreview = secondaryButton("查看界面预览", 0);
+        Button fullPreview = secondaryButton("查看界面预览", R.drawable.il_eye);
         fullPreview.setOnClickListener(view -> {
             showDisplayPreview();
         });
@@ -7381,7 +7381,7 @@ public final class MainActivity extends Activity {
             setScaleControlValue(screenPaddingH[0], h, 0);
             setScaleControlValue(screenPaddingV[0], v, 0);
             updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, -1, -1, parseNumber(padding.input, 0, NAV_BAR_HEIGHT_DP) == null ? this.session.pagePadding() : parseNumber(padding.input, 0, NAV_BAR_HEIGHT_DP).intValue());
-        }), REPLY_PAGE_SIZE);
+        }), 0);
         linearLayout.addView(panel);
         panel = card();
         TextView bodyGroupTitle = text("正文排版", 13.0f, this.TEXT);
@@ -7408,7 +7408,7 @@ public final class MainActivity extends Activity {
                 typefaceCreate = appRegularTypeface();
             }
             previewBody.setTypeface(typefaceCreate);
-        }), 4);
+        }), 0);
         updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, this.session.uiScale(), this.session.textScale(), this.session.pagePadding());
         previewBody.setTextSize((13 * this.session.bodyTextScale()) / 100.0f);
         Compat.setLetterSpacing(previewBody, this.session.bodyLetterSpacing() / 200.0f);
@@ -7436,7 +7436,7 @@ public final class MainActivity extends Activity {
             rowIndex += REPLY_PREVIEW_COUNT;
         }
         panel.addView(themeGrid);
-        Button save = button("保存显示设置", R.drawable.ic_settings);
+        Button save = button("保存显示设置", R.drawable.ic_save);
         save.setOnClickListener(view2 -> {
             Integer ui = parseNumber(uiScale.input, 70, 160);
             Integer text = parseNumber(textScale.input, 70, 180);
@@ -7470,7 +7470,7 @@ public final class MainActivity extends Activity {
             toast("显示设置已保存");
         });
         addTop(panel, save, 10);
-        Button reset = secondaryButton("恢复默认设置", 0);
+        Button reset = secondaryButton("恢复默认设置", R.drawable.il_refresh);
         reset.setOnClickListener(view3 -> {
             showLiteDialog("恢复默认显示设置", "主题、字体、间距和界面大小都将恢复为默认值", "恢复", () -> {
                 this.session.resetDisplaySettings();
@@ -7533,7 +7533,7 @@ public final class MainActivity extends Activity {
         reply.addView(second, new LinearLayout.LayoutParams(0, -2, 1.0f));
         addTop(comments, reply, 7);
         addTop(linearLayout, comments, 7);
-        Button backToSettings = secondaryButton("返回继续调整", 0);
+        Button backToSettings = secondaryButton("返回继续调整", R.drawable.ic_arrow_back);
         backToSettings.setOnClickListener(view -> {
             showDisplaySettings();
         });
@@ -7591,33 +7591,33 @@ public final class MainActivity extends Activity {
         boolean zPlayGif = this.session.playGif();
         SessionStore sessionStoreGif = this.session;
         Objects.requireNonNull(sessionStoreGif);
-        addTop(panel, toggleRow("帖子内播放动图", zPlayGif, sessionStoreGif::setPlayGif), 4);
+        addTop(panel, toggleRow("帖子内播放动图", zPlayGif, sessionStoreGif::setPlayGif), 0);
         boolean zOriginalImages = this.session.originalImages();
         SessionStore sessionStore = this.session;
         Objects.requireNonNull(sessionStore);
-        addTop(panel, toggleRow("图片查看器允许查看原图", zOriginalImages, sessionStore::setOriginalImages), 4);
+        addTop(panel, toggleRow("图片查看器允许查看原图", zOriginalImages, sessionStore::setOriginalImages), 0);
         boolean zShellBackSwipe = this.session.shellBackSwipe();
         SessionStore sessionStore2 = this.session;
         Objects.requireNonNull(sessionStore2);
-        addTop(panel, toggleRow("右滑返回上一级", zShellBackSwipe, sessionStore2::setShellBackSwipe), 4);
+        addTop(panel, toggleRow("右滑返回上一级", zShellBackSwipe, sessionStore2::setShellBackSwipe), 0);
         boolean zRememberDetailScroll = this.session.rememberDetailScroll();
         SessionStore sessionStore3 = this.session;
         Objects.requireNonNull(sessionStore3);
-        addTop(panel, toggleRow("记住帖子阅读位置", zRememberDetailScroll, sessionStore3::setRememberDetailScroll), 4);
+        addTop(panel, toggleRow("记住帖子阅读位置", zRememberDetailScroll, sessionStore3::setRememberDetailScroll), 0);
         addTop(panel, toggleRow("自动清理", "30 天", "关",
                 this.session.autoOfflineCleanup(), value -> {
                     this.session.setAutoOfflineCleanup(value);
                     if (value) pruneOfflineCache(null);
-                }), 4);
+                }), 0);
         boolean zDoubleTapCommentReply = this.session.doubleTapCommentReply();
         SessionStore sessionStore4 = this.session;
         Objects.requireNonNull(sessionStore4);
-        addTop(panel, toggleRow("双击评论回复", zDoubleTapCommentReply, sessionStore4::setDoubleTapCommentReply), 4);
+        addTop(panel, toggleRow("双击评论回复", zDoubleTapCommentReply, sessionStore4::setDoubleTapCommentReply), 0);
         EditText blockKeywords = textField(panel, "屏蔽关键词", this.session.blockKeywords());
         blockKeywords.setSingleLine(false);
         blockKeywords.setMinLines(REPLY_PREVIEW_COUNT);
         blockKeywords.setGravity(16);
-        Button saveFilter = button("保存内容过滤", R.drawable.ic_settings);
+        Button saveFilter = button("保存内容过滤", R.drawable.ic_save);
         saveFilter.setOnClickListener(view -> {
             this.session.setBlockKeywords(blockKeywords.getText().toString());
             this.feed.clear();
@@ -7628,7 +7628,7 @@ public final class MainActivity extends Activity {
         addTop(panel, saveFilter, 7);
         TextView offlineInfo = text("离线缓存 " + formatCacheMb(this.localCache.offlineBytes()) + " / 已缓存帖子" + this.localCache.detailCount(), 11.0f, this.MUTED);
         addTop(panel, offlineInfo, 8);
-        Button pruneOffline = secondaryButton("清理过期离线内容", 0);
+        Button pruneOffline = secondaryButton("清理过期离线内容", R.drawable.il_cleanup);
         pruneOffline.setOnClickListener(view -> {
             pruneOffline.setEnabled(false);
             pruneOfflineCache(() -> {
@@ -7639,12 +7639,12 @@ public final class MainActivity extends Activity {
             });
         });
         addTop(panel, pruneOffline, 7);
-        Button diagnostics = secondaryButton("导出日志", 0);
+        Button diagnostics = secondaryButton("导出日志", R.drawable.il_scroll);
         diagnostics.setOnClickListener(view2 -> {
             exportDiagnostics();
         });
         addTop(panel, diagnostics, 7);
-        Button clearCache = secondaryButton("清除缓存 " + formatCacheMb(cacheBytes()), 0);
+        Button clearCache = secondaryButton("清除缓存 " + formatCacheMb(cacheBytes()), R.drawable.il_cleanup);
         clearCache.setOnClickListener(view3 -> {
             long before = tempCacheBytes();
             long imageBefore = ((long) ImageLoader.cacheSizeKb()) * 1024;
@@ -7655,7 +7655,8 @@ public final class MainActivity extends Activity {
             toast("已清除缓存 " + formatCacheMb(before + imageBefore));
         });
         addTop(panel, clearCache, 10);
-        Button login = button(this.session.isLoggedIn() ? "退出登录" : "二维码登录", R.drawable.ic_logout);
+        Button login = button(this.session.isLoggedIn() ? "退出登录" : "二维码登录",
+                this.session.isLoggedIn() ? R.drawable.ic_logout : R.drawable.il_qr);
         login.setOnClickListener(view5 -> {
             if (this.session.isLoggedIn()) {
                 this.session.clearSession();
@@ -7679,16 +7680,16 @@ public final class MainActivity extends Activity {
         }), 0);
         addTop(panel, toggleRow("显示开屏动画", splashEnabled[0], value2 -> {
             splashEnabled[0] = value2;
-        }), 4);
+        }), 0);
         EditText splashText = textField(panel, "开屏文字", this.session.splashText());
         ScaleControl duration = settingSlider(panel, "开屏时长", "ms", 500, 2600, this.session.splashDuration(), value3 -> {
         });
-        Button preview = secondaryButton("预览开屏动画", 0);
+        Button preview = secondaryButton("预览开屏动画", R.drawable.il_eye);
         preview.setOnClickListener(view -> {
             showSplashPreview(splashText.getText().toString().trim(), parseNumber(duration.input, 500, 2600));
         });
         addTop(panel, preview, 8);
-        Button save = button("保存启动设置", R.drawable.ic_settings);
+        Button save = button("保存启动设置", R.drawable.ic_save);
         save.setOnClickListener(view2 -> {
             Integer durationValue = parseNumber(duration.input, 500, 2600);
             if (durationValue == null) {
@@ -8020,12 +8021,12 @@ public final class MainActivity extends Activity {
         addTop(panel, feedbackTitle, 12);
         addTop(panel, text("QQ群：781941517", 12.0f, this.TEXT), REPLY_PAGE_SIZE);
         addTop(panel, text("遇到问题可以扫码进交流群。", 11.0f, this.MUTED), 3);
-        Button feedbackQr = secondaryButton("群二维码", 0);
+        Button feedbackQr = secondaryButton("群二维码", R.drawable.il_qr);
         feedbackQr.setOnClickListener(view -> {
             showFeedbackGroupQr();
         });
         addTop(panel, feedbackQr, 8);
-        Button announcements = secondaryButton("公告列表", 0);
+        Button announcements = secondaryButton("公告列表", R.drawable.il_info);
         announcements.setOnClickListener(view2 -> {
             showAnnouncementsV2();
         });
@@ -8033,7 +8034,7 @@ public final class MainActivity extends Activity {
         TextView updateStatus = text("", 12.0f, this.MUTED);
         updateStatus.setVisibility(8);
         addTop(panel, updateStatus, 8);
-        Button update = secondaryButton("检查更新", 0);
+        Button update = secondaryButton("检查更新", R.drawable.il_update);
         update.setOnClickListener(view3 -> {
             update.setEnabled(false);
             update.setText("检查中");
@@ -8071,7 +8072,7 @@ public final class MainActivity extends Activity {
             });
         });
         addTop(panel, update, 8);
-        Button repository = secondaryButton("打开 GitHub 项目", 0);
+        Button repository = secondaryButton("打开 GitHub 项目", R.drawable.il_globe);
         repository.setOnClickListener(view4 -> {
             openUrl("https://github.com/huanghao897/heybox-lite");
         });
@@ -8119,13 +8120,38 @@ public final class MainActivity extends Activity {
     private LinearLayout toggleRow(String label, String onText, String offText,
                                    boolean initial, ToggleListener listener) {
         LinearLayout row = new LinearLayout(this);
-        row.setGravity(16);
-        TextView title = text(label, 13.0f, this.TEXT);
-        row.addView(title, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
+        row.setOrientation(1);
+        LinearLayout content = new LinearLayout(this);
+        content.setGravity(16);
+        content.setPadding(dp(6), dp(9), dp(6), dp(9));
+
+        ImageView icon = new ImageView(this);
+        icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        icon.setPadding(dp(6), dp(6), dp(6), dp(6));
+        Drawable drawable = Compat.tintedDrawable(this, settingToggleIcon(label), Color.WHITE);
+        if (drawable != null) {
+            icon.setImageDrawable(drawable);
+        }
+        Compat.setBackground(icon, UiComponents.iconChip(this, settingToggleColor(label),
+                this.session.uiScale() / 100.0f));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(32), dp(32));
+        iconParams.rightMargin = dp(12);
+        content.addView(icon, iconParams);
+
+        TextView title = text(label, 13.5f, this.TEXT);
+        title.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        content.addView(title, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
         TextView state = text("", 11.0f, this.TEXT);
         state.setGravity(17);
-        state.setPadding(dp(6), 0, dp(6), 0);
-        row.addView(state, new LinearLayout.LayoutParams(-2, dp(28)));
+        state.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        state.setPadding(dp(9), 0, dp(9), 0);
+        content.addView(state, new LinearLayout.LayoutParams(-2, dp(30)));
+        row.addView(content, new LinearLayout.LayoutParams(-1, dp(54)));
+
+        View divider = new View(this);
+        divider.setBackgroundColor(this.themeTokens.hairline);
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, Math.max(1, dp(1)));
+        row.addView(divider, dividerParams);
         boolean[] value = {initial};
         Runnable render = () -> {
             state.setText(value[0] ? onText : offText);
@@ -8136,12 +8162,39 @@ public final class MainActivity extends Activity {
             Compat.setBackground(state, round(background, 14));
         };
         render.run();
-        row.setOnClickListener(view -> {
+        content.setOnClickListener(view -> {
+            UiComponents.press(view);
             value[0] = !value[0];
             render.run();
             listener.onChanged(value[0]);
         });
         return row;
+    }
+
+    private int settingToggleIcon(String label) {
+        if (label.contains("夜间")) return R.drawable.il_sun;
+        if (label.contains("圆屏")) return R.drawable.il_round_screen;
+        if (label.contains("加粗")) return R.drawable.il_bold;
+        if (label.contains("无图")) return R.drawable.il_image;
+        if (label.contains("动图")) return R.drawable.il_gif;
+        if (label.contains("原图")) return R.drawable.il_zoom;
+        if (label.contains("右滑")) return R.drawable.il_swipe;
+        if (label.contains("阅读位置")) return R.drawable.il_scroll;
+        if (label.contains("清理")) return R.drawable.il_cleanup;
+        if (label.contains("评论回复")) return R.drawable.il_reply;
+        if (label.contains("更新")) return R.drawable.il_update;
+        if (label.contains("开屏")) return R.drawable.il_splash;
+        return R.drawable.il_settings;
+    }
+
+    private int settingToggleColor(String label) {
+        if (label.contains("夜间") || label.contains("无图")) return Color.rgb(92, 141, 235);
+        if (label.contains("动图") || label.contains("更新")) return Color.rgb(80, 181, 112);
+        if (label.contains("原图") || label.contains("开屏")) return Color.rgb(133, 106, 218);
+        if (label.contains("清理")) return Color.rgb(220, 103, 83);
+        if (label.contains("评论")) return Color.rgb(214, 96, 145);
+        if (label.contains("圆屏") || label.contains("阅读")) return Color.rgb(55, 165, 190);
+        return Color.rgb(224, 143, 60);
     }
 
     private ScaleControl settingSlider(LinearLayout parent, String label, String unit, final int min, int max, int current, final IntListener listener) {
@@ -8743,7 +8796,7 @@ public final class MainActivity extends Activity {
             strPrimaryColor = this.session.primaryColor();
         }
         EditText accent = textField(display, "主色", strPrimaryColor);
-        Button save = button("保存显示设置", R.drawable.ic_settings);
+        Button save = button("保存显示设置", R.drawable.ic_save);
         save.setOnClickListener(view -> {
             Integer ui = parseNumber(uiScale, 70, 160);
             Integer text = parseNumber(textScale, 70, 180);
@@ -8769,7 +8822,8 @@ public final class MainActivity extends Activity {
             toast("已清除缓存 " + Math.max(1, before) + " KB");
         });
         addTop(page, clearCache, 8);
-        Button login = button(this.session.isLoggedIn() ? "退出登录" : "二维码登录", R.drawable.ic_logout);
+        Button login = button(this.session.isLoggedIn() ? "退出登录" : "二维码登录",
+                this.session.isLoggedIn() ? R.drawable.ic_logout : R.drawable.il_qr);
         login.setOnClickListener(view3 -> {
             if (this.session.isLoggedIn()) {
                 this.session.clearSession();
