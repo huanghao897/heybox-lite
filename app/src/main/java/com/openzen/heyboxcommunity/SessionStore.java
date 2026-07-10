@@ -61,6 +61,7 @@ final class SessionStore {
     private static final String AUTO_OFFLINE_CLEANUP = "auto_offline_cleanup";
     private static final String DOUBLE_TAP_COMMENT_REPLY = "double_tap_comment_reply";
     private static final String PLAY_GIF = "play_gif";
+    private static final String MOTION_LEVEL = "motion_level";
     private static final String LAST_ANNOUNCEMENT_ID = "last_announcement_id";
     private static final String SEEN_ANNOUNCEMENT_IDS = "seen_announcement_ids";
     private static final String LAST_SIGN_ATTEMPT_DATE = "last_sign_attempt_date";
@@ -353,6 +354,33 @@ final class SessionStore {
 
     void setPlayGif(boolean value) {
         prefs.edit().putBoolean(PLAY_GIF, value).apply();
+    }
+
+    /** 动画等级：0 关闭 / 1 精简 / 2 完整。首次按设备内存一次性判定并固化，之后完全听用户设置。 */
+    int motionLevel() {
+        int stored = prefs.getInt(MOTION_LEVEL, -1);
+        if (stored >= 0) return Math.min(2, stored);
+        int resolved = detectDefaultMotionLevel();
+        prefs.edit().putInt(MOTION_LEVEL, resolved).apply();
+        return resolved;
+    }
+
+    void setMotionLevel(int value) {
+        prefs.edit().putInt(MOTION_LEVEL, Math.max(0, Math.min(2, value))).apply();
+    }
+
+    private int detectDefaultMotionLevel() {
+        try {
+            android.app.ActivityManager manager = (android.app.ActivityManager)
+                    context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (manager != null) {
+                if (Build.VERSION.SDK_INT >= 19 && manager.isLowRamDevice()) return 0;
+                if (manager.getMemoryClass() <= 64) return 0;
+            }
+        } catch (Exception ignored) {
+        }
+        // 默认精简；“完整”只由用户主动选择
+        return 1;
     }
 
     boolean doubleTapCommentReply() {
@@ -1694,6 +1722,7 @@ final class SessionStore {
         boolean autoOfflineCleanup = autoOfflineCleanup();
         boolean doubleTapCommentReply = doubleTapCommentReply();
         boolean playGif = playGif();
+        int motionLevel = motionLevel();
         String lastAnnouncementId = lastAnnouncementId();
         String seenAnnouncementIds = prefs.getString(SEEN_ANNOUNCEMENT_IDS, "[]");
         String searchHistory = prefs.getString(SEARCH_HISTORY, "[]");
@@ -1727,6 +1756,7 @@ final class SessionStore {
                 .putBoolean(AUTO_OFFLINE_CLEANUP, autoOfflineCleanup)
                 .putBoolean(DOUBLE_TAP_COMMENT_REPLY, doubleTapCommentReply)
                 .putBoolean(PLAY_GIF, playGif)
+                .putInt(MOTION_LEVEL, motionLevel)
                 .putString(LAST_ANNOUNCEMENT_ID, lastAnnouncementId)
                 .putString(SEEN_ANNOUNCEMENT_IDS, seenAnnouncementIds)
                 .putString(SEARCH_HISTORY, searchHistory)

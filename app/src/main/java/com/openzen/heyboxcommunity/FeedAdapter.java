@@ -38,6 +38,10 @@ final class FeedAdapter extends BaseAdapter {
     private final int primaryColor;
     private final int secondaryColor;
     private final ThemeTokens tokens;
+    private static final int ENTER_LIMIT = 6;
+    /** 本轮已入场的帖子 ID；配合预算保证每个 adapter 实例只有首批条目播入场动画。 */
+    private final java.util.Set<String> enteredIds = new java.util.HashSet<>();
+    private int enterBudget = ENTER_LIMIT;
 
     FeedAdapter(Context context, List<FeedItem> items, boolean noImage,
                 float uiScale, float textScale, boolean darkMode,
@@ -148,12 +152,18 @@ final class FeedAdapter extends BaseAdapter {
             holder = new Holder(card, copy, badge, title, description, author, likes, comments, cover);
             outer.setTag(holder);
             reusable = outer;
-            reusable.setAlpha(0f);
-            reusable.setTranslationY(dp(6));
-            reusable.animate().alpha(1f).translationY(0).setDuration(MotionSpec.ENTER_MS)
-                    .setInterpolator(MotionSpec.EASE_OUT).start();
         } else {
             holder = (Holder) reusable.getTag();
+        }
+        // 绑定前先复位变换，防止复用带出上一条的动画状态；
+        // 入场只对“本轮首批”条目按 ID 播一次，滚动复用/加载更多不重播
+        Motions.reset(reusable);
+        FeedItem entering = getItem(position);
+        if (!Motions.off() && this.enterBudget > 0 && entering.id != null
+                && !entering.id.isEmpty() && this.enteredIds.add(entering.id)) {
+            int order = ENTER_LIMIT - this.enterBudget;
+            this.enterBudget--;
+            Motions.listEnter(reusable, order, dp(8));
         }
 
         FeedItem item = getItem(position);

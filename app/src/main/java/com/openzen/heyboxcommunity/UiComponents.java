@@ -39,14 +39,14 @@ final class UiComponents {
     }
 
     static void press(View view) {
-        if (view == null) return;
+        if (view == null || Motions.off()) return;
         view.animate().cancel();
         view.animate().scaleX(0.975f).scaleY(0.975f)
                 .setDuration(MotionSpec.PRESS_IN_MS)
                 .setInterpolator(MotionSpec.EASE_OUT)
                 .withEndAction(() -> view.animate().scaleX(1f).scaleY(1f)
                         .setDuration(MotionSpec.PRESS_OUT_MS)
-                        .setInterpolator(MotionSpec.EASE_OUT)
+                        .setInterpolator(Motions.full() ? MotionSpec.SPRING : MotionSpec.EASE_OUT)
                         .start())
                 .start();
     }

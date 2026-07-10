@@ -165,6 +165,7 @@ public final class MainActivity extends Activity {
     private String cachedProfileUserId = "";
     private final Map<View, Integer> searchBarHeights = new HashMap();
     private final Map<View, Boolean> searchBarStates = new HashMap();
+    private boolean pendingBackTransition;
     private String lastSearchKeyword = "";
     private final List<FeedItem> searchResultItems = new ArrayList();
     private int searchOffset;
@@ -260,6 +261,7 @@ public final class MainActivity extends Activity {
                 this.localCache.log(message);
             }
         });
+        Motions.setLevel(this.session.motionLevel());
         this.writeTokenProvider = new WriteTokenProvider(this, this.session, this.api);
         this.signInManager = new SignInManager(this.session, this.api, this.writeTokenProvider, message2 -> {
             if (this.localCache != null) {
@@ -540,6 +542,7 @@ public final class MainActivity extends Activity {
             int width = getResources().getDisplayMetrics().widthPixels;
             dialog.getWindow().setLayout(Math.max(dp(220), Math.min(width - dp(28), dp(360))), -2);
         }
+        Motions.dialogIn(linearLayout);
     }
 
     /* JADX INFO: loaded from: MainActivity$MaxHeightScrollView.class */
@@ -1831,6 +1834,10 @@ public final class MainActivity extends Activity {
     }
 
     private void showFeed() {
+        // 底部导航从“我的”切回社区：feed 在左侧，用返回方向的转场
+        if ("profile".equals(this.screen)) {
+            this.pendingBackTransition = true;
+        }
         activate("feed");
         this.title.setText("社区");
         this.action.setText("");
@@ -1839,7 +1846,6 @@ public final class MainActivity extends Activity {
         this.action.setOnClickListener(view -> {
             loadFeed(true);
         });
-        this.content.removeAllViews();
         final boolean coldLaunchRefresh = this.feedColdLaunchPending;
         this.feedColdLaunchPending = false;
         if (coldLaunchRefresh) {
@@ -1854,7 +1860,7 @@ public final class MainActivity extends Activity {
             this.cachedFeedListView = null;
         }
         if (!coldLaunchRefresh && this.cachedFeedContainer != null && this.feedListView == this.cachedFeedListView && this.cachedFeedContainer.getParent() == null) {
-            this.content.addView(this.cachedFeedContainer, match());
+            transitionTo(this.cachedFeedContainer);
             restoreFeedScroll();
             updateFeedFooter();
             return;
@@ -1899,7 +1905,7 @@ public final class MainActivity extends Activity {
         });
         updateFeedFooter();
         this.cachedFeedContainer = list;
-        this.content.addView(list, match());
+        transitionTo(list);
         if (!coldLaunchRefresh) {
             restoreFeedScroll();
         }
@@ -2106,10 +2112,10 @@ public final class MainActivity extends Activity {
         setBottomNavVisible(false);
         this.leading.setVisibility(0);
         this.leading.setOnClickListener(view -> {
+            this.pendingBackTransition = true;
             showFeed();
         });
         this.action.setVisibility(4);
-        this.content.removeAllViews();
         FrameLayout frameLayout = new FrameLayout(this);
         frameLayout.setBackgroundColor(this.BG);
         LinearLayout searchBar = new LinearLayout(this);
@@ -2162,7 +2168,7 @@ public final class MainActivity extends Activity {
             return true;
         });
         renderSearchHistory(recent, input, results);
-        this.content.addView(frameLayout, match());
+        transitionTo(frameLayout);
         // 从详情返回时恢复上一次的搜索词和已加载结果，避免整页重来
         if (restoreResults && !this.lastSearchKeyword.isEmpty() && !this.searchResultItems.isEmpty()) {
             input.setText(this.lastSearchKeyword);
@@ -2558,6 +2564,8 @@ public final class MainActivity extends Activity {
     }
 
     private void showDetail(final FeedItem item) {
+        this.pendingBackTransition = false;
+        PageTransitionController.finishNow();
         saveCurrentDetailProgress();
         stopQrPolling();
         ensureEmojiCatalog(() -> {
@@ -5935,9 +5943,10 @@ public final class MainActivity extends Activity {
             showProfile();
         });
         if (this.cachedProfileContainer != null && this.cachedProfileLoggedIn && this.session.userId().equals(this.cachedProfileUserId) && this.cachedProfileContainer.getParent() == null) {
-            this.content.removeAllViews();
-            this.content.addView(this.cachedProfileContainer, match());
+            transitionTo(this.cachedProfileContainer);
         } else {
+            this.pendingBackTransition = false;
+            PageTransitionController.finishNow();
             this.content.removeAllViews();
             showLoading();
             this.api.get(EndpointProvider.profile(), Collections.singletonMap(SecureStrings.userid(), this.session.userId()), new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.23
@@ -5966,9 +5975,8 @@ public final class MainActivity extends Activity {
             this.cachedProfileContainer = null;
             showProfile();
         });
-        this.content.removeAllViews();
         if (this.cachedProfileContainer != null && !this.cachedProfileLoggedIn && this.cachedProfileContainer.getParent() == null) {
-            this.content.addView(this.cachedProfileContainer, match());
+            transitionTo(this.cachedProfileContainer);
             return;
         }
         ScrollView scroll = new ScrollView(this);
@@ -6009,7 +6017,7 @@ public final class MainActivity extends Activity {
         this.cachedProfileContainer = scroll;
         this.cachedProfileLoggedIn = false;
         this.cachedProfileUserId = "";
-        this.content.addView(scroll, match());
+        transitionTo(scroll);
     }
 
     private void renderProfile(JSONObject body) {
@@ -6070,7 +6078,7 @@ public final class MainActivity extends Activity {
         this.cachedProfileContainer = scrollView;
         this.cachedProfileLoggedIn = true;
         this.cachedProfileUserId = this.session.userId();
-        this.content.addView(scrollView, match());
+        transitionTo(scrollView);
     }
 
     private String signInButtonText(SignInManager.Result state) {
@@ -6135,16 +6143,13 @@ public final class MainActivity extends Activity {
         setBottomNavVisible(false);
         this.leading.setVisibility(0);
         this.leading.setOnClickListener(view -> {
+            this.pendingBackTransition = true;
             showProfile();
         });
         this.title.setText("设置中心");
         this.action.setVisibility(4);
-        this.content.removeAllViews();
         View settingsHome = buildSettingsHomeContent();
-        this.content.addView(settingsHome, match());
-        if (!this.shellAnimating) {
-            animateIn(settingsHome);
-        }
+        transitionTo(settingsHome);
     }
 
     private View buildSettingsHomeContent() {
@@ -7243,21 +7248,65 @@ public final class MainActivity extends Activity {
         setBottomNavVisible(false);
         this.leading.setVisibility(0);
         this.leading.setOnClickListener(view -> {
+            this.pendingBackTransition = true;
             back.run();
         });
         this.title.setText(pageTitle);
         this.action.setVisibility(4);
-        this.content.removeAllViews();
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
         page.setPadding(dp(8), dp(8), dp(8), dp(14));
         scroll.addView(page);
         page.addView(settingsTopCard(pageTitle));
-        this.content.addView(scroll, match());
-        if (!this.shellAnimating) {
-            animateIn(scroll);
-        }
+        transitionTo(scroll);
         return page;
+    }
+
+    /** 动画效果三挡选择：关闭 / 精简 / 完整。切换立即生效并结算进行中的转场。 */
+    private View motionLevelRow() {
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(1);
+        TextView label = text("动画效果", 12.0f, this.MUTED);
+        wrap.addView(label);
+        LinearLayout seg = new LinearLayout(this);
+        seg.setOrientation(0);
+        final String[] names = {"关闭", "精简", "完整"};
+        final Button[] buttons = new Button[names.length];
+        final Runnable refresh = () -> {
+            int current = this.session.motionLevel();
+            ThemeTokens tokens = this.themeTokens != null ? this.themeTokens
+                    : ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY);
+            float scale = this.session.uiScale() / 100.0f;
+            for (int i = 0; i < buttons.length; i++) {
+                boolean selected = i == current;
+                Compat.setBackground(buttons[i], selected
+                        ? UiComponents.primaryButton(this, tokens, scale)
+                        : UiComponents.ghostButton(this, tokens, scale));
+                buttons[i].setTextColor(selected ? tokens.onPrimary : tokens.text);
+            }
+        };
+        for (int i = 0; i < names.length; i++) {
+            final int level = i;
+            Button item = secondaryButton(names[i], 0);
+            buttons[i] = item;
+            item.setOnClickListener(view -> {
+                this.session.setMotionLevel(level);
+                Motions.setLevel(level);
+                PageTransitionController.finishNow();
+                refresh.run();
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(34), 1.0f);
+            if (i > 0) {
+                params.leftMargin = dp(6);
+            }
+            seg.addView(item, params);
+        }
+        refresh.run();
+        addTop(wrap, seg, 5);
+        TextView hint = text("完整挡包含页面滑动转场与列表入场，低配手表建议精简或关闭", 10.5f, this.MUTED);
+        hint.setLineSpacing(0.0f, 1.16f);
+        addTop(wrap, hint, 4);
+        return wrap;
     }
 
     private View settingsTopCard(String pageTitle) {
@@ -7309,6 +7358,7 @@ public final class MainActivity extends Activity {
         ScaleControl padding = settingSlider(panel, "左右边距", "dp", 0, NAV_BAR_HEIGHT_DP, this.session.pagePadding(), value4 -> {
             updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, -1, -1, value4);
         });
+        addTop(panel, motionLevelRow(), REPLY_PAGE_SIZE);
         linearLayout.addView(panel);
         panel = card();
         TextView roundTitle = text("手表屏幕适配", 13.0f, this.TEXT);
@@ -8854,8 +8904,10 @@ public final class MainActivity extends Activity {
 
     @Override // android.app.Activity
     public void onBackPressed() {
+        this.pendingBackTransition = true;
         if ("detail".equals(this.screen)) {
             if (this.detailPager != null && this.detailPager.showingComments()) {
+                this.pendingBackTransition = false;
                 this.detailPager.showArticle(true);
                 return;
             } else {
@@ -8937,6 +8989,9 @@ public final class MainActivity extends Activity {
     }
 
     private boolean restoreDetailReturnView() {
+        // 详情返回直接恢复原 View（保持滚动位置），不走页面转场
+        this.pendingBackTransition = false;
+        PageTransitionController.finishNow();
         if (this.detailReturnView == null || !shouldKeepDetailReturnView(this.detailReturn)) {
             this.detailReturnView = null;
             return false;
@@ -9012,6 +9067,19 @@ public final class MainActivity extends Activity {
             this.api.close();
         }
         super.onDestroy();
+    }
+
+    /** 页面切换统一入口：真实双 View 转场；方向由 pendingBackTransition 决定，消费后复位。 */
+    private void transitionTo(View next) {
+        boolean back = this.pendingBackTransition;
+        this.pendingBackTransition = false;
+        if (this.shellAnimating) {
+            PageTransitionController.finishNow();
+            this.content.removeAllViews();
+            this.content.addView(next, match());
+            return;
+        }
+        PageTransitionController.run(this.content, next, !back);
     }
 
     private void showLoading() {
@@ -9158,13 +9226,11 @@ public final class MainActivity extends Activity {
     }
 
     private void animateIn(View view) {
-        if (this.shellAnimating) {
-            view.setAlpha(1.0f);
-            view.setTranslationY(0.0f);
+        // 页面转场期间内容直接到位，避免与转场动画叠加
+        if (this.shellAnimating || PageTransitionController.isRunning()) {
+            Motions.reset(view);
         } else {
-            view.setAlpha(0.0f);
-            view.setTranslationY(dp(6));
-            view.animate().alpha(1.0f).translationY(0.0f).setDuration(180L).setInterpolator(MotionSpec.EASE_OUT).start();
+            Motions.enter(view, dp(6));
         }
     }
 
@@ -9172,16 +9238,21 @@ public final class MainActivity extends Activity {
         if (action == null) {
             return;
         }
-        view.setEnabled(false);
-        view.animate().cancel();
-        view.animate().scaleX(0.975f).scaleY(0.975f).setDuration(60L).setInterpolator(MotionSpec.EASE_OUT).start();
-        this.handler.postDelayed(() -> {
-            view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(105L).setInterpolator(MotionSpec.EASE_OUT).start();
-            view.setEnabled(true);
-            if (!isFinishing()) {
-                action.run();
-            }
-        }, 75L);
+        // 反馈与动作并行：立即执行动作，按压回弹只是视觉效果，不拖慢响应
+        if (!Motions.off()) {
+            view.animate().cancel();
+            view.animate().scaleX(0.975f).scaleY(0.975f)
+                    .setDuration(MotionSpec.PRESS_IN_MS)
+                    .setInterpolator(MotionSpec.EASE_OUT)
+                    .withEndAction(() -> view.animate().scaleX(1.0f).scaleY(1.0f)
+                            .setDuration(MotionSpec.PRESS_OUT_MS)
+                            .setInterpolator(Motions.full() ? MotionSpec.SPRING : MotionSpec.EASE_OUT)
+                            .start())
+                    .start();
+        }
+        if (!isFinishing()) {
+            action.run();
+        }
     }
 
     private LinearLayout vertical(int color) {

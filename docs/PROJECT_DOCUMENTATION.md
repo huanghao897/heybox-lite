@@ -33,8 +33,8 @@ C:\opencode\HeyBoxCommunity
 当前 Gradle 配置中的版本：
 
 ```text
-versionName: 2.0.3
-versionCode: 206
+versionName: 2.0.4
+versionCode: 207
 applicationId: com.ronan.heyboxlite.preview
 namespace: com.openzen.heyboxcommunity
 ```
@@ -137,8 +137,8 @@ HeyBoxCommunity
 applicationId "com.ronan.heyboxlite.preview"
 minSdk 14
 targetSdk 35
-versionCode 206
-versionName "2.0.3"
+versionCode 207
+versionName "2.0.4"
 ```
 
 更新服务地址：
@@ -873,7 +873,7 @@ App 前台启动/恢复时上报心跳。
   "userId": "123456",
   "username": "用户昵称",
   "avatar": "https://...",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "versionCode": 206,
   "model": "OPPO Watch",
   "os": "9"
@@ -1065,14 +1065,14 @@ $env:HEYBOX_RELEASE_KEY_PASSWORD='android'
 输出：
 
 ```text
-dist/heybox-Lite-2.0.3.apk
+dist/heybox-Lite-2.0.4.apk
 dist/heybox-Lite-latest.apk
 ```
 
 ### 7.4 签名检查
 
 ```powershell
-C:\opencode\android-sdk\build-tools\36.0.0\apksigner.bat verify --print-certs dist\heybox-Lite-2.0.3.apk
+C:\opencode\android-sdk\build-tools\36.0.0\apksigner.bat verify --print-certs dist\heybox-Lite-2.0.4.apk
 ```
 
 期望：
@@ -1577,7 +1577,7 @@ $env:HEYBOX_RELEASE_KEY_PASSWORD='android'
 ### 检查签名
 
 ```powershell
-C:\opencode\android-sdk\build-tools\36.0.0\apksigner.bat verify --print-certs dist\heybox-Lite-2.0.3.apk
+C:\opencode\android-sdk\build-tools\36.0.0\apksigner.bat verify --print-certs dist\heybox-Lite-2.0.4.apk
 ```
 
 ### 检查后台语法
