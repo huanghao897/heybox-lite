@@ -98,7 +98,7 @@ public final class MainActivity extends Activity {
     private static final int[][] THEME_COLORS = {new int[]{-14386760, -9193242}, new int[]{-3982790, -1083529}, new int[]{-2597743, -1006399}, new int[]{-9022795, -4744481}, new int[]{-14185897, -9320552}, new int[]{-15299695, -9713717}, new int[]{-2921692, -1007516}, new int[]{-3958250, -995480}, new int[]{-7894890, -5327686}, new int[]{-15253642, -10646588}, new int[]{-15263977, -3102658}, new int[]{-13530253, -7808833}};
     private static final String TITLE_FAVORITES = "我的收藏";
     private static final String MSG_OFFLINE_CACHE = "已显示离线缓存";
-    private static final String MSG_EMPTY_CONTENT = "这里暂时没有内容";
+    private static final String MSG_EMPTY_CONTENT = "暂无内容";
     private static final String MSG_FAVORITES_UNAVAILABLE = "我的收藏暂不可用\n小黑盒接口未返回可访问的收藏夹，这通常是账号权限或当前网页接口限制。\n已保留现有缓存，可稍后再试。";
     private int BG;
     private int PANEL;
@@ -155,6 +155,7 @@ public final class MainActivity extends Activity {
     private long lastWriteSubmitAt;
     private long writeBlockedUntilAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final PageTransitionController pageTransitions = new PageTransitionController();
     private final Runnable qrPollTask = new Runnable() { // from class: com.openzen.heyboxcommunity.MainActivity.1
         @Override // java.lang.Runnable
         public void run() {
@@ -179,6 +180,7 @@ public final class MainActivity extends Activity {
     private final Map<String, LikeState> linkLikeOverrides = new HashMap();
     private final Map<String, Bitmap> screenSnapshots = new HashMap();
     private final Map<String, Bitmap> fullScreenSnapshots = new HashMap();
+    private final Map<String, View> retainedPages = new HashMap();
     private String screen = "feed";
     private String detailReturn = "feed";
     private View detailReturnView;
@@ -736,6 +738,7 @@ public final class MainActivity extends Activity {
         if (this.bottom == null) {
             return;
         }
+        animate = animate && !Motions.off();
         if (visible) {
             if (this.bottomNavShowPending) {
                 return;
@@ -961,24 +964,6 @@ public final class MainActivity extends Activity {
         return overlay;
     }
 
-    private void fadeFullScreenTransitionOverlay(ImageView overlay) {
-        if (overlay == null) {
-            return;
-        }
-        overlay.post(() -> {
-            overlay.postDelayed(() -> {
-                overlay.animate().alpha(0.0f).setStartDelay(40L).setDuration(210L).setInterpolator(new DecelerateInterpolator()).setListener(new AnimatorListenerAdapter() { // from class: com.openzen.heyboxcommunity.MainActivity.4
-                    @Override // android.animation.AnimatorListenerAdapter, android.animation.Animator.AnimatorListener
-                    public void onAnimationEnd(Animator animation) {
-                        if (overlay.getParent() instanceof ViewGroup) {
-                            ((ViewGroup) overlay.getParent()).removeView(overlay);
-                        }
-                    }
-                });
-            }, 32L);
-        });
-    }
-
     private void removeFullScreenTransitionOverlayAfterLayout(ImageView overlay) {
         if (overlay == null) {
             return;
@@ -992,7 +977,73 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void showShellTransitionOverlay(Bitmap bitmap) {
+    private View realShellPreview(String key) {
+        View target = "feed".equals(key) ? this.cachedFeedContainer
+                : "profile".equals(key) ? this.cachedProfileContainer
+                : this.retainedPages.get(key);
+        return target != null && target.getParent() == null ? target : null;
+    }
+
+    private void configureAdoptedShellScreen(String key) {
+        if ("feed".equals(key)) {
+            activate("feed");
+            this.title.setText("社区");
+            this.action.setVisibility(4);
+            restoreFeedScroll();
+            return;
+        }
+        if ("profile".equals(key)) {
+            activate("profile");
+            this.title.setText("我的");
+            this.action.setVisibility(0);
+            setIcon(this.action, R.drawable.il_refresh, this.TEXT, 19);
+            this.action.setOnClickListener(view -> {
+                this.cachedProfileContainer = null;
+                showProfile();
+            });
+            return;
+        }
+        this.screen = key;
+        setBottomNavVisible(false, false);
+        this.leading.setVisibility(0);
+        this.action.setVisibility(4);
+        if ("settings_home".equals(key)) {
+            this.title.setText("设置");
+            this.leading.setOnClickListener(view -> {
+                this.pendingBackTransition = true;
+                showProfile();
+            });
+        } else if ("display_settings".equals(key)) {
+            this.title.setText("显示");
+            this.leading.setOnClickListener(view -> {
+                this.pendingBackTransition = true;
+                showSettingsHome();
+            });
+        } else if ("display_preview".equals(key)) {
+            this.title.setText("界面预览");
+            this.leading.setOnClickListener(view -> {
+                this.pendingBackTransition = true;
+                showDisplaySettings();
+            });
+        } else if ("startup_settings".equals(key)) {
+            this.title.setText("启动与更新");
+            this.leading.setOnClickListener(view -> {
+                this.pendingBackTransition = true;
+                showSettingsHome();
+            });
+        } else if ("app_settings".equals(key)) {
+            this.title.setText("内容与缓存");
+            this.leading.setOnClickListener(view -> {
+                this.pendingBackTransition = true;
+                showSettingsHome();
+            });
+        } else if ("about".equals(key)) {
+            this.title.setText("关于");
+            this.leading.setOnClickListener(view -> {
+                this.pendingBackTransition = true;
+                showSettingsHome();
+            });
+        }
     }
 
     private void activate(String key) {
@@ -1017,113 +1068,6 @@ public final class MainActivity extends Activity {
                 textItem.setTypeface(appRegularTypeface(), active ? 1 : 0);
             }
         }
-    }
-
-    private void animateShellChange(Runnable change, int direction) {
-        if (this.shellAnimating) {
-            return;
-        }
-        View oldChild = (this.content == null || this.content.getChildCount() == 0) ? null : this.content.getChildAt(0);
-        int width = this.content == null ? 0 : Math.max(1, this.content.getWidth());
-        if (oldChild == null || width <= 1) {
-            change.run();
-            return;
-        }
-        this.shellAnimating = true;
-        Bitmap oldBitmap = null;
-        try {
-            oldBitmap = Bitmap.createBitmap(oldChild.getWidth(), oldChild.getHeight(), Bitmap.Config.RGB_565);
-            Canvas canvas = new Canvas(oldBitmap);
-            canvas.drawColor(this.BG);
-            oldChild.draw(canvas);
-        } catch (Throwable th) {
-        }
-        change.run();
-        final View newChild = this.content.getChildCount() == 0 ? null : this.content.getChildAt(0);
-        if (newChild == null || oldBitmap == null || oldBitmap.isRecycled()) {
-            if (newChild != null) {
-                newChild.setTranslationX(0.0f);
-                newChild.setAlpha(1.0f);
-            }
-            this.shellAnimating = false;
-            return;
-        }
-        final ImageView oldOverlay = new ImageView(this);
-        oldOverlay.setTag(TRANSITION_OVERLAY_TAG);
-        oldOverlay.setBackgroundColor(this.BG);
-        oldOverlay.setScaleType(ImageView.ScaleType.FIT_XY);
-        oldOverlay.setImageBitmap(oldBitmap);
-        this.content.addView(oldOverlay, match());
-        oldOverlay.bringToFront();
-        newChild.setTranslationX(direction * width);
-        newChild.setAlpha(1.0f);
-        ValueAnimator animator = ValueAnimator.ofFloat(0.0f, 1.0f);
-        animator.setDuration(190L);
-        animator.setInterpolator(MotionSpec.EASE_OUT);
-        animator.addUpdateListener(value -> {
-            float progress = ((Float) value.getAnimatedValue()).floatValue();
-            oldOverlay.setTranslationX((-direction) * width * progress);
-            newChild.setTranslationX(direction * width * (1.0f - progress));
-        });
-        animator.addListener(new AnimatorListenerAdapter() { // from class: com.openzen.heyboxcommunity.MainActivity.5
-            @Override // android.animation.AnimatorListenerAdapter, android.animation.Animator.AnimatorListener
-            public void onAnimationEnd(Animator animation) {
-                newChild.setTranslationX(0.0f);
-                if (oldOverlay.getParent() instanceof ViewGroup) {
-                    ((ViewGroup) oldOverlay.getParent()).removeView(oldOverlay);
-                }
-                MainActivity.this.shellAnimating = false;
-            }
-        });
-        animator.start();
-    }
-
-    private void animateShellView(final View view, float fromX, final float toX, float fromAlpha, final float toAlpha, int duration, final Runnable end) {
-        if (view == null) {
-            if (end != null) {
-                end.run();
-                return;
-            }
-            return;
-        }
-        view.setTranslationX(fromX);
-        view.setAlpha(fromAlpha);
-        ValueAnimator animator = ValueAnimator.ofFloat(0.0f, 1.0f);
-        animator.setDuration(duration);
-        animator.setInterpolator(new DecelerateInterpolator());
-        animator.addUpdateListener(value -> {
-            float progress = ((Float) value.getAnimatedValue()).floatValue();
-            view.setTranslationX(fromX + ((toX - fromX) * progress));
-            view.setAlpha(fromAlpha + ((toAlpha - fromAlpha) * progress));
-        });
-        animator.addListener(new AnimatorListenerAdapter() { // from class: com.openzen.heyboxcommunity.MainActivity.6
-            @Override // android.animation.AnimatorListenerAdapter, android.animation.Animator.AnimatorListener
-            public void onAnimationEnd(Animator animation) {
-                view.setTranslationX(toX);
-                view.setAlpha(toAlpha);
-                if (end != null) {
-                    end.run();
-                }
-            }
-        });
-        animator.start();
-    }
-
-    private void navigateTopLevelSwipe(int direction) {
-        int next;
-        int index = topLevelIndex();
-        if (index >= 0 && (next = index + direction) >= 0 && next <= 1) {
-            animateShellChange(() -> {
-                showTopLevel(next);
-            }, direction);
-        }
-    }
-
-    private void backWithShellAnimation() {
-        if (!canHeaderBack() || "detail".equals(this.screen)) {
-            return;
-        }
-        animateShellChange(this::onBackPressed, -1);
     }
 
     /* JADX INFO: loaded from: MainActivity$BackSwipeFrameLayout.class */
@@ -1249,7 +1193,9 @@ public final class MainActivity extends Activity {
         }
 
         private boolean canUseShellSwipe() {
-            return (MainActivity.this.shellAnimating || "detail".equals(MainActivity.this.screen) || "login".equals(MainActivity.this.screen)) ? false : true;
+            return !MainActivity.this.shellAnimating && !MainActivity.this.pageTransitions.isRunning()
+                    && !"detail".equals(MainActivity.this.screen)
+                    && !"login".equals(MainActivity.this.screen);
         }
 
         private boolean hasShellSwipeTarget(float dx) {
@@ -1306,9 +1252,13 @@ public final class MainActivity extends Activity {
 
         private void installShellPreview(String targetKey) {
             removeShellPreview();
-            if (this.gestureMode == MODE_BACK && "settings_home".equals(targetKey)) {
+            this.previewChild = MainActivity.this.realShellPreview(targetKey);
+            if (this.previewChild == null && this.gestureMode == MODE_BACK
+                    && "settings_home".equals(targetKey)) {
                 this.previewChild = MainActivity.this.buildSettingsHomeContent();
-            } else {
+                MainActivity.this.retainedPages.put(targetKey, this.previewChild);
+            }
+            if (this.previewChild == null) {
                 ImageView image = new ImageView(getContext());
                 image.setBackgroundColor(MainActivity.this.themeTokens == null ? MainActivity.this.PANEL : MainActivity.this.themeTokens.panel);
                 image.setScaleType(ImageView.ScaleType.FIT_XY);
@@ -1371,6 +1321,15 @@ public final class MainActivity extends Activity {
             }
             cancelSwipeAnimator();
             float fromX = this.dragChild.getTranslationX();
+            if (Motions.off()) {
+                this.dragChild.setTranslationX(targetX);
+                if (this.previewChild != null) {
+                    this.previewChild.setTranslationX((this.gestureDirection
+                            * Math.max(MODE_TOP_LEVEL, getWidth())) + targetX);
+                }
+                if (end != null) end.run();
+                return;
+            }
             if (Math.abs(fromX - targetX) < MainActivity.this.dp(MODE_TOP_LEVEL)) {
                 this.dragChild.setTranslationX(targetX);
                 if (end != null) {
@@ -1414,15 +1373,11 @@ public final class MainActivity extends Activity {
             int direction = this.gestureDirection;
             int mode = this.gestureMode;
             String targetKey = targetScreenKeyForGesture();
-            if (mode == MODE_BACK && "settings_home".equals(targetKey) && this.previewChild != null && !(this.previewChild instanceof ImageView)) {
-                completeSettingsHomeSwipe();
+            if (this.previewChild != null && !(this.previewChild instanceof ImageView)) {
+                completeRealShellSwipe(targetKey);
                 return;
             }
             ImageView rebuildGuard = mode == MODE_BACK ? MainActivity.this.installFullScreenTransitionOverlay(MainActivity.this.fullScreenSnapshot(targetKey)) : null;
-            if (this.dragChild != null) {
-                this.dragChild.setTranslationX(0.0f);
-                this.dragChild.setAlpha(1.0f);
-            }
             if (mode == MODE_TOP_LEVEL) {
                 int next = MainActivity.this.topLevelIndex() + direction;
                 change = () -> {
@@ -1446,28 +1401,19 @@ public final class MainActivity extends Activity {
             MainActivity.this.removeFullScreenTransitionOverlayAfterLayout(rebuildGuard);
         }
 
-        private void completeSettingsHomeSwipe() {
+        private void completeRealShellSwipe(String targetKey) {
             View oldChild = this.dragChild;
             View target = this.previewChild;
             if (target == null) {
                 resetShellDrag();
-                MainActivity.this.showSettingsHome();
                 return;
             }
-            target.setTranslationX(0.0f);
-            target.setAlpha(1.0f);
+            Motions.resetTree(target);
             if (oldChild != null && oldChild.getParent() == this) {
                 super.removeView(oldChild);
             }
-            MainActivity.this.screen = "settings_home";
-            MainActivity.this.setBottomNavVisible(false, false);
-            MainActivity.this.leading.setVisibility(0);
-            MainActivity.this.leading.setOnClickListener(view -> {
-                MainActivity.this.showProfile();
-            });
-            MainActivity.this.title.setText("设置中心");
-            MainActivity.this.action.setVisibility(4);
-            this.displayedScreenKey = "settings_home";
+            MainActivity.this.configureAdoptedShellScreen(targetKey);
+            this.displayedScreenKey = targetKey;
             this.previewChild = null;
             this.dragChild = null;
             this.gestureMode = 0;
@@ -1496,6 +1442,12 @@ public final class MainActivity extends Activity {
                 this.swipeAnimator.cancel();
                 this.swipeAnimator = null;
             }
+        }
+
+        void cancelMotion() {
+            this.tracking = false;
+            this.dragging = false;
+            resetShellDrag();
         }
 
         @Override // android.view.View
@@ -1877,8 +1829,8 @@ public final class MainActivity extends Activity {
         this.feedListView = list;
         this.cachedFeedListView = list;
         list.setBackgroundColor(this.BG);
-        list.setDivider(new ColorDrawable(0));
-        list.setDividerHeight(dp(REPLY_PREVIEW_COUNT));
+        list.setDivider(null);
+        list.setDividerHeight(0);
         list.setOverScrollMode(REPLY_PREVIEW_COUNT);
         list.setSelector(new ColorDrawable(this.session.darkMode() ? Color.rgb(50, 50, 50) : Color.rgb(225, 228, 232)));
         list.setPullRefreshAction(() -> {
@@ -2396,6 +2348,14 @@ public final class MainActivity extends Activity {
         if (state == null || state.booleanValue() != visible) {
             this.searchBarStates.put(searchBar, Boolean.valueOf(visible));
             searchBar.animate().cancel();
+            if (Motions.off()) {
+                searchBar.setVisibility(visible ? 0 : 8);
+                searchBar.setEnabled(visible);
+                setChildrenEnabled(searchBar, visible);
+                searchBar.setAlpha(visible ? 1.0f : 0.0f);
+                searchBar.setTranslationY(0.0f);
+                return;
+            }
             if (visible) {
                 searchBar.setVisibility(0);
                 searchBar.setEnabled(true);
@@ -2565,7 +2525,7 @@ public final class MainActivity extends Activity {
 
     private void showDetail(final FeedItem item) {
         this.pendingBackTransition = false;
-        PageTransitionController.finishNow();
+        this.pageTransitions.finishNow();
         saveCurrentDetailProgress();
         stopQrPolling();
         ensureEmojiCatalog(() -> {
@@ -2606,8 +2566,7 @@ public final class MainActivity extends Activity {
         });
         this.title.setText("正文");
         this.action.setVisibility(4);
-        this.content.removeAllViews();
-        showLoading();
+        transitionTo(detailLoadingPage());
         final int requestToken = this.detailRequestToken + 1;
         this.detailRequestToken = requestToken;
         if (!isNetworkConnected()) {
@@ -2867,7 +2826,8 @@ public final class MainActivity extends Activity {
         commentScroll.addView(commentPage);
         addDetailCommentSection(commentPage, result == null ? null : result.optJSONArray("comments"));
         pager.setPages(articleScroll, commentScroll);
-        this.content.addView(pager, match());
+        pager.setReturnView(this.detailReturnView);
+        transitionTo(pager);
         this.detailScroll = articleScroll;
         this.detailCommentScroll = commentScroll;
         int savedScroll = this.session.rememberDetailScroll() ? this.localCache.scroll(this.currentLinkId) : 0;
@@ -2910,7 +2870,8 @@ public final class MainActivity extends Activity {
         private int currentPage;
         private boolean dragging;
         private boolean returning;
-        private ImageView returnPreview;
+        private View returnPreview;
+        private boolean realReturnView;
         private ValueAnimator settleAnimator;
 
         DetailPager(Context context) {
@@ -2921,13 +2882,14 @@ public final class MainActivity extends Activity {
 
         void setPages(View article, View comments) {
             removeAllViews();
-            this.returnPreview = new ImageView(getContext());
-            this.returnPreview.setBackgroundColor(MainActivity.this.themeTokens == null ? MainActivity.this.PANEL : MainActivity.this.themeTokens.panel);
-            this.returnPreview.setScaleType(ImageView.ScaleType.FIT_XY);
+            ImageView snapshot = new ImageView(getContext());
+            snapshot.setBackgroundColor(MainActivity.this.themeTokens == null ? MainActivity.this.PANEL : MainActivity.this.themeTokens.panel);
+            snapshot.setScaleType(ImageView.ScaleType.FIT_XY);
             Bitmap bitmap = MainActivity.this.screenSnapshot(MainActivity.this.backTargetScreenKey());
             if (bitmap != null && !bitmap.isRecycled()) {
-                this.returnPreview.setImageBitmap(bitmap);
+                snapshot.setImageBitmap(bitmap);
             }
+            this.returnPreview = snapshot;
             addView(this.returnPreview, new FrameLayout.LayoutParams(-1, -1));
             addView(article, new FrameLayout.LayoutParams(-1, -1));
             addView(comments, new FrameLayout.LayoutParams(-1, -1));
@@ -2935,6 +2897,29 @@ public final class MainActivity extends Activity {
             post(() -> {
                 scrollTo(pageScrollX(this.currentPage), 0);
             });
+        }
+
+        void setReturnView(View view) {
+            if (view == null) return;
+            if (view.getParent() instanceof ViewGroup) {
+                ((ViewGroup) view.getParent()).removeView(view);
+            }
+            if (this.returnPreview != null) removeView(this.returnPreview);
+            this.returnPreview = view;
+            this.realReturnView = true;
+            Motions.resetTree(view);
+            addView(view, 0, new FrameLayout.LayoutParams(-1, -1));
+            requestLayout();
+        }
+
+        View takeReturnView() {
+            if (!this.realReturnView || this.returnPreview == null) return null;
+            View view = this.returnPreview;
+            removeView(view);
+            this.returnPreview = null;
+            this.realReturnView = false;
+            Motions.resetTree(view);
+            return view;
         }
 
         boolean showingComments() {
@@ -3059,7 +3044,7 @@ public final class MainActivity extends Activity {
             this.currentPage = page;
             MainActivity.this.updateDetailPagerTitle();
             int destination = pageScrollX(page);
-            if (!animate) {
+            if (!animate || Motions.off()) {
                 scrollTo(destination, 0);
                 return;
             }
@@ -3091,6 +3076,12 @@ public final class MainActivity extends Activity {
             this.returning = true;
             int fromX = getScrollX();
             int destination = -Math.max(PAGE_COMMENTS, getWidth());
+            if (Motions.off()) {
+                scrollTo(destination, 0);
+                this.returning = false;
+                MainActivity.this.returnFromDetailGesture();
+                return;
+            }
             int distance = Math.abs(destination - fromX);
             int duration = Math.max(150, Math.min(280, distance / 3));
             this.settleAnimator = ValueAnimator.ofInt(fromX, destination);
@@ -3105,7 +3096,7 @@ public final class MainActivity extends Activity {
                     DetailPager.this.settleAnimator = null;
                     if (DetailPager.this.returning) {
                         DetailPager.this.returning = false;
-                        MainActivity.this.returnFromDetailSmooth();
+                        MainActivity.this.returnFromDetailGesture();
                     }
                 }
             });
@@ -3118,6 +3109,11 @@ public final class MainActivity extends Activity {
                 this.settleAnimator.cancel();
                 this.settleAnimator = null;
             }
+        }
+
+        void cancelMotion() {
+            cancelSettle();
+            scrollTo(pageScrollX(this.currentPage), 0);
         }
 
         @Override // android.view.View
@@ -3160,7 +3156,11 @@ public final class MainActivity extends Activity {
         TextView watchLater = actionPill("", R.drawable.ic_history);
         updateWatchLaterView(watchLater, this.localCache.isWatchLater(item.id), false);
         watchLater.setOnClickListener(view3 -> toggleWatchLater(item, watchLater));
-        TextView comment = actionPill("评论", R.drawable.ic_comment);
+        LinearLayout.LayoutParams watchParams = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
+        watchParams.leftMargin = dp(6);
+        row.addView(watchLater, watchParams);
+        TextView comment = actionPill("", R.drawable.ic_comment);
+        comment.setContentDescription("评论");
         LinearLayout.LayoutParams commentParams = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
         commentParams.leftMargin = dp(6);
         row.addView(comment, commentParams);
@@ -3168,8 +3168,6 @@ public final class MainActivity extends Activity {
             showCommentDialog(null);
         });
         addTop(article, row, 10);
-        addTop(article, watchLater, 6);
-        watchLater.getLayoutParams().height = dp(34);
     }
 
     private void toggleWatchLater(FeedItem item, TextView button) {
@@ -3204,12 +3202,9 @@ public final class MainActivity extends Activity {
 
     private void updateWatchLaterView(TextView view, boolean saved, boolean loading) {
         if (view == null) return;
-        view.setText(loading ? "缓存中" : saved ? "已缓存" : "稍后看");
-        int background = saved
-                ? activeActionBackground(this.SECONDARY)
-                : blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.2f : 0.1f);
-        int foreground = saved ? contrast(background) : this.TEXT;
-        updatePill(view, background, foreground, R.drawable.ic_history);
+        view.setText(loading ? "…" : "");
+        view.setContentDescription(loading ? "正在缓存" : saved ? "移出稍后看" : "稍后看");
+        updateActionIcon(view, saved ? this.SECONDARY : this.MUTED, R.drawable.ic_history);
     }
 
     private void refreshWatchLaterOffline(FeedItem item, JSONObject body, Runnable complete) {
@@ -3248,45 +3243,28 @@ public final class MainActivity extends Activity {
     private TextView actionPill(String label, int icon) {
         TextView view = text(label, 12.0f, this.TEXT);
         view.setGravity(17);
-        view.setTypeface(appRegularTypeface(), 1);
-        view.setPadding(dp(7), 0, dp(7), 0);
-        updatePill(view, blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.2f : 0.1f), this.TEXT, icon);
+        view.setPadding(dp(6), 0, dp(6), 0);
+        updateActionIcon(view, this.MUTED, icon);
         return view;
     }
 
     private void updateLinkLikeView(TextView view, boolean liked, int likes) {
-        int iBlend;
-        if (liked) {
-            iBlend = activeActionBackground(this.PRIMARY);
-        } else {
-            iBlend = blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.2f : 0.1f);
-        }
-        int bg = iBlend;
-        int fg = liked ? contrast(bg) : this.TEXT;
         view.setText(String.valueOf(Math.max(0, likes)));
-        updatePill(view, bg, fg, R.drawable.ic_thumb_up);
+        view.setContentDescription(liked ? "取消点赞" : "点赞");
+        updateActionIcon(view, liked ? this.SECONDARY : this.MUTED, R.drawable.ic_thumb_up);
     }
 
     private void updateFavoriteView(TextView view, boolean favored) {
-        int iBlend;
         view.setTag(Boolean.valueOf(favored));
-        if (favored) {
-            iBlend = blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.48f : 0.22f);
-        } else {
-            iBlend = blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.2f : 0.1f);
-        }
-        int bg = iBlend;
-        int fg = favored ? this.SECONDARY : this.TEXT;
-        view.setText(favored ? "已收藏" : "收藏");
-        updatePill(view, bg, fg, R.drawable.ic_bookmark);
+        view.setText("");
+        view.setContentDescription(favored ? "取消收藏" : "收藏");
+        updateActionIcon(view, favored ? this.SECONDARY : this.MUTED, R.drawable.ic_bookmark);
     }
 
-    private void updatePill(TextView view, int bg, int fg, int icon) {
-        view.setTextColor(fg);
-        GradientDrawable drawable = round(bg, 10);
-        drawable.setStroke(dp(1), blend(bg, fg, 0.2f));
-        Compat.setBackground(view, drawable);
-        setLeftIcon(view, icon, fg, 15);
+    private void updateActionIcon(TextView view, int color, int icon) {
+        view.setTextColor(color);
+        view.setBackgroundColor(Color.TRANSPARENT);
+        setLeftIcon(view, icon, color, 17);
     }
 
     private boolean linkLiked(JSONObject link, FeedItem fallback) {
@@ -5273,7 +5251,7 @@ public final class MainActivity extends Activity {
                     replySection.setPadding(dp(8), dp(3), dp(8), dp(3));
                     int replyBg = this.session.darkMode()
                             ? Color.rgb(30, 32, 35) : Color.rgb(247, 248, 250);
-                    Compat.setBackground(replySection, round(replyBg, 8));
+                    replySection.setBackgroundColor(replyBg);
                     LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(-1, -2);
                     sectionParams.topMargin = dp(5);
                     linearLayoutCard.addView(replySection, sectionParams);
@@ -5285,7 +5263,6 @@ public final class MainActivity extends Activity {
                     renderReplies(replyList, root, replies, expected, initial, allLoaded);
                 }
                 addTop(page, linearLayoutCard, count == 0 ? 0 : 2);
-                animateIn(linearLayoutCard);
                 count += 1 + replies.size();
             }
         }
@@ -5306,7 +5283,6 @@ public final class MainActivity extends Activity {
             more.getLayoutParams().height = dp(26);
             more.setOnClickListener(view -> {
                 renderReplies(parent, root, replies, total, shown + REPLY_PAGE_SIZE, allLoaded);
-                animateIn(parent);
             });
         } else if (!allLoaded && total > replies.size()) {
             TextView more2 = replyControl("再展开 5 条", R.drawable.ic_expand);
@@ -5327,12 +5303,11 @@ public final class MainActivity extends Activity {
     }
 
     private TextView replyControl(String label, int icon) {
-        int background = this.session.darkMode() ? Color.rgb(34, 36, 39) : Color.rgb(244, 245, 247);
-        TextView control = text(label, 11.0f, this.MUTED);
-        control.setGravity(17);
+        TextView control = text(label, 11.0f, this.SECONDARY);
+        control.setGravity(16);
         control.setPadding(dp(8), 0, dp(8), 0);
-        GradientDrawable drawable = round(background, 6);
-        Compat.setBackground(control, drawable);
+        control.setBackgroundColor(Color.TRANSPARENT);
+        setLeftIcon(control, icon, this.SECONDARY, 13);
         return control;
     }
 
@@ -5364,7 +5339,6 @@ public final class MainActivity extends Activity {
                 });
                 int total = Math.max(expected, merged.size());
                 MainActivity.this.renderReplies(target, root, merged, total, shown + MainActivity.REPLY_PAGE_SIZE, merged.size() >= total);
-                MainActivity.this.animateIn(target);
             }
 
             @Override // com.openzen.heyboxcommunity.ApiClient.Callback
@@ -5454,14 +5428,11 @@ public final class MainActivity extends Activity {
     }
 
     private void updateCommentLikeView(TextView view, boolean liked, int likes) {
-        int bg = liked ? activeActionBackground(this.PRIMARY) : blend(this.BG, this.MUTED, this.session.darkMode() ? 0.12f : 0.08f);
-        int color = liked ? contrast(bg) : this.MUTED;
+        int color = liked ? this.SECONDARY : this.MUTED;
         view.setText(String.valueOf(Math.max(0, likes)));
         view.setTextColor(color);
         view.setPadding(dp(5), 0, dp(5), 0);
-        GradientDrawable drawable = round(bg, 14);
-        drawable.setStroke(dp(1), liked ? blend(bg, color, 0.24f) : blend(this.BG, this.MUTED, 0.18f));
-        Compat.setBackground(view, drawable);
+        view.setBackgroundColor(Color.TRANSPARENT);
         setLeftIcon(view, R.drawable.ic_thumb_up, color, liked ? 14 : 13);
     }
 
@@ -5945,19 +5916,18 @@ public final class MainActivity extends Activity {
         if (this.cachedProfileContainer != null && this.cachedProfileLoggedIn && this.session.userId().equals(this.cachedProfileUserId) && this.cachedProfileContainer.getParent() == null) {
             transitionTo(this.cachedProfileContainer);
         } else {
-            this.pendingBackTransition = false;
-            PageTransitionController.finishNow();
-            this.content.removeAllViews();
-            showLoading();
+            transitionTo(detailLoadingPage());
             this.api.get(EndpointProvider.profile(), Collections.singletonMap(SecureStrings.userid(), this.session.userId()), new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.23
                 @Override // com.openzen.heyboxcommunity.ApiClient.Callback
                 public void onSuccess(JSONObject body) {
+                    if (!"profile".equals(MainActivity.this.screen) || MainActivity.this.isFinishing()) return;
                     MainActivity.this.hideLoading();
                     MainActivity.this.renderProfile(body);
                 }
 
                 @Override // com.openzen.heyboxcommunity.ApiClient.Callback
                 public void onError(String message) {
+                    if (!"profile".equals(MainActivity.this.screen) || MainActivity.this.isFinishing()) return;
                     MainActivity.this.hideLoading();
                     MainActivity.this.toast("个人资料加载失败" + message);
                     MainActivity.this.renderProfile(new JSONObject());
@@ -5983,7 +5953,8 @@ public final class MainActivity extends Activity {
         LinearLayout page = vertical(this.BG);
         page.setPadding(dp(8), dp(8), dp(8), dp(12));
         scroll.addView(page);
-        LinearLayout profile = card();
+        LinearLayout profile = vertical(this.BG);
+        profile.setPadding(dp(6), dp(8), dp(6), dp(8));
         LinearLayout headRow = new LinearLayout(this);
         headRow.setGravity(16);
         ImageView avatar = new ImageView(this);
@@ -6011,7 +5982,6 @@ public final class MainActivity extends Activity {
         });
         addTop(profile, login, 13);
         page.addView(profile);
-        animateIn(profile);
         addProfileMenu(page, false);
         addBottomNavSafeSpace(page);
         this.cachedProfileContainer = scroll;
@@ -6030,7 +6000,8 @@ public final class MainActivity extends Activity {
         LinearLayout linearLayoutVertical = vertical(this.BG);
         linearLayoutVertical.setPadding(dp(8), dp(8), dp(8), dp(12));
         scrollView.addView(linearLayoutVertical);
-        LinearLayout profile = card();
+        LinearLayout profile = vertical(this.BG);
+        profile.setPadding(dp(6), dp(8), dp(6), dp(8));
         LinearLayout headRow = new LinearLayout(this);
         headRow.setGravity(16);
         ImageView avatar = new ImageView(this);
@@ -6072,7 +6043,6 @@ public final class MainActivity extends Activity {
             addTop(profile, text(signature, 13.0f, this.TEXT), 11);
         }
         linearLayoutVertical.addView(profile);
-        animateIn(profile);
         addProfileMenu(linearLayoutVertical, true);
         addBottomNavSafeSpace(linearLayoutVertical);
         this.cachedProfileContainer = scrollView;
@@ -6146,9 +6116,10 @@ public final class MainActivity extends Activity {
             this.pendingBackTransition = true;
             showProfile();
         });
-        this.title.setText("设置中心");
+        this.title.setText("设置");
         this.action.setVisibility(4);
         View settingsHome = buildSettingsHomeContent();
+        this.retainedPages.put("settings_home", settingsHome);
         transitionTo(settingsHome);
     }
 
@@ -6157,12 +6128,12 @@ public final class MainActivity extends Activity {
         LinearLayout page = vertical(this.BG);
         page.setPadding(dp(8), dp(8), dp(8), dp(14));
         scroll.addView(page);
-        page.addView(settingsTopCard("设置中心"));
-        LinearLayout panel = card();
-        addSettingEntry(panel, "显示与主题", "主题、字号、间距与界面预览", R.drawable.il_palette, this::showDisplaySettings);
-        addSettingEntry(panel, "启动与更新", "开屏动画、开屏文字与自动更新", R.drawable.il_refresh, this::showStartupSettings);
-        addSettingEntry(panel, "内容与网络", "图片加载、缓存与登录状态", R.drawable.il_globe, this::showAppSettings);
-        addSettingEntry(panel, "关于 heybox Lite", "版本、项目说明与免责声明", R.drawable.il_info, this::showAbout);
+        page.addView(settingsTopCard("设置"));
+        LinearLayout panel = settingsList();
+        addSettingEntry(panel, "显示", "", R.drawable.il_palette, this::showDisplaySettings);
+        addSettingEntry(panel, "启动与更新", this.session.autoUpdateCheck() ? "自动检查" : "手动检查", R.drawable.il_refresh, this::showStartupSettings);
+        addSettingEntry(panel, "内容与缓存", formatCacheMb(cacheBytes()), R.drawable.il_globe, this::showAppSettings);
+        addSettingEntry(panel, "关于", appVersion(), R.drawable.il_info, this::showAbout);
         page.addView(panel);
         return scroll;
     }
@@ -6189,14 +6160,18 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(24), dp(24));
         markerParams.rightMargin = dp(14);
         row.addView(marker, markerParams);
-        LinearLayout copy = vertical(0);
         TextView titleView = text(name, 14.5f, this.TEXT);
         titleView.setTypeface(appRegularTypeface(), 1);
-        copy.addView(titleView);
-        TextView descView = text(description, 11.0f, this.MUTED);
-        descView.setPadding(0, dp(1), 0, 0);
-        copy.addView(descView);
-        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        titleView.setSingleLine(true);
+        row.addView(titleView, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        if (description != null && !description.isEmpty()) {
+            TextView state = text(description, 11.0f, this.MUTED);
+            state.setGravity(21);
+            state.setSingleLine(true);
+            LinearLayout.LayoutParams stateParams = new LinearLayout.LayoutParams(-2, -2);
+            stateParams.rightMargin = dp(5);
+            row.addView(state, stateParams);
+        }
         ImageView arrow = new ImageView(this);
         arrow.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         Drawable chevron = Compat.tintedDrawable(this, R.drawable.il_chevron, this.MUTED);
@@ -6209,21 +6184,20 @@ public final class MainActivity extends Activity {
             runWithPressFeedback(view, action);
         });
         parent.addView(row);
-        animateIn(row);
     }
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
-        LinearLayout panel = card();
-        addSettingEntry(panel, "稍后看", "本地保存的帖子与离线内容", R.drawable.il_history,
+        LinearLayout panel = settingsList();
+        addSettingEntry(panel, "稍后看", String.valueOf(this.localCache.watchLaterItems().size()), R.drawable.il_history,
                 this::showWatchLater);
-        addSettingEntry(panel, "收藏", "我收藏的帖子", R.drawable.il_bookmark, () -> {
+        addSettingEntry(panel, "收藏", "", R.drawable.il_bookmark, () -> {
             if (!this.session.isLoggedIn()) {
                 showLogin();
                 return;
             }
             showFavorites();
         });
-        addSettingEntry(panel, "历史", "浏览记录", R.drawable.il_history, () -> {
+        addSettingEntry(panel, "历史", "", R.drawable.il_history, () -> {
             if (!this.session.isLoggedIn()) {
                 showLogin();
                 return;
@@ -6240,10 +6214,9 @@ public final class MainActivity extends Activity {
         addSettingEntry(panel, "每日签到", signSub, R.drawable.il_calendar, () -> {
             toast("签到功能已暂时关闭");
         });
-        addSettingEntry(panel, "设置中心", "主题、缓存、字号与关于", R.drawable.il_settings,
+        addSettingEntry(panel, "设置", "", R.drawable.il_settings,
                 this::showSettingsHome);
         addTop(page, panel, 8);
-        animateIn(panel);
     }
 
     private void showWatchLater() {
@@ -7258,7 +7231,16 @@ public final class MainActivity extends Activity {
         page.setPadding(dp(8), dp(8), dp(8), dp(14));
         scroll.addView(page);
         page.addView(settingsTopCard(pageTitle));
-        transitionTo(scroll);
+        this.retainedPages.put(key, scroll);
+        if (this.shellAnimating) {
+            transitionTo(scroll);
+        } else {
+            this.handler.post(() -> {
+                if (key.equals(this.screen) && scroll.getParent() == null && !isFinishing()) {
+                    transitionTo(scroll);
+                }
+            });
+        }
         return page;
     }
 
@@ -7292,7 +7274,7 @@ public final class MainActivity extends Activity {
             item.setOnClickListener(view -> {
                 this.session.setMotionLevel(level);
                 Motions.setLevel(level);
-                PageTransitionController.finishNow();
+                cancelAllMotion();
                 refresh.run();
             });
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(34), 1.0f);
@@ -7303,9 +7285,6 @@ public final class MainActivity extends Activity {
         }
         refresh.run();
         addTop(wrap, seg, 5);
-        TextView hint = text("完整挡包含页面滑动转场与列表入场，低配手表建议精简或关闭", 10.5f, this.MUTED);
-        hint.setLineSpacing(0.0f, 1.16f);
-        addTop(wrap, hint, 4);
         return wrap;
     }
 
@@ -7324,8 +7303,8 @@ public final class MainActivity extends Activity {
     }
 
     private void showDisplaySettings() {
-        LinearLayout linearLayout = settingsPage("display_settings", "显示设置");
-        LinearLayout panel = card();
+        LinearLayout linearLayout = settingsPage("display_settings", "显示");
+        LinearLayout panel = settingsList();
         boolean[] dark = {this.session.darkMode()};
         boolean[] bodyBold = {this.session.bodyBold()};
         boolean[] roundScreen = {this.session.roundScreen()};
@@ -7492,7 +7471,7 @@ public final class MainActivity extends Activity {
         articleBadge.setGravity(17);
         Compat.setBackground(articleBadge, round(this.SECONDARY, 4));
         feedCard.addView(articleBadge, new LinearLayout.LayoutParams(dp(42), dp(NAV_ICON_SIZE_DP)));
-        TextView previewTitle = text("方屏上的社区，也可以清晰又从", 15.0f, this.TEXT);
+        TextView previewTitle = text("方屏上的社区，也可以清晰又从容", 15.0f, this.TEXT);
         previewTitle.setTypeface(appRegularTypeface(), 1);
         addTop(feedCard, previewTitle, 6);
         TextView summary = text("这是一条帖子列表摘要，用来观察整体字号、卡片间距和主题颜色", 11.0f, this.MUTED);
@@ -7578,8 +7557,8 @@ public final class MainActivity extends Activity {
     }
 
     private void showAppSettings() {
-        LinearLayout page = settingsPage("app_settings", "应用设置");
-        LinearLayout panel = card();
+        LinearLayout page = settingsPage("app_settings", "内容与缓存");
+        LinearLayout panel = settingsList();
         addTop(panel, toggleRow("无图模式", this.session.noImage(), value -> {
             this.session.setNoImage(value);
             this.feed.clear();
@@ -7601,7 +7580,7 @@ public final class MainActivity extends Activity {
         SessionStore sessionStore3 = this.session;
         Objects.requireNonNull(sessionStore3);
         addTop(panel, toggleRow("记住帖子阅读位置", zRememberDetailScroll, sessionStore3::setRememberDetailScroll), 4);
-        addTop(panel, toggleRow("自动清理 30 天前的离线内容",
+        addTop(panel, toggleRow("自动清理", "30 天", "关",
                 this.session.autoOfflineCleanup(), value -> {
                     this.session.setAutoOfflineCleanup(value);
                     if (value) pruneOfflineCache(null);
@@ -7668,7 +7647,7 @@ public final class MainActivity extends Activity {
 
     private void showStartupSettings() {
         LinearLayout page = settingsPage("startup_settings", "启动与更新");
-        LinearLayout panel = card();
+        LinearLayout panel = settingsList();
         boolean[] autoUpdate = {this.session.autoUpdateCheck()};
         boolean[] splashEnabled = {this.session.splashEnabled()};
         addTop(panel, toggleRow("进入软件时检查更新", autoUpdate[0], value -> {
@@ -7999,7 +7978,7 @@ public final class MainActivity extends Activity {
 
     private void showAbout() {
         LinearLayout page = settingsPage("about", "关于");
-        LinearLayout panel = card();
+        LinearLayout panel = settingsList();
         TextView appName = text("heybox Lite", 20.0f, this.TEXT);
         appName.setTypeface(appRegularTypeface(), 1);
         panel.addView(appName);
@@ -8027,8 +8006,9 @@ public final class MainActivity extends Activity {
             showAnnouncementsV2();
         });
         addTop(panel, announcements, 8);
-        TextView updateStatus = text("从服务器检查最新版本", 12.0f, this.MUTED);
-        addTop(panel, updateStatus, 12);
+        TextView updateStatus = text("", 12.0f, this.MUTED);
+        updateStatus.setVisibility(8);
+        addTop(panel, updateStatus, 8);
         Button update = secondaryButton("检查更新", 0);
         update.setOnClickListener(view3 -> {
             update.setEnabled(false);
@@ -8040,6 +8020,7 @@ public final class MainActivity extends Activity {
                         return;
                     }
                     update.setEnabled(true);
+                    updateStatus.setVisibility(0);
                     if (result.updateAvailable) {
                         MainActivity.this.showUpdateDialog(result);
                         updateStatus.setText("发现新版" + result.version);
@@ -8059,6 +8040,7 @@ public final class MainActivity extends Activity {
                         return;
                     }
                     update.setEnabled(true);
+                    updateStatus.setVisibility(0);
                     update.setText("重新检查");
                     updateStatus.setText("检查失败：" + message);
                 }
@@ -8107,32 +8089,23 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout toggleRow(String label, boolean initial, ToggleListener listener) {
+        return toggleRow(label, "开", "关", initial, listener);
+    }
+
+    private LinearLayout toggleRow(String label, String onText, String offText,
+                                   boolean initial, ToggleListener listener) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
         TextView title = text(label, 13.0f, this.TEXT);
         row.addView(title, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
         TextView state = text("", 11.0f, this.TEXT);
-        state.setGravity(17);
-        row.addView(state, new LinearLayout.LayoutParams(dp(48), dp(28)));
+        state.setGravity(21);
+        row.addView(state, new LinearLayout.LayoutParams(dp(58), dp(40)));
         boolean[] value = {initial};
         Runnable render = () -> {
-            int i;
-            int iRgb;
-            state.setText(value[0] ? "开" : "关");
-            if (value[0]) {
-                i = this.session.darkMode() ? -16777216 : -1;
-            } else {
-                i = this.session.darkMode() ? -1 : -16777216;
-            }
-            int foreground = i;
-            if (value[0]) {
-                iRgb = this.session.darkMode() ? -1 : -16777216;
-            } else {
-                iRgb = this.session.darkMode() ? Color.rgb(55, 57, 60) : Color.rgb(220, 222, 225);
-            }
-            int background = iRgb;
-            state.setTextColor(foreground);
-            Compat.setBackground(state, round(background, 14));
+            state.setText(value[0] ? onText : offText);
+            state.setTextColor(value[0] ? this.SECONDARY : this.MUTED);
+            state.setBackgroundColor(Color.TRANSPARENT);
         };
         render.run();
         row.setOnClickListener(view -> {
@@ -8948,12 +8921,28 @@ public final class MainActivity extends Activity {
     }
 
     private void returnFromDetail() {
+        returnFromDetail(false);
+    }
+
+    private void returnFromDetailGesture() {
+        returnFromDetail(true);
+    }
+
+    private void returnFromDetail(boolean gestureOwned) {
         saveCurrentDetailProgress();
         this.detailRequestToken++;
+        View returnView = this.detailPager == null ? this.detailReturnView
+                : this.detailPager.takeReturnView();
         this.detailPager = null;
         this.detailScroll = null;
-        if (restoreDetailReturnView()) {
+        this.detailReturnView = returnView;
+        if (restoreDetailReturnView(!gestureOwned)) {
             return;
+        }
+        this.pendingBackTransition = !gestureOwned;
+        if (gestureOwned) {
+            this.pageTransitions.finishNow();
+            this.content.removeAllViews();
         }
         if (!"saved".equals(this.detailReturn)) {
             if (!"search".equals(this.detailReturn)) {
@@ -8985,29 +8974,28 @@ public final class MainActivity extends Activity {
     }
 
     private boolean shouldKeepDetailReturnView(String screenKey) {
-        return "search".equals(screenKey) || "saved".equals(screenKey) || "user_space".equals(screenKey);
+        return "feed".equals(screenKey) || "search".equals(screenKey)
+                || "saved".equals(screenKey) || "user_space".equals(screenKey);
     }
 
-    private boolean restoreDetailReturnView() {
-        // 详情返回直接恢复原 View（保持滚动位置），不走页面转场
+    private boolean restoreDetailReturnView(boolean animate) {
         this.pendingBackTransition = false;
-        PageTransitionController.finishNow();
+        this.pageTransitions.finishNow();
         if (this.detailReturnView == null || !shouldKeepDetailReturnView(this.detailReturn)) {
             this.detailReturnView = null;
             return false;
         }
         View view = this.detailReturnView;
         this.detailReturnView = null;
-        this.content.removeAllViews();
-        this.content.addView(view, match());
+        if (view.getParent() instanceof ViewGroup) {
+            ((ViewGroup) view.getParent()).removeView(view);
+        }
         this.screen = this.detailReturn;
-        this.title.setText(this.detailReturnTitle == null ? "" : this.detailReturnTitle);
-        this.leading.setVisibility(0);
-        this.leading.setOnClickListener(v -> onBackPressed());
-        this.action.setVisibility(4);
-        setBottomNavVisible(false);
-        if ("user_space".equals(this.screen)) {
-            this.title.setText("动态");
+        configureDetailReturnChrome();
+        if (animate) this.pageTransitions.run(this.content, view, false);
+        else {
+            this.content.removeAllViews();
+            this.content.addView(view, match());
         }
         // 离屏期间列表若收到过 notifyDataSetChanged（如加载更多回包），重挂载会丢滚动位置，这里强制回到进详情前的位置
         if ("search".equals(this.screen) && this.searchListView != null && this.searchListPosition >= 0) {
@@ -9020,7 +9008,23 @@ public final class MainActivity extends Activity {
                 }
             });
         }
+        if ("feed".equals(this.screen)) restoreFeedScroll();
         return true;
+    }
+
+    private void configureDetailReturnChrome() {
+        if ("feed".equals(this.screen)) {
+            activate("feed");
+            this.title.setText("社区");
+            this.action.setVisibility(4);
+            return;
+        }
+        setBottomNavVisible(false);
+        this.title.setText(this.detailReturnTitle == null ? "" : this.detailReturnTitle);
+        this.leading.setVisibility(0);
+        this.leading.setOnClickListener(v -> onBackPressed());
+        this.action.setVisibility(4);
+        if ("user_space".equals(this.screen)) this.title.setText("动态");
     }
 
     private void saveCurrentDetailProgress() {
@@ -9058,6 +9062,11 @@ public final class MainActivity extends Activity {
     protected void onDestroy() {
         saveCurrentDetailProgress();
         stopQrPolling();
+        this.pageTransitions.cancelNow();
+        if (this.detailPager != null) this.detailPager.cancelMotion();
+        if (this.content instanceof BackSwipeFrameLayout) {
+            ((BackSwipeFrameLayout) this.content).cancelMotion();
+        }
         ImageLoader.cancelTree(this.content);
         this.handler.removeCallbacksAndMessages(null);
         if (this.writeTokenProvider != null) {
@@ -9074,12 +9083,22 @@ public final class MainActivity extends Activity {
         boolean back = this.pendingBackTransition;
         this.pendingBackTransition = false;
         if (this.shellAnimating) {
-            PageTransitionController.finishNow();
+            this.pageTransitions.finishNow();
             this.content.removeAllViews();
             this.content.addView(next, match());
             return;
         }
-        PageTransitionController.run(this.content, next, !back);
+        this.pageTransitions.run(this.content, next, !back);
+    }
+
+    private void cancelAllMotion() {
+        this.pageTransitions.finishNow();
+        if (this.detailPager != null) this.detailPager.cancelMotion();
+        if (this.content instanceof BackSwipeFrameLayout) {
+            ((BackSwipeFrameLayout) this.content).cancelMotion();
+        }
+        Motions.resetTree(this.shellRoot);
+        this.shellAnimating = false;
     }
 
     private void showLoading() {
@@ -9088,6 +9107,16 @@ public final class MainActivity extends Activity {
         progress.setTag("loading");
         progress.setColor(this.PRIMARY);
         this.content.addView(progress, new FrameLayout.LayoutParams(dp(38), dp(38), 17));
+    }
+
+    private View detailLoadingPage() {
+        FrameLayout page = new FrameLayout(this);
+        page.setTag("detail_loading");
+        page.setBackgroundColor(this.BG);
+        LoadingSpinnerView progress = new LoadingSpinnerView(this);
+        progress.setColor(this.PRIMARY);
+        page.addView(progress, new FrameLayout.LayoutParams(dp(38), dp(38), 17));
+        return page;
     }
 
     private void hideLoading() {
@@ -9123,6 +9152,12 @@ public final class MainActivity extends Activity {
         ThemeTokens tokens = themeTokensOf;
         Compat.setBackground(card, UiComponents.card(this, tokens, this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
         return card;
+    }
+
+    private LinearLayout settingsList() {
+        LinearLayout list = vertical(this.PANEL);
+        list.setPadding(dp(8), 0, dp(8), 0);
+        return list;
     }
 
     private TextView icon(String value) {
@@ -9227,7 +9262,7 @@ public final class MainActivity extends Activity {
 
     private void animateIn(View view) {
         // 页面转场期间内容直接到位，避免与转场动画叠加
-        if (this.shellAnimating || PageTransitionController.isRunning()) {
+        if (this.shellAnimating || this.pageTransitions.isRunning()) {
             Motions.reset(view);
         } else {
             Motions.enter(view, dp(6));

@@ -1,6 +1,7 @@
 package com.openzen.heyboxcommunity;
 
 import android.view.View;
+import android.view.ViewGroup;
 
 /**
  * 全局动效等级与通用动画工具。
@@ -41,6 +42,16 @@ final class Motions {
         view.setTranslationY(0.0f);
         view.setScaleX(1.0f);
         view.setScaleY(1.0f);
+    }
+
+    static void resetTree(View view) {
+        if (view == null) return;
+        reset(view);
+        if (!(view instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            resetTree(group.getChildAt(i));
+        }
     }
 
     /** 面板/页面内容入场：淡入（完整挡带轻微上移）。关闭挡直接到位。 */

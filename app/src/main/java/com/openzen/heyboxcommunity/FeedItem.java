@@ -20,6 +20,7 @@ final class FeedItem {
     final String topicName;
     final String image;
     final String[] images;
+    final long createdAt;
     final int comments;
     final int clicks;
     int likes;
@@ -29,7 +30,7 @@ final class FeedItem {
 
     private FeedItem(String id, String title, String description, String author,
                      String authorId, String authorAvatar,
-                     String topicName, String image, int comments, int clicks, int likes, boolean article, boolean liked,
+                     String topicName, String image, long createdAt, int comments, int clicks, int likes, boolean article, boolean liked,
                      boolean pinned, String hsrc, String[] images) {
         this.id = id;
         this.hsrc = hsrc;
@@ -41,6 +42,7 @@ final class FeedItem {
         this.topicName = topicName == null ? "" : topicName;
         this.image = image;
         this.images = images == null ? new String[0] : images;
+        this.createdAt = createdAt;
         this.comments = comments;
         this.clicks = clicks;
         this.likes = likes;
@@ -82,6 +84,8 @@ final class FeedItem {
                 authorAvatar,
                 topicName,
                 image,
+                normalizeTime(firstLong(json, "create_time", "created_at", "publish_time",
+                        "post_time", "time")),
                 firstInt(json, "comment_num", "comment_count", "reply_num",
                         "reply_count", "comments"),
                 firstInt(json, "click", "click_num", "read_num", "view_num", "views"),
@@ -107,6 +111,7 @@ final class FeedItem {
             json.put("title", title);
             json.put("description", description);
             json.put("image", image);
+            if (createdAt > 0L) json.put("create_time", createdAt);
             if (images.length > 0) {
                 JSONArray values = new JSONArray();
                 for (String value : images) values.put(value);
@@ -247,5 +252,16 @@ final class FeedItem {
             if (json.has(key)) return json.optInt(key, 0);
         }
         return 0;
+    }
+
+    private static long firstLong(JSONObject json, String... keys) {
+        for (String key : keys) {
+            if (json.has(key)) return json.optLong(key, 0L);
+        }
+        return 0L;
+    }
+
+    private static long normalizeTime(long value) {
+        return value > 100000000000L ? value / 1000L : value;
     }
 }
