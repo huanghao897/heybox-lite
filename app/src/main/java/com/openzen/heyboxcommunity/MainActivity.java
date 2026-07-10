@@ -2857,18 +2857,45 @@ public final class MainActivity extends Activity {
     }
 
     private void addDetailCommentSection(LinearLayout page, JSONArray commentArray) {
-        View divider = new View(this);
-        divider.setBackgroundColor(this.themeTokens == null ? blend(this.PANEL, this.SECONDARY, 0.18f) : this.themeTokens.hairline);
-        addTop(page, divider, 10);
-        divider.getLayoutParams().height = dp(1);
+        LinearLayout surface = vertical(0);
+        surface.setPadding(dp(12), dp(12), dp(12), dp(14));
+        Compat.setBackground(surface, roundStroke(this.themeTokens.background, 28,
+                this.themeTokens.glassStroke, 1));
+        LinearLayout heading = new LinearLayout(this);
+        heading.setGravity(16);
         TextView commentTitle = text("评论 " + (commentArray == null ? 0 : commentArray.length()), 14.0f, this.TEXT);
         commentTitle.setTypeface(appRegularTypeface(), 1);
-        commentTitle.setPadding(dp(REPLY_PREVIEW_COUNT), dp(10), dp(REPLY_PREVIEW_COUNT), dp(REPLY_PAGE_SIZE));
-        page.addView(commentTitle);
-        LinearLayout comments = vertical(this.BG);
+        heading.addView(commentTitle, new LinearLayout.LayoutParams(0, dp(32), 1.0f));
+        TextView sort = text("热门", 11.0f, this.MUTED);
+        sort.setGravity(17);
+        setLeftIcon(sort, R.drawable.ic_sort, this.MUTED, 11);
+        heading.addView(sort, new LinearLayout.LayoutParams(dp(58), dp(32)));
+        surface.addView(heading);
+        LinearLayout comments = vertical(0);
         comments.setBackgroundColor(0);
-        page.addView(comments);
-        int count = addComments(comments, commentArray);
+        surface.addView(comments);
+        renderCommentList(comments, commentArray, false);
+        sort.setOnClickListener(view -> {
+            android.widget.PopupMenu menu = new android.widget.PopupMenu(this, sort);
+            menu.getMenu().add(0, 0, 0, "热门");
+            menu.getMenu().add(0, 1, 1, "最新");
+            menu.setOnMenuItemClickListener(item -> {
+                boolean latest = item.getItemId() == 1;
+                sort.setText(latest ? "最新" : "热门");
+                setLeftIcon(sort, R.drawable.ic_sort, this.MUTED, 11);
+                renderCommentList(comments, commentArray, latest);
+                return true;
+            });
+            menu.show();
+        });
+        LinearLayout.LayoutParams surfaceParams = new LinearLayout.LayoutParams(-1, -2);
+        surfaceParams.topMargin = dp(10);
+        page.addView(surface, surfaceParams);
+    }
+
+    private void renderCommentList(LinearLayout comments, JSONArray source, boolean latest) {
+        comments.removeAllViews();
+        int count = addComments(comments, source, latest);
         if (count == 0) {
             TextView empty = text("暂无评论", 13.0f, this.MUTED);
             empty.setPadding(dp(4), dp(8), dp(4), dp(12));
@@ -3261,8 +3288,10 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout detailArticleSurface() {
-        LinearLayout article = vertical(this.BG);
-        article.setPadding(dp(4), dp(8), dp(4), dp(12));
+        LinearLayout article = vertical(0);
+        article.setPadding(dp(14), dp(14), dp(14), dp(14));
+        Compat.setBackground(article, roundStroke(this.themeTokens.background, 28,
+                this.themeTokens.glassStroke, 1));
         return article;
     }
 
@@ -5219,7 +5248,7 @@ public final class MainActivity extends Activity {
         return ch == 65307 || ch == ';';
     }
 
-    private int addComments(LinearLayout page, JSONArray groups) {
+    private int addComments(LinearLayout page, JSONArray groups, boolean latest) {
         if (groups == null) {
             return 0;
         }
@@ -5230,9 +5259,9 @@ public final class MainActivity extends Activity {
                 threads.add(group);
             }
         }
-        Collections.sort(threads, (a, b) -> {
-            return Integer.compare(threadLikes(b), threadLikes(a));
-        });
+        Collections.sort(threads, (a, b) -> latest
+                ? Long.compare(threadTime(b), threadTime(a))
+                : Integer.compare(threadLikes(b), threadLikes(a)));
         int count = 0;
         Iterator<JSONObject> it = threads.iterator();
         while (it.hasNext()) {
@@ -5242,11 +5271,6 @@ public final class MainActivity extends Activity {
             if (root != null) {
                 LinearLayout linearLayoutCard = vertical(this.BG);
                 linearLayoutCard.setPadding(dp(4), dp(9), dp(4), dp(8));
-                if (count > 0) {
-                    View divider = new View(this);
-                    divider.setBackgroundColor(blend(this.BG, this.MUTED, this.session.darkMode() ? 0.22f : 0.16f));
-                    page.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
-                }
                 addComment(linearLayoutCard, root, false);
                 List<JSONObject> replies = new ArrayList<>();
                 if (comments != null) {
@@ -5265,9 +5289,11 @@ public final class MainActivity extends Activity {
                     LinearLayout replySection = new LinearLayout(this);
                     replySection.setOrientation(1);
                     replySection.setPadding(dp(8), dp(3), dp(8), dp(3));
-                    Compat.setBackground(replySection, round(this.themeTokens.faintAccent(), 10));
+                    Compat.setBackground(replySection, roundStroke(this.themeTokens.panelElevated,
+                            14, this.themeTokens.hairline, 1));
                     LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(-1, -2);
                     sectionParams.topMargin = dp(5);
+                    sectionParams.leftMargin = dp(44);
                     linearLayoutCard.addView(replySection, sectionParams);
                     LinearLayout replyList = new LinearLayout(this);
                     replyList.setOrientation(1);
@@ -5283,6 +5309,12 @@ public final class MainActivity extends Activity {
         return count;
     }
 
+    private long threadTime(JSONObject group) {
+        JSONArray comments = group == null ? null : group.optJSONArray("comment");
+        JSONObject root = comments == null ? group : comments.optJSONObject(0);
+        return root == null ? 0L : commentTime(root);
+    }
+
     private void renderReplies(LinearLayout parent, JSONObject root, List<JSONObject> replies, int expected, int visibleCount, boolean allLoaded) {
         parent.removeAllViews();
         int total = Math.max(expected, replies.size());
@@ -5293,23 +5325,20 @@ public final class MainActivity extends Activity {
         if (shown < replies.size()) {
             int nextCount = Math.min(REPLY_PAGE_SIZE, replies.size() - shown);
             TextView more = replyControl("再展开 " + nextCount + " 条", R.drawable.ic_expand);
-            addTop(parent, more, 2);
-            more.getLayoutParams().height = dp(26);
+            addReplyControl(parent, more);
             more.setOnClickListener(view -> {
                 renderReplies(parent, root, replies, total, shown + REPLY_PAGE_SIZE, allLoaded);
             });
         } else if (!allLoaded && total > replies.size()) {
             TextView more2 = replyControl("再展开 5 条", R.drawable.ic_expand);
-            addTop(parent, more2, 2);
-            more2.getLayoutParams().height = dp(26);
+            addReplyControl(parent, more2);
             more2.setOnClickListener(view2 -> {
                 loadSubComments(parent, root, replies, total, shown);
             });
         }
         if (shown > REPLY_PREVIEW_COUNT) {
             TextView collapse = replyControl("收起回复", R.drawable.ic_collapse);
-            addTop(parent, collapse, 2);
-            collapse.getLayoutParams().height = dp(26);
+            addReplyControl(parent, collapse);
             collapse.setOnClickListener(view3 -> {
                 renderReplies(parent, root, replies, total, Math.min(REPLY_PREVIEW_COUNT, replies.size()), allLoaded);
             });
@@ -5321,7 +5350,14 @@ public final class MainActivity extends Activity {
         control.setGravity(17);
         control.setPadding(dp(8), 0, dp(8), 0);
         Compat.setBackground(control, round(this.themeTokens.softAccent(), 13));
+        setLeftIcon(control, icon, this.themeTokens.accent, 12);
         return control;
+    }
+
+    private void addReplyControl(LinearLayout parent, TextView control) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(26));
+        params.topMargin = dp(3);
+        parent.addView(control, params);
     }
 
     private void loadSubComments(final LinearLayout target, final JSONObject root, final List<JSONObject> preview, final int expected, final int shown) {
