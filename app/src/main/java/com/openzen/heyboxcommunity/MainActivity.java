@@ -111,6 +111,7 @@ public final class MainActivity extends Activity {
     private ApiClient api;
     private WriteTokenProvider writeTokenProvider;
     private SignInManager signInManager;
+    private ReadingTimeTracker readingTimeTracker;
     private LinearLayout shellRoot;
     private LinearLayout shellBar;
     private FrameLayout content;
@@ -128,6 +129,7 @@ public final class MainActivity extends Activity {
     private View cachedProfileContainer;
     private boolean cachedProfileLoggedIn;
     private TextView feedFooter;
+    private TextView readingTodayView;
     private ScrollView detailScroll;
     private ScrollView detailCommentScroll;
     private DetailPager detailPager;
@@ -190,6 +192,7 @@ public final class MainActivity extends Activity {
     private String currentAuthCode = "";
     private String lastDetailDiagnostics = "";
     private JSONObject currentDetailBody;
+    private boolean activityResumed;
 
     /* JADX INFO: loaded from: MainActivity$IntListener.class */
     private interface IntListener {
@@ -251,6 +254,7 @@ public final class MainActivity extends Activity {
         }
         this.session = new SessionStore(this);
         this.localCache = new LocalCache(this);
+        this.readingTimeTracker = new ReadingTimeTracker(this);
         ImageLoader.init(this);
         if (this.session.autoOfflineCleanup()) {
             pruneOfflineCache(null);
@@ -827,7 +831,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean canHeaderBack() {
-        return "detail".equals(this.screen) || "user_space".equals(this.screen) || "search".equals(this.screen) || "saved".equals(this.screen) || "announcement_board".equals(this.screen) || "settings_home".equals(this.screen) || "display_preview".equals(this.screen) || "display_settings".equals(this.screen) || "startup_settings".equals(this.screen) || "app_settings".equals(this.screen) || "about".equals(this.screen);
+        return "detail".equals(this.screen) || "user_space".equals(this.screen) || "search".equals(this.screen) || "saved".equals(this.screen) || "reading_stats".equals(this.screen) || "announcement_board".equals(this.screen) || "settings_home".equals(this.screen) || "display_preview".equals(this.screen) || "display_settings".equals(this.screen) || "startup_settings".equals(this.screen) || "app_settings".equals(this.screen) || "about".equals(this.screen);
     }
 
     private int topLevelIndex() {
@@ -879,7 +883,7 @@ public final class MainActivity extends Activity {
     }
 
     private String backTargetScreenKey() {
-        return "detail".equals(this.screen) ? this.detailReturn : "user_space".equals(this.screen) ? "detail" : "search".equals(this.screen) ? "feed" : "saved".equals(this.screen) ? "profile" : "announcement_board".equals(this.screen) ? "about" : "display_preview".equals(this.screen) ? "display_settings" : ("display_settings".equals(this.screen) || "startup_settings".equals(this.screen) || "app_settings".equals(this.screen) || "about".equals(this.screen)) ? "settings_home" : "settings_home".equals(this.screen) ? "profile" : "feed";
+        return "detail".equals(this.screen) ? this.detailReturn : "user_space".equals(this.screen) ? "detail" : "search".equals(this.screen) ? "feed" : "saved".equals(this.screen) ? "profile" : "reading_stats".equals(this.screen) ? "profile" : "announcement_board".equals(this.screen) ? "about" : "display_preview".equals(this.screen) ? "display_settings" : ("display_settings".equals(this.screen) || "startup_settings".equals(this.screen) || "app_settings".equals(this.screen) || "about".equals(this.screen)) ? "settings_home" : "settings_home".equals(this.screen) ? "profile" : "feed";
     }
 
     private boolean canDetailSwipeBack() {
@@ -999,6 +1003,7 @@ public final class MainActivity extends Activity {
         }
         if ("profile".equals(key)) {
             activate("profile");
+            updateReadingTimeEntry();
             this.title.setText("我的");
             this.action.setVisibility(0);
             setIcon(this.action, R.drawable.il_refresh, this.TEXT, 19);
@@ -1006,6 +1011,15 @@ public final class MainActivity extends Activity {
                 this.cachedProfileContainer = null;
                 showProfile();
             });
+            return;
+        }
+        if ("reading_stats".equals(key)) {
+            this.screen = key;
+            setBottomNavVisible(false, false);
+            this.title.setText("阅读时长");
+            this.leading.setVisibility(0);
+            this.leading.setOnClickListener(view -> showProfile());
+            this.action.setVisibility(4);
             return;
         }
         this.screen = key;
@@ -1902,6 +1916,85 @@ public final class MainActivity extends Activity {
         });
         row.addView(search, new LinearLayout.LayoutParams(0, -1, 1.0f));
         return wrap;
+    }
+
+    private void updateReadingTimeEntry() {
+        if (this.readingTodayView == null || this.readingTimeTracker == null) return;
+        this.readingTodayView.setText("今天 " + formatReadingDuration(this.readingTimeTracker.stats().todayMs()));
+    }
+
+    private void showReadingStats() {
+        this.screen = "reading_stats";
+        setBottomNavVisible(false);
+        this.leading.setVisibility(0);
+        this.leading.setOnClickListener(view -> {
+            this.pendingBackTransition = true;
+            showProfile();
+        });
+        this.title.setText("阅读时长");
+        this.action.setVisibility(4);
+
+        ReadingTimeTracker.Stats stats = this.readingTimeTracker.stats();
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(this.BG);
+        LinearLayout page = vertical(this.BG);
+        page.setPadding(dp(8), dp(8), dp(8), dp(18));
+        scroll.addView(page);
+        page.addView(settingsTopCard("阅读时长"));
+        TextView date = text(new SimpleDateFormat("M月d日", Locale.getDefault()).format(new Date()), 11.0f, this.MUTED);
+        addTop(page, date, 0);
+        addTop(page, readingSummaryCard("今天", stats.todayArticleMs, stats.todayPostMs), 8);
+        addTop(page, readingSummaryCard("累计", stats.totalArticleMs, stats.totalPostMs), 8);
+        this.retainedPages.put("reading_stats", scroll);
+        transitionTo(scroll);
+    }
+
+    private View readingSummaryCard(String label, long articleMs, long postMs) {
+        LinearLayout panel = card();
+        TextView title = text(label, 12.0f, this.MUTED);
+        panel.addView(title);
+        long total = articleMs + postMs;
+        TextView duration = text(formatReadingDuration(total), 23.0f, this.TEXT);
+        duration.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        addTop(panel, duration, 3);
+
+        int articlePercent = total == 0L ? 0 : (int) Math.round((articleMs * 100.0d) / total);
+        int postPercent = total == 0L ? 0 : 100 - articlePercent;
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(0);
+        Compat.setBackground(bar, round(this.themeTokens.hairline, 3));
+        if (total > 0L) {
+            if (articleMs > 0L) {
+                View article = new View(this);
+                Compat.setBackground(article, round(this.themeTokens.accent, 3));
+                bar.addView(article, new LinearLayout.LayoutParams(0, -1, (float) articleMs));
+            }
+            if (postMs > 0L) {
+                View post = new View(this);
+                Compat.setBackground(post, round(this.MUTED, 3));
+                bar.addView(post, new LinearLayout.LayoutParams(0, -1, (float) postMs));
+            }
+        }
+        addTop(panel, bar, 10);
+        bar.getLayoutParams().height = dp(6);
+
+        TextView article = text("文章  " + articlePercent + "%  ·  " + formatReadingDuration(articleMs), 11.5f, this.TEXT);
+        setLeftIcon(article, R.drawable.il_scroll, this.themeTokens.accent, 13);
+        addTop(panel, article, 10);
+        TextView post = text("帖子  " + postPercent + "%  ·  " + formatReadingDuration(postMs), 11.5f, this.TEXT);
+        setLeftIcon(post, R.drawable.ic_comment, this.MUTED, 13);
+        addTop(panel, post, 7);
+        return panel;
+    }
+
+    private String formatReadingDuration(long milliseconds) {
+        if (milliseconds <= 0L) return "0 分钟";
+        long minutes = milliseconds / 60_000L;
+        if (minutes == 0L) return "<1 分钟";
+        long hours = minutes / 60L;
+        long remainder = minutes % 60L;
+        if (hours == 0L) return minutes + " 分钟";
+        return remainder == 0L ? hours + " 小时" : hours + " 小时 " + remainder + " 分钟";
     }
 
     private TextView feedFooterView() {
@@ -2846,6 +2939,9 @@ public final class MainActivity extends Activity {
         pager.setPages(articleScroll, commentScroll);
         pager.setReturnView(this.detailReturnView);
         transitionTo(pager);
+        if (this.activityResumed && this.readingTimeTracker != null && fallback != null) {
+            this.readingTimeTracker.start(fallback.article);
+        }
         this.detailScroll = articleScroll;
         this.detailCommentScroll = commentScroll;
         int savedScroll = this.session.rememberDetailScroll() ? this.localCache.scroll(this.currentLinkId) : 0;
@@ -5954,6 +6050,7 @@ public final class MainActivity extends Activity {
             return;
         }
         activate("profile");
+        updateReadingTimeEntry();
         this.title.setText("我的");
         this.action.setText("");
         setIcon(this.action, R.drawable.il_refresh, this.TEXT, 19);
@@ -5987,6 +6084,7 @@ public final class MainActivity extends Activity {
 
     private void showGuestProfile() {
         activate("profile");
+        updateReadingTimeEntry();
         this.title.setText("我的");
         this.action.setVisibility(0);
         setIcon(this.action, R.drawable.il_refresh, this.TEXT, 19);
@@ -6217,6 +6315,9 @@ public final class MainActivity extends Activity {
         TextView descView = text(description, 11.0f, this.MUTED);
         descView.setPadding(0, dp(1), 0, 0);
         copy.addView(descView);
+        if ("阅读时长".equals(name)) {
+            this.readingTodayView = descView;
+        }
         row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.0f));
         ImageView arrow = new ImageView(this);
         arrow.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
@@ -6233,8 +6334,8 @@ public final class MainActivity extends Activity {
     }
 
     private int settingIconColor(String name, int icon) {
-        // 「霁蓝」方案色板；浏览历史与稍后看共用图标，按名称区分成青/紫
         if (name != null && name.startsWith("浏览历史")) return Color.rgb(47, 169, 196);
+        if (icon == R.drawable.il_reading) return Color.rgb(83, 135, 230);
         if (icon == R.drawable.il_palette) return Color.rgb(61, 123, 255);
         if (icon == R.drawable.il_refresh) return Color.rgb(245, 154, 35);
         if (icon == R.drawable.il_globe) return Color.rgb(47, 181, 102);
@@ -6246,6 +6347,9 @@ public final class MainActivity extends Activity {
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
         LinearLayout panel = settingsList();
+        addSettingEntry(panel, "阅读时长",
+                "今天 " + formatReadingDuration(this.readingTimeTracker.stats().todayMs()),
+                R.drawable.il_reading, this::showReadingStats);
         addSettingEntry(panel, "稍后看", this.localCache.watchLaterItems().size() + " 篇离线内容", R.drawable.il_history,
                 this::showWatchLater);
         addSettingEntry(panel, "收藏", "我收藏的帖子", R.drawable.il_bookmark, () -> {
@@ -6273,6 +6377,7 @@ public final class MainActivity extends Activity {
         addSettingEntry(panel, "设置", "主题、缓存与关于", R.drawable.il_settings,
                 this::showSettingsHome);
         addTop(page, panel, 8);
+        updateReadingTimeEntry();
     }
 
     private void showWatchLater() {
@@ -9006,6 +9111,10 @@ public final class MainActivity extends Activity {
             returnFromUserSpace();
             return;
         }
+        if ("reading_stats".equals(this.screen)) {
+            showProfile();
+            return;
+        }
         if (!"saved".equals(this.screen)) {
             if (!"announcement_board".equals(this.screen)) {
                 if (!"display_preview".equals(this.screen)) {
@@ -9043,6 +9152,10 @@ public final class MainActivity extends Activity {
     }
 
     private void returnFromDetail(boolean gestureOwned) {
+        if (this.readingTimeTracker != null) {
+            this.readingTimeTracker.pause();
+            updateReadingTimeEntry();
+        }
         saveCurrentDetailProgress();
         this.detailRequestToken++;
         View returnView = this.detailPager == null ? this.detailReturnView
@@ -9151,6 +9264,11 @@ public final class MainActivity extends Activity {
     @Override // android.app.Activity
     protected void onResume() {
         super.onResume();
+        this.activityResumed = true;
+        if ("detail".equals(this.screen) && this.currentDetailBody != null
+                && this.currentDetailItem != null && this.readingTimeTracker != null) {
+            this.readingTimeTracker.start(this.currentDetailItem.article);
+        }
         PresenceReporter.ping(this.session);
         this.handler.removeCallbacks(this.presenceTick);
         this.handler.postDelayed(this.presenceTick, 150_000L);
@@ -9158,6 +9276,8 @@ public final class MainActivity extends Activity {
 
     @Override // android.app.Activity
     protected void onPause() {
+        this.activityResumed = false;
+        if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
         this.handler.removeCallbacks(this.presenceTick);
         saveCurrentDetailProgress();
         super.onPause();
@@ -9174,6 +9294,7 @@ public final class MainActivity extends Activity {
 
     @Override // android.app.Activity
     protected void onDestroy() {
+        if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
         saveCurrentDetailProgress();
         stopQrPolling();
         this.pageTransitions.cancelNow();
@@ -9194,6 +9315,9 @@ public final class MainActivity extends Activity {
 
     /** 页面切换统一入口：真实双 View 转场；方向由 pendingBackTransition 决定，消费后复位。 */
     private void transitionTo(View next) {
+        if (!"detail".equals(this.screen) && this.readingTimeTracker != null) {
+            this.readingTimeTracker.pause();
+        }
         boolean back = this.pendingBackTransition;
         this.pendingBackTransition = false;
         if (this.shellAnimating) {
