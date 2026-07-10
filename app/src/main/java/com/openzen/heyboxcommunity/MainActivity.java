@@ -154,6 +154,7 @@ public final class MainActivity extends Activity {
     private String pendingDetailReturn = "";
     private int detailRequestToken;
     private long lastManualSignClickAt;
+    private long lastExitBackAt;
     private long lastWriteSubmitAt;
     private long writeBlockedUntilAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -7736,7 +7737,10 @@ public final class MainActivity extends Activity {
         boolean zShellBackSwipe = this.session.shellBackSwipe();
         SessionStore sessionStore2 = this.session;
         Objects.requireNonNull(sessionStore2);
-        addTop(panel, toggleRow("右滑返回上一级", zShellBackSwipe, sessionStore2::setShellBackSwipe), 0);
+        addTop(panel, toggleRow("右滑返回上一级", zShellBackSwipe,
+                sessionStore2::setShellBackSwipe), 0);
+        addTop(panel, toggleRow("退出确认", this.session.confirmExitOnBack(),
+                this.session::setConfirmExitOnBack), 0);
         boolean zRememberDetailScroll = this.session.rememberDetailScroll();
         SessionStore sessionStore3 = this.session;
         Objects.requireNonNull(sessionStore3);
@@ -8315,6 +8319,7 @@ public final class MainActivity extends Activity {
         if (label.contains("无图")) return R.drawable.il_image;
         if (label.contains("动图")) return R.drawable.il_gif;
         if (label.contains("原图")) return R.drawable.il_zoom;
+        if (label.contains("退出确认")) return R.drawable.il_gesture_block;
         if (label.contains("右滑")) return R.drawable.il_swipe;
         if (label.contains("阅读位置")) return R.drawable.il_scroll;
         if (label.contains("清理")) return R.drawable.il_cleanup;
@@ -8328,7 +8333,7 @@ public final class MainActivity extends Activity {
         if (label.contains("夜间") || label.contains("无图")) return Color.rgb(61, 123, 255);
         if (label.contains("动图") || label.contains("更新")) return Color.rgb(47, 181, 102);
         if (label.contains("原图") || label.contains("开屏")) return Color.rgb(168, 96, 232);
-        if (label.contains("清理")) return Color.rgb(228, 88, 88);
+        if (label.contains("清理") || label.contains("退出")) return Color.rgb(228, 88, 88);
         if (label.contains("评论")) return Color.rgb(221, 91, 133);
         if (label.contains("圆屏") || label.contains("阅读")) return Color.rgb(47, 169, 196);
         return Color.rgb(245, 154, 35);
@@ -9121,6 +9126,14 @@ public final class MainActivity extends Activity {
                     if (!"display_settings".equals(this.screen) && !"startup_settings".equals(this.screen) && !"app_settings".equals(this.screen) && !"about".equals(this.screen)) {
                         if (!"settings_home".equals(this.screen)) {
                             if ("feed".equals(this.screen)) {
+                                if (this.session.confirmExitOnBack()) {
+                                    long now = System.currentTimeMillis();
+                                    if (now - this.lastExitBackAt > 2000L) {
+                                        this.lastExitBackAt = now;
+                                        toast("再按一次退出");
+                                        return;
+                                    }
+                                }
                                 super.onBackPressed();
                                 return;
                             } else {
