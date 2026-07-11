@@ -5586,14 +5586,15 @@ public final class MainActivity extends Activity {
     }
 
     private String formatCommentLikeCount(int count) {
-        if (count < 10_000) return String.valueOf(count);
-        if (count < 100_000) {
-            String value = String.format(Locale.US, "%.1f", count / 10_000.0d);
-            return value.endsWith(".0") ? value.substring(0, value.length() - 2) + "万" : value + "万";
-        }
-        if (count < 100_000_000) return (count / 10_000) + "万";
-        String value = String.format(Locale.US, "%.1f", count / 100_000_000.0d);
-        return value.endsWith(".0") ? value.substring(0, value.length() - 2) + "亿" : value + "亿";
+        if (count < 1_000) return String.valueOf(count);
+        if (count < 10_000) return compactDecimal(count / 1_000.0d) + "K";
+        if (count < 100_000_000) return compactDecimal(count / 10_000.0d) + "万";
+        return compactDecimal(count / 100_000_000.0d) + "亿";
+    }
+
+    private String compactDecimal(double value) {
+        String text = String.format(Locale.US, "%.1f", value);
+        return text.endsWith(".0") ? text.substring(0, text.length() - 2) : text;
     }
 
     private void toggleCommentLike(final JSONObject comment, final TextView view) {
