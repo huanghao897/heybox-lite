@@ -6296,10 +6296,10 @@ public final class MainActivity extends Activity {
         if (parent.getChildCount() > 0) {
             View divider = new View(this);
             divider.setBackgroundColor(this.session.darkMode()
-                    ? Color.argb(26, 255, 255, 255) : Color.argb(20, 0, 0, 0));
+                    ? Color.argb(16, 255, 255, 255) : Color.argb(14, 0, 0, 0));
             LinearLayout.LayoutParams dividerParams =
                     new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-            dividerParams.leftMargin = dp(44);
+            dividerParams.leftMargin = dp(45);
             parent.addView(divider, dividerParams);
         }
         LinearLayout row = new LinearLayout(this);
@@ -6307,18 +6307,19 @@ public final class MainActivity extends Activity {
         row.setPadding(dp(6), dp(14), dp(6), dp(14));
         ImageView marker = new ImageView(this);
         marker.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        Drawable iconDrawable = Compat.tintedDrawable(this, icon, Color.WHITE);
+        Drawable iconDrawable = Compat.tintedDrawable(this, icon, this.themeTokens.text);
         if (iconDrawable != null) {
             marker.setImageDrawable(iconDrawable);
         }
         marker.setPadding(dp(5), dp(5), dp(5), dp(5));
-        Compat.setBackground(marker, UiComponents.iconChip(this,
-                settingIconColor(name, icon), this.session.uiScale() / 100.0f));
+        Compat.setBackground(marker, UiComponents.monoChip(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
         LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(27), dp(27));
         markerParams.rightMargin = dp(12);
         row.addView(marker, markerParams);
         LinearLayout copy = vertical(0);
-        TextView titleView = text(name, 14.5f, this.TEXT);
+        TextView titleView = text(name, 14.5f,
+                name.startsWith("退出登录") ? Color.rgb(228, 88, 88) : this.TEXT);
         titleView.setTypeface(appRegularTypeface(), 1);
         copy.addView(titleView);
         TextView descView = null;
@@ -6344,23 +6345,6 @@ public final class MainActivity extends Activity {
         });
         parent.addView(row);
         return descView;
-    }
-
-    private int settingIconColor(String name, int icon) {
-        if (name != null && name.startsWith("浏览历史")) return Color.rgb(47, 169, 196);
-        if (icon == R.drawable.il_reading) return Color.rgb(83, 135, 230);
-        if (icon == R.drawable.il_palette) return Color.rgb(61, 123, 255);
-        if (icon == R.drawable.il_refresh) return Color.rgb(245, 154, 35);
-        if (icon == R.drawable.il_globe) return Color.rgb(47, 181, 102);
-        if (icon == R.drawable.il_bookmark) return Color.rgb(221, 91, 133);
-        if (icon == R.drawable.il_history) return Color.rgb(168, 96, 232);
-        if (icon == R.drawable.il_calendar) return Color.rgb(228, 88, 88);
-        if (icon == R.drawable.il_eye) return Color.rgb(47, 169, 196);
-        if (icon == R.drawable.il_cleanup) return Color.rgb(245, 154, 35);
-        if (icon == R.drawable.il_update) return Color.rgb(61, 123, 255);
-        if (icon == R.drawable.il_qr) return Color.rgb(47, 181, 102);
-        if (icon == R.drawable.ic_logout) return Color.rgb(228, 88, 88);
-        return Color.rgb(124, 131, 140);
     }
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
@@ -7423,6 +7407,15 @@ public final class MainActivity extends Activity {
         return page;
     }
 
+    /** 卡外组名：小号加字距标签，站在分组卡上方，页面形成"标题—内容块"节奏。 */
+    private void addSectionLabel(LinearLayout page, String label) {
+        TextView view = text(label, 9.5f, this.themeTokens.subtle);
+        view.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        Compat.setLetterSpacing(view, 0.18f);
+        view.setPadding(dp(6), 0, 0, dp(4));
+        addTop(page, view, 12);
+    }
+
     private View settingsTopCard(String pageTitle) {
         LinearLayout box = new LinearLayout(this);
         box.setGravity(16);
@@ -7439,6 +7432,7 @@ public final class MainActivity extends Activity {
 
     private void showDisplaySettings() {
         LinearLayout linearLayout = settingsPage("display_settings", "显示与主题");
+        addSectionLabel(linearLayout, "显示");
         LinearLayout panel = settingsList();
         boolean[] dark = {this.session.darkMode()};
         boolean[] bodyBold = {this.session.bodyBold()};
@@ -7473,13 +7467,11 @@ public final class MainActivity extends Activity {
             updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, -1, -1, value4);
         });
         linearLayout.addView(panel);
+        addSectionLabel(linearLayout, "屏幕适配");
         panel = card();
-        TextView roundTitle = text("手表屏幕适配", 13.0f, this.TEXT);
-        roundTitle.setTypeface(appRegularTypeface(), 1);
-        addTop(panel, roundTitle, 0);
         TextView roundDesc = text("圆屏模式会给页面四周留出安全边距，避免内容贴到屏幕边缘。横纵向边距按屏幕百分比计算，适合圆屏和小屏手表微调", 11.0f, this.MUTED);
         roundDesc.setLineSpacing(0.0f, 1.16f);
-        addTop(panel, roundDesc, 4);
+        addTop(panel, roundDesc, 2);
         ScaleControl[] screenPaddingH = {settingSlider(panel, "横向边距", "%", 0, NAV_BAR_HEIGHT_DP, this.session.screenPaddingHPercent(), value6 -> {
         })};
         ScaleControl[] screenPaddingV = {settingSlider(panel, "纵向边距", "%", 0, NAV_BAR_HEIGHT_DP, this.session.screenPaddingVPercent(), value7 -> {
@@ -7493,10 +7485,8 @@ public final class MainActivity extends Activity {
             updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, -1, -1, parseNumber(padding.input, 0, NAV_BAR_HEIGHT_DP) == null ? this.session.pagePadding() : parseNumber(padding.input, 0, NAV_BAR_HEIGHT_DP).intValue());
         }), 0);
         linearLayout.addView(panel);
+        addSectionLabel(linearLayout, "正文排版");
         panel = card();
-        TextView bodyGroupTitle = text("正文排版", 13.0f, this.TEXT);
-        bodyGroupTitle.setTypeface(appRegularTypeface(), 1);
-        addTop(panel, bodyGroupTitle, 0);
         ScaleControl bodyText = settingSlider(panel, "正文字号", "%", 75, 170, this.session.bodyTextScale(), value8 -> {
             previewBody.setTextSize((13 * value8) / 100.0f);
         });
@@ -7525,10 +7515,8 @@ public final class MainActivity extends Activity {
         previewBody.setPadding(0, dp(this.session.bodyParagraphSpacing()), 0, 0);
         previewBody.setLineSpacing(0.0f, this.session.bodyLineSpacing() / 100.0f);
         linearLayout.addView(panel);
+        addSectionLabel(linearLayout, "颜色主题");
         panel = card();
-        TextView themeTitle = text("预设颜色主题", 13.0f, this.TEXT);
-        themeTitle.setTypeface(appRegularTypeface(), 1);
-        addTop(panel, themeTitle, 0);
         LinearLayout themeGrid = vertical(0);
         for (int start = 0; start < THEME_NAMES.length; start += 6) {
             LinearLayout row = new LinearLayout(this);
@@ -7705,6 +7693,7 @@ public final class MainActivity extends Activity {
 
     private void showAppSettings() {
         LinearLayout page = settingsPage("app_settings", "内容与网络");
+        addSectionLabel(page, "浏览与交互");
         LinearLayout panel = settingsList();
         addTop(panel, toggleRow("无图模式", this.session.noImage(), value -> {
             this.session.setNoImage(value);
@@ -7740,12 +7729,10 @@ public final class MainActivity extends Activity {
         Objects.requireNonNull(sessionStore4);
         addTop(panel, toggleRow("双击评论回复", zDoubleTapCommentReply, sessionStore4::setDoubleTapCommentReply), 0);
         page.addView(panel);
+        addSectionLabel(page, "内容过滤");
         LinearLayout filter = settingsList();
-        TextView filterTitle = text("内容过滤", 13.0f, this.TEXT);
-        filterTitle.setTypeface(appRegularTypeface(), 1);
-        addTop(filter, filterTitle, 0);
         TextView filterLabel = text("屏蔽关键词（逗号分隔）", 11.0f, this.MUTED);
-        addTop(filter, filterLabel, 6);
+        addTop(filter, filterLabel, 2);
         EditText blockKeywords = new EditText(this);
         blockKeywords.setText(this.session.blockKeywords());
         blockKeywords.setTextColor(this.TEXT);
@@ -7767,7 +7754,8 @@ public final class MainActivity extends Activity {
             toast("内容过滤已保存");
         });
         addTop(filter, saveFilter, 9);
-        addTop(page, filter, 8);
+        page.addView(filter);
+        addSectionLabel(page, "维护");
         LinearLayout maintain = settingsList();
         final TextView[] pruneDesc = new TextView[1];
         pruneDesc[0] = addSettingEntry(maintain, "清理过期离线内容", offlineSummary(), R.drawable.il_cleanup, () ->
@@ -7801,7 +7789,7 @@ public final class MainActivity extends Activity {
                     }
                     showLogin();
                 });
-        addTop(page, maintain, 8);
+        page.addView(maintain);
     }
 
     private String offlineSummary() {
@@ -8140,6 +8128,7 @@ public final class MainActivity extends Activity {
 
     private void showAbout() {
         LinearLayout page = settingsPage("about", "关于");
+        addSectionLabel(page, "应用");
         LinearLayout panel = settingsList();
         TextView appName = text("heybox Lite", 20.0f, this.TEXT);
         appName.setTypeface(appRegularTypeface(), 1);
@@ -8154,6 +8143,7 @@ public final class MainActivity extends Activity {
         disclaimer.setLineSpacing(0.0f, 1.22f);
         addTop(panel, disclaimer, 10);
         page.addView(panel);
+        addSectionLabel(page, "支持");
         LinearLayout actions = settingsList();
         addSettingEntry(actions, "群二维码", "QQ 群 781941517，扫码进交流群", R.drawable.il_qr,
                 this::showFeedbackGroupQr);
@@ -8204,7 +8194,7 @@ public final class MainActivity extends Activity {
                 });
         addSettingEntry(actions, "打开 GitHub 项目", "huanghao897/heybox-lite", R.drawable.il_globe, () ->
                 openUrl("https://github.com/huanghao897/heybox-lite"));
-        addTop(page, actions, 8);
+        page.addView(actions);
     }
 
     private void showFeedbackGroupQr() {
@@ -8256,11 +8246,11 @@ public final class MainActivity extends Activity {
         ImageView icon = new ImageView(this);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         icon.setPadding(dp(5), dp(5), dp(5), dp(5));
-        Drawable drawable = Compat.tintedDrawable(this, settingToggleIcon(label), Color.WHITE);
+        Drawable drawable = Compat.tintedDrawable(this, settingToggleIcon(label), this.themeTokens.text);
         if (drawable != null) {
             icon.setImageDrawable(drawable);
         }
-        Compat.setBackground(icon, UiComponents.iconChip(this, settingToggleColor(label),
+        Compat.setBackground(icon, UiComponents.monoChip(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(27), dp(27));
         iconParams.rightMargin = dp(12);
@@ -8289,16 +8279,16 @@ public final class MainActivity extends Activity {
         final int travel = dp(16);
         Runnable paintTrack = () -> Compat.setBackground(toggle, round(value[0]
                 ? this.themeTokens.accent
-                : (this.session.darkMode() ? Color.rgb(58, 62, 70) : Color.rgb(203, 208, 214)), 13));
+                : (this.session.darkMode() ? Color.rgb(51, 55, 62) : Color.rgb(203, 208, 214)), 13));
         paintTrack.run();
         thumb.setTranslationX(value[0] ? travel : 0.0f);
         content.addView(toggle, new LinearLayout.LayoutParams(dp(42), dp(26)));
-        content.setMinimumHeight(dp(50));
+        content.setMinimumHeight(dp(52));
         row.addView(content, new LinearLayout.LayoutParams(-1, -2));
 
         View divider = new View(this);
         divider.setBackgroundColor(this.session.darkMode()
-                ? Color.argb(26, 255, 255, 255) : Color.argb(20, 0, 0, 0));
+                ? Color.argb(16, 255, 255, 255) : Color.argb(14, 0, 0, 0));
         LinearLayout.LayoutParams dividerParams =
                 new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
         dividerParams.leftMargin = dp(45);
@@ -8331,16 +8321,6 @@ public final class MainActivity extends Activity {
         if (label.contains("更新")) return R.drawable.il_update;
         if (label.contains("开屏")) return R.drawable.il_splash;
         return R.drawable.il_settings;
-    }
-
-    private int settingToggleColor(String label) {
-        if (label.contains("夜间") || label.contains("无图")) return Color.rgb(61, 123, 255);
-        if (label.contains("动图") || label.contains("更新")) return Color.rgb(47, 181, 102);
-        if (label.contains("原图") || label.contains("开屏")) return Color.rgb(168, 96, 232);
-        if (label.contains("清理") || label.contains("退出")) return Color.rgb(228, 88, 88);
-        if (label.contains("评论")) return Color.rgb(221, 91, 133);
-        if (label.contains("圆屏") || label.contains("阅读")) return Color.rgb(47, 169, 196);
-        return Color.rgb(245, 154, 35);
     }
 
     /** 两行式滑杆：标签与数值同一行（数值点按可键入），通栏轨道在下，白钮与开关圆钮同族。 */
@@ -9437,7 +9417,7 @@ public final class MainActivity extends Activity {
             themeTokensOf = this.themeTokens;
         }
         ThemeTokens tokens = themeTokensOf;
-        Compat.setBackground(card, UiComponents.card(this, tokens, this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
+        Compat.setBackground(card, UiComponents.groupCard(this, tokens, this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
         return card;
     }
 
@@ -9466,7 +9446,7 @@ public final class MainActivity extends Activity {
         return button(value, 0);
     }
 
-    /** 主按钮：主题色柔和底胶囊（全 App 无硬填充按钮）。 */
+    /** 主按钮：主题色粗体文字行——无底无框，全屏唯一的彩色本身就是按钮。 */
     private Button button(String value, int iconRes) {
         ThemeTokens themeTokensOf;
         Button button = new Button(this);
@@ -9483,14 +9463,20 @@ public final class MainActivity extends Activity {
         button.setTypeface(appRegularTypeface(), Typeface.BOLD);
         button.setPadding(dp(12), 0, dp(12), 0);
         button.setGravity(17);
-        button.setMinHeight(dp(36));
-        button.setMinimumHeight(dp(36));
+        button.setMinHeight(dp(40));
+        button.setMinimumHeight(dp(40));
         if (Build.VERSION.SDK_INT >= 21) {
             button.setStateListAnimator(null);
         }
-        Compat.setBackground(button, UiComponents.softPill(this, tokens, this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
+        Compat.setBackground(button, null);
+        button.setOnTouchListener((view, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                UiComponents.press(view);
+            }
+            return false;
+        });
         if (iconRes != 0) {
-            setLeftIcon(button, iconRes, tokens.accent, 16);
+            setLeftIcon(button, iconRes, tokens.accent, 15);
         }
         return button;
     }

@@ -21,8 +21,18 @@ final class UiComponents {
         return drawable;
     }
 
-    static GradientDrawable iconChip(Context context, int color, float scale) {
-        return round(context, color, 8, scale);
+    /** 石墨单色图标芯片：深灰底 + 极淡描边，图标用前景色（全屏唯一彩色留给主题色）。 */
+    static GradientDrawable monoChip(Context context, ThemeTokens tokens, float scale) {
+        int fill = ThemeTokens.blend(tokens.panel, tokens.text, tokens.dark ? 0.06f : 0.05f);
+        GradientDrawable drawable = round(context, fill, 8, scale);
+        drawable.setStroke(Math.max(1, dp(context, 1, scale)),
+                ThemeTokens.blend(fill, tokens.text, 0.05f));
+        return drawable;
+    }
+
+    /** 设置分组卡：无描边，靠底色与卡面的色阶分层。 */
+    static GradientDrawable groupCard(Context context, ThemeTokens tokens, float scale) {
+        return round(context, tokens.panel, 16, scale);
     }
 
     static GradientDrawable dock(Context context, ThemeTokens tokens, float scale) {
