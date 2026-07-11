@@ -4836,14 +4836,17 @@ public final class MainActivity extends Activity {
                 dots.getChildAt(i).setAlpha(i == page ? 1.0f : 0.4f);
             }
         });
-        for (String url : urls) {
+        final String[] urlArray = urls.toArray(new String[0]);
+        for (int pageIndex = 0; pageIndex < urls.size(); pageIndex++) {
+            final int position = pageIndex;
+            final String url = urls.get(pageIndex);
             FrameLayout pageFrame = new FrameLayout(this);
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.FIT_CENTER);
             image.setAdjustViewBounds(false);
             pageFrame.addView(image, match());
             image.setOnClickListener(view -> {
-                openImage(image, url);
+                openImage(image, urlArray, position);
             });
             ImageLoader.intoMeasuredRevealStable(image, url, detailImageTargetPx(), (success, bitmap) -> {
                 if (!success && image.getDrawable() == null) {
@@ -8847,14 +8850,24 @@ public final class MainActivity extends Activity {
     }
 
     private void openImage(ImageView source, String url) {
+        openImage(source, new String[]{url}, 0);
+    }
+
+    /** 帖子多图：把整组图和当前索引交给查看器，放大后可左右滑动切换。 */
+    private void openImage(ImageView source, String[] urls, int index) {
         int[] location = new int[REPLY_PREVIEW_COUNT];
         source.getLocationOnScreen(location);
+        String current = urls.length > 0 ? urls[Math.max(0, Math.min(urls.length - 1, index))] : "";
         Drawable drawable = source.getDrawable();
         if (drawable instanceof BitmapDrawable) {
-            ImageViewerActivity.preparePreview(url, ((BitmapDrawable) drawable).getBitmap());
+            ImageViewerActivity.preparePreview(current, ((BitmapDrawable) drawable).getBitmap());
         }
         Intent intent = new Intent(this, (Class<?>) ImageViewerActivity.class);
-        intent.putExtra("image_url", url);
+        intent.putExtra("image_url", current);
+        if (urls.length > 1) {
+            intent.putExtra("image_urls", urls);
+            intent.putExtra("image_index", index);
+        }
         intent.putExtra("origin_x", location[0] + (source.getWidth() / REPLY_PREVIEW_COUNT));
         intent.putExtra("origin_y", location[1] + (source.getHeight() / REPLY_PREVIEW_COUNT));
         intent.putExtra("origin_width", source.getWidth());

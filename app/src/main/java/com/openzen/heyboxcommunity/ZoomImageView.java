@@ -77,6 +77,11 @@ final class ZoomImageView extends ImageView {
         blankClickListener = listener;
     }
 
+    /** 是否已放大：用于外层横滑图集判断——放大时手势归缩放/平移，未放大时才翻页。 */
+    boolean isZoomed() {
+        return scale > 1.01f;
+    }
+
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         post(this::fitImage);

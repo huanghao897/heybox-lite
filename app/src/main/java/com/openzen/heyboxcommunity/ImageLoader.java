@@ -369,6 +369,44 @@ final class ImageLoader {
         });
     }
 
+    interface SizeCallback {
+        void onSize(long bytes);
+    }
+
+    /** 探测原图字节大小（HEAD 请求），用于“查看原图（xxxKB）”。失败回调 -1。 */
+    static void probeOriginalSize(String sourceUrl, SizeCallback callback) {
+        String url = originalUrl(sourceUrl);
+        if (url.isEmpty()) {
+            MAIN.post(() -> callback.onSize(-1L));
+            return;
+        }
+        EXECUTOR.execute(() -> {
+            long size = headContentLength(url);
+            MAIN.post(() -> callback.onSize(size));
+        });
+    }
+
+    private static long headContentLength(String url) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.setRequestMethod("HEAD");
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(8000);
+            connection.setUseCaches(true);
+            HeaderProvider.applyPublic(connection);
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) return -1L;
+            String length = connection.getHeaderField("Content-Length");
+            if (length == null) return -1L;
+            return Long.parseLong(length.trim());
+        } catch (Throwable ignored) {
+            return -1L;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
     private static byte[] downloadBytes(String url, int maxBytes) {
         HttpURLConnection connection = null;
         try {
