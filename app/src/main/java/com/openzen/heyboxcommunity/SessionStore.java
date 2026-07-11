@@ -95,6 +95,14 @@ final class SessionStore {
     private static final String PRESENCE_IDENTITY_UPLOADED = "presence_identity_uploaded_";
     static final String DEFAULT_SPLASH_TEXT = "方寸之间，看见热爱";
     private static final String LEGACY_PREFIX = "L1:";
+    private static final String SIGNIN_SECRET_PREFIX = "HBLSEC1:";
+    private static final String[] SIGNIN_SECRET_KEYS = {
+            SIGNIN_MOBILE_PKEY,
+            SIGNIN_MOBILE_TOKEN,
+            SIGNIN_MOBILE_DEVICE_ID,
+            SIGNIN_REPLAY_URL,
+            SIGNIN_REPLAY_COOKIE
+    };
 
     private final Context context;
     private final SharedPreferences prefs;
@@ -110,6 +118,7 @@ final class SessionStore {
                     ? UUID.randomUUID().toString().replace("-", "") : androidId;
             prefs.edit().putString(SecureStrings.deviceId(), id).apply();
         }
+        migrateSignInSecrets();
     }
 
     boolean isLoggedIn() {
@@ -525,18 +534,15 @@ final class SessionStore {
     }
 
     String signInPkey() {
-        String value = prefs.getString(SIGNIN_MOBILE_PKEY, "");
-        return value == null ? "" : value.trim();
+        return signInValue(SIGNIN_MOBILE_PKEY);
     }
 
     String signInXhhToken() {
-        String value = prefs.getString(SIGNIN_MOBILE_TOKEN, "");
-        return value == null ? "" : value.trim();
+        return signInValue(SIGNIN_MOBILE_TOKEN);
     }
 
     String signInDeviceId() {
-        String value = prefs.getString(SIGNIN_MOBILE_DEVICE_ID, "");
-        return value == null ? "" : value.trim();
+        return signInValue(SIGNIN_MOBILE_DEVICE_ID);
     }
 
     String importSignInCredentialsFromText(String text) {
@@ -623,8 +629,7 @@ final class SessionStore {
     }
 
     String signInReplayUrl() {
-        String value = prefs.getString(SIGNIN_REPLAY_URL, "");
-        return value == null ? "" : value.trim();
+        return signInValue(SIGNIN_REPLAY_URL);
     }
 
     Map<String, String> signInReplayHeaders() {
@@ -679,10 +684,10 @@ final class SessionStore {
                         + " columns=" + cursorColumnsForLog(cursor);
             }
             SharedPreferences.Editor editor = prefs.edit();
-            if (!id.isEmpty()) editor.putString(SIGNIN_MOBILE_USER_ID, id);
-            if (!pkey.isEmpty()) editor.putString(SIGNIN_MOBILE_PKEY, pkey);
-            if (!token.isEmpty()) editor.putString(SIGNIN_MOBILE_TOKEN, token);
-            if (!deviceId.isEmpty()) editor.putString(SIGNIN_MOBILE_DEVICE_ID, deviceId);
+            putIfPresent(editor, SIGNIN_MOBILE_USER_ID, id);
+            putIfPresent(editor, SIGNIN_MOBILE_PKEY, pkey);
+            putIfPresent(editor, SIGNIN_MOBILE_TOKEN, token);
+            putIfPresent(editor, SIGNIN_MOBILE_DEVICE_ID, deviceId);
             editor.putString(SIGNIN_MOBILE_SOURCE, "official-provider:"
                             + providerUriName(usedUri))
                     .putLong(SIGNIN_MOBILE_IMPORTED_AT, System.currentTimeMillis())
@@ -713,12 +718,12 @@ final class SessionStore {
                 return "session=no-pkey cookieKeys=" + authCookieKeysForLog();
             }
             SharedPreferences.Editor editor = prefs.edit()
-                    .putString(SIGNIN_MOBILE_PKEY, pkey)
                     .putString(SIGNIN_MOBILE_SOURCE, "lite-session-copy")
                     .putLong(SIGNIN_MOBILE_IMPORTED_AT, System.currentTimeMillis());
-            if (!id.isEmpty()) editor.putString(SIGNIN_MOBILE_USER_ID, id);
-            if (!token.isEmpty()) editor.putString(SIGNIN_MOBILE_TOKEN, token);
-            if (!deviceId.isEmpty()) editor.putString(SIGNIN_MOBILE_DEVICE_ID, deviceId);
+            putIfPresent(editor, SIGNIN_MOBILE_PKEY, pkey);
+            putIfPresent(editor, SIGNIN_MOBILE_USER_ID, id);
+            putIfPresent(editor, SIGNIN_MOBILE_TOKEN, token);
+            putIfPresent(editor, SIGNIN_MOBILE_DEVICE_ID, deviceId);
             editor.apply();
             return "session=ok-isolated idLen=" + id.length()
                     + " pkeyLen=" + pkey.length()
@@ -1530,12 +1535,73 @@ final class SessionStore {
     private void putIfPresent(SharedPreferences.Editor editor, String key, String value) {
         if (editor == null || key == null || key.isEmpty()
                 || value == null || value.trim().isEmpty()) return;
-        editor.putString(key, value.trim());
+        String clean = value.trim();
+        if (isSignInSecretKey(key)) {
+            String encrypted = encryptSignInSecret(clean);
+            if (encrypted != null) editor.putString(key, encrypted);
+            return;
+        }
+        editor.putString(key, clean);
     }
 
     private String signInValue(String key) {
         String value = prefs.getString(key, "");
-        return value == null ? "" : value.trim();
+        String clean = value == null ? "" : value.trim();
+        if (clean.isEmpty() || !isSignInSecretKey(key)) return clean;
+        if (!clean.startsWith(SIGNIN_SECRET_PREFIX)) {
+            migrateSignInSecret(key, clean);
+            return clean;
+        }
+        return decryptSignInSecret(clean);
+    }
+
+    private void migrateSignInSecrets() {
+        for (String key : SIGNIN_SECRET_KEYS) {
+            String value = prefs.getString(key, "");
+            if (value != null && !value.trim().isEmpty()
+                    && !value.startsWith(SIGNIN_SECRET_PREFIX)) {
+                migrateSignInSecret(key, value.trim());
+            }
+        }
+    }
+
+    private void migrateSignInSecret(String key, String value) {
+        String encrypted = encryptSignInSecret(value);
+        if (encrypted != null) prefs.edit().putString(key, encrypted).apply();
+    }
+
+    private String encryptSignInSecret(String value) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                try {
+                    return SIGNIN_SECRET_PREFIX + ModernCookieCrypto.encrypt(value);
+                } catch (Exception ignored) {
+                    // Some vendor keystores are unreliable; the authenticated legacy format is safe fallback.
+                }
+            }
+            return SIGNIN_SECRET_PREFIX + encryptLegacy(value);
+        } catch (Exception legacyError) {
+            return null;
+        }
+    }
+
+    private String decryptSignInSecret(String value) {
+        try {
+            String encrypted = value.substring(SIGNIN_SECRET_PREFIX.length());
+            if (encrypted.startsWith(LEGACY_PREFIX)) return decryptLegacy(encrypted).trim();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                return ModernCookieCrypto.decrypt(encrypted).trim();
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
+    }
+
+    private boolean isSignInSecretKey(String key) {
+        for (String secretKey : SIGNIN_SECRET_KEYS) {
+            if (secretKey.equals(key)) return true;
+        }
+        return false;
     }
 
     private String safeLogValue(String value) {

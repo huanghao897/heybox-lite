@@ -1,7 +1,6 @@
 package com.openzen.heyboxcommunity;
 
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
@@ -10,7 +9,6 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.ContentValues;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
@@ -29,10 +27,8 @@ import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.MediaStore;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
@@ -65,11 +61,6 @@ import com.openzen.heyboxcommunity.SignInManager;
 import com.openzen.heyboxcommunity.UpdateChecker;
 import com.openzen.heyboxcommunity.WriteTokenProvider;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -556,27 +547,6 @@ public final class MainActivity extends Activity {
         }
         Motions.dialogIn(linearLayout);
     }
-    private static final class MaxHeightScrollView extends ScrollView {
-        private int maxHeight;
-
-        MaxHeightScrollView(Context context) {
-            super(context);
-        }
-
-        void setMaxHeight(int maxHeight) {
-            this.maxHeight = Math.max(0, maxHeight);
-            requestLayout();
-        }
-
-        @Override
-        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            if (this.maxHeight > 0) {
-                heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(this.maxHeight, Integer.MIN_VALUE);
-            }
-            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-        }
-    }
-
     private TextView dialogAction(String label, boolean primary, AlertDialog[] holder, Runnable action) {
         int iRgb;
         int fill = primary ? this.PRIMARY : 0;
@@ -1488,168 +1458,6 @@ public final class MainActivity extends Activity {
             return super.performClick();
         }
     }
-    private final class PullRefreshListView extends ListView {
-        private final int touchSlop;
-        private final TextView refreshHeader;
-        private final int triggerHeight;
-        private float startX;
-        private float startY;
-        private boolean trackingPull;
-        private boolean pulling;
-        private boolean refreshing;
-        private Runnable refreshAction;
-
-        PullRefreshListView(Context context) {
-            super(context);
-            this.touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
-            this.triggerHeight = MainActivity.this.dp(58);
-            this.refreshHeader = MainActivity.this.text("下拉刷新", 12.0f, MainActivity.this.MUTED);
-            this.refreshHeader.setGravity(17);
-            this.refreshHeader.setAlpha(0.0f);
-            this.refreshHeader.setBackgroundColor(MainActivity.this.BG);
-            addHeaderView(this.refreshHeader, null, false);
-            setHeaderHeight(0);
-        }
-
-        void setPullRefreshAction(Runnable action) {
-            this.refreshAction = action;
-        }
-
-        void setRefreshing(boolean value) {
-            this.refreshing = value;
-            this.refreshHeader.animate().cancel();
-            if (value) {
-                this.refreshHeader.setText("正在刷新...");
-                this.refreshHeader.setTextColor(MainActivity.this.SECONDARY);
-                setHeaderHeight(Math.max(this.triggerHeight, headerHeight()));
-                this.refreshHeader.setAlpha(1.0f);
-                return;
-            }
-            this.refreshHeader.setText("下拉刷新");
-            this.refreshHeader.setTextColor(MainActivity.this.MUTED);
-            if (!this.pulling) {
-                animateHeaderTo(0);
-            }
-        }
-
-        @Override
-        public boolean onTouchEvent(MotionEvent event) {
-            if (!this.pulling && !this.refreshing && event.getActionMasked() == MainActivity.REPLY_PREVIEW_COUNT && isAtTop() && event.getY() - this.startY > this.touchSlop) {
-                this.trackingPull = true;
-            }
-            switch (event.getActionMasked()) {
-                case 0:
-                    this.startX = event.getX();
-                    this.startY = event.getY();
-                    this.trackingPull = isAtTop() && !this.refreshing;
-                    this.pulling = false;
-                    break;
-                case 1:
-                case 3:
-                    if (this.pulling) {
-                        boolean shouldRefresh = headerHeight() >= this.triggerHeight;
-                        this.pulling = false;
-                        this.trackingPull = false;
-                        if (shouldRefresh) {
-                            setRefreshing(true);
-                            if (this.refreshAction != null) {
-                                this.refreshAction.run();
-                                return true;
-                            }
-                            return true;
-                        }
-                        animateHeaderTo(0);
-                        return true;
-                    }
-                    this.trackingPull = false;
-                    break;
-                case MainActivity.REPLY_PREVIEW_COUNT /* 2 */:
-                    float dx = event.getX() - this.startX;
-                    float dy = event.getY() - this.startY;
-                    if (Math.abs(dx) > Math.abs(dy) * 1.15f) {
-                        this.trackingPull = false;
-                    } else if ((this.trackingPull || this.pulling) && dy > this.touchSlop * 0.55f && isAtTop() && !this.refreshing) {
-                        this.pulling = true;
-                        getParent().requestDisallowInterceptTouchEvent(true);
-                        int height = Math.min(this.triggerHeight + MainActivity.this.dp(28), Math.round((dy - (this.touchSlop * 0.55f)) * 0.62f));
-                        setHeaderHeight(Math.max(0, height));
-                        this.refreshHeader.setText(height >= this.triggerHeight ? "松开刷新" : "下拉刷新");
-                        this.refreshHeader.setTextColor(height >= this.triggerHeight ? MainActivity.this.SECONDARY : MainActivity.this.MUTED);
-                        this.refreshHeader.setAlpha(Math.min(1.0f, height / this.triggerHeight));
-                        return true;
-                    }
-                    break;
-            }
-            return super.onTouchEvent(event);
-        }
-
-        @Override
-        public boolean onInterceptTouchEvent(MotionEvent event) {
-            switch (event.getActionMasked()) {
-                case 0:
-                    this.startX = event.getX();
-                    this.startY = event.getY();
-                    this.trackingPull = isAtTop() && !this.refreshing;
-                    this.pulling = false;
-                    break;
-                case MainActivity.REPLY_PREVIEW_COUNT /* 2 */:
-                    if (!this.refreshing) {
-                        float dx = event.getX() - this.startX;
-                        float dy = event.getY() - this.startY;
-                        if (isAtTop() && dy > this.touchSlop * 0.75f && Math.abs(dy) > Math.abs(dx) * 1.12f) {
-                            this.trackingPull = true;
-                            return true;
-                        }
-                    }
-                    break;
-            }
-            return super.onInterceptTouchEvent(event);
-        }
-
-        private boolean isAtTop() {
-            if (getChildCount() != 0 && canScrollVertically(-1)) {
-                return getFirstVisiblePosition() <= 1 && getChildAt(0) != null && getChildAt(0).getTop() >= getPaddingTop();
-            }
-            return true;
-        }
-
-        private int headerHeight() {
-            ViewGroup.LayoutParams params = this.refreshHeader.getLayoutParams();
-            if (params == null) {
-                return 0;
-            }
-            return params.height;
-        }
-
-        private void setHeaderHeight(int height) {
-            ViewGroup.LayoutParams params = this.refreshHeader.getLayoutParams();
-            if (params == null) {
-                params = new AbsListView.LayoutParams(-1, height);
-            }
-            if (Math.abs(params.height - height) < MainActivity.this.dp(MainActivity.REPLY_PREVIEW_COUNT)) {
-                return;
-            }
-            params.height = Math.max(0, height);
-            this.refreshHeader.setLayoutParams(params);
-        }
-
-        private void animateHeaderTo(int target) {
-            int start = headerHeight();
-            if (start == target) {
-                return;
-            }
-            ValueAnimator animator = ValueAnimator.ofInt(start, target);
-            animator.setDuration(160L);
-            animator.setInterpolator(new DecelerateInterpolator());
-            animator.addUpdateListener(value -> {
-                int height = ((Integer) value.getAnimatedValue()).intValue();
-                setHeaderHeight(height);
-                this.refreshHeader.setAlpha(this.triggerHeight <= 0 ? 0.0f : Math.min(1.0f, height / this.triggerHeight));
-            });
-            animator.start();
-        }
-    }
-
     private void showLogin() {
         stopQrPolling();
         this.screen = "login";
@@ -1857,7 +1665,9 @@ public final class MainActivity extends Activity {
                 this.localCache.log("feed restored from offline cache: " + this.feed.size());
             }
         }
-        PullRefreshListView list = new PullRefreshListView(this);
+        PullRefreshListView list = new PullRefreshListView(this, this.BG, this.MUTED,
+                this.SECONDARY, this.session.uiScale() / 100.0f,
+                this.session.textScale() / 100.0f);
         this.feedListView = list;
         this.cachedFeedListView = list;
         list.setBackgroundColor(this.BG);
@@ -8292,7 +8102,9 @@ public final class MainActivity extends Activity {
         setIcon(this.action, R.drawable.ic_refresh, this.TEXT, 18);
         this.action.setVisibility(0);
         this.content.removeAllViews();
-        PullRefreshListView list = new PullRefreshListView(this);
+        PullRefreshListView list = new PullRefreshListView(this, this.BG, this.MUTED,
+                this.SECONDARY, this.session.uiScale() / 100.0f,
+                this.session.textScale() / 100.0f);
         list.setBackgroundColor(this.BG);
         list.setDivider(null);
         list.setSelector(new ColorDrawable(0));
@@ -8953,57 +8765,14 @@ public final class MainActivity extends Activity {
     }
 
     private void downloadUpdateApk(String url, ProgressBar progress, TextView state, AlertDialog dialog) {
-        HttpURLConnection connection = null;
-        File output = null;
         try {
-            connection = (HttpURLConnection) new URL(url).openConnection();
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(12000);
-            connection.setRequestProperty("Accept", "application/vnd.android.package-archive,*/*");
-            connection.setRequestProperty("User-Agent", "heybox-Lite/" + appVersion());
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) {
-                throw new IllegalStateException("下载失败，HTTP " + status);
-            }
-            int length = connection.getContentLength();
-            File dir = new File(getCacheDir(), "updates");
-            if (!dir.exists() && !dir.mkdirs()) {
-                throw new IllegalStateException("无法创建更新缓存目录");
-            }
-            output = new File(dir, "heybox-Lite-update-" + appVersion() + "-" + System.currentTimeMillis() + ".apk");
-            long written = 0;
-            byte[] buffer = new byte[16384];
-            try (InputStream in = connection.getInputStream();
-                 FileOutputStream out = new FileOutputStream(output)) {
-                int count;
-                while ((count = in.read(buffer)) >= 0) {
-                    out.write(buffer, 0, count);
-                    written += count;
-                    if (length > 0) {
-                        int percent = Math.max(0, Math.min(100, (int) ((written * 100) / length)));
-                        this.handler.post(() -> {
-                            if (isFinishing()) {
-                                return;
-                            }
-                            progress.setIndeterminate(false);
-                            progress.setProgress(percent);
-                            state.setText("已下载" + percent + "%");
-                        });
-                    } else {
-                        this.handler.post(() -> {
-                            if (isFinishing()) {
-                                return;
-                            }
-                            progress.setIndeterminate(true);
-                            state.setText("正在下载...");
-                        });
-                    }
-                }
-            }
-            if (written < 131072) {
-                throw new IllegalStateException("下载内容异常，未得到有效 APK");
-            }
-            final File ready = output;
+            File ready = UpdateDownloadClient.download(this, url, appVersion(),
+                    (percent, indeterminate) -> this.handler.post(() -> {
+                        if (isFinishing()) return;
+                        progress.setIndeterminate(indeterminate);
+                        state.setText(indeterminate ? "正在下载..." : "已下载" + percent + "%");
+                        if (!indeterminate) progress.setProgress(percent);
+                    }));
             this.handler.post(() -> {
                 if (isFinishing()) {
                     return;
@@ -9017,9 +8786,6 @@ public final class MainActivity extends Activity {
                 installDownloadedUpdate(ready);
             });
         } catch (Exception error) {
-            if (output != null && output.exists()) {
-                output.delete();
-            }
             String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
             if (this.localCache != null) {
                 this.localCache.log("update download failed: " + message);
@@ -9034,10 +8800,6 @@ public final class MainActivity extends Activity {
                     }, "知道了", null, null, null);
                 }
             });
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
         }
     }
 
@@ -9075,100 +8837,14 @@ public final class MainActivity extends Activity {
     }
 
     private void shareDiagnostics(File file) {
-        Uri fileUri = DiagnosticsProvider.uriFor(file);
-        Intent share = new Intent(Intent.ACTION_SEND);
-        share.setType("text/plain");
-        share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        if (Build.VERSION.SDK_INT >= 16) {
-            share.setClipData(ClipData.newUri(getContentResolver(), file.getName(), fileUri));
-        }
-        share.putExtra(Intent.EXTRA_SUBJECT, "heybox Lite diagnostics");
-        share.putExtra(Intent.EXTRA_STREAM, fileUri);
-        share.putExtra(Intent.EXTRA_TEXT, "heybox Lite diagnostics txt\nTXT file: " + file.getName());
-        try {
-            startActivity(Intent.createChooser(share, "分享诊断日志"));
-        } catch (Exception e) {
+        if (!DiagnosticsExporter.share(this, file)) {
             toast("没有可用的分享应用，日志已保存：" + file.getAbsolutePath());
         }
     }
 
     private void saveDiagnosticsToDownloads(String fileName, String diagnostics) {
-        if (Build.VERSION.SDK_INT >= 29) {
-            Uri uri = createDownloadsDocument(fileName);
-            if (uri != null && writeDiagnosticsToUri(uri, diagnostics)) {
-                toast("已保存到 Download/heyboxlite/" + fileName);
-                return;
-            }
-        }
-        File file = downloadsDiagnosticsFile(fileName);
-        if (writeDiagnosticsToFile(file, diagnostics)) {
-            toast("已保存到 " + file.getAbsolutePath());
-        } else {
-            toast("保存失败");
-        }
-    }
-
-    @TargetApi(Build.VERSION_CODES.Q)
-    private Uri createDownloadsDocument(String fileName) {
-        try {
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
-            values.put(MediaStore.Downloads.MIME_TYPE, "text/plain");
-            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/heyboxlite");
-            return getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private boolean writeDiagnosticsToUri(Uri uri, String diagnostics) {
-        OutputStream output = null;
-        try {
-            output = getContentResolver().openOutputStream(uri);
-            if (output == null) {
-                return false;
-            }
-            output.write((diagnostics == null ? "" : diagnostics).getBytes("UTF-8"));
-            output.flush();
-            return true;
-        } catch (Exception e) {
-            return false;
-        } finally {
-            if (output != null) {
-                try {
-                    output.close();
-                } catch (Exception ignored) {
-                }
-            }
-        }
-    }
-
-    private File downloadsDiagnosticsFile(String fileName) {
-        File downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-        return new File(new File(downloads, "heyboxlite"), fileName);
-    }
-
-    private boolean writeDiagnosticsToFile(File file, String diagnostics) {
-        OutputStream output = null;
-        try {
-            File parent = file.getParentFile();
-            if (parent != null) {
-                parent.mkdirs();
-            }
-            output = new FileOutputStream(file, false);
-            output.write((diagnostics == null ? "" : diagnostics).getBytes("UTF-8"));
-            output.flush();
-            return true;
-        } catch (Exception e) {
-            return false;
-        } finally {
-            if (output != null) {
-                try {
-                    output.close();
-                } catch (Exception ignored) {
-                }
-            }
-        }
+        String path = DiagnosticsExporter.save(this, fileName, diagnostics);
+        toast(path == null ? "保存失败" : "已保存到 " + path);
     }
 
     private String buildDiagnostics() {
