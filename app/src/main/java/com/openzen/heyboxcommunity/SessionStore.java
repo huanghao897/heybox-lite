@@ -15,10 +15,11 @@ import org.json.JSONObject;
 import org.json.JSONArray;
 
 import java.net.URLDecoder;
-import java.util.HashMap;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.UUID;
@@ -1474,7 +1475,7 @@ final class SessionStore {
 
     private void putReplayHeader(Map<String, String> replay, String name, String value) {
         if (replay == null || name == null || value == null) return;
-        String key = name.trim().toLowerCase();
+        String key = name.trim().toLowerCase(Locale.ROOT);
         String clean = value.trim();
         if (clean.isEmpty()) return;
         if ("cookie".equals(key)) replay.put("cookie", clean);

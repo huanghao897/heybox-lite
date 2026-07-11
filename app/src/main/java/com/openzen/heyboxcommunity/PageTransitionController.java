@@ -1,5 +1,6 @@
 package com.openzen.heyboxcommunity;
 
+import android.os.Build;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -34,6 +35,11 @@ final class PageTransitionController {
         if (container == null || next == null) return;
         finishNow();
         Motions.reset(next);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+            container.removeAllViews();
+            container.addView(next, params());
+            return;
+        }
         View old = container.getChildCount() == 0
                 ? null : container.getChildAt(container.getChildCount() - 1);
         boolean oldIsLoading = old != null && ("loading".equals(old.getTag())

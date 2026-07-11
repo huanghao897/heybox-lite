@@ -1,5 +1,6 @@
 package com.openzen.heyboxcommunity;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.Build;
 
@@ -13,6 +14,7 @@ import java.util.Set;
 public final class NativeLibraryLoader {
     private static final Set<String> LOADED = new HashSet<>();
     private static final int BUFFER_SIZE = 8192;
+    @SuppressLint("StaticFieldLeak")
     private static Context hostContext;
 
     private NativeLibraryLoader() {}
@@ -88,11 +90,10 @@ public final class NativeLibraryLoader {
             int count;
             while ((count = input.read(buffer)) > 0) output.write(buffer, 0, count);
         }
-        if (!out.setReadable(true, true)) {
-            out.setReadable(true, false);
-        }
-        if (!out.setExecutable(true, true)) {
-            out.setExecutable(true, false);
+        boolean readable = out.setReadable(true, true) || out.canRead();
+        boolean executable = out.setExecutable(true, true) || out.canExecute();
+        if (!readable || !executable) {
+            throw new IllegalStateException("cannot secure native library permissions");
         }
     }
 

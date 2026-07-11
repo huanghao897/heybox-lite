@@ -2,6 +2,7 @@ package com.openzen.heyboxcommunity;
 
 import android.content.Context;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.view.View;
 import android.widget.TextView;
 
@@ -59,7 +60,8 @@ final class UiComponents {
     }
 
     static void press(View view) {
-        if (view == null || Motions.off()) return;
+        if (view == null || Motions.off()
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) return;
         view.animate().cancel();
         view.animate().scaleX(0.975f).scaleY(0.975f)
                 .setDuration(MotionSpec.PRESS_IN_MS)

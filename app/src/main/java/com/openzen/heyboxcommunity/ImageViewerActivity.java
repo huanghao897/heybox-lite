@@ -25,6 +25,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.lang.ref.WeakReference;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -54,11 +55,11 @@ public final class ImageViewerActivity extends Activity {
     private boolean destroyed;
     private SessionStore session;
     private static String pendingPreviewUrl;
-    private static Bitmap pendingPreviewBitmap;
+    private static WeakReference<Bitmap> pendingPreviewBitmap;
 
     static void preparePreview(String sourceUrl, Bitmap bitmap) {
         pendingPreviewUrl = sourceUrl;
-        pendingPreviewBitmap = bitmap;
+        pendingPreviewBitmap = new WeakReference<>(bitmap);
     }
 
     @Override protected void onCreate(Bundle state) {
@@ -236,7 +237,7 @@ public final class ImageViewerActivity extends Activity {
     private boolean showPreparedPreview(int index) {
         Bitmap bitmap = null;
         if (urls[index] != null && urls[index].equals(pendingPreviewUrl)) {
-            bitmap = pendingPreviewBitmap;
+            bitmap = pendingPreviewBitmap == null ? null : pendingPreviewBitmap.get();
         }
         pendingPreviewUrl = null;
         pendingPreviewBitmap = null;

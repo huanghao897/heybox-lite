@@ -1,5 +1,6 @@
 package com.openzen.heyboxcommunity;
 
+import android.os.Build;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -60,7 +61,7 @@ final class Motions {
     static void listEnter(View view, int index, float translatePx) {
         if (view == null) return;
         view.animate().cancel();
-        if (off()) {
+        if (off() || Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
             reset(view);
             return;
         }

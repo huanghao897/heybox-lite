@@ -1,5 +1,7 @@
 package com.openzen.heyboxcommunity;
 
+import android.annotation.SuppressLint;
+import android.annotation.TargetApi;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
@@ -85,13 +87,13 @@ import java.util.Set;
 import java.util.TimeZone;
 import org.json.JSONArray;
 import org.json.JSONObject;
-
-/* JADX INFO: loaded from: MainActivity.class */
+@SuppressLint("WrongConstant")
 public final class MainActivity extends Activity {
     private static final int REPLY_PREVIEW_COUNT = 2;
     private static final int REPLY_PAGE_SIZE = 5;
     private static final int NAV_BAR_HEIGHT_DP = 30;
     private static final int NAV_ICON_SIZE_DP = 20;
+    private static final int AXIS_ROTARY_SCROLL = 26;
     private static final String TRANSITION_OVERLAY_TAG = "shell_transition_overlay";
     private static final String WELCOME_ANNOUNCEMENT_ID = "welcome-heybox-lite-1.77";
     private static final int MAX_WRITE_FALLBACK_ATTEMPTS = 2;
@@ -162,8 +164,8 @@ public final class MainActivity extends Activity {
     private long writeBlockedUntilAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final PageTransitionController pageTransitions = new PageTransitionController();
-    private final Runnable qrPollTask = new Runnable() { // from class: com.openzen.heyboxcommunity.MainActivity.1
-        @Override // java.lang.Runnable
+    private final Runnable qrPollTask = new Runnable() {
+        @Override
         public void run() {
             MainActivity.this.pollQr();
         }
@@ -198,28 +200,18 @@ public final class MainActivity extends Activity {
     private String lastDetailDiagnostics = "";
     private JSONObject currentDetailBody;
     private boolean activityResumed;
-
-    /* JADX INFO: loaded from: MainActivity$IntListener.class */
     private interface IntListener {
         void onChanged(int i);
     }
-
-    /* JADX INFO: loaded from: MainActivity$SavedListFallback.class */
     private interface SavedListFallback {
         boolean onFallback(String str);
     }
-
-    /* JADX INFO: loaded from: MainActivity$ToggleListener.class */
     private interface ToggleListener {
         void onChanged(boolean z);
     }
-
-    /* JADX INFO: loaded from: MainActivity$WriteRequest.class */
     private interface WriteRequest {
         void start(ApiClient.Callback callback);
     }
-
-    /* JADX INFO: loaded from: MainActivity$WriteStep.class */
     private static class WriteStep {
         final String name;
         final WriteRequest request;
@@ -241,8 +233,6 @@ public final class MainActivity extends Activity {
             this.count = count;
         }
     }
-
-    /* JADX INFO: loaded from: MainActivity$LikeState.class */
     private static final class LikeState {
         final boolean liked;
         final int likes;
@@ -253,7 +243,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    @Override // android.app.Activity
+    @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         CrashReporter.install(this);
@@ -310,7 +300,7 @@ public final class MainActivity extends Activity {
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent event) {
         if (event != null && event.getActionMasked() == MotionEvent.ACTION_SCROLL) {
-            float axis = event.getAxisValue(MotionEvent.AXIS_SCROLL);
+            float axis = event.getAxisValue(AXIS_ROTARY_SCROLL);
             if (axis == 0.0f) axis = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
             if (axis != 0.0f && scrollWithCrown(-Math.round(axis * dp(44)))) return true;
         }
@@ -368,8 +358,8 @@ public final class MainActivity extends Activity {
     }
 
     private void checkUpdateOnLaunch() {
-        UpdateChecker.check(appVersion(), new UpdateChecker.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.2
-            @Override // com.openzen.heyboxcommunity.UpdateChecker.Callback
+        UpdateChecker.check(appVersion(), new UpdateChecker.Callback() {
+            @Override
             public void onResult(UpdateChecker.Result result) {
                 if (!result.updateAvailable || MainActivity.this.isFinishing()) {
                     return;
@@ -384,7 +374,7 @@ public final class MainActivity extends Activity {
                 }
             }
 
-            @Override // com.openzen.heyboxcommunity.UpdateChecker.Callback
+            @Override
             public void onError(String message) {
             }
         });
@@ -396,8 +386,8 @@ public final class MainActivity extends Activity {
             markAnnouncementSeen(welcome);
             showAnnouncementDialog(welcome);
         } else {
-            AnnouncementChecker.load(new AnnouncementChecker.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.3
-                @Override // com.openzen.heyboxcommunity.AnnouncementChecker.Callback
+            AnnouncementChecker.load(new AnnouncementChecker.Callback() {
+                @Override
                 public void onResult(List<AnnouncementChecker.Item> items) {
                     AnnouncementChecker.Item item;
                     if (MainActivity.this.isFinishing() || (item = MainActivity.this.firstUnseenAnnouncement(items)) == null) {
@@ -406,7 +396,7 @@ public final class MainActivity extends Activity {
                     MainActivity.this.showAnnouncementDialog(item);
                 }
 
-                @Override // com.openzen.heyboxcommunity.AnnouncementChecker.Callback
+                @Override
                 public void onError(String message) {
                 }
             });
@@ -566,8 +556,6 @@ public final class MainActivity extends Activity {
         }
         Motions.dialogIn(linearLayout);
     }
-
-    /* JADX INFO: loaded from: MainActivity$MaxHeightScrollView.class */
     private static final class MaxHeightScrollView extends ScrollView {
         private int maxHeight;
 
@@ -580,7 +568,7 @@ public final class MainActivity extends Activity {
             requestLayout();
         }
 
-        @Override // android.widget.ScrollView, android.widget.FrameLayout, android.view.View
+        @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             if (this.maxHeight > 0) {
                 heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(this.maxHeight, Integer.MIN_VALUE);
@@ -970,6 +958,13 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void recycleSnapshots(Map<String, Bitmap> snapshots) {
+        for (Bitmap bitmap : snapshots.values()) {
+            if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+        }
+        snapshots.clear();
+    }
+
     private ImageView installFullScreenTransitionOverlay(Bitmap bitmap) {
         if (bitmap == null || bitmap.isRecycled()) {
             return null;
@@ -1107,8 +1102,6 @@ public final class MainActivity extends Activity {
             }
         }
     }
-
-    /* JADX INFO: loaded from: MainActivity$BackSwipeFrameLayout.class */
     private final class BackSwipeFrameLayout extends FrameLayout {
         private static final int MODE_NONE = 0;
         private static final int MODE_TOP_LEVEL = 1;
@@ -1133,7 +1126,7 @@ public final class MainActivity extends Activity {
             this.touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         }
 
-        @Override // android.view.ViewGroup
+        @Override
         public void addView(View child, int index, ViewGroup.LayoutParams params) {
             super.addView(child, index, params);
             if (child != this.previewChild) {
@@ -1141,7 +1134,7 @@ public final class MainActivity extends Activity {
             }
         }
 
-        @Override // android.view.ViewGroup
+        @Override
         public void removeAllViews() {
             MainActivity.this.captureShellSnapshot(this.displayedScreenKey, currentShellChild());
             MainActivity.this.captureFullScreenSnapshot(this.displayedScreenKey);
@@ -1149,7 +1142,7 @@ public final class MainActivity extends Activity {
             this.previewChild = null;
         }
 
-        @Override // android.view.ViewGroup
+        @Override
         public boolean onInterceptTouchEvent(MotionEvent event) {
             if (!canUseShellSwipe()) {
                 return false;
@@ -1187,7 +1180,7 @@ public final class MainActivity extends Activity {
             }
         }
 
-        @Override // android.view.View
+        @Override
         public boolean onTouchEvent(MotionEvent event) {
             if (!this.dragging && !canUseShellSwipe()) {
                 return false;
@@ -1396,8 +1389,8 @@ public final class MainActivity extends Activity {
                     this.previewChild.setAlpha(1.0f);
                 }
             });
-            this.swipeAnimator.addListener(new AnimatorListenerAdapter() { // from class: com.openzen.heyboxcommunity.MainActivity.BackSwipeFrameLayout.1
-                @Override // android.animation.AnimatorListenerAdapter, android.animation.Animator.AnimatorListener
+            this.swipeAnimator.addListener(new AnimatorListenerAdapter() {
+                @Override
                 public void onAnimationEnd(Animator animation) {
                     BackSwipeFrameLayout.this.swipeAnimator = null;
                     if (end != null) {
@@ -1490,13 +1483,11 @@ public final class MainActivity extends Activity {
             resetShellDrag();
         }
 
-        @Override // android.view.View
+        @Override
         public boolean performClick() {
             return super.performClick();
         }
     }
-
-    /* JADX INFO: loaded from: MainActivity$PullRefreshListView.class */
     private final class PullRefreshListView extends ListView {
         private final int touchSlop;
         private final TextView refreshHeader;
@@ -1541,7 +1532,7 @@ public final class MainActivity extends Activity {
             }
         }
 
-        @Override // android.widget.AbsListView, android.view.View
+        @Override
         public boolean onTouchEvent(MotionEvent event) {
             if (!this.pulling && !this.refreshing && event.getActionMasked() == MainActivity.REPLY_PREVIEW_COUNT && isAtTop() && event.getY() - this.startY > this.touchSlop) {
                 this.trackingPull = true;
@@ -1592,7 +1583,7 @@ public final class MainActivity extends Activity {
             return super.onTouchEvent(event);
         }
 
-        @Override // android.widget.AbsListView, android.view.ViewGroup
+        @Override
         public boolean onInterceptTouchEvent(MotionEvent event) {
             switch (event.getActionMasked()) {
                 case 0:
@@ -1720,8 +1711,8 @@ public final class MainActivity extends Activity {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("app", "web");
         params.put(SecureStrings.heyboxId(), "");
-        this.api.get(EndpointProvider.qrUrl(), params, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.7
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.get(EndpointProvider.qrUrl(), params, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 JSONObject result = body.optJSONObject("result");
                 String url = result == null ? "" : result.optString("qr_url");
@@ -1747,7 +1738,7 @@ public final class MainActivity extends Activity {
                 }
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 MainActivity.this.setQrStatus("获取失败：" + MainActivity.this.qrErrorMessage(message), MainActivity.this.PRIMARY);
             }
@@ -1772,8 +1763,8 @@ public final class MainActivity extends Activity {
         Map<String, String> params = new HashMap<>();
         params.put("qr", this.qrKey);
         params.put("app", "web");
-        this.api.get(EndpointProvider.qrState(), params, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.8
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.get(EndpointProvider.qrState(), params, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 if (MainActivity.this.pollingQr) {
                     JSONObject result = body.optJSONObject("result");
@@ -1802,7 +1793,7 @@ public final class MainActivity extends Activity {
                 }
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 if (MainActivity.this.pollingQr) {
                     MainActivity.this.setQrStatus("网络波动，正在重试", MainActivity.this.MUTED);
@@ -1884,12 +1875,12 @@ public final class MainActivity extends Activity {
         list.addFooterView(this.feedFooter, null, false);
         this.feedAdapter = new FeedAdapter(this, this.feed, this.session.noImage(), this.session.uiScale() / 100.0f, this.session.textScale() / 100.0f, this.session.darkMode(), this.PRIMARY, this.SECONDARY, this::showDetail, this::toggleFeedLike);
         list.setAdapter((ListAdapter) this.feedAdapter);
-        list.setOnScrollListener(new AbsListView.OnScrollListener() { // from class: com.openzen.heyboxcommunity.MainActivity.9
-            @Override // android.widget.AbsListView.OnScrollListener
+        list.setOnScrollListener(new AbsListView.OnScrollListener() {
+            @Override
             public void onScrollStateChanged(AbsListView view2, int state) {
             }
 
-            @Override // android.widget.AbsListView.OnScrollListener
+            @Override
             public void onScroll(AbsListView view2, int first, int visible, int total) {
                 // 持续记录首个可见位置：无论点击还是手势滑动离开 feed，回来都能精确还原、不闪位
                 if (visible > 0) {
@@ -2241,8 +2232,8 @@ public final class MainActivity extends Activity {
         Map<String, String> params = new HashMap<>();
         params.put("offset", String.valueOf(this.feedOffset));
         params.put("pull", reset ? "1" : "0");
-        this.api.get(EndpointProvider.feeds(), params, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.10
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.get(EndpointProvider.feeds(), params, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 if (reset) {
                     MainActivity.this.feedRefreshing = false;
@@ -2296,7 +2287,7 @@ public final class MainActivity extends Activity {
                 }
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 if (reset) {
                     MainActivity.this.feedRefreshing = false;
@@ -2499,8 +2490,8 @@ public final class MainActivity extends Activity {
         this.searchEndReached = false;
         this.searchLoadingMore = false;
         this.searchStaleRounds = 0;
-        this.api.get(EndpointProvider.search(), searchParams(keyword, 0), new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.11
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.get(EndpointProvider.search(), searchParams(keyword, 0), new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 if ("search".equals(MainActivity.this.screen) && session == MainActivity.this.searchSession) {
                     List<FeedItem> items = new ArrayList<>();
@@ -2517,7 +2508,7 @@ public final class MainActivity extends Activity {
                 }
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 if ("search".equals(MainActivity.this.screen) && session == MainActivity.this.searchSession) {
                     MainActivity.this.localCache.log("search failed: " + message);
@@ -2559,12 +2550,12 @@ public final class MainActivity extends Activity {
         footer.setOnClickListener(view -> {
             loadMoreSearchResults(adapter, footer);
         });
-        list.setOnScrollListener(new AbsListView.OnScrollListener() { // from class: com.openzen.heyboxcommunity.MainActivity.12
-            @Override // android.widget.AbsListView.OnScrollListener
+        list.setOnScrollListener(new AbsListView.OnScrollListener() {
+            @Override
             public void onScrollStateChanged(AbsListView view, int scrollState) {
             }
 
-            @Override // android.widget.AbsListView.OnScrollListener
+            @Override
             public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount, int totalItemCount) {
                 if (totalItemCount > 0 && firstVisibleItem + visibleItemCount >= totalItemCount - REPLY_PREVIEW_COUNT) {
                     MainActivity.this.loadMoreSearchResults(adapter, footer);
@@ -2581,8 +2572,8 @@ public final class MainActivity extends Activity {
         this.searchLoadingMore = true;
         footer.setText("正在加载更多…");
         final int session = this.searchSession;
-        this.api.get(EndpointProvider.search(), searchParams(this.lastSearchKeyword, this.searchOffset), new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.31
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.get(EndpointProvider.search(), searchParams(this.lastSearchKeyword, this.searchOffset), new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 if (session != MainActivity.this.searchSession) {
                     return;
@@ -2614,7 +2605,7 @@ public final class MainActivity extends Activity {
                 }
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 if (session != MainActivity.this.searchSession) {
                     return;
@@ -2859,8 +2850,8 @@ public final class MainActivity extends Activity {
             handleDetailFailure(item, "当前无网络");
             return;
         }
-        this.api.get(EndpointProvider.linkTree(), detailParams(item), new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.13
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.get(EndpointProvider.linkTree(), detailParams(item), new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 if (MainActivity.this.isCurrentDetailRequest(item, requestToken)) {
                     MainActivity.this.hideLoading();
@@ -2881,7 +2872,7 @@ public final class MainActivity extends Activity {
                 }
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 if (MainActivity.this.isCurrentDetailRequest(item, requestToken)) {
                     MainActivity.this.hideLoading();
@@ -2898,8 +2889,8 @@ public final class MainActivity extends Activity {
     private void requestDetailV2(final FeedItem item, final int requestToken, final String fallbackMessage) {
         if (isCurrentDetailRequest(item, requestToken)) {
             showLoading();
-            this.api.get(EndpointProvider.linkTreeV2(), detailParams(item), new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.14
-                @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            this.api.get(EndpointProvider.linkTreeV2(), detailParams(item), new ApiClient.Callback() {
+                @Override
                 public void onSuccess(JSONObject body) {
                     if (MainActivity.this.isCurrentDetailRequest(item, requestToken)) {
                         MainActivity.this.hideLoading();
@@ -2914,7 +2905,7 @@ public final class MainActivity extends Activity {
                     }
                 }
 
-                @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+                @Override
                 public void onError(String message) {
                     if (MainActivity.this.isCurrentDetailRequest(item, requestToken)) {
                         MainActivity.this.hideLoading();
@@ -3175,8 +3166,6 @@ public final class MainActivity extends Activity {
             comments.addView(empty);
         }
     }
-
-    /* JADX INFO: loaded from: MainActivity$DetailPager.class */
     private final class DetailPager extends FrameLayout {
         private static final int PAGE_ARTICLE = 0;
         private static final int PAGE_COMMENTS = 1;
@@ -3248,7 +3237,7 @@ public final class MainActivity extends Activity {
             settleToPage(0, animate);
         }
 
-        @Override // android.widget.FrameLayout, android.view.ViewGroup, android.view.View
+        @Override
         protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
             int width = right - left;
             int height = bottom - top;
@@ -3268,7 +3257,7 @@ public final class MainActivity extends Activity {
             }
         }
 
-        @Override // android.view.ViewGroup
+        @Override
         public boolean onInterceptTouchEvent(MotionEvent event) {
             switch (event.getActionMasked()) {
                 case 0:
@@ -3297,7 +3286,7 @@ public final class MainActivity extends Activity {
             return this.dragging;
         }
 
-        @Override // android.view.View
+        @Override
         public boolean onTouchEvent(MotionEvent event) {
             switch (event.getActionMasked()) {
                 case 0:
@@ -3408,8 +3397,8 @@ public final class MainActivity extends Activity {
             this.settleAnimator.addUpdateListener(value -> {
                 scrollTo(((Integer) value.getAnimatedValue()).intValue(), 0);
             });
-            this.settleAnimator.addListener(new AnimatorListenerAdapter() { // from class: com.openzen.heyboxcommunity.MainActivity.DetailPager.1
-                @Override // android.animation.AnimatorListenerAdapter, android.animation.Animator.AnimatorListener
+            this.settleAnimator.addListener(new AnimatorListenerAdapter() {
+                @Override
                 public void onAnimationEnd(Animator animation) {
                     DetailPager.this.settleAnimator = null;
                     if (DetailPager.this.returning) {
@@ -3434,7 +3423,7 @@ public final class MainActivity extends Activity {
             scrollTo(pageScrollX(this.currentPage), 0);
         }
 
-        @Override // android.view.View
+        @Override
         public boolean performClick() {
             return super.performClick();
         }
@@ -3778,15 +3767,15 @@ public final class MainActivity extends Activity {
         rememberLinkLike(item.id, nextLiked, nextLikes);
         updateLinkLikeView(view, nextLiked, nextLikes);
         updateFeedLike(item.id, nextLiked, nextLikes);
-        postLinkLike(item, nextLiked, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.15
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        postLinkLike(item, nextLiked, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 MainActivity.this.rememberLinkLike(item.id, nextLiked, nextLikes);
                 MainActivity.this.updateFeedLike(item.id, nextLiked, nextLikes);
                 MainActivity.this.localCache.log("link like ok " + item.id + ": " + beforeLikes + " -> " + nextLikes);
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 item.liked = beforeLiked;
                 item.likes = beforeLikes;
@@ -3810,15 +3799,15 @@ public final class MainActivity extends Activity {
         item.likes = nextLikes;
         rememberLinkLike(item.id, nextLiked, nextLikes);
         updateFeedLike(item.id, nextLiked, nextLikes);
-        postLinkLike(item, nextLiked, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.16
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        postLinkLike(item, nextLiked, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 MainActivity.this.rememberLinkLike(item.id, nextLiked, nextLikes);
                 MainActivity.this.updateFeedLike(item.id, nextLiked, nextLikes);
                 MainActivity.this.localCache.log("feed like ok " + item.id + ": " + beforeLikes + " -> " + nextLikes);
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 item.liked = beforeLiked;
                 item.likes = beforeLikes;
@@ -3838,14 +3827,14 @@ public final class MainActivity extends Activity {
         final boolean nextFavored = !favored;
         updateFavoriteView(view, nextFavored);
         view.setEnabled(false);
-        postFavorite(item, nextFavored, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.17
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        postFavorite(item, nextFavored, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 view.setEnabled(true);
                 MainActivity.this.toast(nextFavored ? "已收藏" : "已取消收藏");
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 view.setEnabled(true);
                 MainActivity.this.updateFavoriteView(view, favored);
@@ -3964,8 +3953,8 @@ public final class MainActivity extends Activity {
         if (step == null || step.request == null) {
             runWriteFallback(requests, index + 1, lastError, importantError, tokenRetried, callback);
         } else {
-            step.request.start(new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.18
-                @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            step.request.start(new ApiClient.Callback() {
+                @Override
                 public void onSuccess(JSONObject body) {
                     if (MainActivity.this.localCache != null) {
                         MainActivity.this.localCache.log("write fallback " + index + " ok: " + label);
@@ -3973,7 +3962,7 @@ public final class MainActivity extends Activity {
                     callback.onSuccess(body);
                 }
 
-                @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+                @Override
                 public void onError(final String message2) {
                     if (MainActivity.this.localCache != null) {
                         MainActivity.this.localCache.log("write fallback " + index + " failed: " + label + ": " + message2);
@@ -3997,13 +3986,13 @@ public final class MainActivity extends Activity {
                         if (MainActivity.this.localCache != null) {
                             MainActivity.this.localCache.log("write auth failed, refreshing token then retrying chain");
                         }
-                        MainActivity.this.writeTokenProvider.refresh(new WriteTokenProvider.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.18.1
-                            @Override // com.openzen.heyboxcommunity.WriteTokenProvider.Callback
+                        MainActivity.this.writeTokenProvider.refresh(new WriteTokenProvider.Callback() {
+                            @Override
                             public void onReady() {
                                 MainActivity.this.scheduleWriteFallback(requests, 0, "", "", true, callback);
                             }
 
-                            @Override // com.openzen.heyboxcommunity.WriteTokenProvider.Callback
+                            @Override
                             public void onError(String tokenMessage) {
                                 if (MainActivity.this.localCache != null) {
                                     MainActivity.this.localCache.log("write token refresh failed, continue fallback: " + tokenMessage);
@@ -4587,8 +4576,8 @@ public final class MainActivity extends Activity {
             updateFollowView(follow, next);
             follow.setClickable(false);
             follow.setAlpha(0.92f);
-            postFollow(targetUserId, next, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.19
-                @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            postFollow(targetUserId, next, new ApiClient.Callback() {
+                @Override
                 public void onSuccess(JSONObject body) {
                     MainActivity.this.applyFollowState(link, user, MainActivity.this.nextFollowStatus(beforeStatus, next));
                     follow.setClickable(true);
@@ -4597,7 +4586,7 @@ public final class MainActivity extends Activity {
                     MainActivity.this.toast(next ? "已关注" : "已取消关注");
                 }
 
-                @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+                @Override
                 public void onError(String message) {
                     follow.setClickable(true);
                     follow.setAlpha(1.0f);
@@ -5184,8 +5173,6 @@ public final class MainActivity extends Activity {
         int max = this.session != null && this.session.roundScreen() ? 720 : 900;
         return Math.max(480, Math.min(max, Math.round(width * 1.25f)));
     }
-
-    /* JADX INFO: loaded from: MainActivity$ZoomablePostImageView.class */
     private final class ZoomablePostImageView extends ImageView {
         private final Matrix imageMatrixValue;
         private final int slop;
@@ -5228,13 +5215,13 @@ public final class MainActivity extends Activity {
             }
         }
 
-        @Override // android.view.View
+        @Override
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
             super.onSizeChanged(w, h, oldw, oldh);
             postFit();
         }
 
-        @Override // android.view.View
+        @Override
         public boolean onTouchEvent(MotionEvent event) {
             switch (event.getActionMasked()) {
                 case 0:
@@ -5395,8 +5382,8 @@ public final class MainActivity extends Activity {
                 this.scale = fromScale + ((toScale - fromScale) * progress);
                 setImageMatrix(this.imageMatrixValue);
             });
-            this.zoomAnimator.addListener(new AnimatorListenerAdapter() { // from class: com.openzen.heyboxcommunity.MainActivity.ZoomablePostImageView.1
-                @Override // android.animation.AnimatorListenerAdapter, android.animation.Animator.AnimatorListener
+            this.zoomAnimator.addListener(new AnimatorListenerAdapter() {
+                @Override
                 public void onAnimationEnd(Animator animation) {
                     ZoomablePostImageView.this.zoomAnimator = null;
                     ZoomablePostImageView.this.imageMatrixValue.set(target);
@@ -5479,7 +5466,7 @@ public final class MainActivity extends Activity {
             }
         }
 
-        @Override // android.view.View
+        @Override
         public boolean performClick() {
             super.performClick();
             if (this.singleTapAction != null) {
@@ -5489,8 +5476,6 @@ public final class MainActivity extends Activity {
             return true;
         }
     }
-
-    /* JADX INFO: loaded from: MainActivity$PostImageFrame.class */
     private final class PostImageFrame extends FrameLayout {
         private final int minHeight;
         private final int maxHeight;
@@ -5518,7 +5503,7 @@ public final class MainActivity extends Activity {
             requestLayout();
         }
 
-        @Override // android.widget.FrameLayout, android.view.View
+        @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             int width = View.MeasureSpec.getSize(widthMeasureSpec);
             int desired = width > 0 ? Math.round(width * this.aspect) : this.fallbackHeight;
@@ -5739,8 +5724,8 @@ public final class MainActivity extends Activity {
         params.put("offset", String.valueOf(preview.size()));
         params.put("page", String.valueOf((preview.size() / 50) + 1));
         params.put("limit", "50");
-        this.api.get(EndpointProvider.subComments(), params, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.20
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.get(EndpointProvider.subComments(), params, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 List<JSONObject> replies = MainActivity.this.extractSubComments(body, id);
                 if (replies.isEmpty()) {
@@ -5756,7 +5741,7 @@ public final class MainActivity extends Activity {
                 MainActivity.this.renderReplies(target, root, merged, total, shown + MainActivity.REPLY_PAGE_SIZE, merged.size() >= total);
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 target.removeView(loading);
                 MainActivity.this.toast("回复加载失败" + message);
@@ -5897,13 +5882,13 @@ public final class MainActivity extends Activity {
             setCommentLikeState(comment, nextLiked, nextLikes);
             updateCommentLikeView(view, nextLiked, nextLikes);
             view.root.setEnabled(false);
-            postCommentLike(id, nextLiked, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.21
-                @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            postCommentLike(id, nextLiked, new ApiClient.Callback() {
+                @Override
                 public void onSuccess(JSONObject body) {
                     view.root.setEnabled(true);
                 }
 
-                @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+                @Override
                 public void onError(String message) {
                     view.root.setEnabled(true);
                     MainActivity.this.setCommentLikeState(comment, beforeLiked, beforeLikes);
@@ -6039,8 +6024,8 @@ public final class MainActivity extends Activity {
             sendButton.setEnabled(false);
             sendButton.setAlpha(0.58f);
         }
-        postCreateComment(value, rootId, replyId, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.22
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        postCreateComment(value, rootId, replyId, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 if (dialog != null && dialog.isShowing()) {
                     dialog.dismiss();
@@ -6051,7 +6036,7 @@ public final class MainActivity extends Activity {
                 }
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 if (dialog != null && dialog.isShowing()) {
                     if (sendButton != null) {
@@ -6487,15 +6472,15 @@ public final class MainActivity extends Activity {
             transitionTo(this.cachedProfileContainer);
         } else {
             transitionTo(detailLoadingPage());
-            this.api.get(EndpointProvider.profile(), Collections.singletonMap(SecureStrings.userid(), this.session.userId()), new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.23
-                @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            this.api.get(EndpointProvider.profile(), Collections.singletonMap(SecureStrings.userid(), this.session.userId()), new ApiClient.Callback() {
+                @Override
                 public void onSuccess(JSONObject body) {
                     if (!"profile".equals(MainActivity.this.screen) || MainActivity.this.isFinishing()) return;
                     MainActivity.this.hideLoading();
                     MainActivity.this.renderProfile(body);
                 }
 
-                @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+                @Override
                 public void onError(String message) {
                     if (!"profile".equals(MainActivity.this.screen) || MainActivity.this.isFinishing()) return;
                     MainActivity.this.hideLoading();
@@ -6959,14 +6944,14 @@ public final class MainActivity extends Activity {
     private void showFavorites() {
         prepareSavedPage(TITLE_FAVORITES);
         showLoading();
-        this.api.get(EndpointProvider.favoriteTabs(), Collections.emptyMap(), new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.24
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.get(EndpointProvider.favoriteTabs(), Collections.emptyMap(), new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 MainActivity.this.localCache.log("favorite tabs loaded: " + MainActivity.this.favoriteTabSummary(body));
                 MainActivity.this.showFavoriteContents("tab ok");
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 MainActivity.this.localCache.log("favorite tabs failed, trying content: " + message);
                 MainActivity.this.showFavoriteContents(message);
@@ -6991,8 +6976,8 @@ public final class MainActivity extends Activity {
         folderParams.put("enable_new_style_collect", "1");
         folderParams.put("x_os_type", "Windows");
         folderParams.put("device_info", "Edge");
-        this.api.get(EndpointProvider.favoriteFolders(), folderParams, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.25
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.get(EndpointProvider.favoriteFolders(), folderParams, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 JSONObject folder = MainActivity.this.firstFavoriteFolder(MainActivity.this.findFavoriteFolders(body));
                 String folderId = MainActivity.this.favoriteFolderId(folder);
@@ -7007,7 +6992,7 @@ public final class MainActivity extends Activity {
                 }
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 MainActivity.this.localCache.log("favorite folders failed: " + message);
                 MainActivity.this.showFavoriteLegacyList(message);
@@ -7230,8 +7215,8 @@ public final class MainActivity extends Activity {
         params.put("x_os_type", "Windows");
         params.put("device_info", "Edge");
         final String cacheKey = savedCacheKey(pageTitle, path);
-        this.api.get(path, params, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.26
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.get(path, params, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 JSONObject value;
                 MainActivity.this.hideLoading();
@@ -7265,7 +7250,7 @@ public final class MainActivity extends Activity {
                 MainActivity.this.renderSavedItems(pageTitle, items2);
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 if (MainActivity.this.isLoginWriteError(message)) {
                     MainActivity.this.localCache.log(pageTitle + " web failed, trying mobile: " + message);
@@ -7292,8 +7277,8 @@ public final class MainActivity extends Activity {
         if (this.localCache != null) {
             this.localCache.log(pageTitle + " request mobile path=" + path + " keys=" + params.keySet());
         }
-        this.api.getSigned(path, params, HeyboxSigner.Algorithm.ANDROID, ApiClient.RequestProfile.MOBILE, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.27
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.getSigned(path, params, HeyboxSigner.Algorithm.ANDROID, ApiClient.RequestProfile.MOBILE, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 JSONObject value;
                 MainActivity.this.hideLoading();
@@ -7330,7 +7315,7 @@ public final class MainActivity extends Activity {
                 MainActivity.this.renderSavedItems(pageTitle, items2);
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 if (MainActivity.this.isLoginWriteError(message) || MainActivity.this.isParameterWriteError(message)) {
                     if (MainActivity.this.localCache != null) {
@@ -7358,8 +7343,8 @@ public final class MainActivity extends Activity {
         if (this.localCache != null) {
             this.localCache.log(pageTitle + " request official path=" + path + " keys=" + params.keySet());
         }
-        this.api.getSigned(path, params, HeyboxSigner.Algorithm.ANDROID, ApiClient.RequestProfile.OFFICIAL_MOBILE_CLIENT, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.28
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+        this.api.getSigned(path, params, HeyboxSigner.Algorithm.ANDROID, ApiClient.RequestProfile.OFFICIAL_MOBILE_CLIENT, new ApiClient.Callback() {
+            @Override
             public void onSuccess(JSONObject body) {
                 JSONObject value;
                 MainActivity.this.hideLoading();
@@ -7396,7 +7381,7 @@ public final class MainActivity extends Activity {
                 MainActivity.this.renderSavedItems(pageTitle, items2);
             }
 
-            @Override // com.openzen.heyboxcommunity.ApiClient.Callback
+            @Override
             public void onError(String message) {
                 MainActivity.this.hideLoading();
                 if (MainActivity.this.localCache != null) {
@@ -7475,13 +7460,13 @@ public final class MainActivity extends Activity {
         list.setDivider(new ColorDrawable(0));
         list.setDividerHeight(dp(REPLY_PREVIEW_COUNT));
         list.setAdapter((ListAdapter) adapter);
-        list.setOnScrollListener(new AbsListView.OnScrollListener() { // from class: com.openzen.heyboxcommunity.MainActivity.29
-            @Override // android.widget.AbsListView.OnScrollListener
+        list.setOnScrollListener(new AbsListView.OnScrollListener() {
+            @Override
             public void onScrollStateChanged(AbsListView view, int scrollState) {
                 MainActivity.this.setSearchBarVisible(search, scrollState == 0);
             }
 
-            @Override // android.widget.AbsListView.OnScrollListener
+            @Override
             public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount, int totalItemCount) {
             }
         });
@@ -7491,12 +7476,12 @@ public final class MainActivity extends Activity {
         results.addView(emptyView, match());
         emptyView.setVisibility(allItems.isEmpty() ? 0 : 8);
         list.setVisibility(allItems.isEmpty() ? 8 : 0);
-        search.addTextChangedListener(new TextWatcher() { // from class: com.openzen.heyboxcommunity.MainActivity.30
-            @Override // android.text.TextWatcher
+        search.addTextChangedListener(new TextWatcher() {
+            @Override
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {
             }
 
-            @Override // android.text.TextWatcher
+            @Override
             public void onTextChanged(CharSequence value, int start, int before, int count) {
                 String query = value.toString().trim().toLowerCase(Locale.US);
                 filtered.clear();
@@ -7518,7 +7503,7 @@ public final class MainActivity extends Activity {
                 }
             }
 
-            @Override // android.text.TextWatcher
+            @Override
             public void afterTextChanged(Editable value) {
             }
         });
@@ -8276,8 +8261,8 @@ public final class MainActivity extends Activity {
         });
         this.content.addView(overlay, match());
         final int[] frame = {0};
-        Runnable animation = new Runnable() { // from class: com.openzen.heyboxcommunity.MainActivity.31
-            @Override // java.lang.Runnable
+        Runnable animation = new Runnable() {
+            @Override
             public void run() {
                 if (overlay.getParent() == null) {
                     return;
@@ -8333,8 +8318,8 @@ public final class MainActivity extends Activity {
         if (list == null || adapter == null) {
             return;
         }
-        AnnouncementChecker.load(new AnnouncementChecker.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.32
-            @Override // com.openzen.heyboxcommunity.AnnouncementChecker.Callback
+        AnnouncementChecker.load(new AnnouncementChecker.Callback() {
+            @Override
             public void onResult(List<AnnouncementChecker.Item> items) {
                 if (MainActivity.this.isFinishing() || !"announcement_board".equals(MainActivity.this.screen)) {
                     return;
@@ -8343,7 +8328,7 @@ public final class MainActivity extends Activity {
                 adapter.setItems(MainActivity.this.withWelcomeAnnouncement(items));
             }
 
-            @Override // com.openzen.heyboxcommunity.AnnouncementChecker.Callback
+            @Override
             public void onError(String message) {
                 if (MainActivity.this.isFinishing() || !"announcement_board".equals(MainActivity.this.screen)) {
                     return;
@@ -8372,8 +8357,8 @@ public final class MainActivity extends Activity {
         });
         this.content.removeAllViews();
         showLoading();
-        AnnouncementChecker.load(new AnnouncementChecker.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.33
-            @Override // com.openzen.heyboxcommunity.AnnouncementChecker.Callback
+        AnnouncementChecker.load(new AnnouncementChecker.Callback() {
+            @Override
             public void onResult(List<AnnouncementChecker.Item> items) {
                 if (MainActivity.this.isFinishing() || !"announcement_board".equals(MainActivity.this.screen)) {
                     return;
@@ -8381,7 +8366,7 @@ public final class MainActivity extends Activity {
                 MainActivity.this.renderAnnouncementList(items);
             }
 
-            @Override // com.openzen.heyboxcommunity.AnnouncementChecker.Callback
+            @Override
             public void onError(String message) {
                 if (MainActivity.this.isFinishing() || !"announcement_board".equals(MainActivity.this.screen)) {
                     return;
@@ -8436,8 +8421,6 @@ public final class MainActivity extends Activity {
         this.content.addView(scrollView, match());
         animateIn(scrollView);
     }
-
-    /* JADX INFO: loaded from: MainActivity$AnnouncementAdapter.class */
     private final class AnnouncementAdapter extends BaseAdapter {
         private final List<AnnouncementChecker.Item> items = new ArrayList();
 
@@ -8456,7 +8439,7 @@ public final class MainActivity extends Activity {
             notifyDataSetChanged();
         }
 
-        @Override // android.widget.Adapter
+        @Override
         public int getCount() {
             if (this.items.isEmpty()) {
                 return 1;
@@ -8464,7 +8447,7 @@ public final class MainActivity extends Activity {
             return this.items.size();
         }
 
-        @Override // android.widget.Adapter
+        @Override
         public Object getItem(int position) {
             if (this.items.isEmpty()) {
                 return null;
@@ -8472,12 +8455,12 @@ public final class MainActivity extends Activity {
             return this.items.get(position);
         }
 
-        @Override // android.widget.Adapter
+        @Override
         public long getItemId(int position) {
             return position;
         }
 
-        @Override // android.widget.Adapter
+        @Override
         public View getView(int position, View convertView, ViewGroup parent) {
             if (this.items.isEmpty()) {
                 TextView empty = MainActivity.this.text("暂无公告", 13.0f, MainActivity.this.MUTED);
@@ -8578,8 +8561,8 @@ public final class MainActivity extends Activity {
                     }
                     checking[0] = true;
                     if (updateDesc[0] != null) updateDesc[0].setText("正在检查更新…");
-                    UpdateChecker.check(appVersion(), new UpdateChecker.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.34
-                        @Override // com.openzen.heyboxcommunity.UpdateChecker.Callback
+                    UpdateChecker.check(appVersion(), new UpdateChecker.Callback() {
+                        @Override
                         public void onResult(UpdateChecker.Result result) {
                             if (MainActivity.this.isFinishing()) {
                                 return;
@@ -8596,7 +8579,7 @@ public final class MainActivity extends Activity {
                             if (updateDesc[0] != null) updateDesc[0].setText("当前已是最新版");
                         }
 
-                        @Override // com.openzen.heyboxcommunity.UpdateChecker.Callback
+                        @Override
                         public void onError(String message) {
                             if (MainActivity.this.isFinishing()) {
                                 return;
@@ -8773,8 +8756,8 @@ public final class MainActivity extends Activity {
         sliderParams.topMargin = dp(1);
         wrap.addView(slider, sliderParams);
         addTop(parent, wrap, 6);
-        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { // from class: com.openzen.heyboxcommunity.MainActivity.35
-            @Override // android.widget.SeekBar.OnSeekBarChangeListener
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 int value = min + progress;
                 input.setText(String.valueOf(value));
@@ -8782,11 +8765,11 @@ public final class MainActivity extends Activity {
                 listener.onChanged(value);
             }
 
-            @Override // android.widget.SeekBar.OnSeekBarChangeListener
+            @Override
             public void onStartTrackingTouch(SeekBar seekBar) {
             }
 
-            @Override // android.widget.SeekBar.OnSeekBarChangeListener
+            @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
             }
         });
@@ -9125,6 +9108,7 @@ public final class MainActivity extends Activity {
         }
     }
 
+    @TargetApi(Build.VERSION_CODES.Q)
     private Uri createDownloadsDocument(String fileName) {
         try {
             ContentValues values = new ContentValues();
@@ -9297,8 +9281,6 @@ public final class MainActivity extends Activity {
         String clean = value == null ? "" : value.replace('\n', ' ').replace('\r', ' ').replaceAll("\\s+", " ").trim();
         return clean.length() <= max ? clean : clean.substring(0, Math.max(0, max)) + "...";
     }
-
-    /* JADX INFO: loaded from: MainActivity$ScaleControl.class */
     private static final class ScaleControl {
         final EditText input;
         final SeekBar slider;
@@ -9525,7 +9507,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    @Override // android.app.Activity
+    @Override
     public void onBackPressed() {
         this.pendingBackTransition = true;
         if ("detail".equals(this.screen)) {
@@ -9701,7 +9683,7 @@ public final class MainActivity extends Activity {
         this.localCache.saveScroll(this.currentLinkId, this.detailScroll.getScrollY());
     }
 
-    @Override // android.app.Activity
+    @Override
     protected void onResume() {
         super.onResume();
         this.activityResumed = true;
@@ -9714,7 +9696,7 @@ public final class MainActivity extends Activity {
         this.handler.postDelayed(this.presenceTick, 600_000L);
     }
 
-    @Override // android.app.Activity
+    @Override
     protected void onPause() {
         this.activityResumed = false;
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
@@ -9732,7 +9714,7 @@ public final class MainActivity extends Activity {
         }
     };
 
-    @Override // android.app.Activity
+    @Override
     protected void onDestroy() {
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
         saveCurrentDetailProgress();
@@ -9743,6 +9725,9 @@ public final class MainActivity extends Activity {
             ((BackSwipeFrameLayout) this.content).cancelMotion();
         }
         ImageLoader.cancelTree(this.content);
+        recycleSnapshots(this.screenSnapshots);
+        recycleSnapshots(this.fullScreenSnapshots);
+        this.retainedPages.clear();
         this.handler.removeCallbacksAndMessages(null);
         if (this.writeTokenProvider != null) {
             this.writeTokenProvider.close();
@@ -9871,6 +9856,7 @@ public final class MainActivity extends Activity {
     }
 
     /** 主按钮：主题色粗体文字行——无底无框，全屏唯一的彩色本身就是按钮。 */
+    @SuppressLint("ClickableViewAccessibility")
     private Button button(String value, int iconRes) {
         ThemeTokens themeTokensOf;
         Button button = new Button(this);
@@ -9955,7 +9941,7 @@ public final class MainActivity extends Activity {
             return;
         }
         // 反馈与动作并行：立即执行动作，按压回弹只是视觉效果，不拖慢响应
-        if (!Motions.off()) {
+        if (!Motions.off() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
             view.animate().cancel();
             view.animate().scaleX(0.975f).scaleY(0.975f)
                     .setDuration(MotionSpec.PRESS_IN_MS)
@@ -9999,7 +9985,7 @@ public final class MainActivity extends Activity {
     }
 
     private void toast(String message) {
-        Toast.makeText(this, message, 1).show();
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
 
     private String formatTime(long seconds) {

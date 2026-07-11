@@ -13,7 +13,9 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 final class FeedAdapter extends BaseAdapter {
     interface Listener {
@@ -38,6 +40,8 @@ final class FeedAdapter extends BaseAdapter {
     private final int primaryColor;
     private final int secondaryColor;
     private final ThemeTokens tokens;
+    private final Set<String> animatedItems = new HashSet<>();
+    private int initialAnimationCount;
 
     FeedAdapter(Context context, List<FeedItem> items, boolean noImage,
                 float uiScale, float textScale, boolean darkMode,
@@ -148,15 +152,16 @@ final class FeedAdapter extends BaseAdapter {
             holder = new Holder(card, copy, badge, title, description, author, likes, comments, cover);
             outer.setTag(holder);
             reusable = outer;
-            reusable.setAlpha(0f);
-            reusable.setTranslationY(dp(6));
-            reusable.animate().alpha(1f).translationY(0).setDuration(MotionSpec.ENTER_MS)
-                    .setInterpolator(MotionSpec.EASE_OUT).start();
         } else {
             holder = (Holder) reusable.getTag();
         }
 
         FeedItem item = getItem(position);
+        Motions.reset(reusable);
+        String animationKey = item.id.isEmpty() ? "position:" + position : item.id;
+        if (initialAnimationCount < 6 && animatedItems.add(animationKey)) {
+            Motions.listEnter(reusable, initialAnimationCount++, dp(6));
+        }
         String title = RichContent.plainText(item.title);
         String description = RichContent.plainText(item.description);
         EmojiRenderer.set(holder.title, title.isEmpty() ? "无标题内容" : title, darkMode);

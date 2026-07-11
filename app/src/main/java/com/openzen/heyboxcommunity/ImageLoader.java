@@ -9,6 +9,7 @@ import android.net.NetworkInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Rect;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.LruCache;
@@ -27,6 +28,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -211,6 +213,7 @@ final class ImageLoader {
     }
 
     private static void startReveal(ImageView view) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) return;
         int width = view.getWidth();
         int height = view.getHeight();
         if (width <= 0 || height <= 0) {
@@ -249,7 +252,9 @@ final class ImageLoader {
     private static void clearReveal(ImageView view) {
         ValueAnimator animator = REVEAL_ANIMATORS.remove(view);
         if (animator != null) animator.cancel();
-        view.setClipBounds(null);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            view.setClipBounds(null);
+        }
     }
 
     static void load(String sourceUrl, int targetPx, Callback callback) {
@@ -326,7 +331,8 @@ final class ImageLoader {
             kept.add(file);
             total += file.length();
         }
-        kept.sort((left, right) -> Long.compare(left.lastModified(), right.lastModified()));
+        Collections.sort(kept,
+                (left, right) -> Long.compare(left.lastModified(), right.lastModified()));
         for (File file : kept) {
             if (total <= MAX_OFFLINE_BYTES) break;
             long length = file.length();
