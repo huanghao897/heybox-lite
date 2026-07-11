@@ -5581,8 +5581,9 @@ public final class MainActivity extends Activity {
         view.setMaxLines(1);
         view.setPadding(0, 0, 0, 0);
         Compat.setBackground(view, null);
-        setLeftIcon(view, liked ? R.drawable.ic_thumb_up_filled : R.drawable.ic_thumb_up,
-                color, liked ? 14 : 13);
+        setLeftIcon(view, liked ? R.drawable.official_comment_like_filled
+                : R.drawable.official_comment_like_line, color, 15);
+        view.setCompoundDrawablePadding(0);
     }
 
     private String formatCommentLikeCount(int count) {
