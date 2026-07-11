@@ -299,7 +299,7 @@ public final class MainActivity extends Activity {
             });
         }
         showFeed();
-        PresenceReporter.ping(this.session);
+        PresenceReporter.ping(this.session, this.readingTimeTracker);
         if (this.session.autoUpdateCheck()) {
             this.handler.postDelayed(this::checkUpdateOnLaunch, 650L);
         }
@@ -9447,9 +9447,9 @@ public final class MainActivity extends Activity {
                 && this.currentDetailItem != null && this.readingTimeTracker != null) {
             this.readingTimeTracker.start(this.currentDetailItem.article);
         }
-        PresenceReporter.ping(this.session);
+        PresenceReporter.ping(this.session, this.readingTimeTracker);
         this.handler.removeCallbacks(this.presenceTick);
-        this.handler.postDelayed(this.presenceTick, 150_000L);
+        this.handler.postDelayed(this.presenceTick, 600_000L);
     }
 
     @Override // android.app.Activity
@@ -9461,12 +9461,12 @@ public final class MainActivity extends Activity {
         super.onPause();
     }
 
-    /** 前台在线心跳：每 2.5 分钟一次，保证 5 分钟在线窗口内持续可见；退后台即停止。 */
+    /** 前台在线心跳每 10 分钟一次，退后台即停止。 */
     private final Runnable presenceTick = new Runnable() {
         @Override
         public void run() {
-            PresenceReporter.ping(MainActivity.this.session);
-            MainActivity.this.handler.postDelayed(this, 150_000L);
+            PresenceReporter.ping(MainActivity.this.session, MainActivity.this.readingTimeTracker);
+            MainActivity.this.handler.postDelayed(this, 600_000L);
         }
     };
 

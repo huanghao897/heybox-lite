@@ -91,6 +91,7 @@ final class SessionStore {
     private static final String SIGNIN_REPLAY_REFERER = "signin_replay_referer";
     private static final String SEARCH_HISTORY = "search_history";
     private static final String BLOCK_KEYWORDS = "block_keywords";
+    private static final String PRESENCE_IDENTITY_UPLOADED = "presence_identity_uploaded_";
     static final String DEFAULT_SPLASH_TEXT = "方寸之间，看见热爱";
     private static final String LEGACY_PREFIX = "L1:";
 
@@ -156,6 +157,18 @@ final class SessionStore {
 
     String avatar() {
         return prefs.getString(AVATAR, "");
+    }
+
+    boolean presenceIdentityUploaded() {
+        String id = userId();
+        return !id.isEmpty() && prefs.getBoolean(PRESENCE_IDENTITY_UPLOADED + id, false);
+    }
+
+    void markPresenceIdentityUploaded() {
+        String id = userId();
+        if (!id.isEmpty()) {
+            prefs.edit().putBoolean(PRESENCE_IDENTITY_UPLOADED + id, true).apply();
+        }
     }
 
     boolean noImage() {

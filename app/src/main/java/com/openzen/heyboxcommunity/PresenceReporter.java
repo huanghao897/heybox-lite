@@ -12,42 +12,54 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class PresenceReporter {
+    private static final long PING_INTERVAL_MS = 10L * 60L * 1000L;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static long lastPingAt;
 
     private PresenceReporter() {}
 
-    static void ping(SessionStore session) {
+    static void ping(SessionStore session, ReadingTimeTracker readingTime) {
         long now = System.currentTimeMillis();
-        if (now - lastPingAt < 60_000L) return;
+        boolean includeIdentity = session != null && session.isLoggedIn()
+                && !session.presenceIdentityUploaded();
+        if (!includeIdentity && now - lastPingAt < PING_INTERVAL_MS) return;
         lastPingAt = now;
-        final String payload = buildPayload(session);
-        EXECUTOR.execute(() -> request(payload));
+        final String payload = buildPayload(session, readingTime, includeIdentity);
+        EXECUTOR.execute(() -> {
+            if (request(payload) && includeIdentity) session.markPresenceIdentityUploaded();
+        });
     }
 
-    /** 仅上报公开身份（ID/昵称/头像）与版本机型，不携带任何 Cookie/凭据。 */
-    private static String buildPayload(SessionStore session) {
+    private static String buildPayload(SessionStore session, ReadingTimeTracker readingTime,
+                                       boolean includeIdentity) {
         try {
             JSONObject body = new JSONObject();
+            if (readingTime != null) {
+                body.put("readingTimeSeconds", readingTime.stats().totalMs() / 1000L);
+            }
             if (session != null) {
-                body.put("deviceId", session.deviceIdentifier());
                 if (session.isLoggedIn()) {
                     body.put("userId", session.userId());
+                }
+                if (includeIdentity) {
+                    body.put("deviceId", session.deviceIdentifier());
                     body.put("username", session.userName());
                     body.put("avatar", session.avatar());
                 }
             }
             body.put("version", BuildConfig.VERSION_NAME);
             body.put("versionCode", BuildConfig.VERSION_CODE);
-            body.put("model", Build.MODEL == null ? "" : Build.MODEL);
-            body.put("os", Build.VERSION.RELEASE == null ? "" : Build.VERSION.RELEASE);
+            if (includeIdentity) {
+                body.put("model", Build.MODEL == null ? "" : Build.MODEL);
+                body.put("os", Build.VERSION.RELEASE == null ? "" : Build.VERSION.RELEASE);
+            }
             return body.toString();
         } catch (Exception ignored) {
             return "";
         }
     }
 
-    private static void request(String payload) {
+    private static boolean request(String payload) {
         HttpURLConnection connection = null;
         try {
             URL url = new URL(presenceUrl());
@@ -70,8 +82,10 @@ final class PresenceReporter {
                 output.write(bytes);
                 output.close();
             }
-            connection.getResponseCode();
+            int status = connection.getResponseCode();
+            return status >= 200 && status < 300;
         } catch (Exception ignored) {
+            return false;
         } finally {
             if (connection != null) connection.disconnect();
         }
