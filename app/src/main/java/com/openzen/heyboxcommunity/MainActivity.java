@@ -6247,9 +6247,12 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isPinnedComment(JSONObject comment) {
-        // 官方仅以 is_top=="1" 判定置顶（BBSCommentObj.is_top，f0.g("1", getIs_top())）。
-        // 普通评论的 is_top 为空串或 "0"，严格等值比较，避免把热评前几条误标为置顶。
-        return comment != null && "1".equals(comment.optString("is_top").trim());
+        // 官方置顶评论判据是 top_comment 字段（BBSCommentObj.top_comment），
+        // 角标显隐用 c.x()：等于 "1" 或 "true" 才置顶。
+        // 注意不是 is_top —— is_top 每个楼主评论都有，会把整列都误标。
+        if (comment == null) return false;
+        String flag = comment.optString("top_comment").trim();
+        return "1".equals(flag) || "true".equalsIgnoreCase(flag);
     }
 
     private boolean isPinnedThread(JSONObject group) {
@@ -6260,20 +6263,24 @@ public final class MainActivity extends Activity {
     }
 
     private View pinnedCommentCard(LinearLayout card) {
+        // 官方置顶：左上角丝带角标；正文整体下移，圆头像与角标之间留出间距才美观
+        card.setPadding(card.getPaddingLeft(), card.getPaddingTop() + dp(9),
+                card.getPaddingRight(), card.getPaddingBottom());
         FrameLayout frame = new FrameLayout(this);
         frame.addView(card, new FrameLayout.LayoutParams(-1, -2));
         ImageView corner = new ImageView(this);
         corner.setImageResource(R.drawable.official_comment_pinned_corner);
         corner.setScaleType(ImageView.ScaleType.FIT_XY);
-        FrameLayout.LayoutParams cornerParams = new FrameLayout.LayoutParams(dp(40), dp(40));
+        FrameLayout.LayoutParams cornerParams = new FrameLayout.LayoutParams(dp(34), dp(34));
         cornerParams.gravity = 51;
         frame.addView(corner, cornerParams);
-        TextView label = text("置顶", 8.0f, Color.WHITE);
+        TextView label = text("置顶", 7.5f, Color.WHITE);
         label.setGravity(17);
+        label.setTypeface(appRegularTypeface(), Typeface.BOLD);
         label.setRotation(-45.0f);
-        FrameLayout.LayoutParams labelParams = new FrameLayout.LayoutParams(dp(32), dp(16));
-        labelParams.leftMargin = -dp(3);
-        labelParams.topMargin = dp(3);
+        FrameLayout.LayoutParams labelParams = new FrameLayout.LayoutParams(dp(30), dp(14));
+        labelParams.leftMargin = -dp(4);
+        labelParams.topMargin = dp(2);
         frame.addView(label, labelParams);
         return frame;
     }
