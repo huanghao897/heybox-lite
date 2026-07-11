@@ -3450,10 +3450,8 @@ public final class MainActivity extends Activity {
     private void addDetailActions(LinearLayout article, FeedItem item, JSONObject link) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
-        Compat.setBackground(row, UiComponents.dock(this, this.themeTokens,
-                this.session.uiScale() / 100.0f));
-        Compat.clipToOutline(row);
-        TextView like = actionPill("", R.drawable.ic_thumb_up);
+        CommentLikeControl like = detailCountAction(R.drawable.official_comment_like_line,
+                Math.max(0, item.likes));
         LikeState state = linkLikeState(link, item);
         boolean liked = state.liked;
         int likes = state.likes;
@@ -3461,37 +3459,56 @@ public final class MainActivity extends Activity {
         item.likes = likes;
         updateFeedLike(item.id, liked, likes);
         updateLinkLikeView(like, liked, likes);
-        like.setOnClickListener(view -> {
+        like.root.setOnClickListener(view -> {
             toggleLinkLike(item, like);
         });
-        addDockItem(row, like, false);
-        TextView favorite = actionPill("", R.drawable.ic_bookmark);
+        addDetailAction(row, like.root);
+        ImageView favorite = detailIconAction();
         boolean favored = linkFavored(link);
         updateFavoriteView(favorite, favored);
-        addDockItem(row, favorite, true);
+        addDetailAction(row, favorite);
         favorite.setOnClickListener(view2 -> {
             toggleFavorite(item, favorite);
         });
         TextView watchLater = actionPill("", R.drawable.ic_history);
         updateWatchLaterView(watchLater, this.localCache.isWatchLater(item.id), false);
         watchLater.setOnClickListener(view3 -> toggleWatchLater(item, watchLater));
-        addDockItem(row, watchLater, true);
-        TextView comment = actionPill(String.valueOf(Math.max(0, item.comments)), R.drawable.ic_comment);
-        comment.setContentDescription("评论");
-        addDockItem(row, comment, true);
-        comment.setOnClickListener(view4 -> {
+        addDetailAction(row, watchLater);
+        CommentLikeControl comment = detailCountAction(R.drawable.official_detail_comment,
+                Math.max(0, item.comments));
+        comment.root.setContentDescription("评论");
+        addDetailAction(row, comment.root);
+        comment.root.setOnClickListener(view4 -> {
             showCommentDialog(null);
         });
         addTop(article, row, 10);
     }
 
-    private void addDockItem(LinearLayout dock, View item, boolean divider) {
-        if (divider) {
-            View line = new View(this);
-            line.setBackgroundColor(this.themeTokens.hairline);
-            dock.addView(line, new LinearLayout.LayoutParams(dp(1), -1));
-        }
-        dock.addView(item, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
+    private void addDetailAction(LinearLayout dock, View item) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
+        params.leftMargin = dp(2);
+        params.rightMargin = dp(2);
+        dock.addView(item, params);
+    }
+
+    private CommentLikeControl detailCountAction(int iconRes, int count) {
+        CommentLikeControl control = commentLikeControl();
+        control.icon.setImageResource(iconRes);
+        control.icon.setColorFilter(this.MUTED);
+        control.count.setText(formatCommentLikeCount(count));
+        control.count.setTextColor(this.MUTED);
+        Compat.setBackground(control.root, roundStroke(this.PANEL, 8,
+                this.themeTokens.hairline, 1));
+        return control;
+    }
+
+    private ImageView detailIconAction() {
+        ImageView view = new ImageView(this);
+        view.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        view.setPadding(dp(11), dp(11), dp(11), dp(11));
+        Compat.setBackground(view, roundStroke(this.PANEL, 8,
+                this.themeTokens.hairline, 1));
+        return view;
     }
 
     private void toggleWatchLater(FeedItem item, TextView button) {
@@ -3526,7 +3543,7 @@ public final class MainActivity extends Activity {
 
     private void updateWatchLaterView(TextView view, boolean saved, boolean loading) {
         if (view == null) return;
-        view.setText(loading ? "缓存中" : saved ? "已缓存" : "稍后");
+        view.setText(loading ? "缓存中" : saved ? "已缓存" : "缓存");
         view.setContentDescription(saved ? "移出稍后看" : "稍后看");
         updateDockItem(view, saved || loading, R.drawable.ic_history);
     }
@@ -3573,24 +3590,33 @@ public final class MainActivity extends Activity {
         return view;
     }
 
-    private void updateLinkLikeView(TextView view, boolean liked, int likes) {
-        view.setText(String.valueOf(Math.max(0, likes)));
-        view.setContentDescription(liked ? "取消点赞" : "点赞");
-        updateDockItem(view, liked, R.drawable.ic_thumb_up);
+    private void updateLinkLikeView(CommentLikeControl view, boolean liked, int likes) {
+        int color = liked ? this.themeTokens.accent : this.MUTED;
+        view.icon.setImageResource(liked ? R.drawable.official_comment_like_filled
+                : R.drawable.official_comment_like_line);
+        view.icon.setColorFilter(color);
+        view.count.setText(formatCommentLikeCount(Math.max(0, likes)));
+        view.count.setTextColor(color);
+        view.root.setContentDescription(liked ? "取消点赞" : "点赞");
+        Compat.setBackground(view.root, roundStroke(liked ? this.themeTokens.softAccent() : this.PANEL,
+                8, this.themeTokens.hairline, 1));
     }
 
-    private void updateFavoriteView(TextView view, boolean favored) {
+    private void updateFavoriteView(ImageView view, boolean favored) {
         view.setTag(Boolean.valueOf(favored));
-        view.setText(favored ? "已收藏" : "收藏");
         view.setContentDescription(favored ? "取消收藏" : "收藏");
-        updateDockItem(view, favored, R.drawable.ic_bookmark);
+        view.setImageResource(favored ? R.drawable.official_favorite_filled
+                : R.drawable.official_favorite_line);
+        view.setColorFilter(favored ? this.themeTokens.accent : this.MUTED);
+        Compat.setBackground(view, roundStroke(favored ? this.themeTokens.softAccent() : this.PANEL,
+                8, this.themeTokens.hairline, 1));
     }
 
     private void updateDockItem(TextView view, boolean active, int icon) {
         int color = active ? this.themeTokens.accent : this.MUTED;
         view.setTextColor(color);
-        // 激活段整段铺主题色柔和底，靠操作坞的圆角轮廓裁切两端
-        Compat.setBackground(view, active ? round(this.themeTokens.softAccent(), 0) : null);
+        Compat.setBackground(view, roundStroke(active ? this.themeTokens.softAccent() : this.PANEL,
+                8, this.themeTokens.hairline, 1));
         setLeftIcon(view, icon, color, 15);
     }
 
@@ -3739,7 +3765,7 @@ public final class MainActivity extends Activity {
         return message;
     }
 
-    private void toggleLinkLike(final FeedItem item, final TextView view) {
+    private void toggleLinkLike(final FeedItem item, final CommentLikeControl view) {
         if (!requireLogin("点赞") || !allowWriteAction("点赞") || item == null || item.id.isEmpty()) {
             return;
         }
@@ -3803,7 +3829,7 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void toggleFavorite(FeedItem item, final TextView view) {
+    private void toggleFavorite(FeedItem item, final ImageView view) {
         if (!requireLogin("收藏") || !allowWriteAction("收藏") || item == null || item.id.isEmpty()) {
             return;
         }
