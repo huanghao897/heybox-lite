@@ -5366,6 +5366,12 @@ public final class MainActivity extends Activity {
             JSONArray comments = group2 == null ? null : group2.optJSONArray("comment");
             JSONObject root = comments == null ? group2 : comments.optJSONObject(0);
             if (root != null) {
+                if (isCyComment(group2) && !root.has("is_cy")) {
+                    try {
+                        root.put("_group_is_cy", 1);
+                    } catch (Exception ignored) {
+                    }
+                }
                 LinearLayout linearLayoutCard = vertical(this.BG);
                 linearLayoutCard.setPadding(dp(4), dp(9), dp(4), dp(8));
                 addComment(linearLayoutCard, root, false);
@@ -5857,17 +5863,20 @@ public final class MainActivity extends Activity {
         if (reply) {
             addCompactReply(block, comment, author, target, visibleComment, created);
         } else {
-            block.addView(commentNameRow(author, user, true));
+            block.addView(commentNameRow(author, user, isPostAuthorComment(user, author)));
             String meta = commentSubMeta(comment, created);
             if (!meta.isEmpty()) {
                 TextView metaView = text(meta, 10.5f, this.MUTED);
                 addTop(block, metaView, 1);
             }
-            TextView value = text(visibleComment, 13.0f, this.TEXT);
+            String displayComment = isCyComment(comment) ? " Cy  " + visibleComment : visibleComment;
+            TextView value = text(displayComment, 13.0f, this.TEXT);
             value.setLineSpacing(dp(1), this.session.bodyLineSpacing() / 100.0f);
             Compat.setLetterSpacing(value, this.session.bodyLetterSpacing() / 200.0f);
             value.setTypeface(Typeface.create("sans-serif-medium", 0));
-            EmojiRenderer.set(value, visibleComment, this.session.darkMode());
+            EmojiRenderer.set(value, displayComment, this.session.darkMode(), span -> {
+                if (isCyComment(comment)) applyInlineBadge(span, 0, 4);
+            });
             addTop(block, value, 5);
         }
         String commentImage = commentImage(comment);
@@ -5906,16 +5915,22 @@ public final class MainActivity extends Activity {
     private void addCompactReply(LinearLayout block, JSONObject comment, String author,
                                  String target, String visibleComment, long created) {
         final String name = author.isEmpty() ? "匿名用户" : author;
+        final String authorBadge = isPostAuthorComment(comment.optJSONObject("user"), name)
+                ? " 作者 " : "";
+        final String cyBadge = isCyComment(comment) ? " Cy  " : "";
         final boolean hasTarget = !target.isEmpty();
         final String replyLabel = hasTarget ? " 回复 " : "";
         final String replyName = hasTarget ? "@" + target : "";
         final String meta = commentSubMeta(comment, created);
         final String metaSeg = meta.isEmpty() ? "" : "  " + meta;
-        final String full = name + replyLabel + replyName + "：" + visibleComment + metaSeg;
+        final String full = name + authorBadge + replyLabel + replyName + "："
+                + cyBadge + visibleComment + metaSeg;
 
         final int nameEnd = name.length();
-        final int replyNameStart = nameEnd + replyLabel.length();
+        final int authorBadgeStart = nameEnd;
+        final int replyNameStart = nameEnd + authorBadge.length() + replyLabel.length();
         final int replyNameEnd = replyNameStart + replyName.length();
+        final int cyBadgeStart = replyNameEnd + 1;
         final int metaStart = full.length() - meta.length();
         final int metaEnd = full.length();
         final int nameColor = this.SECONDARY;
@@ -5929,9 +5944,15 @@ public final class MainActivity extends Activity {
                     android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             span.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), 0, nameEnd,
                     android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            if (!authorBadge.isEmpty()) {
+                applyInlineBadge(span, authorBadgeStart, authorBadgeStart + authorBadge.length());
+            }
             if (hasTarget) {
                 span.setSpan(new android.text.style.ForegroundColorSpan(nameColor),
                         replyNameStart, replyNameEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (!cyBadge.isEmpty()) {
+                applyInlineBadge(span, cyBadgeStart, cyBadgeStart + cyBadge.length() - 1);
             }
             if (!meta.isEmpty()) {
                 span.setSpan(new android.text.style.ForegroundColorSpan(metaColor),
@@ -5941,12 +5962,56 @@ public final class MainActivity extends Activity {
         block.addView(value, new LinearLayout.LayoutParams(-1, -2));
     }
 
-    private LinearLayout commentNameRow(String author, JSONObject user, boolean strong) {
+    private LinearLayout commentNameRow(String author, JSONObject user, boolean postAuthor) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
         row.addView(commentNameText(author, false), new LinearLayout.LayoutParams(-2, -2));
         addLevelBadge(row, user, false);
+        if (postAuthor) addAuthorBadge(row);
         return row;
+    }
+
+    private void addAuthorBadge(LinearLayout row) {
+        TextView badge = text("作者", 8.0f, Color.WHITE);
+        badge.setGravity(17);
+        badge.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        badge.setPadding(dp(4), 0, dp(4), 0);
+        Compat.setBackground(badge, round(Color.rgb(35, 37, 40), 3));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(15));
+        params.leftMargin = dp(2);
+        row.addView(badge, params);
+    }
+
+    private boolean isPostAuthorComment(JSONObject user, String author) {
+        String commentUserId = userId(user);
+        String postAuthorId = this.currentDetailItem == null ? "" : this.currentDetailItem.authorId;
+        if (postAuthorId.isEmpty() && this.currentDetailBody != null) {
+            JSONObject result = this.currentDetailBody.optJSONObject("result");
+            JSONObject link = result == null ? null : result.optJSONObject("link");
+            postAuthorId = authorUserId(link, link == null ? null : link.optJSONObject("user"));
+        }
+        if (!commentUserId.isEmpty() && !postAuthorId.isEmpty()) {
+            return commentUserId.equals(postAuthorId);
+        }
+        return this.currentDetailItem != null && !author.isEmpty()
+                && author.equals(this.currentDetailItem.author);
+    }
+
+    private boolean isCyComment(JSONObject comment) {
+        if (comment == null) return false;
+        if (truthy(comment, "is_cy", "cy", "is_eye", "_group_is_cy")) return true;
+        String type = first(comment.optString("comment_type"), comment.optString("type"));
+        return "cy".equalsIgnoreCase(type);
+    }
+
+    private void applyInlineBadge(android.text.Spannable span, int start, int end) {
+        if (start < 0 || end <= start || end > span.length()) return;
+        span.setSpan(new android.text.style.BackgroundColorSpan(Color.rgb(35, 37, 40)),
+                start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        span.setSpan(new android.text.style.ForegroundColorSpan(Color.WHITE),
+                start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        span.setSpan(new android.text.style.StyleSpan(Typeface.BOLD),
+                start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     private TextView commentNameText(String author, boolean reply) {
