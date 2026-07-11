@@ -140,9 +140,9 @@ final class FeedAdapter extends BaseAdapter {
             TextView author = label(10, mutedColor);
             author.setSingleLine(true);
             meta.addView(author, new LinearLayout.LayoutParams(0, -2, 1));
-            TextView likes = stat(R.drawable.ic_thumb_up);
+            TextView likes = stat(R.drawable.official_comment_like_line);
             meta.addView(likes, new LinearLayout.LayoutParams(dp(48), dp(24)));
-            TextView comments = stat(R.drawable.ic_comment);
+            TextView comments = stat(R.drawable.official_detail_comment);
             meta.addView(comments, new LinearLayout.LayoutParams(dp(48), dp(24)));
 
             holder = new Holder(card, copy, badge, title, description, author, likes, comments, cover);
@@ -164,8 +164,10 @@ final class FeedAdapter extends BaseAdapter {
         EmojiRenderer.set(holder.description, description, darkMode);
         holder.description.setVisibility(description.isEmpty() ? View.GONE : View.VISIBLE);
         holder.author.setText(item.author.isEmpty() ? "小黑盒社区" : item.author);
-        updateStatView(holder.likes, item.likes, item.liked, R.drawable.ic_thumb_up);
-        updateStatView(holder.comments, item.comments, false, R.drawable.ic_comment);
+        updateStatView(holder.likes, item.likes, item.liked, item.liked
+                ? R.drawable.official_comment_like_filled
+                : R.drawable.official_comment_like_line);
+        updateStatView(holder.comments, item.comments, false, R.drawable.official_detail_comment);
         boolean showImage = !noImage && !item.image.isEmpty();
         holder.cover.setVisibility(showImage ? View.VISIBLE : View.GONE);
         LinearLayout.LayoutParams copyParams =
@@ -228,7 +230,7 @@ final class FeedAdapter extends BaseAdapter {
         if (drawable != null) {
             drawable.setBounds(0, 0, dp(size), dp(size));
             view.setCompoundDrawables(drawable, null, null, null);
-            view.setCompoundDrawablePadding(dp(3));
+            view.setCompoundDrawablePadding(dp(2));
         }
     }
 
