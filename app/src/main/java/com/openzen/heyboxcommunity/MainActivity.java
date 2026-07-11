@@ -5603,12 +5603,6 @@ public final class MainActivity extends Activity {
                     } catch (Exception ignored) {
                     }
                 }
-                if (isPinnedComment(group2) && !isPinnedComment(root)) {
-                    try {
-                        root.put("_group_is_top", 1);
-                    } catch (Exception ignored) {
-                    }
-                }
                 LinearLayout linearLayoutCard = vertical(this.BG);
                 linearLayoutCard.setPadding(dp(4), dp(9), dp(4), dp(8));
                 addComment(linearLayoutCard, root, false);
@@ -6257,13 +6251,15 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isPinnedComment(JSONObject comment) {
-        return comment != null && (truthy(comment, "is_top", "top", "is_sticky", "sticky",
-                "is_pin", "pinned", "_group_is_top") || comment.optInt("top_status") == 1);
+        // 官方仅以 is_top=="1" 判定置顶（BBSCommentObj.is_top，f0.g("1", getIs_top())）。
+        // 普通评论的 is_top 为空串或 "0"，严格等值比较，避免把热评前几条误标为置顶。
+        return comment != null && "1".equals(comment.optString("is_top").trim());
     }
 
     private boolean isPinnedThread(JSONObject group) {
+        if (group == null) return false;
         if (isPinnedComment(group)) return true;
-        JSONArray comments = group == null ? null : group.optJSONArray("comment");
+        JSONArray comments = group.optJSONArray("comment");
         return comments != null && isPinnedComment(comments.optJSONObject(0));
     }
 
