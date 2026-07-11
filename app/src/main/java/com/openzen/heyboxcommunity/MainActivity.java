@@ -229,6 +229,18 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private static final class CommentLikeControl {
+        final LinearLayout root;
+        final ImageView icon;
+        final TextView count;
+
+        CommentLikeControl(LinearLayout root, ImageView icon, TextView count) {
+            this.root = root;
+            this.icon = icon;
+            this.count = count;
+        }
+    }
+
     /* JADX INFO: loaded from: MainActivity$LikeState.class */
     private static final class LikeState {
         final boolean liked;
@@ -5356,9 +5368,12 @@ public final class MainActivity extends Activity {
                 threads.add(group);
             }
         }
-        Collections.sort(threads, (a, b) -> latest
-                ? Long.compare(threadTime(b), threadTime(a))
-                : Integer.compare(threadLikes(b), threadLikes(a)));
+        Collections.sort(threads, (a, b) -> {
+            int pinned = Boolean.compare(isPinnedThread(b), isPinnedThread(a));
+            if (pinned != 0) return pinned;
+            return latest ? Long.compare(threadTime(b), threadTime(a))
+                    : Integer.compare(threadLikes(b), threadLikes(a));
+        });
         int count = 0;
         Iterator<JSONObject> it = threads.iterator();
         while (it.hasNext()) {
@@ -5369,6 +5384,12 @@ public final class MainActivity extends Activity {
                 if (isCyComment(group2) && !root.has("is_cy")) {
                     try {
                         root.put("_group_is_cy", 1);
+                    } catch (Exception ignored) {
+                    }
+                }
+                if (isPinnedComment(group2) && !isPinnedComment(root)) {
+                    try {
+                        root.put("_group_is_top", 1);
                     } catch (Exception ignored) {
                     }
                 }
@@ -5405,7 +5426,8 @@ public final class MainActivity extends Activity {
                     boolean allLoaded = expected <= replies.size();
                     renderReplies(replyList, root, replies, expected, initial, allLoaded);
                 }
-                addTop(page, linearLayoutCard, count == 0 ? 0 : 2);
+                addTop(page, isPinnedComment(root) ? pinnedCommentCard(linearLayoutCard)
+                        : linearLayoutCard, count == 0 ? 0 : 2);
                 count += 1 + replies.size();
             }
         }
@@ -5579,17 +5601,30 @@ public final class MainActivity extends Activity {
         return truthy(comment, "is_support", "supported", "is_award", "liked", "has_support");
     }
 
-    private void updateCommentLikeView(TextView view, boolean liked, int likes) {
+    private CommentLikeControl commentLikeControl() {
+        LinearLayout root = new LinearLayout(this);
+        root.setGravity(17);
+        root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setPadding(dp(2), 0, dp(2), 0);
+        ImageView icon = new ImageView(this);
+        icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        root.addView(icon, new LinearLayout.LayoutParams(dp(15), dp(15)));
+        TextView count = text("0", 10.0f, this.MUTED);
+        count.setGravity(16);
+        count.setSingleLine(true);
+        LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(-2, -2);
+        countParams.leftMargin = dp(2);
+        root.addView(count, countParams);
+        return new CommentLikeControl(root, icon, count);
+    }
+
+    private void updateCommentLikeView(CommentLikeControl view, boolean liked, int likes) {
         int color = liked ? this.TEXT : this.MUTED;
-        view.setText(formatCommentLikeCount(Math.max(0, likes)));
-        view.setTextColor(color);
-        view.setSingleLine(true);
-        view.setMaxLines(1);
-        view.setPadding(0, 0, 0, 0);
-        Compat.setBackground(view, null);
-        setLeftIcon(view, liked ? R.drawable.official_comment_like_filled
-                : R.drawable.official_comment_like_line, color, 15);
-        view.setCompoundDrawablePadding(0);
+        view.icon.setImageResource(liked ? R.drawable.official_comment_like_filled
+                : R.drawable.official_comment_like_line);
+        view.icon.setColorFilter(color);
+        view.count.setText(formatCommentLikeCount(Math.max(0, likes)));
+        view.count.setTextColor(color);
     }
 
     private String formatCommentLikeCount(int count) {
@@ -5604,7 +5639,7 @@ public final class MainActivity extends Activity {
         return text.endsWith(".0") ? text.substring(0, text.length() - 2) : text;
     }
 
-    private void toggleCommentLike(final JSONObject comment, final TextView view) {
+    private void toggleCommentLike(final JSONObject comment, final CommentLikeControl view) {
         if (requireLogin("评论点赞")) {
             if (!allowWriteAction("评论点赞")) {
                 return;
@@ -5620,16 +5655,16 @@ public final class MainActivity extends Activity {
             int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
             setCommentLikeState(comment, nextLiked, nextLikes);
             updateCommentLikeView(view, nextLiked, nextLikes);
-            view.setEnabled(false);
+            view.root.setEnabled(false);
             postCommentLike(id, nextLiked, new ApiClient.Callback() { // from class: com.openzen.heyboxcommunity.MainActivity.21
                 @Override // com.openzen.heyboxcommunity.ApiClient.Callback
                 public void onSuccess(JSONObject body) {
-                    view.setEnabled(true);
+                    view.root.setEnabled(true);
                 }
 
                 @Override // com.openzen.heyboxcommunity.ApiClient.Callback
                 public void onError(String message) {
-                    view.setEnabled(true);
+                    view.root.setEnabled(true);
                     MainActivity.this.setCommentLikeState(comment, beforeLiked, beforeLikes);
                     MainActivity.this.updateCommentLikeView(view, beforeLiked, beforeLikes);
                     MainActivity.this.toast("评论点赞失败" + MainActivity.this.writeErrorMessage("评论点赞", message));
@@ -5640,7 +5675,7 @@ public final class MainActivity extends Activity {
 
     private void setCommentLikeState(JSONObject comment, boolean liked, int likes) {
         try {
-            comment.put("is_support", liked ? 1 : REPLY_PREVIEW_COUNT);
+            comment.put("is_support", liked ? 1 : 0);
             comment.put("comment_award_num", Math.max(0, likes));
         } catch (Exception e) {
         }
@@ -5875,7 +5910,9 @@ public final class MainActivity extends Activity {
             Compat.setLetterSpacing(value, this.session.bodyLetterSpacing() / 200.0f);
             value.setTypeface(Typeface.create("sans-serif-medium", 0));
             EmojiRenderer.set(value, displayComment, this.session.darkMode(), span -> {
-                if (isCyComment(comment)) applyInlineBadge(span, 0, 4);
+                if (isCyComment(comment)) {
+                    applyInlineImageBadge(span, 0, 3, R.drawable.official_cy_badge, 15);
+                }
             });
             addTop(block, value, 5);
         }
@@ -5887,15 +5924,14 @@ public final class MainActivity extends Activity {
             block.addView(image, imageParams);
         }
         if (!reply) {
-            TextView likes = text(String.valueOf(commentLikes(comment)), 10.0f, this.MUTED);
+            CommentLikeControl likes = commentLikeControl();
             updateCommentLikeView(likes, commentLiked(comment), commentLikes(comment));
-            likes.setGravity(17);
-            likes.setOnClickListener(view -> {
+            likes.root.setOnClickListener(view -> {
                 toggleCommentLike(comment, likes);
             });
-            LinearLayout.LayoutParams likeParams = new LinearLayout.LayoutParams(dp(58), dp(26));
-            likeParams.leftMargin = dp(5);
-            row.addView(likes, likeParams);
+            LinearLayout.LayoutParams likeParams = new LinearLayout.LayoutParams(-2, dp(26));
+            likeParams.leftMargin = dp(3);
+            row.addView(likes.root, likeParams);
         }
         View.OnLongClickListener copy = view -> {
             copyCommentText(visibleComment);
@@ -5945,14 +5981,16 @@ public final class MainActivity extends Activity {
             span.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), 0, nameEnd,
                     android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             if (!authorBadge.isEmpty()) {
-                applyInlineBadge(span, authorBadgeStart, authorBadgeStart + authorBadge.length());
+                applyInlineImageBadge(span, authorBadgeStart,
+                        authorBadgeStart + authorBadge.length(), R.drawable.official_author_badge, 13);
             }
             if (hasTarget) {
                 span.setSpan(new android.text.style.ForegroundColorSpan(nameColor),
                         replyNameStart, replyNameEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             if (!cyBadge.isEmpty()) {
-                applyInlineBadge(span, cyBadgeStart, cyBadgeStart + cyBadge.length() - 1);
+                applyInlineImageBadge(span, cyBadgeStart,
+                        cyBadgeStart + cyBadge.length() - 1, R.drawable.official_cy_badge, 15);
             }
             if (!meta.isEmpty()) {
                 span.setSpan(new android.text.style.ForegroundColorSpan(metaColor),
@@ -5966,18 +6004,16 @@ public final class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
         row.addView(commentNameText(author, false), new LinearLayout.LayoutParams(-2, -2));
-        addLevelBadge(row, user, false);
         if (postAuthor) addAuthorBadge(row);
+        addLevelBadge(row, user, false);
         return row;
     }
 
     private void addAuthorBadge(LinearLayout row) {
-        TextView badge = text("作者", 8.0f, Color.WHITE);
-        badge.setGravity(17);
-        badge.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        badge.setPadding(dp(4), 0, dp(4), 0);
-        Compat.setBackground(badge, round(Color.rgb(35, 37, 40), 3));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(15));
+        ImageView badge = new ImageView(this);
+        badge.setImageResource(R.drawable.official_author_badge);
+        badge.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(28), dp(15));
         params.leftMargin = dp(2);
         row.addView(badge, params);
     }
@@ -6004,14 +6040,48 @@ public final class MainActivity extends Activity {
         return "cy".equalsIgnoreCase(type);
     }
 
-    private void applyInlineBadge(android.text.Spannable span, int start, int end) {
+    private boolean isPinnedComment(JSONObject comment) {
+        return comment != null && (truthy(comment, "is_top", "top", "is_sticky", "sticky",
+                "is_pin", "pinned", "_group_is_top") || comment.optInt("top_status") == 1);
+    }
+
+    private boolean isPinnedThread(JSONObject group) {
+        if (isPinnedComment(group)) return true;
+        JSONArray comments = group == null ? null : group.optJSONArray("comment");
+        return comments != null && isPinnedComment(comments.optJSONObject(0));
+    }
+
+    private View pinnedCommentCard(LinearLayout card) {
+        FrameLayout frame = new FrameLayout(this);
+        frame.addView(card, new FrameLayout.LayoutParams(-1, -2));
+        ImageView corner = new ImageView(this);
+        corner.setImageResource(R.drawable.official_comment_pinned_corner);
+        corner.setScaleType(ImageView.ScaleType.FIT_XY);
+        FrameLayout.LayoutParams cornerParams = new FrameLayout.LayoutParams(dp(40), dp(40));
+        cornerParams.gravity = 51;
+        frame.addView(corner, cornerParams);
+        TextView label = text("置顶", 8.0f, Color.WHITE);
+        label.setGravity(17);
+        label.setRotation(-45.0f);
+        FrameLayout.LayoutParams labelParams = new FrameLayout.LayoutParams(dp(32), dp(16));
+        labelParams.leftMargin = -dp(3);
+        labelParams.topMargin = dp(3);
+        frame.addView(label, labelParams);
+        return frame;
+    }
+
+    private void applyInlineImageBadge(android.text.Spannable span, int start, int end,
+                                       int drawableRes, int heightDp) {
         if (start < 0 || end <= start || end > span.length()) return;
-        span.setSpan(new android.text.style.BackgroundColorSpan(Color.rgb(35, 37, 40)),
-                start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-        span.setSpan(new android.text.style.ForegroundColorSpan(Color.WHITE),
-                start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-        span.setSpan(new android.text.style.StyleSpan(Typeface.BOLD),
-                start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        Drawable drawable = getResources().getDrawable(drawableRes);
+        int height = dp(heightDp);
+        int width = drawable.getIntrinsicHeight() <= 0 ? height
+                : Math.max(1, Math.round(height * drawable.getIntrinsicWidth()
+                / (float) drawable.getIntrinsicHeight()));
+        drawable.setBounds(0, 0, width, height);
+        span.setSpan(new android.text.style.ImageSpan(drawable,
+                        android.text.style.ImageSpan.ALIGN_BASELINE), start, end,
+                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     private TextView commentNameText(String author, boolean reply) {
