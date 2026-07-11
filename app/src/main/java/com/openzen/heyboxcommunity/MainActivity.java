@@ -70,6 +70,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -1938,7 +1939,12 @@ public final class MainActivity extends Activity {
 
     private void updateReadingTimeEntry() {
         if (this.readingTodayView == null || this.readingTimeTracker == null) return;
-        this.readingTodayView.setText("今天 " + formatReadingDuration(this.readingTimeTracker.stats().todayMs()));
+        this.readingTodayView.setText(readingEntrySummary());
+    }
+
+    private String readingEntrySummary() {
+        ReadingTimeTracker.Stats stats = this.readingTimeTracker.stats();
+        return "今天 " + formatReadingDuration(stats.todayMs()) + " · " + stats.todayCount + " 篇";
     }
 
     private void showReadingStats() {
@@ -1959,28 +1965,79 @@ public final class MainActivity extends Activity {
         page.setPadding(dp(8), dp(8), dp(8), dp(18));
         scroll.addView(page);
         page.addView(settingsTopCard("阅读时长"));
-        TextView date = text(new SimpleDateFormat("M月d日", Locale.getDefault()).format(new Date()), 11.0f, this.MUTED);
-        addTop(page, date, 0);
-        addTop(page, readingSummaryCard("今天", stats.todayArticleMs, stats.todayPostMs), 8);
-        addTop(page, readingSummaryCard("累计", stats.totalArticleMs, stats.totalPostMs), 8);
+        addSectionLabel(page, "今日");
+        page.addView(readingHeroCard(stats));
+        addSectionLabel(page, "近 7 天");
+        page.addView(readingWeekCard(stats));
+        addSectionLabel(page, "构成");
+        page.addView(readingSplitCard(stats));
+        addSectionLabel(page, "常看社区");
+        page.addView(readingTopicsCard(stats));
         this.retainedPages.put("reading_stats", scroll);
         transitionTo(scroll);
     }
 
-    private View readingSummaryCard(String label, long articleMs, long postMs) {
+    /** 今日卡：大数字时长 + 日期与篇数。 */
+    private View readingHeroCard(ReadingTimeTracker.Stats stats) {
         LinearLayout panel = card();
-        TextView title = text(label, 12.0f, this.MUTED);
-        panel.addView(title);
-        long total = articleMs + postMs;
-        TextView duration = text(formatReadingDuration(total), 23.0f, this.TEXT);
-        duration.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        addTop(panel, duration, 3);
+        panel.addView(readingDurationView(stats.todayMs(), 30.0f, 13.0f));
+        TextView meta = text(new SimpleDateFormat("M 月 d 日", Locale.getDefault()).format(new Date())
+                + " · 看过 " + stats.todayCount + " 篇", 10.5f, this.MUTED);
+        addTop(panel, meta, 4);
+        return panel;
+    }
 
-        int articlePercent = total == 0L ? 0 : (int) Math.round((articleMs * 100.0d) / total);
-        int postPercent = total == 0L ? 0 : 100 - articlePercent;
+    /** 近 7 天柱状图：今天主题色，其余石墨；下附本周合计与日均。 */
+    private View readingWeekCard(ReadingTimeTracker.Stats stats) {
+        LinearLayout panel = card();
+        LinearLayout chart = new LinearLayout(this);
+        long max = 1L;
+        for (long value : stats.weekMs) max = Math.max(max, value);
+        int chartHeight = dp(52);
+        Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.DAY_OF_YEAR, -6);
+        String[] names = {"日", "一", "二", "三", "四", "五", "六"};
+        for (int i = 0; i < 7; i++) {
+            boolean today = i == 6;
+            LinearLayout cell = vertical(0);
+            cell.setGravity(1);
+            LinearLayout barBox = new LinearLayout(this);
+            barBox.setGravity(81);
+            View bar = new View(this);
+            Compat.setBackground(bar, round(today ? this.themeTokens.accent
+                    : blend(this.PANEL, this.TEXT, this.session.darkMode() ? 0.10f : 0.08f), 3));
+            int height = (int) Math.max(dp(3), stats.weekMs[i] * chartHeight / max);
+            barBox.addView(bar, new LinearLayout.LayoutParams(dp(10), height));
+            cell.addView(barBox, new LinearLayout.LayoutParams(-1, chartHeight));
+            String dayName = today ? "今天" : names[calendar.get(Calendar.DAY_OF_WEEK) - 1];
+            TextView label = text(dayName, 8.5f, today ? this.themeTokens.accent : this.themeTokens.subtle);
+            label.setGravity(17);
+            LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-1, -2);
+            labelParams.topMargin = dp(4);
+            cell.addView(label, labelParams);
+            chart.addView(cell, new LinearLayout.LayoutParams(0, -2, 1.0f));
+            calendar.add(Calendar.DAY_OF_YEAR, 1);
+        }
+        addTop(panel, chart, 4);
+        long weekTotal = stats.weekTotalMs();
+        TextView meta = text("本周 " + formatReadingDuration(weekTotal)
+                + " · 日均 " + formatReadingDuration(weekTotal / 7L), 10.5f, this.MUTED);
+        addTop(panel, meta, 9);
+        return panel;
+    }
+
+    /** 构成卡：累计时长 + 文章/帖子占比条与图例。 */
+    private View readingSplitCard(ReadingTimeTracker.Stats stats) {
+        LinearLayout panel = card();
+        panel.addView(readingDurationView(stats.totalMs(), 20.0f, 11.0f));
+        TextView meta = text("累计 · 看过 " + stats.totalCount + " 篇", 10.5f, this.MUTED);
+        addTop(panel, meta, 2);
+        long total = stats.totalMs();
+        long articleMs = stats.totalArticleMs;
+        long postMs = stats.totalPostMs;
+        int postColor = blend(this.PANEL, this.TEXT, this.session.darkMode() ? 0.24f : 0.20f);
         LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(0);
-        Compat.setBackground(bar, round(this.themeTokens.hairline, 3));
+        Compat.setBackground(bar, round(blend(this.PANEL, this.TEXT, 0.06f), 3));
         if (total > 0L) {
             if (articleMs > 0L) {
                 View article = new View(this);
@@ -1989,20 +2046,113 @@ public final class MainActivity extends Activity {
             }
             if (postMs > 0L) {
                 View post = new View(this);
-                Compat.setBackground(post, round(this.MUTED, 3));
+                Compat.setBackground(post, round(postColor, 3));
                 bar.addView(post, new LinearLayout.LayoutParams(0, -1, (float) postMs));
             }
         }
-        addTop(panel, bar, 10);
-        bar.getLayoutParams().height = dp(6);
-
-        TextView article = text("文章  " + articlePercent + "%  ·  " + formatReadingDuration(articleMs), 11.5f, this.TEXT);
-        setLeftIcon(article, R.drawable.il_scroll, this.themeTokens.accent, 13);
-        addTop(panel, article, 10);
-        TextView post = text("帖子  " + postPercent + "%  ·  " + formatReadingDuration(postMs), 11.5f, this.TEXT);
-        setLeftIcon(post, R.drawable.ic_comment, this.MUTED, 13);
-        addTop(panel, post, 7);
+        LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(-1, dp(6));
+        barParams.topMargin = dp(10);
+        panel.addView(bar, barParams);
+        panel.addView(readingLegendRow("文章", this.themeTokens.accent, articleMs, total));
+        panel.addView(readingLegendRow("帖子", postColor, postMs, total));
         return panel;
+    }
+
+    private View readingLegendRow(String label, int color, long ms, long total) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(16);
+        View dot = new View(this);
+        Compat.setBackground(dot, round(color, 4));
+        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(8), dp(8));
+        dotParams.rightMargin = dp(7);
+        row.addView(dot, dotParams);
+        TextView name = text(label, 11.5f, this.TEXT);
+        row.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        int percent = total == 0L ? 0 : (int) Math.round((ms * 100.0d) / total);
+        TextView value = text(percent + "% · " + formatReadingDuration(ms), 10.5f, this.MUTED);
+        row.addView(value, new LinearLayout.LayoutParams(-2, -2));
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, dp(30));
+        row.setLayoutParams(rowParams);
+        return row;
+    }
+
+    /** 常看社区：按话题累计的时长排行，比例条用主题色。 */
+    private View readingTopicsCard(ReadingTimeTracker.Stats stats) {
+        LinearLayout panel = card();
+        if (stats.topics.isEmpty()) {
+            TextView empty = text("多看几篇帖子，这里会按社区统计你的阅读分布", 10.5f, this.MUTED);
+            empty.setLineSpacing(0.0f, 1.3f);
+            empty.setPadding(0, dp(6), 0, dp(6));
+            panel.addView(empty);
+            return panel;
+        }
+        long max = Math.max(1L, stats.topics.get(0).ms);
+        int shown = Math.min(5, stats.topics.size());
+        for (int i = 0; i < shown; i++) {
+            ReadingTimeTracker.TopicStat topic = stats.topics.get(i);
+            LinearLayout item = vertical(0);
+            LinearLayout head = new LinearLayout(this);
+            head.setGravity(16);
+            TextView name = text(topic.name, 11.5f, this.TEXT);
+            name.setSingleLine(true);
+            name.setEllipsize(TextUtils.TruncateAt.END);
+            head.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
+            TextView value = text(formatReadingDuration(topic.ms), 10.5f, this.MUTED);
+            head.addView(value, new LinearLayout.LayoutParams(-2, -2));
+            item.addView(head, new LinearLayout.LayoutParams(-1, -2));
+            LinearLayout track = new LinearLayout(this);
+            Compat.setBackground(track, round(blend(this.PANEL, this.TEXT, 0.06f), 2));
+            View fill = new View(this);
+            Compat.setBackground(fill, round(this.themeTokens.accent, 2));
+            track.addView(fill, new LinearLayout.LayoutParams(0, -1, (float) topic.ms));
+            track.addView(new View(this), new LinearLayout.LayoutParams(0, -1, (float) (max - topic.ms)));
+            LinearLayout.LayoutParams trackParams = new LinearLayout.LayoutParams(-1, dp(3));
+            trackParams.topMargin = dp(6);
+            item.addView(track, trackParams);
+            addTop(panel, item, i == 0 ? 2 : 12);
+        }
+        return panel;
+    }
+
+    /** 大数字时长：数值粗体大号、单位小号次要色。 */
+    private TextView readingDurationView(long milliseconds, float numberSp, float unitSp) {
+        android.text.SpannableStringBuilder builder = new android.text.SpannableStringBuilder();
+        long minutes = Math.max(0L, milliseconds / 60_000L);
+        long hours = minutes / 60L;
+        long remainder = minutes % 60L;
+        if (milliseconds > 0L && minutes == 0L) {
+            appendReadingSegment(builder, "不足 ", unitSp, this.MUTED, false);
+            appendReadingSegment(builder, "1", numberSp, this.TEXT, true);
+            appendReadingSegment(builder, " 分钟", unitSp, this.MUTED, false);
+        } else if (hours > 0L) {
+            appendReadingSegment(builder, String.valueOf(hours), numberSp, this.TEXT, true);
+            appendReadingSegment(builder, " 时 ", unitSp, this.MUTED, false);
+            appendReadingSegment(builder, String.valueOf(remainder), numberSp, this.TEXT, true);
+            appendReadingSegment(builder, " 分", unitSp, this.MUTED, false);
+        } else {
+            appendReadingSegment(builder, String.valueOf(minutes), numberSp, this.TEXT, true);
+            appendReadingSegment(builder, " 分钟", unitSp, this.MUTED, false);
+        }
+        TextView view = new TextView(this);
+        view.setText(builder);
+        view.setTypeface(appRegularTypeface());
+        Compat.setLetterSpacing(view, 0.0f);
+        return view;
+    }
+
+    private void appendReadingSegment(android.text.SpannableStringBuilder builder,
+                                      String value, float sizeSp, int color, boolean bold) {
+        int start = builder.length();
+        builder.append(value);
+        int end = builder.length();
+        builder.setSpan(new android.text.style.AbsoluteSizeSpan(Math.round(sp(sizeSp)), true),
+                start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        builder.setSpan(new android.text.style.ForegroundColorSpan(color),
+                start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (bold) {
+            builder.setSpan(new android.text.style.StyleSpan(Typeface.BOLD),
+                    start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
     }
 
     private String formatReadingDuration(long milliseconds) {
@@ -2931,6 +3081,12 @@ public final class MainActivity extends Activity {
         headline.setLineSpacing(dp(REPLY_PREVIEW_COUNT), 1.08f);
         article.addView(headline);
         addAuthorHeader(article, link, user, author);
+        if (this.readingTimeTracker != null) {
+            this.readingTimeTracker.tagTopic(firstTopicName(link));
+        }
+        if (fallback.article) {
+            addTopicChips(article, link);
+        }
         String notice = body.optString("_fallback_notice");
         if (!notice.isEmpty()) {
             TextView fallbackNotice = text(notice, 11.0f, this.SECONDARY);
@@ -2945,6 +3101,9 @@ public final class MainActivity extends Activity {
         this.lastDetailDiagnostics = buildDetailDiagnostics(body, fallback, link, fallbackImages);
         this.localCache.log("detail diagnostics captured link=" + (fallback == null ? "" : fallback.id) + " title=" + compactLogText(heading, 48));
         addRichContent(article, link, fallback.description, fallbackImages);
+        if (!fallback.article) {
+            addTopicChips(article, link);
+        }
         addDetailActions(article, fallback, link);
         page.addView(article);
         addDetailCommentSection(page, result == null ? null : result.optJSONArray("comments"));
@@ -2958,7 +3117,7 @@ public final class MainActivity extends Activity {
         pager.setReturnView(this.detailReturnView);
         transitionTo(pager);
         if (this.activityResumed && this.readingTimeTracker != null && fallback != null) {
-            this.readingTimeTracker.start(fallback.article);
+            this.readingTimeTracker.start(fallback.article, fallback.id);
         }
         this.detailScroll = articleScroll;
         this.detailCommentScroll = commentScroll;
@@ -4002,6 +4161,63 @@ public final class MainActivity extends Activity {
             toggleFollow(follow, link, user, targetUserId);
         });
         addTop(article, linearLayout, article.getChildCount() == 0 ? 0 : 14);
+    }
+
+    /** 官方同款话题标签：文章放作者行下方，普通帖放正文下方；同时供阅读统计按社区累计。 */
+    private void addTopicChips(LinearLayout article, JSONObject link) {
+        JSONArray topics = link == null ? null : link.optJSONArray("topics");
+        if (topics == null || topics.length() == 0) return;
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(16);
+        int added = 0;
+        for (int i = 0; i < topics.length() && added < 3; i++) {
+            JSONObject topic = topics.optJSONObject(i);
+            if (topic == null) continue;
+            String name = first(topic.optString("name"), topic.optString("title"));
+            if (name.isEmpty()) continue;
+            LinearLayout chip = new LinearLayout(this);
+            chip.setGravity(16);
+            chip.setPadding(dp(5), 0, dp(9), 0);
+            Compat.setBackground(chip, round(blend(this.BG, this.TEXT,
+                    this.session.darkMode() ? 0.07f : 0.05f), 9));
+            String icon = first(topic.optString("pic_url"), topic.optString("icon"),
+                    topic.optString("img_url"), topic.optString("appicon"));
+            if (!this.session.noImage() && !icon.isEmpty()) {
+                ImageView pic = new ImageView(this);
+                pic.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                Compat.setBackground(pic, round(blend(this.BG, this.TEXT, 0.12f), 4));
+                Compat.clipToOutline(pic);
+                LinearLayout.LayoutParams picParams = new LinearLayout.LayoutParams(dp(16), dp(16));
+                picParams.rightMargin = dp(5);
+                chip.addView(pic, picParams);
+                ImageLoader.intoPlain(pic, icon, 64);
+            } else {
+                chip.setPadding(dp(9), 0, dp(9), 0);
+            }
+            TextView label = text(name, 10.5f, this.TEXT);
+            label.setSingleLine(true);
+            label.setEllipsize(TextUtils.TruncateAt.END);
+            label.setMaxWidth(dp(120));
+            chip.addView(label, new LinearLayout.LayoutParams(-2, -2));
+            LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(-2, dp(26));
+            if (added > 0) chipParams.leftMargin = dp(6);
+            row.addView(chip, chipParams);
+            added++;
+        }
+        if (added == 0) return;
+        addTop(article, row, 9);
+    }
+
+    private String firstTopicName(JSONObject link) {
+        JSONArray topics = link == null ? null : link.optJSONArray("topics");
+        if (topics == null) return "";
+        for (int i = 0; i < topics.length(); i++) {
+            JSONObject topic = topics.optJSONObject(i);
+            if (topic == null) continue;
+            String name = first(topic.optString("name"), topic.optString("title"));
+            if (!name.isEmpty()) return name;
+        }
+        return "";
     }
 
     private void updateFollowView(TextView follow, boolean following) {
@@ -6511,8 +6727,7 @@ public final class MainActivity extends Activity {
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
         LinearLayout panel = settingsList();
-        addSettingEntry(panel, "阅读时长",
-                "今天 " + formatReadingDuration(this.readingTimeTracker.stats().todayMs()),
+        addSettingEntry(panel, "阅读时长", readingEntrySummary(),
                 R.drawable.il_reading, this::showReadingStats);
         addSettingEntry(panel, "稍后看", this.localCache.watchLaterItems().size() + " 篇离线内容", R.drawable.il_history,
                 this::showWatchLater);
@@ -9445,7 +9660,7 @@ public final class MainActivity extends Activity {
         this.activityResumed = true;
         if ("detail".equals(this.screen) && this.currentDetailBody != null
                 && this.currentDetailItem != null && this.readingTimeTracker != null) {
-            this.readingTimeTracker.start(this.currentDetailItem.article);
+            this.readingTimeTracker.start(this.currentDetailItem.article, this.currentDetailItem.id);
         }
         PresenceReporter.ping(this.session, this.readingTimeTracker);
         this.handler.removeCallbacks(this.presenceTick);
