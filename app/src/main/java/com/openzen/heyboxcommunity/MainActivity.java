@@ -6,6 +6,7 @@ import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.ContentValues;
 import android.content.Intent;
@@ -5573,15 +5574,26 @@ public final class MainActivity extends Activity {
     }
 
     private void updateCommentLikeView(TextView view, boolean liked, int likes) {
-        int color = liked ? this.themeTokens.accent : this.MUTED;
-        view.setText(String.valueOf(Math.max(0, likes)));
+        int color = liked ? this.TEXT : this.MUTED;
+        view.setText(formatCommentLikeCount(Math.max(0, likes)));
         view.setTextColor(color);
-        view.setPadding(dp(5), 0, dp(5), 0);
-        GradientDrawable drawable = round(liked
-                ? this.themeTokens.softAccent() : Color.TRANSPARENT, 14);
-        drawable.setStroke(dp(1), liked ? this.themeTokens.accent : this.themeTokens.hairline);
-        Compat.setBackground(view, drawable);
-        setLeftIcon(view, R.drawable.ic_thumb_up, color, liked ? 14 : 13);
+        view.setSingleLine(true);
+        view.setMaxLines(1);
+        view.setPadding(0, 0, 0, 0);
+        Compat.setBackground(view, null);
+        setLeftIcon(view, liked ? R.drawable.ic_thumb_up_filled : R.drawable.ic_thumb_up,
+                color, liked ? 14 : 13);
+    }
+
+    private String formatCommentLikeCount(int count) {
+        if (count < 10_000) return String.valueOf(count);
+        if (count < 100_000) {
+            String value = String.format(Locale.US, "%.1f", count / 10_000.0d);
+            return value.endsWith(".0") ? value.substring(0, value.length() - 2) + "万" : value + "万";
+        }
+        if (count < 100_000_000) return (count / 10_000) + "万";
+        String value = String.format(Locale.US, "%.1f", count / 100_000_000.0d);
+        return value.endsWith(".0") ? value.substring(0, value.length() - 2) + "亿" : value + "亿";
     }
 
     private void toggleCommentLike(final JSONObject comment, final TextView view) {
@@ -5870,10 +5882,16 @@ public final class MainActivity extends Activity {
             likes.setOnClickListener(view -> {
                 toggleCommentLike(comment, likes);
             });
-            LinearLayout.LayoutParams likeParams = new LinearLayout.LayoutParams(dp(48), dp(26));
+            LinearLayout.LayoutParams likeParams = new LinearLayout.LayoutParams(dp(58), dp(26));
             likeParams.leftMargin = dp(5);
             row.addView(likes, likeParams);
         }
+        View.OnLongClickListener copy = view -> {
+            copyCommentText(visibleComment);
+            return true;
+        };
+        block.setOnLongClickListener(copy);
+        row.setOnLongClickListener(copy);
         attachCommentReplyGesture(row, comment);
         linearLayout.addView(row);
         if (reply) {
@@ -5885,7 +5903,6 @@ public final class MainActivity extends Activity {
 
     private void addCompactReply(LinearLayout block, JSONObject comment, String author,
                                  String target, String visibleComment, long created) {
-        // 官方样式：整段文字流（蓝色用户名 + 回复对象 + 冒号 + 内容 + 时间），自然换行不截断
         final String name = author.isEmpty() ? "匿名用户" : author;
         final boolean hasTarget = !target.isEmpty();
         final String replyLabel = hasTarget ? " 回复 " : "";
@@ -6024,6 +6041,14 @@ public final class MainActivity extends Activity {
                 }
             }
         });
+    }
+
+    private void copyCommentText(String value) {
+        if (TextUtils.isEmpty(value)) return;
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) return;
+        clipboard.setPrimaryClip(ClipData.newPlainText("评论", value));
+        toast("评论已复制");
     }
 
     private String commentImage(JSONObject comment) {

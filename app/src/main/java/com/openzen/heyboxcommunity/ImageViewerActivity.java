@@ -1,10 +1,16 @@
 package com.openzen.heyboxcommunity;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.DownloadManager;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.view.Gravity;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
@@ -13,7 +19,12 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
 public final class ImageViewerActivity extends Activity {
+    private static final int REQUEST_SAVE_IMAGE = 41;
     static final String EXTRA_URL = "image_url";
     static final String EXTRA_ORIGIN_X = "origin_x";
     static final String EXTRA_ORIGIN_Y = "origin_y";
@@ -24,6 +35,7 @@ public final class ImageViewerActivity extends Activity {
     private ZoomImageView image;
     private LoadingSpinnerView progress;
     private TextView original;
+    private TextView save;
     private String url;
     private boolean closing;
     private boolean destroyed;
@@ -54,21 +66,26 @@ public final class ImageViewerActivity extends Activity {
         controls.setGravity(Gravity.CENTER);
         controls.setPadding(dp(8), 0, dp(8), 0);
 
-        TextView back = control("‹ 返回");
+        TextView back = control("返回");
         back.setOnClickListener(view -> closeViewer());
-        controls.addView(back, new LinearLayout.LayoutParams(dp(82), dp(38)));
+        controls.addView(back, new LinearLayout.LayoutParams(0, dp(38), 1f));
 
-        original = control("查看原图");
+        original = control("原图");
         original.setOnClickListener(view -> loadOriginal());
         if (session.originalImages()) {
-            LinearLayout.LayoutParams originalParams =
-                    new LinearLayout.LayoutParams(dp(96), dp(38));
+            LinearLayout.LayoutParams originalParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
             originalParams.leftMargin = dp(8);
             controls.addView(original, originalParams);
         }
-        FrameLayout.LayoutParams controlsParams =
-                new FrameLayout.LayoutParams(-2, dp(46),
-                        Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        save = control("保存图片");
+        save.setOnClickListener(view -> saveImage());
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
+        saveParams.leftMargin = dp(8);
+        controls.addView(save, saveParams);
+
+        FrameLayout.LayoutParams controlsParams = new FrameLayout.LayoutParams(-1, dp(46), Gravity.BOTTOM);
+        controlsParams.leftMargin = dp(12);
+        controlsParams.rightMargin = dp(12);
         controlsParams.bottomMargin = dp(12);
         root.addView(controls, controlsParams);
 
@@ -170,6 +187,67 @@ public final class ImageViewerActivity extends Activity {
                 Toast.makeText(this, "原图仍在加载或网络较慢", Toast.LENGTH_SHORT).show();
             }
         }, 15000);
+    }
+
+    private void saveImage() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && Build.VERSION.SDK_INT <= Build.VERSION_CODES.P
+                && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_SAVE_IMAGE);
+            return;
+        }
+        String source = ImageLoader.originalUrl(url);
+        if (source.isEmpty()) {
+            Toast.makeText(this, "图片地址不可用", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+            if (manager == null) throw new IllegalStateException();
+            String extension = imageExtension(source);
+            String fileName = "heybox-" + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+                    .format(new Date()) + "." + extension;
+            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(source));
+            request.setTitle("heybox Lite 图片");
+            request.setDescription("正在保存到相册");
+            request.setMimeType(imageMimeType(extension));
+            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES,
+                    "heybox Lite/" + fileName);
+            request.allowScanningByMediaScanner();
+            manager.enqueue(request);
+            Toast.makeText(this, "正在保存到相册", Toast.LENGTH_SHORT).show();
+        } catch (Exception error) {
+            Toast.makeText(this, "保存图片失败", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private String imageExtension(String source) {
+        String lower = source.toLowerCase(Locale.US);
+        if (lower.endsWith(".gif")) return "gif";
+        if (lower.endsWith(".png")) return "png";
+        if (lower.endsWith(".webp")) return "webp";
+        if (lower.endsWith(".jpeg")) return "jpeg";
+        return "jpg";
+    }
+
+    private String imageMimeType(String extension) {
+        if ("gif".equals(extension)) return "image/gif";
+        if ("png".equals(extension)) return "image/png";
+        if ("webp".equals(extension)) return "image/webp";
+        return "image/jpeg";
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                                      int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_SAVE_IMAGE) return;
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            saveImage();
+        } else {
+            Toast.makeText(this, "没有存储权限，无法保存图片", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private TextView control(String value) {
