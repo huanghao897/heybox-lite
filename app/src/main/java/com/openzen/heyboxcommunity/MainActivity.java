@@ -1891,6 +1891,12 @@ public final class MainActivity extends Activity {
 
             @Override // android.widget.AbsListView.OnScrollListener
             public void onScroll(AbsListView view2, int first, int visible, int total) {
+                // 持续记录首个可见位置：无论点击还是手势滑动离开 feed，回来都能精确还原、不闪位
+                if (visible > 0) {
+                    MainActivity.this.feedFirstVisible = Math.max(0, first);
+                    View firstChild = view2.getChildAt(0);
+                    MainActivity.this.feedFirstTop = firstChild == null ? 0 : firstChild.getTop();
+                }
                 if (total > 0 && first + visible >= total - MainActivity.REPLY_PREVIEW_COUNT && !MainActivity.this.feedNoMore && !MainActivity.this.feedLoadMoreFailed) {
                     MainActivity.this.loadFeed(false);
                 }
