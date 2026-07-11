@@ -3140,24 +3140,20 @@ public final class MainActivity extends Activity {
         TextView sort = text("热门", 11.0f, this.MUTED);
         sort.setGravity(17);
         setLeftIcon(sort, R.drawable.ic_sort, this.MUTED, 11);
-        heading.addView(sort, new LinearLayout.LayoutParams(dp(58), dp(32)));
+        heading.addView(sort, new LinearLayout.LayoutParams(dp(60), dp(32)));
         surface.addView(heading);
         LinearLayout comments = vertical(0);
         comments.setBackgroundColor(0);
         surface.addView(comments);
-        renderCommentList(comments, commentArray, false);
+        final boolean[] latest = {false};
+        renderCommentList(comments, commentArray, latest[0]);
+        // 点一下直接在热门/最新之间切换，不弹选择菜单
         sort.setOnClickListener(view -> {
-            android.widget.PopupMenu menu = new android.widget.PopupMenu(this, sort);
-            menu.getMenu().add(0, 0, 0, "热门");
-            menu.getMenu().add(0, 1, 1, "最新");
-            menu.setOnMenuItemClickListener(item -> {
-                boolean latest = item.getItemId() == 1;
-                sort.setText(latest ? "最新" : "热门");
-                setLeftIcon(sort, R.drawable.ic_sort, this.MUTED, 11);
-                renderCommentList(comments, commentArray, latest);
-                return true;
-            });
-            menu.show();
+            latest[0] = !latest[0];
+            sort.setText(latest[0] ? "最新" : "热门");
+            setLeftIcon(sort, R.drawable.ic_sort, this.MUTED, 11);
+            UiComponents.press(sort);
+            renderCommentList(comments, commentArray, latest[0]);
         });
         LinearLayout.LayoutParams surfaceParams = new LinearLayout.LayoutParams(-1, -2);
         surfaceParams.topMargin = dp(10);
@@ -6114,14 +6110,14 @@ public final class MainActivity extends Activity {
                 TextView metaView = text(meta, 10.5f, this.MUTED);
                 addTop(block, metaView, 1);
             }
-            String displayComment = isCyComment(comment) ? " Cy  " + visibleComment : visibleComment;
+            String displayComment = isCyComment(comment) ? "Cy " + visibleComment : visibleComment;
             TextView value = text(displayComment, 13.0f, this.TEXT);
             value.setLineSpacing(dp(1), this.session.bodyLineSpacing() / 100.0f);
             Compat.setLetterSpacing(value, this.session.bodyLetterSpacing() / 200.0f);
             value.setTypeface(Typeface.create("sans-serif-medium", 0));
             EmojiRenderer.set(value, displayComment, this.session.darkMode(), span -> {
                 if (isCyComment(comment)) {
-                    applyInlineImageBadge(span, 0, 3, R.drawable.official_cy_badge, 15);
+                    applyInlineImageBadge(span, 0, 2, R.drawable.official_cy_badge, 15);
                 }
             });
             addTop(block, value, 5);
@@ -6163,7 +6159,7 @@ public final class MainActivity extends Activity {
         final String name = author.isEmpty() ? "匿名用户" : author;
         final String authorBadge = isPostAuthorComment(comment.optJSONObject("user"), name)
                 ? " 作者 " : "";
-        final String cyBadge = isCyComment(comment) ? " Cy  " : "";
+        final String cyBadge = isCyComment(comment) ? " Cy " : "";
         final boolean hasTarget = !target.isEmpty();
         final String replyLabel = hasTarget ? " 回复 " : "";
         final String replyName = hasTarget ? "@" + target : "";
@@ -6200,7 +6196,7 @@ public final class MainActivity extends Activity {
             }
             if (!cyBadge.isEmpty()) {
                 applyInlineImageBadge(span, cyBadgeStart,
-                        cyBadgeStart + cyBadge.length() - 1, R.drawable.official_cy_badge, 15);
+                        cyBadgeStart + cyBadge.length(), R.drawable.official_cy_badge, 15);
             }
             if (!meta.isEmpty()) {
                 span.setSpan(new android.text.style.ForegroundColorSpan(metaColor),
@@ -6284,15 +6280,18 @@ public final class MainActivity extends Activity {
 
     private void applyInlineImageBadge(android.text.Spannable span, int start, int end,
                                        int drawableRes, int heightDp) {
-        if (start < 0 || end <= start || end > span.length()) return;
-        Drawable drawable = getResources().getDrawable(drawableRes);
+        if (start < 0 || end > span.length()) return;
+        // 收窄到非空白核心：两侧空格保留为真实间距，徽章不再贴着名字和冒号
+        while (start < end && span.charAt(start) == ' ') start++;
+        while (end > start && span.charAt(end - 1) == ' ') end--;
+        if (end <= start) return;
+        Drawable drawable = getResources().getDrawable(drawableRes).mutate();
         int height = dp(heightDp);
         int width = drawable.getIntrinsicHeight() <= 0 ? height
                 : Math.max(1, Math.round(height * drawable.getIntrinsicWidth()
                 / (float) drawable.getIntrinsicHeight()));
         drawable.setBounds(0, 0, width, height);
-        span.setSpan(new android.text.style.ImageSpan(drawable,
-                        android.text.style.ImageSpan.ALIGN_BASELINE), start, end,
+        span.setSpan(new CenteredImageSpan(drawable), start, end,
                 android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 

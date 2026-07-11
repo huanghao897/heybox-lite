@@ -3,7 +3,6 @@ package com.openzen.heyboxcommunity;
 import android.graphics.Bitmap;
 import android.text.Spannable;
 import android.text.SpannableString;
-import android.text.style.ImageSpan;
 import android.util.LruCache;
 import android.widget.TextView;
 
@@ -94,14 +93,14 @@ final class EmojiRenderer {
             String cacheKey = (darkMode ? "d:" : "l:") + code;
             Bitmap bitmap = BITMAPS.get(cacheKey);
             if (bitmap != null) {
-                int height = Math.max(18, Math.round(view.getTextSize() * 1.25f));
-                int width = Math.max(18, Math.round(bitmap.getWidth() * height
+                int height = Math.max(16, Math.round(view.getTextSize() * 1.18f));
+                int width = Math.max(16, Math.round(bitmap.getWidth() * height
                         / (float) Math.max(1, bitmap.getHeight())));
                 bitmap.setDensity(view.getResources().getDisplayMetrics().densityDpi);
                 android.graphics.drawable.BitmapDrawable drawable =
                         new android.graphics.drawable.BitmapDrawable(view.getResources(), bitmap);
                 drawable.setBounds(0, 0, width, height);
-                styled.setSpan(new ImageSpan(drawable, ImageSpan.ALIGN_BASELINE),
+                styled.setSpan(new CenteredImageSpan(drawable),
                         matcher.start(), matcher.start() + code.length(),
                         Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
                 continue;
