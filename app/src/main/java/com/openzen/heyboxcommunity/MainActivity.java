@@ -14,6 +14,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
+import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
@@ -7457,7 +7458,7 @@ public final class MainActivity extends Activity {
         previewBody.setTypeface(Typeface.create("sans-serif-medium", 0));
         TextView previewAction = text("主色按钮", 11.0f, contrast(this.PRIMARY));
         previewAction.setGravity(17);
-        Compat.setBackground(previewAction, round(this.PRIMARY, 7));
+        Compat.setBackground(previewAction, round(this.PRIMARY, 11));
         addTop(livePreview, previewTitle, 0);
         addTop(livePreview, previewBody, 3);
         addTop(livePreview, previewAction, 6);
@@ -7528,23 +7529,22 @@ public final class MainActivity extends Activity {
         TextView themeTitle = text("预设颜色主题", 13.0f, this.TEXT);
         themeTitle.setTypeface(appRegularTypeface(), 1);
         addTop(panel, themeTitle, 0);
-        LinearLayout themeGrid = vertical(this.PANEL);
-        int rowIndex = 0;
-        while (rowIndex < THEME_NAMES.length) {
+        LinearLayout themeGrid = vertical(0);
+        for (int start = 0; start < THEME_NAMES.length; start += 6) {
             LinearLayout row = new LinearLayout(this);
-            row.setGravity(16);
-            row.addView(themePreset(rowIndex), new LinearLayout.LayoutParams(0, dp(44), 1.0f));
-            if (rowIndex + 1 < THEME_NAMES.length) {
-                LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, dp(44), 1.0f);
-                right.leftMargin = dp(REPLY_PAGE_SIZE);
-                row.addView(themePreset(rowIndex + 1), right);
-            } else {
-                row.addView(new View(this), new LinearLayout.LayoutParams(0, dp(44), 1.0f));
+            for (int i = start; i < start + 6; i++) {
+                LinearLayout cell = new LinearLayout(this);
+                cell.setGravity(17);
+                if (i < THEME_NAMES.length) {
+                    cell.addView(themeSwatch(i), new LinearLayout.LayoutParams(dp(34), dp(34)));
+                }
+                row.addView(cell, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
             }
-            addTop(themeGrid, row, rowIndex == 0 ? 4 : REPLY_PAGE_SIZE);
-            rowIndex += REPLY_PREVIEW_COUNT;
+            addTop(themeGrid, row, start == 0 ? 2 : 4);
         }
         panel.addView(themeGrid);
+        TextView themeCaption = text(currentThemeCaption(), 10.5f, this.MUTED);
+        addTop(panel, themeCaption, 2);
         Button save = button("保存显示设置", R.drawable.ic_save);
         save.setOnClickListener(view2 -> {
             Integer ui = parseNumber(uiScale.input, 70, 160);
@@ -7640,51 +7640,67 @@ public final class MainActivity extends Activity {
         reply.addView(second, new LinearLayout.LayoutParams(0, -2, 1.0f));
         addTop(comments, reply, 7);
         addTop(linearLayout, comments, 7);
-        Button backToSettings = secondaryButton("返回继续调整", R.drawable.ic_arrow_back);
+        Button backToSettings = button("返回继续调整", R.drawable.ic_arrow_back);
         backToSettings.setOnClickListener(view -> {
             showDisplaySettings();
         });
         addTop(linearLayout, backToSettings, 9);
     }
 
-    private View themePreset(int index) {
-        int primary = THEME_COLORS[index][0];
-        int secondary = THEME_COLORS[index][1];
-        boolean selected = currentPrimary() == primary && currentSecondary() == secondary;
-        LinearLayout linearLayout = new LinearLayout(this);
-        linearLayout.setGravity(16);
-        linearLayout.setPadding(dp(7), 0, dp(7), 0);
-        int background = blend(this.PANEL, selected ? secondary : this.MUTED, selected ? this.session.darkMode() ? 0.34f : 0.18f : 0.06f);
-        GradientDrawable shape = round(background, 7);
-        shape.setStroke(dp(1), selected ? primary : blend(this.PANEL, this.MUTED, 0.34f));
-        Compat.setBackground(linearLayout, shape);
-        LinearLayout swatches = new LinearLayout(this);
-        View first = new View(this);
-        Compat.setBackground(first, round(primary, 9));
-        swatches.addView(first, new LinearLayout.LayoutParams(dp(18), dp(18)));
-        View second = new View(this);
-        Compat.setBackground(second, round(secondary, 9));
-        LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(dp(18), dp(18));
-        secondParams.leftMargin = -dp(REPLY_PAGE_SIZE);
-        swatches.addView(second, secondParams);
-        linearLayout.addView(swatches, new LinearLayout.LayoutParams(dp(34), dp(22)));
-        TextView name = text(THEME_NAMES[index], 11.0f, this.TEXT);
-        name.setGravity(16);
-        name.setTypeface(appRegularTypeface(), selected ? 1 : 0);
-        linearLayout.addView(name, new LinearLayout.LayoutParams(0, -1, 1.0f));
-        if (selected) {
-            TextView marker = text("", 13.0f, primary);
-            marker.setGravity(17);
-            linearLayout.addView(marker, new LinearLayout.LayoutParams(dp(NAV_ICON_SIZE_DP), -1));
-        }
-        linearLayout.setOnClickListener(view -> {
+    /** 主题色点：对角双色圆，选中时外圈亮环 + 白色对钩。 */
+    private View themeSwatch(int index) {
+        final int primary = THEME_COLORS[index][0];
+        final int secondary = THEME_COLORS[index][1];
+        final boolean selected = currentPrimary() == primary && currentSecondary() == secondary;
+        View swatch = new View(this) {
+            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final RectF rect = new RectF();
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+                super.onDraw(canvas);
+                float cx = getWidth() / 2.0f;
+                float cy = getHeight() / 2.0f;
+                float radius = dp(12);
+                rect.set(cx - radius, cy - radius, cx + radius, cy + radius);
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(primary);
+                canvas.drawArc(rect, 135.0f, 180.0f, true, paint);
+                paint.setColor(secondary);
+                canvas.drawArc(rect, 315.0f, 180.0f, true, paint);
+                if (!selected) return;
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(dp(2));
+                paint.setColor(secondary);
+                canvas.drawCircle(cx, cy, radius + dp(3), paint);
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(Color.WHITE);
+                paint.setTextAlign(Paint.Align.CENTER);
+                paint.setTextSize(dp(12));
+                paint.setFakeBoldText(true);
+                canvas.drawText("✓", cx, cy + dp(4), paint);
+                paint.setFakeBoldText(false);
+                paint.setTextAlign(Paint.Align.LEFT);
+            }
+        };
+        swatch.setContentDescription(THEME_NAMES[index]);
+        swatch.setOnClickListener(view -> {
             this.session.setTheme(colorHex(primary), colorHex(secondary));
             applyPalette();
             Compat.colorSystemBars(getWindow(), this.BG);
             buildShell();
             showDisplaySettings();
         });
-        return linearLayout;
+        return swatch;
+    }
+
+    private String currentThemeCaption() {
+        for (int i = 0; i < THEME_NAMES.length; i++) {
+            if (currentPrimary() == THEME_COLORS[i][0] && currentSecondary() == THEME_COLORS[i][1]) {
+                return "当前 · " + THEME_NAMES[i];
+            }
+        }
+        return "当前 · 自定义配色";
     }
 
     private void showAppSettings() {
@@ -7723,10 +7739,25 @@ public final class MainActivity extends Activity {
         SessionStore sessionStore4 = this.session;
         Objects.requireNonNull(sessionStore4);
         addTop(panel, toggleRow("双击评论回复", zDoubleTapCommentReply, sessionStore4::setDoubleTapCommentReply), 0);
-        EditText blockKeywords = textField(panel, "屏蔽关键词", this.session.blockKeywords());
+        page.addView(panel);
+        LinearLayout filter = settingsList();
+        TextView filterTitle = text("内容过滤", 13.0f, this.TEXT);
+        filterTitle.setTypeface(appRegularTypeface(), 1);
+        addTop(filter, filterTitle, 0);
+        TextView filterLabel = text("屏蔽关键词（逗号分隔）", 11.0f, this.MUTED);
+        addTop(filter, filterLabel, 6);
+        EditText blockKeywords = new EditText(this);
+        blockKeywords.setText(this.session.blockKeywords());
+        blockKeywords.setTextColor(this.TEXT);
+        blockKeywords.setTextSize(sp(11.0f));
         blockKeywords.setSingleLine(false);
         blockKeywords.setMinLines(REPLY_PREVIEW_COUNT);
-        blockKeywords.setGravity(16);
+        blockKeywords.setGravity(48);
+        Compat.tint(blockKeywords, this.themeTokens.accent);
+        blockKeywords.setPadding(dp(8), dp(6), dp(8), dp(6));
+        Compat.setBackground(blockKeywords, roundStroke(this.themeTokens.panelElevated, 8,
+                this.themeTokens.hairline, 1));
+        addTop(filter, blockKeywords, 5);
         Button saveFilter = button("保存内容过滤", R.drawable.ic_save);
         saveFilter.setOnClickListener(view -> {
             this.session.setBlockKeywords(blockKeywords.getText().toString());
@@ -7735,17 +7766,19 @@ public final class MainActivity extends Activity {
             invalidateFeedView();
             toast("内容过滤已保存");
         });
-        addTop(panel, saveFilter, 7);
+        addTop(filter, saveFilter, 9);
+        addTop(page, filter, 8);
+        LinearLayout maintain = settingsList();
         final TextView[] pruneDesc = new TextView[1];
-        pruneDesc[0] = addSettingEntry(panel, "清理过期离线内容", offlineSummary(), R.drawable.il_cleanup, () ->
+        pruneDesc[0] = addSettingEntry(maintain, "清理过期离线内容", offlineSummary(), R.drawable.il_cleanup, () ->
                 pruneOfflineCache(() -> {
                     if (pruneDesc[0] != null) pruneDesc[0].setText(offlineSummary());
                     toast("过期离线内容已清理");
                 }));
-        addSettingEntry(panel, "导出日志", "生成诊断文件用于反馈问题", R.drawable.il_scroll,
+        addSettingEntry(maintain, "导出日志", "生成诊断文件用于反馈问题", R.drawable.il_scroll,
                 this::exportDiagnostics);
         final TextView[] cacheDesc = new TextView[1];
-        cacheDesc[0] = addSettingEntry(panel, "清除缓存", "临时文件与图片缓存 " + formatCacheMb(cacheBytes()),
+        cacheDesc[0] = addSettingEntry(maintain, "清除缓存", "临时文件与图片缓存 " + formatCacheMb(cacheBytes()),
                 R.drawable.il_cleanup, () -> {
                     long before = tempCacheBytes();
                     long imageBefore = ((long) ImageLoader.cacheSizeKb()) * 1024;
@@ -7757,7 +7790,7 @@ public final class MainActivity extends Activity {
                     }
                     toast("已清除缓存 " + formatCacheMb(before + imageBefore));
                 });
-        addSettingEntry(panel, this.session.isLoggedIn() ? "退出登录" : "二维码登录",
+        addSettingEntry(maintain, this.session.isLoggedIn() ? "退出登录" : "二维码登录",
                 this.session.isLoggedIn() ? "当前账号 ID " + this.session.userId() : "扫码登录小黑盒账号",
                 this.session.isLoggedIn() ? R.drawable.ic_logout : R.drawable.il_qr, () -> {
                     if (this.session.isLoggedIn()) {
@@ -7768,7 +7801,7 @@ public final class MainActivity extends Activity {
                     }
                     showLogin();
                 });
-        page.addView(panel);
+        addTop(page, maintain, 8);
     }
 
     private String offlineSummary() {
@@ -8310,34 +8343,42 @@ public final class MainActivity extends Activity {
         return Color.rgb(245, 154, 35);
     }
 
+    /** 两行式滑杆：标签与数值同一行（数值点按可键入），通栏轨道在下，白钮与开关圆钮同族。 */
     private ScaleControl settingSlider(LinearLayout parent, String label, String unit, final int min, int max, int current, final IntListener listener) {
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(16);
-        TextView name = text(label, 12.0f, this.TEXT);
-        row.addView(name, new LinearLayout.LayoutParams(dp(74), dp(38)));
-        SeekBar slider = new SeekBar(this);
-        slider.setMax(max - min);
-        slider.setProgress(Math.max(0, Math.min(max - min, current - min)));
-        Compat.tint(slider, this.themeTokens.accent);
-        row.addView(slider, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(1);
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(16);
+        TextView name = text(label, 11.0f, this.TEXT);
+        head.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
         final EditText input = new EditText(this);
         input.setSingleLine(true);
         input.setText(String.valueOf(current));
-        input.setTextSize(sp(11.0f));
+        input.setTextSize(sp(11.5f));
         input.setTextColor(this.TEXT);
-        input.setGravity(17);
+        input.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        input.setGravity(21);
         input.setInputType(REPLY_PREVIEW_COUNT);
-        Compat.tint(input, this.themeTokens.accent);
-        input.setPadding(dp(4), dp(4), dp(4), dp(4));
-        Compat.setBackground(input, roundStroke(this.themeTokens.panelElevated, 8,
-                this.themeTokens.hairline, 1));
-        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(dp(48), dp(30));
-        inputParams.leftMargin = dp(4);
-        row.addView(input, inputParams);
-        TextView suffix = text(unit, 10.0f, this.MUTED);
-        suffix.setGravity(17);
-        row.addView(suffix, new LinearLayout.LayoutParams(dp(24), dp(38)));
-        addTop(parent, row, 4);
+        input.setPadding(dp(6), dp(2), 0, dp(2));
+        input.setMinWidth(dp(30));
+        Compat.setBackground(input, null);
+        head.addView(input, new LinearLayout.LayoutParams(-2, -2));
+        if (unit != null && !unit.isEmpty()) {
+            TextView suffix = text(unit, 8.5f, this.MUTED);
+            LinearLayout.LayoutParams suffixParams = new LinearLayout.LayoutParams(-2, -2);
+            suffixParams.leftMargin = dp(2);
+            head.addView(suffix, suffixParams);
+        }
+        wrap.addView(head, new LinearLayout.LayoutParams(-1, -2));
+        SeekBar slider = new SeekBar(this);
+        slider.setMax(max - min);
+        slider.setProgress(Math.max(0, Math.min(max - min, current - min)));
+        Compat.tint(slider, this.themeTokens.accent,
+                this.session.darkMode() ? Color.WHITE : this.themeTokens.accent);
+        LinearLayout.LayoutParams sliderParams = new LinearLayout.LayoutParams(-1, dp(26));
+        sliderParams.topMargin = dp(1);
+        wrap.addView(slider, sliderParams);
+        addTop(parent, wrap, 6);
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { // from class: com.openzen.heyboxcommunity.MainActivity.35
             @Override // android.widget.SeekBar.OnSeekBarChangeListener
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -9421,29 +9462,11 @@ public final class MainActivity extends Activity {
         return view;
     }
 
-    private Button secondaryButton(String value, int iconRes) {
-        ThemeTokens tokens = this.themeTokens != null ? this.themeTokens
-                : ThemeTokens.of(this.session != null && this.session.darkMode(), this.PRIMARY, this.SECONDARY);
-        Button button = new Button(this);
-        button.setText(value);
-        button.setTextSize(sp(12.0f));
-        button.setTextColor(tokens.text);
-        button.setAllCaps(false);
-        button.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        button.setPadding(dp(10), 0, dp(10), 0);
-        button.setGravity(17);
-        Compat.setBackground(button, UiComponents.ghostButton(this, tokens,
-                this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
-        if (iconRes != 0) {
-            setLeftIcon(button, iconRes, tokens.text, 17);
-        }
-        return button;
-    }
-
     private Button button(String value) {
         return button(value, 0);
     }
 
+    /** 主按钮：主题色柔和底胶囊（全 App 无硬填充按钮）。 */
     private Button button(String value, int iconRes) {
         ThemeTokens themeTokensOf;
         Button button = new Button(this);
@@ -9455,15 +9478,19 @@ public final class MainActivity extends Activity {
             themeTokensOf = this.themeTokens;
         }
         ThemeTokens tokens = themeTokensOf;
-        int foreground = tokens.onPrimary;
-        button.setTextColor(foreground);
+        button.setTextColor(tokens.accent);
         button.setAllCaps(false);
         button.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        button.setPadding(dp(10), 0, dp(10), 0);
+        button.setPadding(dp(12), 0, dp(12), 0);
         button.setGravity(17);
-        Compat.setBackground(button, UiComponents.primaryButton(this, tokens, this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
+        button.setMinHeight(dp(36));
+        button.setMinimumHeight(dp(36));
+        if (Build.VERSION.SDK_INT >= 21) {
+            button.setStateListAnimator(null);
+        }
+        Compat.setBackground(button, UiComponents.softPill(this, tokens, this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
         if (iconRes != 0) {
-            setLeftIcon(button, iconRes, foreground, 17);
+            setLeftIcon(button, iconRes, tokens.accent, 16);
         }
         return button;
     }

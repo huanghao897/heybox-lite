@@ -84,13 +84,17 @@ final class Compat {
     }
 
     static void tint(SeekBar seekBar, int color) {
+        tint(seekBar, color, color);
+    }
+
+    static void tint(SeekBar seekBar, int trackColor, int thumbColor) {
         if (seekBar.getProgressDrawable() != null) {
             seekBar.getProgressDrawable().mutate()
-                    .setColorFilter(color, PorterDuff.Mode.SRC_IN);
+                    .setColorFilter(trackColor, PorterDuff.Mode.SRC_IN);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN
                 && seekBar.getThumb() != null) {
-            seekBar.getThumb().mutate().setColorFilter(color, PorterDuff.Mode.SRC_IN);
+            seekBar.getThumb().mutate().setColorFilter(thumbColor, PorterDuff.Mode.SRC_IN);
         }
     }
 }
