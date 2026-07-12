@@ -3860,9 +3860,9 @@ public final class MainActivity extends Activity {
         name.setEllipsize(TextUtils.TruncateAt.END);
         name.setMaxWidth(dp(168));
         nameRow.addView(name, new LinearLayout.LayoutParams(-2, -2));
-        int level = userLevel(user);
+        int level = CommentData.userLevel(user);
         if (level > 0) {
-            int levelColor = levelBadgeColor(level);
+            int levelColor = CommentData.levelBadgeColor(level);
             TextView badge = text("Lv." + level, 8.0f, levelColor);
             badge.setGravity(17);
             badge.setTypeface(appRegularTypeface(), 1);
@@ -4419,14 +4419,6 @@ public final class MainActivity extends Activity {
         return user == null ? "" : Json.first(user.optString(SecureStrings.userid()), user.optString(SecureStrings.userId()), user.optString(SecureStrings.heyboxId()), user.optString("heyboxid"), user.optString("uid"), user.optString("account_id"), user.optString("id"));
     }
 
-    private int userLevel(JSONObject user) {
-        if (user == null) {
-            return 0;
-        }
-        JSONObject levelInfo = user.optJSONObject("level_info");
-        return levelInfo != null ? levelInfo.optInt("level", 0) : user.optInt("level", 0);
-    }
-
     private void addRichContent(LinearLayout parent, String source, JSONArray fallbackImages) {
         addRichContent(parent, RichContent.parse(source, fallbackImages), true);
     }
@@ -4703,10 +4695,10 @@ public final class MainActivity extends Activity {
             }
         }
         Collections.sort(threads, (a, b) -> {
-            int pinned = Boolean.compare(isPinnedThread(b), isPinnedThread(a));
+            int pinned = Boolean.compare(CommentData.isPinnedThread(b), CommentData.isPinnedThread(a));
             if (pinned != 0) return pinned;
-            return latest ? Long.compare(threadTime(b), threadTime(a))
-                    : Integer.compare(threadLikes(b), threadLikes(a));
+            return latest ? Long.compare(CommentData.threadTime(b), CommentData.threadTime(a))
+                    : Integer.compare(CommentData.threadLikes(b), CommentData.threadLikes(a));
         });
         int count = 0;
         Iterator<JSONObject> it = threads.iterator();
@@ -4715,7 +4707,7 @@ public final class MainActivity extends Activity {
             JSONArray comments = group2 == null ? null : group2.optJSONArray("comment");
             JSONObject root = comments == null ? group2 : comments.optJSONObject(0);
             if (root != null) {
-                if (isCyComment(group2) && !root.has("is_cy")) {
+                if (CommentData.isCyComment(group2) && !root.has("is_cy")) {
                     try {
                         root.put("_group_is_cy", 1);
                     } catch (Exception ignored) {
@@ -4734,7 +4726,7 @@ public final class MainActivity extends Activity {
                     }
                 }
                 Collections.sort(replies, (a2, b2) -> {
-                    return Long.compare(commentTime(a2), commentTime(b2));
+                    return Long.compare(CommentData.commentTime(a2), CommentData.commentTime(b2));
                 });
                 int expected = Math.max(root.optInt("child_num"), group2 == null ? 0 : group2.optInt("child_num"));
                 if (!replies.isEmpty() || expected > 0) {
@@ -4754,18 +4746,12 @@ public final class MainActivity extends Activity {
                     boolean allLoaded = expected <= replies.size();
                     renderReplies(replyList, root, replies, expected, initial, allLoaded);
                 }
-                addTop(page, isPinnedComment(root) ? pinnedCommentCard(linearLayoutCard)
+                addTop(page, CommentData.isPinnedComment(root) ? pinnedCommentCard(linearLayoutCard)
                         : linearLayoutCard, count == 0 ? 0 : 2);
                 count += 1 + replies.size();
             }
         }
         return count;
-    }
-
-    private long threadTime(JSONObject group) {
-        JSONArray comments = group == null ? null : group.optJSONArray("comment");
-        JSONObject root = comments == null ? group : comments.optJSONObject(0);
-        return root == null ? 0L : commentTime(root);
     }
 
     private void renderReplies(LinearLayout parent, JSONObject root, List<JSONObject> replies, int expected, int visibleCount, boolean allLoaded) {
@@ -4818,7 +4804,7 @@ public final class MainActivity extends Activity {
         loading.setPadding(0, dp(8), 0, dp(8));
         target.addView(loading);
         Map<String, String> params = new HashMap<>();
-        final String id = commentId(root);
+        final String id = CommentData.commentId(root);
         params.put("comment_id", id);
         params.put("commentid", id);
         params.put("root_comment_id", id);
@@ -4837,7 +4823,7 @@ public final class MainActivity extends Activity {
                 }
                 List<JSONObject> merged = MainActivity.this.mergeReplies(preview, replies);
                 Collections.sort(merged, (a, b) -> {
-                    return Long.compare(MainActivity.this.commentTime(a), MainActivity.this.commentTime(b));
+                    return Long.compare(CommentData.commentTime(a), CommentData.commentTime(b));
                 });
                 int total = Math.max(expected, merged.size());
                 MainActivity.this.renderReplies(target, root, merged, total, shown + MainActivity.REPLY_PAGE_SIZE, merged.size() >= total);
@@ -4854,7 +4840,7 @@ public final class MainActivity extends Activity {
     private List<JSONObject> mergeReplies(List<JSONObject> first, List<JSONObject> second) {
         List<JSONObject> merged = new ArrayList<>(first);
         for (JSONObject candidate : second) {
-            String id = commentId(candidate);
+            String id = CommentData.commentId(candidate);
             boolean duplicate = false;
             Iterator<JSONObject> it = merged.iterator();
             while (true) {
@@ -4862,7 +4848,7 @@ public final class MainActivity extends Activity {
                     break;
                 }
                 JSONObject existing = it.next();
-                if (!id.isEmpty() && id.equals(commentId(existing))) {
+                if (!id.isEmpty() && id.equals(CommentData.commentId(existing))) {
                     duplicate = true;
                     break;
                 }
@@ -4900,33 +4886,16 @@ public final class MainActivity extends Activity {
                 if (nested != null) {
                     for (int j = 0; j < nested.length(); j++) {
                         JSONObject reply = nested.optJSONObject(j);
-                        if (reply != null && !rootId.equals(commentId(reply))) {
+                        if (reply != null && !rootId.equals(CommentData.commentId(reply))) {
                             values.add(reply);
                         }
                     }
-                } else if (!rootId.equals(commentId(item))) {
+                } else if (!rootId.equals(CommentData.commentId(item))) {
                     values.add(item);
                 }
             }
         }
         return values;
-    }
-
-    private int threadLikes(JSONObject group) {
-        JSONArray comments = group.optJSONArray("comment");
-        JSONObject root = comments == null ? group : comments.optJSONObject(0);
-        return commentLikes(root == null ? group : root);
-    }
-
-    private int commentLikes(JSONObject comment) {
-        return comment.optInt("comment_award_num", comment.optInt("award_num", comment.optInt("up")));
-    }
-
-    private boolean commentLiked(JSONObject comment) {
-        if (comment == null) {
-            return false;
-        }
-        return Json.truthy(comment, "is_support", "supported", "is_award", "liked", "has_support");
     }
 
     private CommentLikeControl commentLikeControl() {
@@ -4960,13 +4929,13 @@ public final class MainActivity extends Activity {
             if (!allowWriteAction("评论点赞")) {
                 return;
             }
-            String id = commentId(comment);
+            String id = CommentData.commentId(comment);
             if (id.isEmpty()) {
                 toast("没有获取到评论 ID");
                 return;
             }
-            final boolean beforeLiked = commentLiked(comment);
-            final int beforeLikes = commentLikes(comment);
+            final boolean beforeLiked = CommentData.commentLiked(comment);
+            final int beforeLikes = CommentData.commentLikes(comment);
             boolean nextLiked = !beforeLiked;
             int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
             setCommentLikeState(comment, nextLiked, nextLikes);
@@ -5108,8 +5077,8 @@ public final class MainActivity extends Activity {
         if (!allowWriteAction("评论")) {
             return;
         }
-        String replyId = replyTo == null ? "-1" : commentId(replyTo);
-        String rootId = replyTo == null ? "-1" : commentRootId(replyTo);
+        String replyId = replyTo == null ? "-1" : CommentData.commentId(replyTo);
+        String rootId = replyTo == null ? "-1" : CommentData.commentRootId(replyTo);
         if (sendButton != null) {
             sendButton.setEnabled(false);
             sendButton.setAlpha(0.58f);
@@ -5171,19 +5140,6 @@ public final class MainActivity extends Activity {
         return body;
     }
 
-    private long commentTime(JSONObject comment) {
-        return comment.optLong("create_at", comment.optLong("create_time"));
-    }
-
-    private String commentId(JSONObject comment) {
-        return Json.first(comment.optString("commentid"), Json.first(comment.optString("comment_id"), comment.optString("id")));
-    }
-
-    private String commentRootId(JSONObject comment) {
-        String root = Json.first(comment.optString("root_id"), comment.optString("root_comment_id"), comment.optString("rootid"));
-        return root.isEmpty() ? commentId(comment) : root;
-    }
-
     private void addComment(LinearLayout linearLayout, JSONObject comment, boolean reply) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(48);
@@ -5206,8 +5162,8 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
         blockParams.leftMargin = reply ? 0 : dp(10);
         row.addView(block, blockParams);
-        String target = replyTarget(comment);
-        long created = commentTime(comment);
+        String target = CommentData.replyTarget(comment);
+        long created = CommentData.commentTime(comment);
         String visibleComment = RichContent.commentText(comment.optString("text"),
                 comment.optString("content"), comment.optString("html"),
                 comment.optString("description"));
@@ -5220,19 +5176,19 @@ public final class MainActivity extends Activity {
                 TextView metaView = text(meta, 10.5f, this.MUTED);
                 addTop(block, metaView, 1);
             }
-            String displayComment = isCyComment(comment) ? "Cy " + visibleComment : visibleComment;
+            String displayComment = CommentData.isCyComment(comment) ? "Cy " + visibleComment : visibleComment;
             TextView value = text(displayComment, 13.0f, this.TEXT);
             value.setLineSpacing(dp(1), this.session.bodyLineSpacing() / 100.0f);
             Compat.setLetterSpacing(value, this.session.bodyLetterSpacing() / 200.0f);
             value.setTypeface(Typeface.create("sans-serif-medium", 0));
             EmojiRenderer.set(value, displayComment, this.session.darkMode(), span -> {
-                if (isCyComment(comment)) {
+                if (CommentData.isCyComment(comment)) {
                     applyInlineImageBadge(span, 0, 2, R.drawable.official_cy_badge, 15);
                 }
             });
             addTop(block, value, 5);
         }
-        String commentImage = commentImage(comment);
+        String commentImage = CommentData.commentImage(comment);
         if (!this.session.noImage() && !commentImage.isEmpty()) {
             View image = postImageBlock(commentImage, 720, reply ? 92 : 115);
             LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(-1, dp(reply ? 92 : 115));
@@ -5241,7 +5197,7 @@ public final class MainActivity extends Activity {
         }
         if (!reply) {
             CommentLikeControl likes = commentLikeControl();
-            updateCommentLikeView(likes, commentLiked(comment), commentLikes(comment));
+            updateCommentLikeView(likes, CommentData.commentLiked(comment), CommentData.commentLikes(comment));
             likes.root.setOnClickListener(view -> {
                 toggleCommentLike(comment, likes);
             });
@@ -5269,7 +5225,7 @@ public final class MainActivity extends Activity {
         final String name = author.isEmpty() ? "匿名用户" : author;
         final String authorBadge = isPostAuthorComment(comment.optJSONObject("user"), name)
                 ? " 作者 " : "";
-        final String cyBadge = isCyComment(comment) ? " Cy " : "";
+        final String cyBadge = CommentData.isCyComment(comment) ? " Cy " : "";
         final boolean hasTarget = !target.isEmpty();
         final String replyLabel = hasTarget ? " 回复 " : "";
         final String replyName = hasTarget ? "@" + target : "";
@@ -5349,29 +5305,6 @@ public final class MainActivity extends Activity {
                 && author.equals(this.currentDetailItem.author);
     }
 
-    private boolean isCyComment(JSONObject comment) {
-        if (comment == null) return false;
-        if (Json.truthy(comment, "is_cy", "cy", "is_eye", "_group_is_cy")) return true;
-        String type = Json.first(comment.optString("comment_type"), comment.optString("type"));
-        return "cy".equalsIgnoreCase(type);
-    }
-
-    private boolean isPinnedComment(JSONObject comment) {
-        // 官方置顶评论判据是 top_comment 字段（BBSCommentObj.top_comment），
-        // 角标显隐用 c.x()：等于 "1" 或 "true" 才置顶。
-        // 注意不是 is_top —— is_top 每个楼主评论都有，会把整列都误标。
-        if (comment == null) return false;
-        String flag = comment.optString("top_comment").trim();
-        return "1".equals(flag) || "true".equalsIgnoreCase(flag);
-    }
-
-    private boolean isPinnedThread(JSONObject group) {
-        if (group == null) return false;
-        if (isPinnedComment(group)) return true;
-        JSONArray comments = group.optJSONArray("comment");
-        return comments != null && isPinnedComment(comments.optJSONObject(0));
-    }
-
     private View pinnedCommentCard(LinearLayout card) {
         // 官方置顶：左上角丝带角标；正文整体下移，圆头像与角标之间留出间距才美观
         card.setPadding(card.getPaddingLeft(), card.getPaddingTop() + dp(9),
@@ -5423,9 +5356,9 @@ public final class MainActivity extends Activity {
     }
 
     private void addLevelBadge(LinearLayout row, JSONObject user, boolean small) {
-        int level = userLevel(user);
+        int level = CommentData.userLevel(user);
         if (level <= 0) return;
-        int levelColor = levelBadgeColor(level);
+        int levelColor = CommentData.levelBadgeColor(level);
         TextView badge = text("Lv." + level, small ? 7.0f : 8.0f, levelColor);
         badge.setGravity(17);
         badge.setTypeface(appRegularTypeface(), 1);
@@ -5438,17 +5371,9 @@ public final class MainActivity extends Activity {
         row.addView(badge, params);
     }
 
-    private int levelBadgeColor(int level) {
-        if (level >= 40) return Color.rgb(223, 153, 45);
-        if (level >= 30) return Color.rgb(139, 100, 235);
-        if (level >= 20) return Color.rgb(55, 178, 218);
-        if (level >= 10) return Color.rgb(238, 70, 112);
-        return Color.rgb(70, 168, 240);
-    }
-
     private String commentSubMeta(JSONObject comment, long created) {
         String time = created > 0 ? commentDisplayTime(created) : "";
-        String location = commentLocation(comment);
+        String location = CommentData.commentLocation(comment);
         if (time.isEmpty()) return location;
         return location.isEmpty() ? time : time + " · " + location;
     }
@@ -5463,20 +5388,6 @@ public final class MainActivity extends Activity {
         if (diff < hour) return Math.max(1L, diff / minute) + "分钟前";
         if (diff < day) return Math.max(1L, diff / hour) + "小时前";
         return new SimpleDateFormat("MM-dd", Locale.getDefault()).format(new Date(millis));
-    }
-
-    private String commentLocation(JSONObject comment) {
-        if (comment == null) return "";
-        String direct = Json.first(comment.optString("ip_location"), comment.optString("ipLocation"),
-                comment.optString("ip_region"), comment.optString("ipRegion"),
-                comment.optString("location"), comment.optString("area"),
-                comment.optString("province"), comment.optString("city"),
-                comment.optString("region"), comment.optString("address"));
-        if (!direct.isEmpty()) return direct;
-        JSONObject ip = Json.firstObject(comment, "ip_info", "ipInfo", "location_info", "locationInfo");
-        if (ip == null) return "";
-        return Json.first(ip.optString("location"), ip.optString("region"),
-                ip.optString("province"), ip.optString("city"), ip.optString("area"));
     }
 
     private void attachCommentReplyGesture(View target, JSONObject comment) {
@@ -5505,29 +5416,6 @@ public final class MainActivity extends Activity {
         if (clipboard == null) return;
         clipboard.setPrimaryClip(ClipData.newPlainText("评论", value));
         toast("评论已复制");
-    }
-
-    private String commentImage(JSONObject comment) {
-        JSONArray images = comment.optJSONArray("imgs");
-        if (images == null || images.length() == 0) {
-            return "";
-        }
-        JSONObject object = images.optJSONObject(0);
-        if (object != null) {
-            return Json.first(object.optString("url"), Json.first(object.optString("src"), object.optString("original")));
-        }
-        return images.optString(0);
-    }
-
-    private String replyTarget(JSONObject comment) {
-        JSONObject target = comment.optJSONObject("to_user");
-        if (target == null) {
-            target = comment.optJSONObject("reply_user");
-        }
-        if (target == null) {
-            target = comment.optJSONObject("target_user");
-        }
-        return target == null ? "" : target.optString("username", target.optString("nickname"));
     }
 
     private void showProfile() {
