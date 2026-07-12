@@ -55,6 +55,25 @@ public final class NativeLibraryLoader {
         }
     }
 
+    public static synchronized boolean tryLoadFromNativeLibDir(Context context, String name) {
+        if (LOADED.contains(name)) return true;
+        if (context == null) return false;
+        try {
+            String libDir = context.getApplicationInfo().nativeLibraryDir;
+            if (libDir == null || libDir.isEmpty()) return false;
+            File file = new File(libDir, "lib" + name + ".so");
+            if (!file.exists() || !file.canRead()) return false;
+            LocalCache.appendNativeSignLog(context.getApplicationContext(),
+                    "native loader loading from installed app libDir=" + libDir
+                            + " file=" + file.getName());
+            System.load(file.getAbsolutePath());
+            LOADED.add(name);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private static File nativeDir(Context app) {
         try {
             return app.getDir("native_signer", Context.MODE_PRIVATE);

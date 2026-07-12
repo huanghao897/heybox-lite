@@ -2693,7 +2693,7 @@ public final class MainActivity extends Activity {
                         if (!blocked.isEmpty()) {
                             MainActivity.this.handleDetailFailure(item, blocked);
                         } else if (!MainActivity.this.hasDetailLink(body)) {
-                            MainActivity.this.handleDetailFailure(item, MainActivity.first(fallbackMessage, "详情数据为空"));
+                            MainActivity.this.handleDetailFailure(item, Json.first(fallbackMessage, "详情数据为空"));
                         } else {
                             MainActivity.this.cacheDetailAndRender(item, body);
                         }
@@ -2704,7 +2704,7 @@ public final class MainActivity extends Activity {
                 public void onError(String message) {
                     if (MainActivity.this.isCurrentDetailRequest(item, requestToken)) {
                         MainActivity.this.hideLoading();
-                        MainActivity.this.handleDetailFailure(item, MainActivity.first(message, fallbackMessage));
+                        MainActivity.this.handleDetailFailure(item, Json.first(message, fallbackMessage));
                     }
                 }
             });
@@ -2815,8 +2815,8 @@ public final class MainActivity extends Activity {
     private String detailBlockedMessageFrom(JSONObject object) {
         String status = object.optString("status");
         String code = object.optString("code");
-        String message = first(object.optString("msg"), object.optString("message"));
-        return (isVerificationStatus(status) || isVerificationStatus(code)) ? first(message, status, code, "需要完成验证后才能继续") : isVerificationText(message) ? message : "";
+        String message = Json.first(object.optString("msg"), object.optString("message"));
+        return (isVerificationStatus(status) || isVerificationStatus(code)) ? Json.first(message, status, code, "需要完成验证后才能继续") : isVerificationText(message) ? message : "";
     }
 
     private boolean isVerificationStatus(String value) {
@@ -2843,7 +2843,7 @@ public final class MainActivity extends Activity {
         strArr[0] = hsrc(link);
         strArr[1] = fallback == null ? "" : fallback.hsrc;
         strArr[2] = this.currentLinkHsrc;
-        this.currentLinkHsrc = first(strArr);
+        this.currentLinkHsrc = Json.first(strArr);
         String authCode = link == null ? "" : link.optString("auth_code");
         if (authCode.isEmpty() && result != null) {
             authCode = result.optString("auth_code");
@@ -3412,10 +3412,10 @@ public final class MainActivity extends Activity {
         if (link == null) {
             return fallback != null && fallback.liked;
         }
-        if (truthy(link, "is_award_link", "is_award", "liked", "is_liked", "has_award")) {
+        if (Json.truthy(link, "is_award_link", "is_award", "liked", "is_liked", "has_award")) {
             return true;
         }
-        return truthy(link, "award_state", "like_state");
+        return Json.truthy(link, "award_state", "like_state");
     }
 
     private int linkLikes(JSONObject link, FeedItem fallback) {
@@ -3424,7 +3424,7 @@ public final class MainActivity extends Activity {
             return override.likes;
         }
         int fallbackLikes = fallback == null ? 0 : fallback.likes;
-        return link == null ? fallbackLikes : firstInt(link, fallbackLikes, "link_award_num", "like_num", "award_num", "award_count", "like_count", "liked_num", "total_award_num", "up_num", "up");
+        return link == null ? fallbackLikes : Json.firstInt(link, fallbackLikes, "link_award_num", "like_num", "award_num", "award_count", "like_count", "liked_num", "total_award_num", "up_num", "up");
     }
 
     private LikeState linkLikeState(JSONObject link, FeedItem fallback) {
@@ -3438,7 +3438,7 @@ public final class MainActivity extends Activity {
         strArr[1] = link == null ? "" : link.optString("linkid");
         strArr[2] = link == null ? "" : link.optString("link_id");
         strArr[3] = this.currentLinkId;
-        String id = first(strArr);
+        String id = Json.first(strArr);
         if (id.isEmpty()) {
             return null;
         }
@@ -3456,39 +3456,14 @@ public final class MainActivity extends Activity {
         if (link == null) {
             return false;
         }
-        return truthy(link, "is_favour", "is_favor", "is_fav", "favored", "has_favour", "has_favor");
-    }
-
-    private boolean truthy(JSONObject source, String... keys) {
-        if (source == null) {
-            return false;
-        }
-        for (String key : keys) {
-            if (source.has(key)) {
-                Object value = source.opt(key);
-                if (value instanceof Boolean) {
-                    return ((Boolean) value).booleanValue();
-                }
-                if (value instanceof Number) {
-                    return ((Number) value).intValue() == 1;
-                }
-                String text = String.valueOf(value).trim();
-                if ("1".equals(text) || "true".equalsIgnoreCase(text) || "yes".equalsIgnoreCase(text)) {
-                    return true;
-                }
-                if ("0".equals(text) || "2".equals(text) || "false".equalsIgnoreCase(text) || "no".equalsIgnoreCase(text)) {
-                    return false;
-                }
-            }
-        }
-        return false;
+        return Json.truthy(link, "is_favour", "is_favor", "is_fav", "favored", "has_favour", "has_favor");
     }
 
     private String hsrc(JSONObject link) {
         if (link == null) {
             return "";
         }
-        String value = first(link.optString("h_src"), link.optString("hsrc"));
+        String value = Json.first(link.optString("h_src"), link.optString("hsrc"));
         if (!value.isEmpty()) {
             return value;
         }
@@ -3502,18 +3477,6 @@ public final class MainActivity extends Activity {
         } catch (Exception e) {
             return "";
         }
-    }
-
-    private int firstInt(JSONObject source, int fallback, String... keys) {
-        if (source == null) {
-            return fallback;
-        }
-        for (String key : keys) {
-            if (source.has(key)) {
-                return source.optInt(key, fallback);
-            }
-        }
-        return fallback;
     }
 
     private boolean requireLogin(String actionName) {
@@ -3890,7 +3853,7 @@ public final class MainActivity extends Activity {
         LinearLayout linearLayoutVertical = vertical(0);
         LinearLayout nameRow = new LinearLayout(this);
         nameRow.setGravity(16);
-        String nameValue = user == null ? fallbackAuthor : first(user.optString("username"), user.optString("nickname"), user.optString("name"), fallbackAuthor);
+        String nameValue = user == null ? fallbackAuthor : Json.first(user.optString("username"), user.optString("nickname"), user.optString("name"), fallbackAuthor);
         TextView name = text(nameValue.isEmpty() ? "小黑盒用户" : nameValue, 13.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
         name.setSingleLine(true);
@@ -3913,7 +3876,7 @@ public final class MainActivity extends Activity {
         long createdAt = link == null ? 0L
                 : link.optLong("create_at", link.optLong("create_time", link.optLong("createtime")));
         String published = createdAt > 0 ? commentDisplayTime(createdAt) : "";
-        String signature = user == null ? "" : first(user.optString("signature"), user.optString("desc"));
+        String signature = user == null ? "" : Json.first(user.optString("signature"), user.optString("desc"));
         String authorMeta = published.isEmpty() ? signature
                 : (signature.isEmpty() ? published : published + " · " + signature);
         if (!authorMeta.isEmpty()) {
@@ -3952,14 +3915,14 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < topics.length() && added < 3; i++) {
             JSONObject topic = topics.optJSONObject(i);
             if (topic == null) continue;
-            String name = first(topic.optString("name"), topic.optString("title"));
+            String name = Json.first(topic.optString("name"), topic.optString("title"));
             if (name.isEmpty()) continue;
             LinearLayout chip = new LinearLayout(this);
             chip.setGravity(16);
             chip.setPadding(dp(5), 0, dp(9), 0);
             Compat.setBackground(chip, round(blend(this.BG, this.TEXT,
                     this.session.darkMode() ? 0.07f : 0.05f), 9));
-            String icon = first(topic.optString("pic_url"), topic.optString("icon"),
+            String icon = Json.first(topic.optString("pic_url"), topic.optString("icon"),
                     topic.optString("img_url"), topic.optString("appicon"));
             if (!this.session.noImage() && !icon.isEmpty()) {
                 ImageView pic = new ImageView(this);
@@ -3993,7 +3956,7 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < topics.length(); i++) {
             JSONObject topic = topics.optJSONObject(i);
             if (topic == null) continue;
-            String name = first(topic.optString("name"), topic.optString("title"));
+            String name = Json.first(topic.optString("name"), topic.optString("title"));
             if (!name.isEmpty()) return name;
         }
         return "";
@@ -4056,7 +4019,7 @@ public final class MainActivity extends Activity {
         Compat.setBackground(avatar, round(this.session.darkMode() ? Color.rgb(46, 46, 46) : Color.rgb(235, 235, 235), 34));
         Compat.clipToOutline(avatar);
         top.addView(avatar, new LinearLayout.LayoutParams(dp(74), dp(74)));
-        String resolvedAvatar = first(user == null ? "" : user.optString("avatar", user.optString("avartar")), avatarUrl);
+        String resolvedAvatar = Json.first(user == null ? "" : user.optString("avatar", user.optString("avartar")), avatarUrl);
         if (!this.session.noImage() && !resolvedAvatar.isEmpty()) {
             ImageLoader.intoPlain(avatar, resolvedAvatar, 160);
         }
@@ -4064,13 +4027,13 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
         copyParams.leftMargin = dp(14);
         top.addView(copy, copyParams);
-        String resolvedName = first(user == null ? "" : user.optString("username", user.optString("nickname", user.optString("name"))), nameValue, "小黑盒用户");
+        String resolvedName = Json.first(user == null ? "" : user.optString("username", user.optString("nickname", user.optString("name"))), nameValue, "小黑盒用户");
         TextView name = text(resolvedName, 20.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
         copy.addView(name);
-        String signature = user == null ? "" : first(user.optString("signature"), user.optString("desc"));
+        String signature = user == null ? "" : Json.first(user.optString("signature"), user.optString("desc"));
         if (!signature.isEmpty()) {
             TextView desc = text(signature, 12.0f, this.MUTED);
             desc.setLineSpacing(0.0f, 1.18f);
@@ -4240,7 +4203,7 @@ public final class MainActivity extends Activity {
 
     private List<FeedItem> parseUserEvents(JSONObject body) {
         JSONObject result = body == null ? null : body.optJSONObject("result");
-        JSONArray array = firstArray(result, "links", "list", "events", "moments", "data");
+        JSONArray array = Json.firstArray(result, "links", "list", "events", "moments", "data");
         List<FeedItem> items = new ArrayList<>();
         if (array == null) return items;
         for (int i = 0; i < array.length(); i++) {
@@ -4250,20 +4213,6 @@ public final class MainActivity extends Activity {
             items.add(FeedItem.from(link == null ? object : link));
         }
         return items;
-    }
-
-    private JSONArray firstArray(JSONObject object, String... keys) {
-        if (object == null) return null;
-        for (String key : keys) {
-            JSONArray array = object.optJSONArray(key);
-            if (array != null) return array;
-            JSONObject nested = object.optJSONObject(key);
-            if (nested != null) {
-                JSONArray nestedArray = firstArray(nested, "links", "list", "events", "moments", "data");
-                if (nestedArray != null) return nestedArray;
-            }
-        }
-        return null;
     }
 
     private View userEventCard(FeedItem item) {
@@ -4281,7 +4230,7 @@ public final class MainActivity extends Activity {
             LinearLayout.LayoutParams pinnedParams = new LinearLayout.LayoutParams(dp(42), dp(20));
             copy.addView(pinned, pinnedParams);
         }
-        String titleText = RichContent.plainText(first(item.title, item.description, "无标题内容"));
+        String titleText = RichContent.plainText(Json.first(item.title, item.description, "无标题内容"));
         TextView titleView = text(titleText, 14.0f, this.TEXT);
         titleView.setTypeface(appRegularTypeface(), 1);
         titleView.setMaxLines(2);
@@ -4378,7 +4327,7 @@ public final class MainActivity extends Activity {
 
     private boolean isFollowing(JSONObject link, JSONObject user) {
         int status = followStatus(link, user);
-        return status >= 0 ? status == 1 || status == 3 : truthy(link, "is_follow", "is_following", "followed") || truthy(user, "is_follow", "is_following", "followed");
+        return status >= 0 ? status == 1 || status == 3 : Json.truthy(link, "is_follow", "is_following", "followed") || Json.truthy(user, "is_follow", "is_following", "followed");
     }
 
     private int followStatus(JSONObject link, JSONObject user) {
@@ -4463,11 +4412,11 @@ public final class MainActivity extends Activity {
         strArr[5] = link == null ? "" : link.optString("account_id");
         strArr[6] = link == null ? "" : link.optString("id");
         strArr[7] = userId(user);
-        return first(strArr);
+        return Json.first(strArr);
     }
 
     private String userId(JSONObject user) {
-        return user == null ? "" : first(user.optString(SecureStrings.userid()), user.optString(SecureStrings.userId()), user.optString(SecureStrings.heyboxId()), user.optString("heyboxid"), user.optString("uid"), user.optString("account_id"), user.optString("id"));
+        return user == null ? "" : Json.first(user.optString(SecureStrings.userid()), user.optString(SecureStrings.userId()), user.optString(SecureStrings.heyboxId()), user.optString("heyboxid"), user.optString("uid"), user.optString("account_id"), user.optString("id"));
     }
 
     private int userLevel(JSONObject user) {
@@ -4977,7 +4926,7 @@ public final class MainActivity extends Activity {
         if (comment == null) {
             return false;
         }
-        return truthy(comment, "is_support", "supported", "is_award", "liked", "has_support");
+        return Json.truthy(comment, "is_support", "supported", "is_award", "liked", "has_support");
     }
 
     private CommentLikeControl commentLikeControl() {
@@ -5227,11 +5176,11 @@ public final class MainActivity extends Activity {
     }
 
     private String commentId(JSONObject comment) {
-        return first(comment.optString("commentid"), first(comment.optString("comment_id"), comment.optString("id")));
+        return Json.first(comment.optString("commentid"), Json.first(comment.optString("comment_id"), comment.optString("id")));
     }
 
     private String commentRootId(JSONObject comment) {
-        String root = first(comment.optString("root_id"), comment.optString("root_comment_id"), comment.optString("rootid"));
+        String root = Json.first(comment.optString("root_id"), comment.optString("root_comment_id"), comment.optString("rootid"));
         return root.isEmpty() ? commentId(comment) : root;
     }
 
@@ -5402,8 +5351,8 @@ public final class MainActivity extends Activity {
 
     private boolean isCyComment(JSONObject comment) {
         if (comment == null) return false;
-        if (truthy(comment, "is_cy", "cy", "is_eye", "_group_is_cy")) return true;
-        String type = first(comment.optString("comment_type"), comment.optString("type"));
+        if (Json.truthy(comment, "is_cy", "cy", "is_eye", "_group_is_cy")) return true;
+        String type = Json.first(comment.optString("comment_type"), comment.optString("type"));
         return "cy".equalsIgnoreCase(type);
     }
 
@@ -5518,25 +5467,16 @@ public final class MainActivity extends Activity {
 
     private String commentLocation(JSONObject comment) {
         if (comment == null) return "";
-        String direct = first(comment.optString("ip_location"), comment.optString("ipLocation"),
+        String direct = Json.first(comment.optString("ip_location"), comment.optString("ipLocation"),
                 comment.optString("ip_region"), comment.optString("ipRegion"),
                 comment.optString("location"), comment.optString("area"),
                 comment.optString("province"), comment.optString("city"),
                 comment.optString("region"), comment.optString("address"));
         if (!direct.isEmpty()) return direct;
-        JSONObject ip = firstObject(comment, "ip_info", "ipInfo", "location_info", "locationInfo");
+        JSONObject ip = Json.firstObject(comment, "ip_info", "ipInfo", "location_info", "locationInfo");
         if (ip == null) return "";
-        return first(ip.optString("location"), ip.optString("region"),
+        return Json.first(ip.optString("location"), ip.optString("region"),
                 ip.optString("province"), ip.optString("city"), ip.optString("area"));
-    }
-
-    private JSONObject firstObject(JSONObject object, String... keys) {
-        if (object == null) return null;
-        for (String key : keys) {
-            JSONObject found = object.optJSONObject(key);
-            if (found != null) return found;
-        }
-        return null;
     }
 
     private void attachCommentReplyGesture(View target, JSONObject comment) {
@@ -5574,7 +5514,7 @@ public final class MainActivity extends Activity {
         }
         JSONObject object = images.optJSONObject(0);
         if (object != null) {
-            return first(object.optString("url"), first(object.optString("src"), object.optString("original")));
+            return Json.first(object.optString("url"), Json.first(object.optString("src"), object.optString("original")));
         }
         return images.optString(0);
     }
@@ -5860,10 +5800,7 @@ public final class MainActivity extends Activity {
             params.put("no_more", "false");
             showSavedList("浏览历史", EndpointProvider.history(), params);
         });
-        String signSub = "已暂停";
-        addSettingEntry(panel, "每日签到", signSub, R.drawable.il_calendar, () -> {
-            toast("签到功能已暂时关闭");
-        });
+        addSettingEntry(panel, "每日签到", "每日签到领取盒币", R.drawable.il_calendar, this::showSignInDialog);
         addSettingEntry(panel, "设置", "主题、缓存与关于", R.drawable.il_settings,
                 this::showSettingsHome);
         addTop(page, panel, 8);
@@ -6055,7 +5992,7 @@ public final class MainActivity extends Activity {
         }
         JSONObject result = body.optJSONObject("result");
         JSONArray tabs = result == null ? null : result.optJSONArray("tab_list");
-        return "status=" + body.optString("status") + ", tabs=" + (tabs == null ? -1 : tabs.length()) + ", msg=" + first(body.optString("msg"), body.optString("message"));
+        return "status=" + body.optString("status") + ", tabs=" + (tabs == null ? -1 : tabs.length()) + ", msg=" + Json.first(body.optString("msg"), body.optString("message"));
     }
 
     private void showFavoritesUnavailable(JSONObject body, String message) {
@@ -6085,7 +6022,7 @@ public final class MainActivity extends Activity {
         JSONObject source = result == null ? body : result;
         JSONArray folders = source.optJSONArray("folders");
         int folderCount = folders == null ? -1 : folders.length();
-        return "status=" + body.optString("status") + ", msg=" + first(body.optString("msg"), body.optString("message")) + ", folders=" + folderCount + ", favour_post_num=" + source.optInt("favour_post_num", source.optInt("favor_post_num", source.optInt("favorite_post_num", -1)));
+        return "status=" + body.optString("status") + ", msg=" + Json.first(body.optString("msg"), body.optString("message")) + ", folders=" + folderCount + ", favour_post_num=" + source.optInt("favour_post_num", source.optInt("favor_post_num", source.optInt("favorite_post_num", -1)));
     }
 
     private Map<String, String> favoriteParams(String folderId) {
@@ -6153,7 +6090,7 @@ public final class MainActivity extends Activity {
                 if (!favoriteFolderId(folder).isEmpty()) {
                     return true;
                 }
-                if (folder != null && !first(folder.optString("folder_name"), folder.optString("name"), folder.optString("title")).isEmpty()) {
+                if (folder != null && !Json.first(folder.optString("folder_name"), folder.optString("name"), folder.optString("title")).isEmpty()) {
                     return true;
                 }
             }
@@ -6214,7 +6151,7 @@ public final class MainActivity extends Activity {
     }
 
     private String favoriteFolderId(JSONObject folder) {
-        return folder == null ? "" : first(folder.optString("folder_id"), folder.optString("folderid"), folder.optString("fav_folder_id"), folder.optString("collect_folder_id"), folder.optString("collection_id"), folder.optString("id"), folder.optString("fid"));
+        return folder == null ? "" : Json.first(folder.optString("folder_id"), folder.optString("folderid"), folder.optString("fav_folder_id"), folder.optString("collect_folder_id"), folder.optString("collection_id"), folder.optString("id"), folder.optString("fid"));
     }
 
     private void prepareSavedPage(String pageTitle) {
@@ -6703,7 +6640,7 @@ public final class MainActivity extends Activity {
             copyFirstInt(wrapper, merged, "link_award_num", "link_award_num", "like_num", "award_num", "award_count", "like_count", "liked_num", "praise_num", "praise_count", "total_award_num", "award", "awards", "up_num", "up");
             copyFirstInt(wrapper, merged, "comment_num", "comment_num", "comment_count", "reply_num", "reply_count", "comments_count", "total_comment_num", "comment", "comments");
             if (merged.optJSONObject("user") == null) {
-                JSONObject user = findObject(wrapper, 0, "user", "author", "account");
+                JSONObject user = Json.findObject(wrapper, 0, "user", "author", "account");
                 if (user != null) {
                     merged.put("user", user);
                 } else {
@@ -6723,67 +6660,12 @@ public final class MainActivity extends Activity {
 
     private void copyFirstInt(JSONObject source, JSONObject target, String targetKey, String... keys) {
         int value;
-        if (target.optInt(targetKey, 0) <= 0 && (value = findInt(source, keys, 0)) > 0) {
+        if (target.optInt(targetKey, 0) <= 0 && (value = Json.findInt(source, keys, 0)) > 0) {
             try {
                 target.put(targetKey, value);
             } catch (Exception e) {
             }
         }
-    }
-
-    private int findInt(JSONObject source, String[] keys, int depth) {
-        int value;
-        if (source == null || depth > 4) {
-            return 0;
-        }
-        for (String key : keys) {
-            if (source.has(key) && (value = source.optInt(key, 0)) > 0) {
-                return value;
-            }
-        }
-        Iterator<String> names = source.keys();
-        while (names.hasNext()) {
-            Object value2 = source.opt(names.next());
-            if (value2 instanceof JSONObject) {
-                int found = findInt((JSONObject) value2, keys, depth + 1);
-                if (found > 0) {
-                    return found;
-                }
-            } else if (value2 instanceof JSONArray) {
-                JSONArray array = (JSONArray) value2;
-                for (int i = 0; i < array.length(); i++) {
-                    JSONObject item = array.optJSONObject(i);
-                    int found2 = findInt(item, keys, depth + 1);
-                    if (found2 > 0) {
-                        return found2;
-                    }
-                }
-            } else {
-                continue;
-            }
-        }
-        return 0;
-    }
-
-    private JSONObject findObject(JSONObject source, int depth, String... keys) {
-        JSONObject found;
-        if (source == null || depth > 4) {
-            return null;
-        }
-        for (String key : keys) {
-            JSONObject value = source.optJSONObject(key);
-            if (value != null) {
-                return value;
-            }
-        }
-        Iterator<String> names = source.keys();
-        while (names.hasNext()) {
-            Object child = source.opt(names.next());
-            if ((child instanceof JSONObject) && (found = findObject((JSONObject) child, depth + 1, keys)) != null) {
-                return found;
-            }
-        }
-        return null;
     }
 
     private String findString(JSONObject source, int depth, String... keys) {
@@ -8748,12 +8630,4 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
 
-    private static String first(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isEmpty()) {
-                return value;
-            }
-        }
-        return "";
-    }
 }
