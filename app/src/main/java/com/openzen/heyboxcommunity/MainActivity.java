@@ -908,10 +908,6 @@ public final class MainActivity extends Activity {
         return this.fullScreenSnapshots.get(key);
     }
 
-    private void trimScreenSnapshots() {
-        trimSnapshots(this.screenSnapshots, 8);
-    }
-
     private void trimSnapshots(Map<String, Bitmap> target, int maxCount) {
         if (target.size() <= maxCount) {
             return;
@@ -3706,14 +3702,6 @@ public final class MainActivity extends Activity {
         return body;
     }
 
-    private Map<String, String> favouriteBodyOfficial(String linkId, boolean favored) {
-        Map<String, String> body = linkIdBody(linkId);
-        body.put("newsid", "");
-        body.put("favour_type", favored ? "1" : "2");
-        body.put("folder_id", "");
-        return body;
-    }
-
     private Map<String, String> queryHsrc(FeedItem item) {
         Map<String, String> query = new HashMap<>();
         String value = item == null ? "" : item.hsrc;
@@ -3855,31 +3843,6 @@ public final class MainActivity extends Activity {
         }
         String lower = message.toLowerCase(Locale.US);
         return lower.contains("login") || lower.contains("relogin") || message.contains("登录") || message.contains("重新登录");
-    }
-
-    private boolean isRequestValidationError(String message) {
-        if (message == null) {
-            return false;
-        }
-        String lower = message.toLowerCase(Locale.US);
-        return message.contains("验证参数") || message.contains("参数") || message.contains("非法请求") || lower.contains("param") || lower.contains("sign") || isParameterWriteError(message);
-    }
-
-    private String authExpiredMessageIfNeeded(String message, String source) {
-        if (!isLoginWriteError(message)) {
-            return message;
-        }
-        if (this.session != null && this.session.hasOfficialProviderAuth()) {
-            if (this.localCache != null) {
-                this.localCache.log("auth login error but official provider auth exists source=" + source + " cookieKeys=" + this.session.authCookieKeysForLog());
-            }
-            return message;
-        }
-        if (this.session != null && this.session.isLoggedIn() && this.localCache != null) {
-            this.localCache.log("auth login error kept session source=" + source + " cookieKeys=" + this.session.authCookieKeysForLog());
-            return "登录可能已失效，请重新扫码登录";
-        }
-        return "登录可能已失效，请重新扫码登录";
     }
 
     private boolean isParameterWriteError(String message) {
@@ -4355,14 +4318,6 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         card.setLayoutParams(params);
         return card;
-    }
-
-    private int activeFollowBackground() {
-        return this.session.darkMode() ? blend(this.SECONDARY, -1, 0.1f) : this.SECONDARY;
-    }
-
-    private int activeActionBackground(int accent) {
-        return this.session.darkMode() ? blend(accent, -1, 0.1f) : accent;
     }
 
     private void toggleFollow(final TextView follow, final JSONObject link, final JSONObject user, String targetUserId) {
@@ -8348,10 +8303,6 @@ public final class MainActivity extends Activity {
         return ThemeTokens.contrast(color);
     }
 
-    private static int readableOn(int color) {
-        return contrast(color);
-    }
-
     private static int blend(int base, int overlay, float amount) {
         return ThemeTokens.blend(base, overlay, amount);
     }
@@ -8661,114 +8612,6 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void addLegacySettings(LinearLayout page) {
-        String strPrimaryColor;
-        TextView settingsTitle = text("设置", 15.0f, this.TEXT);
-        settingsTitle.setTypeface(appRegularTypeface(), 1);
-        addTop(page, settingsTitle, 12);
-        Switch images = new Switch(this);
-        images.setText("无图模式");
-        images.setTextColor(this.TEXT);
-        images.setTextSize(sp(14.0f));
-        images.setChecked(this.session.noImage());
-        Compat.tint(images, this.PRIMARY);
-        images.setOnCheckedChangeListener((button, checked) -> {
-            this.session.setNoImage(checked);
-            this.feed.clear();
-        });
-        addTop(page, images, 8);
-        Switch originals = new Switch(this);
-        originals.setText("正文图片显示原图");
-        originals.setTextColor(this.TEXT);
-        originals.setTextSize(sp(14.0f));
-        originals.setChecked(this.session.originalImages());
-        Compat.tint(originals, this.PRIMARY);
-        originals.setOnCheckedChangeListener((button2, checked2) -> {
-            this.session.setOriginalImages(checked2);
-        });
-        addTop(page, originals, 2);
-        Switch theme = new Switch(this);
-        theme.setText(this.session.darkMode() ? "夜间模式" : "白天模式");
-        theme.setTextColor(this.TEXT);
-        theme.setTextSize(sp(14.0f));
-        theme.setChecked(this.session.darkMode());
-        Compat.tint(theme, this.PRIMARY);
-        theme.setOnCheckedChangeListener((button3, checked3) -> {
-            this.session.setDarkMode(checked3);
-            recreate();
-        });
-        addTop(page, theme, 2);
-        LinearLayout display = card();
-        TextView displayTitle = text("显示", 15.0f, this.TEXT);
-        displayTitle.setTypeface(appRegularTypeface(), 1);
-        display.addView(displayTitle);
-        EditText uiScale = numberField(display, "界面大小 (%)", this.session.uiScale());
-        EditText textScale = numberField(display, "文字大小 (%)", this.session.textScale());
-        EditText padding = numberField(display, "左右边距 (dp)", this.session.pagePadding());
-        if (this.session.primaryColor().isEmpty()) {
-            strPrimaryColor = this.session.darkMode() ? "#FFFFFF" : "#000000";
-        } else {
-            strPrimaryColor = this.session.primaryColor();
-        }
-        EditText accent = textField(display, "主色", strPrimaryColor);
-        Button save = button("保存显示设置", R.drawable.ic_save);
-        save.setOnClickListener(view -> {
-            Integer ui = parseNumber(uiScale, 70, 160);
-            Integer text = parseNumber(textScale, 70, 180);
-            Integer pad = parseNumber(padding, 0, 30);
-            String accentValue = accent.getText().toString().trim();
-            if (ui == null || text == null || pad == null || !validColor(accentValue)) {
-                toast("请输入有效数字：界面 70-160，文70-180，边0-30");
-                return;
-            }
-            this.session.setUiScale(ui.intValue());
-            this.session.setTextScale(text.intValue());
-            this.session.setPagePadding(pad.intValue());
-            this.session.setPrimaryColor(accentValue);
-            toast("显示设置已保存");
-            recreate();
-        });
-        addTop(display, save, 8);
-        addTop(page, display, 8);
-        Button clearCache = button("清除缓存", R.drawable.ic_trash);
-        clearCache.setOnClickListener(view2 -> {
-            int before = ImageLoader.cacheSizeKb();
-            ImageLoader.clear();
-            toast("已清除缓存 " + Math.max(1, before) + " KB");
-        });
-        addTop(page, clearCache, 8);
-        Button login = button(this.session.isLoggedIn() ? "退出登录" : "二维码登录",
-                this.session.isLoggedIn() ? R.drawable.ic_logout : R.drawable.il_qr);
-        login.setOnClickListener(view3 -> {
-            if (this.session.isLoggedIn()) {
-                this.session.clearSession();
-                this.feed.clear();
-                toast("已退出登录");
-            }
-            showLogin();
-        });
-        addTop(page, login, 12);
-    }
-
-    private EditText numberField(LinearLayout parent, String label, int current) {
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(16);
-        row.addView(text(label, 12.0f, this.TEXT), new LinearLayout.LayoutParams(0, dp(40), 1.0f));
-        EditText input = new EditText(this);
-        input.setText(String.valueOf(current));
-        input.setTextColor(this.TEXT);
-        input.setHintTextColor(this.MUTED);
-        input.setTextSize(sp(13.0f));
-        input.setGravity(17);
-        input.setSingleLine(true);
-        input.setSelectAllOnFocus(true);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        Compat.tint(input, this.PRIMARY);
-        row.addView(input, new LinearLayout.LayoutParams(dp(72), dp(40)));
-        addTop(parent, row, 3);
-        return input;
-    }
-
     private EditText textField(LinearLayout parent, String label, String current) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
@@ -8854,15 +8697,6 @@ public final class MainActivity extends Activity {
 
     private String formatCacheMb(long bytes) {
         return String.format(Locale.US, "%.1f MB", Float.valueOf(Math.max(0L, bytes) / 1048576.0f));
-    }
-
-    private boolean validColor(String value) {
-        try {
-            Color.parseColor(value);
-            return value.matches("#[0-9a-fA-F]{6}");
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     private Integer parseNumber(EditText input, int min, int max) {
@@ -9137,16 +8971,6 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void cancelAllMotion() {
-        this.pageTransitions.finishNow();
-        if (this.detailPager != null) this.detailPager.cancelMotion();
-        if (this.content instanceof BackSwipeFrameLayout) {
-            ((BackSwipeFrameLayout) this.content).cancelMotion();
-        }
-        Motions.resetTree(this.shellRoot);
-        this.shellAnimating = false;
-    }
-
     private void showLoading() {
         hideLoading();
         LoadingSpinnerView progress = new LoadingSpinnerView(this);
@@ -9356,10 +9180,6 @@ public final class MainActivity extends Activity {
 
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-    }
-
-    private String formatTime(long seconds) {
-        return seconds <= 0 ? "" : new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(new Date(seconds * 1000));
     }
 
     private static String first(String... values) {

@@ -20,8 +20,8 @@ import java.util.Locale;
 import java.util.Map;
 
 final class SignInManager {
-    // 签到功能已暂时禁用（服务端风控，第三方客户端无法通过签名校验）。改回 true 即可恢复全部逻辑。
-    private static final boolean ENABLED = false;
+    // 签到功能已重新启用（patch 了 libnative-lib.so 的 checkSignature 绕过签名校验）。
+    private static final boolean ENABLED = true;
 
     interface Callback {
         void onResult(Result result);
