@@ -1746,7 +1746,7 @@ public final class MainActivity extends Activity {
 
     private String readingEntrySummary() {
         ReadingTimeTracker.Stats stats = this.readingTimeTracker.stats();
-        return "今天 " + formatReadingDuration(stats.todayMs()) + " · " + stats.todayCount + " 篇";
+        return "今天 " + Format.readingDuration(stats.todayMs()) + " · " + stats.todayCount + " 篇";
     }
 
     private void showReadingStats() {
@@ -1822,8 +1822,8 @@ public final class MainActivity extends Activity {
         }
         addTop(panel, chart, 4);
         long weekTotal = stats.weekTotalMs();
-        TextView meta = text("本周 " + formatReadingDuration(weekTotal)
-                + " · 日均 " + formatReadingDuration(weekTotal / 7L), 10.5f, this.MUTED);
+        TextView meta = text("本周 " + Format.readingDuration(weekTotal)
+                + " · 日均 " + Format.readingDuration(weekTotal / 7L), 10.5f, this.MUTED);
         addTop(panel, meta, 9);
         return panel;
     }
@@ -1871,7 +1871,7 @@ public final class MainActivity extends Activity {
         TextView name = text(label, 11.5f, this.TEXT);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
         int percent = total == 0L ? 0 : (int) Math.round((ms * 100.0d) / total);
-        TextView value = text(percent + "% · " + formatReadingDuration(ms), 10.5f, this.MUTED);
+        TextView value = text(percent + "% · " + Format.readingDuration(ms), 10.5f, this.MUTED);
         row.addView(value, new LinearLayout.LayoutParams(-2, -2));
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, dp(30));
         row.setLayoutParams(rowParams);
@@ -1899,7 +1899,7 @@ public final class MainActivity extends Activity {
             name.setSingleLine(true);
             name.setEllipsize(TextUtils.TruncateAt.END);
             head.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
-            TextView value = text(formatReadingDuration(topic.ms), 10.5f, this.MUTED);
+            TextView value = text(Format.readingDuration(topic.ms), 10.5f, this.MUTED);
             head.addView(value, new LinearLayout.LayoutParams(-2, -2));
             item.addView(head, new LinearLayout.LayoutParams(-1, -2));
             LinearLayout track = new LinearLayout(this);
@@ -1955,16 +1955,6 @@ public final class MainActivity extends Activity {
             builder.setSpan(new android.text.style.StyleSpan(Typeface.BOLD),
                     start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
-    }
-
-    private String formatReadingDuration(long milliseconds) {
-        if (milliseconds <= 0L) return "0 分钟";
-        long minutes = milliseconds / 60_000L;
-        if (minutes == 0L) return "<1 分钟";
-        long hours = minutes / 60L;
-        long remainder = minutes % 60L;
-        if (hours == 0L) return minutes + " 分钟";
-        return remainder == 0L ? hours + " 小时" : hours + " 小时 " + remainder + " 分钟";
     }
 
     private TextView feedFooterView() {
@@ -3289,7 +3279,7 @@ public final class MainActivity extends Activity {
         CommentLikeControl control = commentLikeControl();
         control.icon.setImageResource(iconRes);
         control.icon.setColorFilter(this.MUTED);
-        control.count.setText(formatCommentLikeCount(count));
+        control.count.setText(Format.commentLikeCount(count));
         control.count.setTextColor(this.MUTED);
         Compat.setBackground(control.root, roundStroke(this.PANEL, 8,
                 this.themeTokens.hairline, 1));
@@ -3389,7 +3379,7 @@ public final class MainActivity extends Activity {
         view.icon.setImageResource(liked ? R.drawable.official_comment_like_filled
                 : R.drawable.official_comment_like_line);
         view.icon.setColorFilter(color);
-        view.count.setText(formatCommentLikeCount(Math.max(0, likes)));
+        view.count.setText(Format.commentLikeCount(Math.max(0, likes)));
         view.count.setTextColor(color);
         view.root.setContentDescription(liked ? "取消点赞" : "点赞");
         Compat.setBackground(view.root, roundStroke(liked ? this.themeTokens.softAccent() : this.PANEL,
@@ -5012,20 +5002,8 @@ public final class MainActivity extends Activity {
         view.icon.setImageResource(liked ? R.drawable.official_comment_like_filled
                 : R.drawable.official_comment_like_line);
         view.icon.setColorFilter(color);
-        view.count.setText(formatCommentLikeCount(Math.max(0, likes)));
+        view.count.setText(Format.commentLikeCount(Math.max(0, likes)));
         view.count.setTextColor(color);
-    }
-
-    private String formatCommentLikeCount(int count) {
-        if (count < 1_000) return String.valueOf(count);
-        if (count < 10_000) return compactDecimal(count / 1_000.0d) + "K";
-        if (count < 100_000_000) return compactDecimal(count / 10_000.0d) + "万";
-        return compactDecimal(count / 100_000_000.0d) + "亿";
-    }
-
-    private String compactDecimal(double value) {
-        String text = String.format(Locale.US, "%.1f", value);
-        return text.endsWith(".0") ? text.substring(0, text.length() - 2) : text;
     }
 
     private void toggleCommentLike(final JSONObject comment, final CommentLikeControl view) {
@@ -5922,8 +5900,8 @@ public final class MainActivity extends Activity {
         footer.setGravity(16);
         footer.setPadding(dp(12), dp(7), dp(8), dp(7));
         long bytes = entry.detailBytes + ImageLoader.offlineBytes(entry.imageUrls);
-        String size = bytes > 0L ? formatOfflineSize(bytes) : "缓存已过期";
-        TextView info = text(size + " · 更新于 " + formatOfflineTime(entry.updatedAt), 10.0f, this.MUTED);
+        String size = bytes > 0L ? Format.offlineSize(bytes) : "缓存已过期";
+        TextView info = text(size + " · 更新于 " + Format.offlineTime(entry.updatedAt), 10.0f, this.MUTED);
         footer.addView(info, new LinearLayout.LayoutParams(0, dp(28), 1.0f));
         TextView remove = text("移除", 11.0f, this.SECONDARY);
         remove.setGravity(17);
@@ -5938,18 +5916,6 @@ public final class MainActivity extends Activity {
         params.bottomMargin = dp(7);
         block.setLayoutParams(params);
         return block;
-    }
-
-    private String formatOfflineSize(long bytes) {
-        if (bytes < 1024L * 1024L) {
-            return Math.max(1L, bytes / 1024L) + " KB";
-        }
-        return formatCacheMb(bytes);
-    }
-
-    private String formatOfflineTime(long millis) {
-        if (millis <= 0L) return "未知";
-        return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(new Date(millis));
     }
 
     private void showSignInDialog() {
@@ -7142,7 +7108,7 @@ public final class MainActivity extends Activity {
         };
         swatch.setContentDescription(THEME_NAMES[index]);
         swatch.setOnClickListener(view -> {
-            this.session.setTheme(colorHex(primary), colorHex(secondary));
+            this.session.setTheme(Format.colorHex(primary), Format.colorHex(secondary));
             applyPalette();
             Compat.colorSystemBars(getWindow(), this.BG);
             buildShell();
@@ -7235,7 +7201,7 @@ public final class MainActivity extends Activity {
         addSettingEntry(maintain, "导出日志", "生成诊断文件用于反馈问题", R.drawable.il_scroll,
                 this::exportDiagnostics);
         final TextView[] cacheDesc = new TextView[1];
-        cacheDesc[0] = addSettingEntry(maintain, "清除缓存", "临时文件与图片缓存 " + formatCacheMb(cacheBytes()),
+        cacheDesc[0] = addSettingEntry(maintain, "清除缓存", "临时文件与图片缓存 " + Format.cacheMb(cacheBytes()),
                 R.drawable.il_cleanup, () -> {
                     long before = tempCacheBytes();
                     long imageBefore = ((long) ImageLoader.cacheSizeKb()) * 1024;
@@ -7243,9 +7209,9 @@ public final class MainActivity extends Activity {
                     EmojiRenderer.clear();
                     ImageLoader.clear();
                     if (cacheDesc[0] != null) {
-                        cacheDesc[0].setText("临时文件与图片缓存 " + formatCacheMb(cacheBytes()));
+                        cacheDesc[0].setText("临时文件与图片缓存 " + Format.cacheMb(cacheBytes()));
                     }
-                    toast("已清除缓存 " + formatCacheMb(before + imageBefore));
+                    toast("已清除缓存 " + Format.cacheMb(before + imageBefore));
                 });
         addSettingEntry(maintain, this.session.isLoggedIn() ? "退出登录" : "二维码登录",
                 this.session.isLoggedIn() ? "当前账号 ID " + this.session.userId() : "扫码登录小黑盒账号",
@@ -7262,7 +7228,7 @@ public final class MainActivity extends Activity {
     }
 
     private String offlineSummary() {
-        return "离线缓存 " + formatCacheMb(this.localCache.offlineBytes())
+        return "离线缓存 " + Format.cacheMb(this.localCache.offlineBytes())
                 + " · 已缓存帖子 " + this.localCache.detailCount();
     }
 
@@ -7903,10 +7869,6 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private static String colorHex(int color) {
-        return String.format(Locale.US, "#%02X%02X%02X", Integer.valueOf(Color.red(color)), Integer.valueOf(Color.green(color)), Integer.valueOf(Color.blue(color)));
-    }
-
     private static int contrast(int color) {
         return ThemeTokens.contrast(color);
     }
@@ -8301,10 +8263,6 @@ public final class MainActivity extends Activity {
             }
         }
         file.delete();
-    }
-
-    private String formatCacheMb(long bytes) {
-        return String.format(Locale.US, "%.1f MB", Float.valueOf(Math.max(0L, bytes) / 1048576.0f));
     }
 
     private Integer parseNumber(EditText input, int min, int max) {
