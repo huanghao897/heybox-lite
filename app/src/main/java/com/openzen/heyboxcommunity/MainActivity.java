@@ -4667,12 +4667,12 @@ public final class MainActivity extends Activity {
     }
 
     private boolean addBodyParagraphs(LinearLayout parent, String source, boolean bodyStarted) {
-        List<String> paragraphs = articleParagraphs(source);
+        List<String> paragraphs = ArticleText.articleParagraphs(source);
         for (String paragraph : paragraphs) {
-            if (isArticleQuote(paragraph)) {
+            if (ArticleText.isArticleQuote(paragraph)) {
                 addArticleQuote(parent, paragraph, bodyStarted);
                 bodyStarted = true;
-            } else if (isInlineHeading(paragraph)) {
+            } else if (ArticleText.isInlineHeading(paragraph)) {
                 addArticleHeading(parent, paragraph, bodyStarted);
                 bodyStarted = true;
             } else {
@@ -4688,26 +4688,6 @@ public final class MainActivity extends Activity {
             }
         }
         return bodyStarted;
-    }
-
-    /** 作者手打的编号短行（如“1.设置（推荐）”“三、心得”）当作小标题渲染，与官方排版一致。 */
-    private boolean isInlineHeading(String paragraph) {
-        String clean = paragraph == null ? "" : paragraph.trim();
-        if (clean.length() < 3 || clean.length() > 26) {
-            return false;
-        }
-        if (clean.matches(".*[。，,;；!！?？…].*")) {
-            return false;
-        }
-        return clean.matches("^(?:[0-9０-９]{1,2}[.．、](?![0-9０-９])|[一二三四五六七八九十]{1,2}[、.．]).+");
-    }
-
-    private boolean isArticleQuote(String paragraph) {
-        if (paragraph == null) {
-            return false;
-        }
-        String clean = paragraph.trim();
-        return clean.startsWith(">") || clean.startsWith("阅读对象") || clean.startsWith("专业黑话") || clean.startsWith("扩展阅读") || clean.startsWith("包含AI") || clean.startsWith("本文") || clean.startsWith("热点");
     }
 
     private void addArticleQuote(LinearLayout parent, String paragraph, boolean bodyStarted) {
@@ -4770,83 +4750,6 @@ public final class MainActivity extends Activity {
         int width = Math.max(320, getResources().getDisplayMetrics().widthPixels);
         int max = this.session != null && this.session.roundScreen() ? 720 : 900;
         return Math.max(480, Math.min(max, Math.round(width * 1.25f)));
-    }
-
-    private List<String> articleParagraphs(String source) {
-        List<String> paragraphs = new ArrayList<>();
-        String value = source == null ? "" : source.replace("\r\n", "\n").replace('\r', '\n').trim();
-        if (value.isEmpty()) {
-            return paragraphs;
-        }
-        String value2 = consumeLeadingArticleLabel(paragraphs, value);
-        if (value2.isEmpty()) {
-            return paragraphs;
-        }
-        String value3 = normalizeArticleBreaks(value2);
-        if (value3.contains("\n")) {
-            String[] parts = value3.split("\\n+");
-            for (String part : parts) {
-                String clean = part.trim();
-                if (!clean.isEmpty()) {
-                    paragraphs.add(clean);
-                }
-            }
-            return paragraphs;
-        }
-        StringBuilder current = new StringBuilder();
-        int visible = 0;
-        for (int i = 0; i < value3.length(); i++) {
-            char ch = value3.charAt(i);
-            current.append(ch);
-            if (!Character.isWhitespace(ch)) {
-                visible++;
-            }
-            if ((isSentenceEnd(ch) && visible >= 28) || (isSoftBreak(ch) && visible >= 68)) {
-                String paragraph = current.toString().trim();
-                if (!paragraph.isEmpty()) {
-                    paragraphs.add(paragraph);
-                }
-                current.setLength(0);
-                visible = 0;
-            }
-        }
-        String tail = current.toString().trim();
-        if (!tail.isEmpty()) {
-            paragraphs.add(tail);
-        }
-        return paragraphs;
-    }
-
-    private String normalizeArticleBreaks(String value) {
-        String output = value.replaceAll("([\\u3002\\uff01\\uff1f!?])\\s*(?=([\\uff08(][0-9\\u4e00-\\u9fff]{1,3}[\\uff09)]))", "$1\n");
-        return output.replaceAll("\\s+(?=([\\uff08(][0-9\\u4e00-\\u9fff]{1,3}[\\uff09)]))", "\n").replaceAll("([^\\n])\\s+(?=([\\u4e00-\\u9fff]{1,4}\\u3001))", "$1\n").replaceAll("([^\\n])\\s+(?=([0-9]{1,2}[.\\uff0e][^0-9]))", "$1\n").replaceAll("([\\u4e00-\\u9fffA-Za-z])(?=([0-9]{1,2}[.\\uff0e][\\u4e00-\\u9fff]))", "$1\n").replaceAll("([\\u3002\\uff01\\uff1f!?])(?=([0-9]{1,2}[.\\uff0e][\\u4e00-\\u9fff]))", "$1\n");
-    }
-
-    private String consumeLeadingArticleLabel(List<String> paragraphs, String value) {
-        String[] labels = {"提示词：", "提示", "提示", "Prompt:", "Prompt"};
-        for (String label : labels) {
-            if (value.equals(label)) {
-                paragraphs.add(displayLabel(label));
-                return "";
-            }
-            if (value.startsWith(label + " ") || value.startsWith(label + "\n") || ((label.endsWith(":") || label.endsWith("")) && value.startsWith(label))) {
-                paragraphs.add(displayLabel(label));
-                return value.substring(label.length()).trim();
-            }
-        }
-        return value;
-    }
-
-    private String displayLabel(String label) {
-        return label.startsWith("提示") ? "提示" : label.startsWith("Prompt") ? "Prompt" : label;
-    }
-
-    private boolean isSentenceEnd(char ch) {
-        return ch == 12290 || ch == 65281 || ch == 65311 || ch == '!' || ch == '?';
-    }
-
-    private boolean isSoftBreak(char ch) {
-        return ch == 65307 || ch == ';';
     }
 
     private int addComments(LinearLayout page, JSONArray groups, boolean latest) {
@@ -5869,58 +5772,6 @@ public final class MainActivity extends Activity {
         return (state == null || !state.loggedIn) ? "去登录" : state.inFlight ? "签到" : state.success ? "重新检查" : "签到";
     }
 
-    private void showSignInCredentialImportDialog() {
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(1);
-        panel.setPadding(dp(16), dp(14), dp(16), dp(12));
-        Compat.setBackground(panel, round(this.PANEL, 14));
-        TextView title = text("导入签到环境", 16.0f, this.TEXT);
-        title.setTypeface(appRegularTypeface(), 1);
-        panel.addView(title);
-        TextView hint = text("粘贴官方成功签到请求 URL、Cookie、HAR 片段key=value 文本。只会保存到签到隔离区，不会覆盖主登录", 11.0f, this.MUTED);
-        hint.setLineSpacing(0.0f, 1.18f);
-        addTop(panel, hint, 8);
-        EditText input = new EditText(this);
-        input.setMinLines(5);
-        input.setMaxLines(8);
-        input.setTextSize(sp(11.0f));
-        input.setTextColor(this.TEXT);
-        input.setHintTextColor(this.MUTED);
-        input.setHint("https://api.xiaoheihe.cn/task/sign_v3/get_sign_state?...\\nCookie: pkey=...; x_xhh_tokenid=...");
-        Compat.tint(input, this.PRIMARY);
-        addTop(panel, input, 8);
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(panel).create();
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(0);
-        actions.setPadding(0, dp(8), 0, 0);
-        Button cancel = button("取消", R.drawable.ic_close);
-        cancel.setOnClickListener(view -> dialog.dismiss());
-        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
-        Button save = button("保存", R.drawable.ic_save);
-        save.setOnClickListener(view -> {
-            String result = this.session.importSignInCredentialsFromText(input.getText().toString());
-            if (this.localCache != null) {
-                this.localCache.log("sign-in manual credential import: "
-                        + result + " " + this.session.signInCredentialSummaryForLog());
-            }
-            toast(result.contains("ok-isolated") ? "已保存签到环境" : "没有提取到可用 pkey");
-            dialog.dismiss();
-            if ("profile".equals(this.screen)) {
-                showProfile();
-            }
-        });
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        saveParams.leftMargin = dp(8);
-        actions.addView(save, saveParams);
-        panel.addView(actions);
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0));
-            int width = getResources().getDisplayMetrics().widthPixels;
-            dialog.getWindow().setLayout(Math.max(dp(230), Math.min(width - dp(24), dp(380))), -2);
-        }
-    }
-
     private void showSettingsHome() {
         stopQrPolling();
         this.screen = "settings_home";
@@ -6150,47 +6001,6 @@ public final class MainActivity extends Activity {
             });
         });
         addTop(panel, action, 10);
-
-        TextView advHeading = text("签到环境（实验功能）", 11.0f, this.MUTED);
-        addTop(panel, advHeading, 14);
-        TextView credential = text((this.session.hasSignInCredentials()
-                || this.session.hasSignInReplayRequest())
-                ? "签到环境：已保存" : "签到环境：未导入", 10.0f, this.MUTED);
-        addTop(panel, credential, 4);
-        LinearLayout advRow = new LinearLayout(this);
-        advRow.setOrientation(0);
-        Button importCredential = button("导入", R.drawable.ic_import);
-        importCredential.setOnClickListener(view -> {
-            String result = this.session.importOfficialProviderAuthForSignInLog();
-            if (!result.contains("ok-isolated")) {
-                result = result + " fallback=" + this.session.importCurrentSessionForSignInLog();
-            }
-            if (this.localCache != null) {
-                this.localCache.log("sign-in isolated credential import: " + result);
-            }
-            toast(result.contains("ok-isolated") ? "已导入签到凭据" : "没有读到可用签到凭据");
-            credential.setText(result.contains("ok-isolated")
-                    ? "签到环境：已保存" : "签到环境：未导入");
-        });
-        advRow.addView(importCredential, new LinearLayout.LayoutParams(0, dp(34), 1.0f));
-        Button pasteCredential = button("粘贴", R.drawable.ic_paste);
-        pasteCredential.setOnClickListener(view -> {
-            dialog.dismiss();
-            showSignInCredentialImportDialog();
-        });
-        LinearLayout.LayoutParams pasteParams = new LinearLayout.LayoutParams(0, dp(34), 1.0f);
-        pasteParams.leftMargin = dp(6);
-        advRow.addView(pasteCredential, pasteParams);
-        Button clearCredential = button("清除", R.drawable.ic_trash);
-        clearCredential.setOnClickListener(view -> {
-            this.session.clearSignInCredentials();
-            toast("已清除签到凭据");
-            credential.setText("签到环境：未导入");
-        });
-        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(0, dp(34), 1.0f);
-        clearParams.leftMargin = dp(6);
-        advRow.addView(clearCredential, clearParams);
-        addTop(panel, advRow, 6);
 
         dialog.show();
         if (dialog.getWindow() != null) {
