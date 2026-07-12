@@ -8647,8 +8647,7 @@ public final class MainActivity extends Activity {
     }
 
     private static int contrast(int color) {
-        int luminance = (((Color.red(color) * 299) + (Color.green(color) * 587)) + (Color.blue(color) * 114)) / 1000;
-        return luminance >= 150 ? -16777216 : -1;
+        return ThemeTokens.contrast(color);
     }
 
     private static int readableOn(int color) {
@@ -8656,9 +8655,7 @@ public final class MainActivity extends Activity {
     }
 
     private static int blend(int base, int overlay, float amount) {
-        float value = Math.max(0.0f, Math.min(1.0f, amount));
-        float keep = 1.0f - value;
-        return Color.rgb(Math.round((Color.red(base) * keep) + (Color.red(overlay) * value)), Math.round((Color.green(base) * keep) + (Color.green(overlay) * value)), Math.round((Color.blue(base) * keep) + (Color.blue(overlay) * value)));
+        return ThemeTokens.blend(base, overlay, amount);
     }
 
     private String appVersion() {

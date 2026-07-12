@@ -70,10 +70,11 @@ final class ThemeTokens {
     }
 
     static int blend(int base, int overlay, float amount) {
-        float keep = 1f - amount;
+        float value = Math.max(0f, Math.min(1f, amount));
+        float keep = 1f - value;
         return Color.rgb(
-                Math.round(Color.red(base) * keep + Color.red(overlay) * amount),
-                Math.round(Color.green(base) * keep + Color.green(overlay) * amount),
-                Math.round(Color.blue(base) * keep + Color.blue(overlay) * amount));
+                Math.round(Color.red(base) * keep + Color.red(overlay) * value),
+                Math.round(Color.green(base) * keep + Color.green(overlay) * value),
+                Math.round(Color.blue(base) * keep + Color.blue(overlay) * value));
     }
 }

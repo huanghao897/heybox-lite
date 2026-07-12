@@ -259,17 +259,11 @@ final class FeedAdapter extends BaseAdapter {
     }
 
     private static int contrast(int color) {
-        int luminance = (Color.red(color) * 299 + Color.green(color) * 587
-                + Color.blue(color) * 114) / 1000;
-        return luminance >= 150 ? Color.BLACK : Color.WHITE;
+        return ThemeTokens.contrast(color);
     }
 
     private static int blend(int base, int overlay, float amount) {
-        float keep = 1f - amount;
-        return Color.rgb(
-                Math.round(Color.red(base) * keep + Color.red(overlay) * amount),
-                Math.round(Color.green(base) * keep + Color.green(overlay) * amount),
-                Math.round(Color.blue(base) * keep + Color.blue(overlay) * amount));
+        return ThemeTokens.blend(base, overlay, amount);
     }
 
     private int dp(int value) {
