@@ -86,8 +86,11 @@ public final class MainActivity extends Activity {
     private static final int AXIS_ROTARY_SCROLL = 26;
     private static final String TRANSITION_OVERLAY_TAG = "shell_transition_overlay";
     private static final String WELCOME_ANNOUNCEMENT_ID = "welcome-heybox-lite-1.77";
+    private static final boolean SIGN_IN_ENABLED = false;
     private static final int MAX_WRITE_FALLBACK_ATTEMPTS = 2;
     private static final long WRITE_FALLBACK_DELAY_MS = 1300L;
+    private static final long QR_POLL_INTERVAL_MS = 2000L;
+    private static final long QR_POLL_ERROR_INTERVAL_MS = 5000L;
     private static final long OFFLINE_MAX_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
     private static final String[] THEME_NAMES = {"默认蓝", "红色", "粉色", "紫色", "绿色", "青色", "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"};
     private static final int[][] THEME_COLORS = {new int[]{-14386760, -9193242}, new int[]{-3982790, -1083529}, new int[]{-2597743, -1006399}, new int[]{-9022795, -4744481}, new int[]{-14185897, -9320552}, new int[]{-15299695, -9713717}, new int[]{-2921692, -1007516}, new int[]{-3958250, -995480}, new int[]{-7894890, -5327686}, new int[]{-15253642, -10646588}, new int[]{-15263977, -3102658}, new int[]{-13530253, -7808833}};
@@ -265,11 +268,13 @@ public final class MainActivity extends Activity {
             }
         });
         this.writeTokenProvider = new WriteTokenProvider(this, this.session, this.api);
-        this.signInManager = new SignInManager(this.session, this.api, this.writeTokenProvider, message2 -> {
-            if (this.localCache != null) {
-                this.localCache.log(message2);
-            }
-        });
+        if (SIGN_IN_ENABLED) {
+            this.signInManager = new SignInManager(this.session, this.api, this.writeTokenProvider, message2 -> {
+                if (this.localCache != null) {
+                    this.localCache.log(message2);
+                }
+            });
+        }
         buildShell();
         if (this.session.isLoggedIn()) {
             EmojiStore.load(this.api, () -> {
@@ -337,7 +342,7 @@ public final class MainActivity extends Activity {
     }
 
     private void autoSignInOnLaunch() {
-        if (isFinishing() || this.signInManager == null || !this.session.isLoggedIn()) {
+        if (!SIGN_IN_ENABLED || isFinishing() || this.signInManager == null || !this.session.isLoggedIn()) {
             return;
         }
         this.signInManager.autoSignInIfNeeded(result -> {
@@ -1535,7 +1540,7 @@ public final class MainActivity extends Activity {
                     }
                     MainActivity.this.setQrStatus("等待扫码", MainActivity.this.SECONDARY);
                     MainActivity.this.pollingQr = true;
-                    MainActivity.this.handler.postDelayed(MainActivity.this.qrPollTask, 900L);
+                    MainActivity.this.handler.postDelayed(MainActivity.this.qrPollTask, QR_POLL_INTERVAL_MS);
                 } catch (Exception e) {
                     MainActivity.this.setQrStatus("二维码生成失败", MainActivity.this.PRIMARY);
                 }
@@ -1592,7 +1597,7 @@ public final class MainActivity extends Activity {
                         }
                         MainActivity.this.setQrStatus("等待扫码", MainActivity.this.SECONDARY);
                     }
-                    MainActivity.this.handler.postDelayed(MainActivity.this.qrPollTask, 1300L);
+                    MainActivity.this.handler.postDelayed(MainActivity.this.qrPollTask, QR_POLL_INTERVAL_MS);
                 }
             }
 
@@ -1600,7 +1605,7 @@ public final class MainActivity extends Activity {
             public void onError(String message) {
                 if (MainActivity.this.pollingQr) {
                     MainActivity.this.setQrStatus("网络波动，正在重试", MainActivity.this.MUTED);
-                    MainActivity.this.handler.postDelayed(MainActivity.this.qrPollTask, 2200L);
+                    MainActivity.this.handler.postDelayed(MainActivity.this.qrPollTask, QR_POLL_ERROR_INTERVAL_MS);
                 }
             }
         });
@@ -3602,24 +3607,18 @@ public final class MainActivity extends Activity {
     }
 
     private void postLinkLike(FeedItem item, boolean nextLiked, ApiClient.Callback callback) {
-        runWriteFallback(new WriteStep[]{writeStep("like-web", cb -> {
-            this.api.postForm(EndpointProvider.awardLink(), Collections.emptyMap(), awardBody(item.id, nextLiked), cb);
-        }), writeStep("like-web-hsrc", cb2 -> {
-            this.api.postForm(EndpointProvider.awardLink(), queryHsrc(item), awardBody(item.id, nextLiked), cb2);
+        runWriteFallback(new WriteStep[]{writeStep("like-official", cb -> {
+            this.api.postForm(EndpointProvider.awardLink(), queryHsrc(item), awardBody(item.id, nextLiked), cb);
+        }), writeStep("like-compat", cb2 -> {
+            this.api.postForm(EndpointProvider.awardLink(), Collections.emptyMap(), awardBody(item.id, nextLiked), cb2);
         })}, callback);
     }
 
     private void postFavorite(FeedItem item, boolean nextFavored, ApiClient.Callback callback) {
-        runWriteFallback(new WriteStep[]{writeStep("favorite-web", cb -> {
-            this.api.postForm(EndpointProvider.favourLink(), Collections.emptyMap(), favouriteBody(item.id, nextFavored ? "1" : "2", false), cb);
-        }), writeStep("favorite-web-folder", cb2 -> {
-            this.api.postForm(EndpointProvider.favourLink(), Collections.emptyMap(), favouriteBody(item.id, nextFavored ? "1" : "2", true), cb2);
-        }), writeStep("favorite-web-hsrc", cb3 -> {
-            this.api.postForm(EndpointProvider.favourLink(), queryHsrc(item), favouriteBody(item.id, nextFavored ? "1" : "2", false), cb3);
-        }), writeStep("favorite-web-newsid", cb4 -> {
-            this.api.postForm(EndpointProvider.favourLink(), queryHsrc(item), favouriteBody(item.id, nextFavored ? "1" : "2", true, true), cb4);
-        }), writeStep("favorite-web-no-hsrc", cb5 -> {
-            this.api.postForm(EndpointProvider.favourLink(), Collections.emptyMap(), favouriteBody(item.id, nextFavored ? "1" : "2", true), cb5);
+        runWriteFallback(new WriteStep[]{writeStep("favorite-official", cb -> {
+            this.api.postForm(EndpointProvider.favourLink(), queryHsrc(item), favouriteBody(item.id, nextFavored ? "1" : "2", false), cb);
+        }), writeStep("favorite-folder-compat", cb2 -> {
+            this.api.postForm(EndpointProvider.favourLink(), queryHsrc(item), favouriteBody(item.id, nextFavored ? "1" : "2", true), cb2);
         })}, callback);
     }
 
@@ -3637,18 +3636,8 @@ public final class MainActivity extends Activity {
     }
 
     private Map<String, String> favouriteBody(String linkId, String type, boolean includeFolder) {
-        return favouriteBody(linkId, type, includeFolder, false);
-    }
-
-    private Map<String, String> favouriteBody(String linkId, String type, boolean includeFolder, boolean includeNewsId) {
         Map<String, String> body = linkIdBody(linkId);
         body.put("favour_type", type);
-        if (!this.session.userId().isEmpty()) {
-            body.put(SecureStrings.userid(), this.session.userId());
-        }
-        if (includeNewsId) {
-            body.put("newsid", linkId);
-        }
         if (includeFolder) {
             body.put("folder_id", "");
         }
@@ -3739,7 +3728,7 @@ public final class MainActivity extends Activity {
                         MainActivity.this.writeTokenProvider.refresh(new WriteTokenProvider.Callback() {
                             @Override
                             public void onReady() {
-                                MainActivity.this.scheduleWriteFallback(requests, 0, "", "", true, callback);
+                                MainActivity.this.scheduleWriteFallback(requests, index, message2, retryImportant, true, callback);
                             }
 
                             @Override
@@ -3747,23 +3736,18 @@ public final class MainActivity extends Activity {
                                 if (MainActivity.this.localCache != null) {
                                     MainActivity.this.localCache.log("write token refresh failed, continue fallback: " + tokenMessage);
                                 }
-                                MainActivity.this.scheduleWriteFallback(requests, index + 1, message2, retryImportant, true, callback);
+                                callback.onError(message2);
                             }
                         });
-                    } else if (tokenError) {
+                    } else if (tokenError || loginError) {
                         if (MainActivity.this.localCache != null) {
-                            MainActivity.this.localCache.log("write token error after refresh, continue fallback");
+                            MainActivity.this.localCache.log("write auth error stop fallback: " + label);
                         }
+                        callback.onError(message2);
+                    } else if (MainActivity.this.isParameterWriteError(message2)) {
                         MainActivity.this.scheduleWriteFallback(requests, index + 1, message2, nextImportant, tokenRetried, callback);
                     } else {
-                        if (loginError) {
-                            if (MainActivity.this.localCache != null) {
-                                MainActivity.this.localCache.log("write login error after token retry, continue fallback");
-                            }
-                            MainActivity.this.scheduleWriteFallback(requests, index + 1, message2, nextImportant, tokenRetried, callback);
-                            return;
-                        }
-                        MainActivity.this.scheduleWriteFallback(requests, index + 1, message2, nextImportant, tokenRetried, callback);
+                        callback.onError(message2);
                     }
                 }
             });
@@ -3803,17 +3787,26 @@ public final class MainActivity extends Activity {
             return false;
         }
         String lower = message.toLowerCase(Locale.US);
-        return message.contains("验证参数") || message.contains("参数") || message.contains("非法请求") || lower.contains("param") || lower.contains("sign");
+        return message.contains("验证参数") || message.contains("参数") || message.contains("非法请求") || lower.contains("param");
     }
 
     private boolean isRiskControlWriteError(String message) {
         if (message == null) {
             return false;
         }
+        String lower = message.toLowerCase(Locale.US);
         return message.contains("无法使用该功能")
                 || message.contains("有风险")
                 || message.contains("风险")
-                || message.contains("风控");
+                || message.contains("风控")
+                || message.contains("请求过于频繁")
+                || message.contains("完成验证")
+                || message.contains("验证码")
+                || message.contains("HTTP 429")
+                || lower.contains("show_captcha")
+                || lower.contains("captcha")
+                || lower.contains("frequent")
+                || lower.contains("risk_control");
     }
 
     private void updateFeedLike(String linkId, boolean liked, int likes) {
@@ -4302,24 +4295,17 @@ public final class MainActivity extends Activity {
 
     private void postFollow(String targetUserId, boolean next, ApiClient.Callback callback) {
         String path = next ? EndpointProvider.followUser() : EndpointProvider.unfollowUser();
-        runWriteFallback(new WriteStep[]{writeStep("follow-web", cb -> {
-            this.api.postForm(path, Collections.emptyMap(), userBody(targetUserId, false, false), cb);
-        }), writeStep("follow-web-compact", cb2 -> {
-            this.api.postForm(path, Collections.emptyMap(), userBody(targetUserId, true, false), cb2);
-        }), writeStep("follow-web-hsrc", cb3 -> {
-            this.api.postForm(path, queryHsrc(this.currentDetailItem), userBody(targetUserId, false, false), cb3);
-        }), writeStep("follow-web-state", cb4 -> {
-            this.api.postForm(path, Collections.emptyMap(), userBody(targetUserId, false, next), cb4);
+        runWriteFallback(new WriteStep[]{writeStep("follow-official", cb -> {
+            this.api.postForm(path, queryHsrc(this.currentDetailItem), followBody(targetUserId, next), cb);
+        }), writeStep("follow-compat", cb2 -> {
+            this.api.postForm(path, Collections.emptyMap(), followBody(targetUserId, next), cb2);
         })}, callback);
     }
 
-    private Map<String, String> userBody(String value, boolean compact, boolean includeState) {
+    private Map<String, String> followBody(String value, boolean following) {
         Map<String, String> body = new HashMap<>();
         body.put("following_id", value);
-        if (!compact && this.currentLinkId != null && !this.currentLinkId.isEmpty()) {
-            body.put("link_id", this.currentLinkId);
-        }
-        if (includeState) {
+        if (following) {
             body.put("follows", "1");
         }
         return body;
@@ -4974,21 +4960,11 @@ public final class MainActivity extends Activity {
     }
 
     private void postCommentLike(String id, boolean liked, ApiClient.Callback callback) {
-        runWriteFallback(new WriteStep[]{writeStep("comment-like-web", cb -> {
-            this.api.postForm(EndpointProvider.supportComment(), Collections.emptyMap(), commentSupportBody(id, liked), cb);
-        }), writeStep("comment-like-web-hsrc", cb2 -> {
-            this.api.postForm(EndpointProvider.supportComment(), queryHsrc(this.currentDetailItem), commentSupportBody(id, liked), cb2);
-        }), writeStep("comment-like-web-body-hsrc", cb3 -> {
-            this.api.postForm(EndpointProvider.supportComment(), Collections.emptyMap(), commentSupportBody(id, liked, this.currentLinkHsrc), cb3);
+        runWriteFallback(new WriteStep[]{writeStep("comment-like-official", cb -> {
+            this.api.postForm(EndpointProvider.supportComment(), queryHsrc(this.currentDetailItem), commentSupportBody(id, liked), cb);
+        }), writeStep("comment-like-compat", cb2 -> {
+            this.api.postForm(EndpointProvider.supportComment(), Collections.emptyMap(), commentSupportBody(id, liked), cb2);
         })}, callback);
-    }
-
-    private Map<String, String> commentSupportBody(String id, boolean liked, String hsrc) {
-        Map<String, String> body = commentSupportBody(id, liked);
-        if (hsrc != null && !hsrc.isEmpty()) {
-            body.put("h_src", hsrc);
-        }
-        return body;
     }
 
     private void showCommentDialog(JSONObject replyTo) {
@@ -5109,34 +5085,22 @@ public final class MainActivity extends Activity {
     }
 
     private void postCreateComment(String value, String rootId, String replyId, ApiClient.Callback callback) {
-        runWriteFallback(new WriteStep[]{writeStep("comment-create-web", cb -> {
-            this.api.postForm(EndpointProvider.createComment(), Collections.emptyMap(), commentCreateBody(value, rootId, replyId, false), cb);
-        }), writeStep("comment-create-web-auth", cb2 -> {
-            this.api.postForm(EndpointProvider.createComment(), commentCreateQuery(), commentCreateBody(value, rootId, replyId, false), cb2);
-        }), writeStep("comment-create-web-hsrc", cb3 -> {
-            this.api.postForm(EndpointProvider.createComment(), queryHsrc(this.currentDetailItem), commentCreateBody(value, rootId, replyId, false), cb3);
-        }), writeStep("comment-create-web-compat", cb4 -> {
-            this.api.postForm(EndpointProvider.createComment(), commentCreateQuery(), commentCreateBody(value, rootId, replyId, true), cb4);
-        }), writeStep("comment-create-web-compat-no-hsrc", cb5 -> {
-            this.api.postForm(EndpointProvider.createComment(), Collections.emptyMap(), commentCreateBody(value, rootId, replyId, true), cb5);
+        runWriteFallback(new WriteStep[]{writeStep("comment-create-official", cb -> {
+            this.api.postForm(EndpointProvider.createComment(), commentCreateQuery(), commentCreateBody(value, rootId, replyId), cb);
+        }), writeStep("comment-create-compat", cb2 -> {
+            this.api.postForm(EndpointProvider.createComment(), Collections.emptyMap(), commentCreateBody(value, rootId, replyId), cb2);
         })}, callback);
     }
 
-    private Map<String, String> commentCreateBody(String value, String rootId, String replyId, boolean compat) {
+    private Map<String, String> commentCreateBody(String value, String rootId, String replyId) {
         Map<String, String> body = new HashMap<>();
         body.put("link_id", this.currentLinkId);
         body.put("text", value);
         body.put("root_id", rootId == null ? "" : rootId);
         body.put("reply_id", replyId == null ? "" : replyId);
+        body.put("imgs", "");
         body.put("is_cy", "0");
-        if (compat) {
-            body.put("recommend_state", "0");
-            body.put("linkid", this.currentLinkId);
-            body.put("content", value);
-            body.put("comment", value);
-            body.put("root_comment_id", rootId == null ? "" : rootId);
-            body.put("reply_comment_id", replyId == null ? "" : replyId);
-        }
+        body.put("recommend_state", "0");
         return body;
     }
 
@@ -5495,7 +5459,7 @@ public final class MainActivity extends Activity {
         TextView name = text("未登录", 18.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
         headCopy.addView(name);
-        headCopy.addView(text("登录后可点赞、收藏、签到", 12.0f, this.MUTED));
+        headCopy.addView(text("登录后可点赞、收藏和评论", 12.0f, this.MUTED));
         LinearLayout.LayoutParams headCopyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
         headCopyParams.leftMargin = dp(12);
         headRow.addView(headCopy, headCopyParams);
@@ -5688,7 +5652,14 @@ public final class MainActivity extends Activity {
             params.put("no_more", "false");
             showSavedList("浏览历史", EndpointProvider.history(), params);
         });
-        addSettingEntry(panel, "每日签到", "每日签到领取盒币", R.drawable.il_calendar, this::showSignInDialog);
+        addSettingEntry(panel, "每日签到", SIGN_IN_ENABLED ? "每日签到领取盒币" : "暂时关闭",
+                R.drawable.il_calendar, () -> {
+                    if (SIGN_IN_ENABLED) {
+                        showSignInDialog();
+                    } else {
+                        toast("签到暂时关闭");
+                    }
+                });
         addSettingEntry(panel, "设置", "主题、缓存与关于", R.drawable.il_settings,
                 this::showSettingsHome);
         addTop(page, panel, 8);
@@ -5744,6 +5715,10 @@ public final class MainActivity extends Activity {
     }
 
     private void showSignInDialog() {
+        if (!SIGN_IN_ENABLED) {
+            toast("签到暂时关闭");
+            return;
+        }
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(1);
         panel.setPadding(dp(16), dp(14), dp(16), dp(12));

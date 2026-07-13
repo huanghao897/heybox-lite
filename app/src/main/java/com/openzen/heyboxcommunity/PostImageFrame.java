@@ -37,6 +37,7 @@ final class PostImageFrame extends FrameLayout {
         int width = View.MeasureSpec.getSize(widthMeasureSpec);
         int desired = width > 0 ? Math.round(width * this.aspect) : this.fallbackHeight;
         int height = Math.max(this.minHeight, Math.min(this.maxHeight, desired));
-        super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(height, 1073741824));
+        super.onMeasure(widthMeasureSpec,
+                View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
     }
 }
