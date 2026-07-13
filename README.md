@@ -77,7 +77,7 @@ HeyBoxCommunity/
 │  ├─ proguard-rules.pro
 │  └─ src/main/
 │     ├─ AndroidManifest.xml
-│     ├─ java/com/openzen/heyboxcommunity/   # 全部源码（约 40 个类）
+│     ├─ java/com/ronan/heyboxlite/   # 全部源码（约 40 个类）
 │     └─ res/                                 # 矢量图标、主题、网络安全配置
 ├─ dist/                        # 构建产物（不入库）
 ├─ docs/PROJECT_DOCUMENTATION.md # 工程详细文档

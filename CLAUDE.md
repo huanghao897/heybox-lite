@@ -21,7 +21,7 @@
 - 只有用户明确说“先别传”或“不用上传”时，才暂停 GitHub 提交与推送。
 - 发布到应用更新服务器仍需用户明确授权，不能因为已推送 GitHub 而自动发布。
 
-## 关键模块（`app/src/main/java/com/openzen/heyboxcommunity/`）
+## 关键模块（`app/src/main/java/com/ronan/heyboxlite/`）
 
 | 类 | 职责 |
 |----|------|

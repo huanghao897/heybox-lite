@@ -2,7 +2,7 @@ package com.nmmedit.protect;
 
 import android.content.Context;
 
-import com.openzen.heyboxcommunity.NativeLibraryLoader;
+import com.ronan.heyboxlite.NativeLibraryLoader;
 
 public final class NativeUtil {
     private static boolean loaded;

@@ -7,8 +7,8 @@
 -dontusemixedcaseclassnames
 
 # Android components are referenced by the manifest. No broad business-model keeps are needed.
--keep class com.openzen.heyboxcommunity.MainActivity { <init>(); }
--keep class com.openzen.heyboxcommunity.ImageViewerActivity { <init>(); }
+-keep class com.ronan.heyboxlite.MainActivity { <init>(); }
+-keep class com.ronan.heyboxlite.ImageViewerActivity { <init>(); }
 
 # Native methods are resolved by exact Java class and method names.
 -keep class com.graphice.shaderar.ShaderManager { *; }
@@ -25,4 +25,4 @@
 -keep class com.max.xiaoheihe.router.serviceimpl.k { *; }
 -keep class okhttp3.** { *; }
 -keep class okio.** { *; }
--keep class com.openzen.heyboxcommunity.NativeLibraryLoader { *; }
+-keep class com.ronan.heyboxlite.NativeLibraryLoader { *; }

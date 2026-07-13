@@ -2,7 +2,7 @@ package com.graphice.shaderar;
 
 import android.content.Context;
 
-import com.openzen.heyboxcommunity.NativeLibraryLoader;
+import com.ronan.heyboxlite.NativeLibraryLoader;
 
 import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;

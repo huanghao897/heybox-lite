@@ -10,7 +10,7 @@ if (signingPropertiesFile.exists()) {
 def previewReleaseCertSha256 = "fbd5642c3c1b5882545f6f1227cf2dc38a54bcd18609203935eedbef408d1382"
 
 android {
-    namespace "com.openzen.heyboxcommunity"
+    namespace "com.ronan.heyboxlite"
     compileSdk 36
 
     defaultConfig {

@@ -2,7 +2,7 @@ package com.max.xiaoheihe.utils;
 
 import android.content.Context;
 
-import com.openzen.heyboxcommunity.NativeLibraryLoader;
+import com.ronan.heyboxlite.NativeLibraryLoader;
 
 public final class NDKTools {
     private static boolean loaded;
