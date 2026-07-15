@@ -2648,7 +2648,22 @@ public final class MainActivity extends Activity {
         if (!authCode.isEmpty()) {
             this.currentAuthCode = authCode;
         }
-        DetailPager pager = new DetailPager(this);
+        DetailPager pager = new DetailPager(this, this::dp, new DetailPager.Listener() {
+            @Override
+            public boolean canSwipeBack() {
+                return MainActivity.this.canDetailSwipeBack();
+            }
+
+            @Override
+            public void onPageChanged() {
+                MainActivity.this.updateDetailPagerTitle();
+            }
+
+            @Override
+            public void onReturn() {
+                MainActivity.this.returnFromDetailGesture();
+            }
+        });
         pager.setBackgroundColor(this.BG);
         this.detailPager = pager;
         ScrollView articleScroll = new ScrollView(this);
@@ -2699,7 +2714,7 @@ public final class MainActivity extends Activity {
         commentPage.setPadding(pagePadding, dp(8), pagePadding, dp(18));
         commentScroll.addView(commentPage);
         addDetailCommentSection(commentPage, result == null ? null : result.optJSONArray("comments"));
-        pager.setPages(articleScroll, commentScroll);
+        pager.setPages(detailReturnPreview(), articleScroll, commentScroll);
         pager.setReturnView(this.detailReturnView);
         transitionTo(pager);
         if (this.activityResumed && this.readingTimeTracker != null && fallback != null) {
@@ -2755,267 +2770,13 @@ public final class MainActivity extends Activity {
             comments.addView(empty);
         }
     }
-    private final class DetailPager extends FrameLayout {
-        private static final int PAGE_ARTICLE = 0;
-        private static final int PAGE_COMMENTS = 1;
-        private final int touchSlop;
-        private float startX;
-        private float startY;
-        private long startTime;
-        private int startScrollX;
-        private int currentPage;
-        private boolean dragging;
-        private boolean returning;
-        private View returnPreview;
-        private boolean realReturnView;
-        private ValueAnimator settleAnimator;
-
-        DetailPager(Context context) {
-            super(context);
-            this.currentPage = 0;
-            this.touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
-        }
-
-        void setPages(View article, View comments) {
-            removeAllViews();
-            ImageView snapshot = new ImageView(getContext());
-            snapshot.setBackgroundColor(MainActivity.this.themeTokens == null ? MainActivity.this.PANEL : MainActivity.this.themeTokens.panel);
-            snapshot.setScaleType(ImageView.ScaleType.FIT_XY);
-            Bitmap bitmap = MainActivity.this.screenSnapshot(MainActivity.this.backTargetScreenKey());
-            if (bitmap != null && !bitmap.isRecycled()) {
-                snapshot.setImageBitmap(bitmap);
-            }
-            this.returnPreview = snapshot;
-            addView(this.returnPreview, new FrameLayout.LayoutParams(-1, -1));
-            addView(article, new FrameLayout.LayoutParams(-1, -1));
-            addView(comments, new FrameLayout.LayoutParams(-1, -1));
-            this.currentPage = 0;
-            post(() -> {
-                scrollTo(pageScrollX(this.currentPage), 0);
-            });
-        }
-
-        void setReturnView(View view) {
-            if (view == null) return;
-            if (view.getParent() instanceof ViewGroup) {
-                ((ViewGroup) view.getParent()).removeView(view);
-            }
-            if (this.returnPreview != null) removeView(this.returnPreview);
-            this.returnPreview = view;
-            this.realReturnView = true;
-            Motions.resetTree(view);
-            addView(view, 0, new FrameLayout.LayoutParams(-1, -1));
-            requestLayout();
-        }
-
-        View takeReturnView() {
-            if (!this.realReturnView || this.returnPreview == null) return null;
-            View view = this.returnPreview;
-            removeView(view);
-            this.returnPreview = null;
-            this.realReturnView = false;
-            Motions.resetTree(view);
-            return view;
-        }
-
-        boolean showingComments() {
-            return this.currentPage == PAGE_COMMENTS;
-        }
-
-        void showArticle(boolean animate) {
-            settleToPage(0, animate);
-        }
-
-        @Override
-        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-            int width = right - left;
-            int height = bottom - top;
-            if (this.returnPreview != null) {
-                this.returnPreview.layout(-width, 0, 0, height);
-            }
-            if (getChildCount() > PAGE_COMMENTS) {
-                getChildAt(PAGE_COMMENTS).layout(0, 0, width, height);
-            }
-            if (getChildCount() > 2) {
-                getChildAt(2).layout(width, 0, width * 2, height);
-            }
-            if (changed) {
-                post(() -> {
-                    scrollTo(pageScrollX(this.currentPage), 0);
-                });
-            }
-        }
-
-        @Override
-        public boolean onInterceptTouchEvent(MotionEvent event) {
-            switch (event.getActionMasked()) {
-                case 0:
-                    cancelSettle();
-                    this.startX = event.getX();
-                    this.startY = event.getY();
-                    this.startTime = event.getEventTime();
-                    this.startScrollX = getScrollX();
-                    this.dragging = false;
-                    this.returning = false;
-                    break;
-                case PAGE_COMMENTS /* 1 */:
-                case 3:
-                    this.dragging = false;
-                    this.returning = false;
-                    break;
-                case MotionEvent.ACTION_MOVE:
-                    float dx = event.getX() - this.startX;
-                    float dy = event.getY() - this.startY;
-                    if ((this.currentPage != 0 || dx <= 0.0f || MainActivity.this.canDetailSwipeBack()) && Math.abs(dx) > this.touchSlop * 2 && Math.abs(dx) > Math.abs(dy) * 1.15f) {
-                        this.dragging = true;
-                        getParent().requestDisallowInterceptTouchEvent(true);
-                    }
-                    break;
-            }
-            return this.dragging;
-        }
-
-        @Override
-        public boolean onTouchEvent(MotionEvent event) {
-            switch (event.getActionMasked()) {
-                case 0:
-                    cancelSettle();
-                    this.startX = event.getX();
-                    this.startY = event.getY();
-                    this.startTime = event.getEventTime();
-                    this.startScrollX = getScrollX();
-                    this.dragging = true;
-                    this.returning = false;
-                    break;
-                case PAGE_COMMENTS /* 1 */:
-                    finishHorizontalDrag(event);
-                    performClick();
-                    break;
-                case MotionEvent.ACTION_MOVE:
-                    dragTo(event.getX() - this.startX);
-                    break;
-                case 3:
-                    settleToPage(this.currentPage, true);
-                    this.dragging = false;
-                    this.returning = false;
-                    break;
-            }
-            return true;
-        }
-
-        private void dragTo(float dx) {
-            int width = Math.max(PAGE_COMMENTS, getWidth());
-            int min = (this.currentPage == 0 && MainActivity.this.canDetailSwipeBack()) ? -width : 0;
-            int next = Math.max(min, Math.min(width, this.startScrollX - Math.round(dx)));
-            scrollTo(next, 0);
-        }
-
-        private void finishHorizontalDrag(MotionEvent event) {
-            int width = Math.max(PAGE_COMMENTS, getWidth());
-            float dx = event.getX() - this.startX;
-            long duration = Math.max(1L, event.getEventTime() - this.startTime);
-            float velocity = (dx * 1000.0f) / duration;
-            if (this.currentPage == 0 && getScrollX() < 0) {
-                boolean enoughDistance = ((float) Math.abs(getScrollX())) > Math.max((float) MainActivity.this.dp(52), ((float) width) * 0.24f);
-                boolean enoughVelocity = velocity > ((float) MainActivity.this.dp(320));
-                this.dragging = false;
-                if (!enoughDistance && !enoughVelocity) {
-                    settleToPage(0, true);
-                    return;
-                } else {
-                    settleToReturn();
-                    return;
-                }
-            }
-            int target = getScrollX() > width / 2 ? PAGE_COMMENTS : 0;
-            if (Math.abs(velocity) > MainActivity.this.dp(360)) {
-                target = velocity < 0.0f ? PAGE_COMMENTS : 0;
-            }
-            this.dragging = false;
-            settleToPage(target, true);
-        }
-
-        private void settleToPage(int page, boolean animate) {
-            cancelSettle();
-            this.currentPage = page;
-            MainActivity.this.updateDetailPagerTitle();
-            int destination = pageScrollX(page);
-            if (!animate || Motions.off()) {
-                scrollTo(destination, 0);
-                return;
-            }
-            int fromX = getScrollX();
-            int distance = Math.abs(destination - fromX);
-            if (distance < MainActivity.this.dp(2)) {
-                scrollTo(destination, 0);
-                return;
-            }
-            int duration = Math.max(160, Math.min(300, distance / 3));
-            this.settleAnimator = ValueAnimator.ofInt(fromX, destination);
-            this.settleAnimator.setDuration(duration);
-            this.settleAnimator.setInterpolator(new DecelerateInterpolator());
-            this.settleAnimator.addUpdateListener(value -> {
-                scrollTo(((Integer) value.getAnimatedValue()).intValue(), 0);
-            });
-            this.settleAnimator.start();
-        }
-
-        private int pageScrollX(int page) {
-            if (page == PAGE_COMMENTS) {
-                return Math.max(0, getWidth());
-            }
-            return 0;
-        }
-
-        private void settleToReturn() {
-            cancelSettle();
-            this.returning = true;
-            int fromX = getScrollX();
-            int destination = -Math.max(PAGE_COMMENTS, getWidth());
-            if (Motions.off()) {
-                scrollTo(destination, 0);
-                this.returning = false;
-                MainActivity.this.returnFromDetailGesture();
-                return;
-            }
-            int distance = Math.abs(destination - fromX);
-            int duration = Math.max(150, Math.min(280, distance / 3));
-            this.settleAnimator = ValueAnimator.ofInt(fromX, destination);
-            this.settleAnimator.setDuration(duration);
-            this.settleAnimator.setInterpolator(new DecelerateInterpolator());
-            this.settleAnimator.addUpdateListener(value -> {
-                scrollTo(((Integer) value.getAnimatedValue()).intValue(), 0);
-            });
-            this.settleAnimator.addListener(new AnimatorListenerAdapter() {
-                @Override
-                public void onAnimationEnd(Animator animation) {
-                    DetailPager.this.settleAnimator = null;
-                    if (DetailPager.this.returning) {
-                        DetailPager.this.returning = false;
-                        MainActivity.this.returnFromDetailGesture();
-                    }
-                }
-            });
-            this.settleAnimator.start();
-        }
-
-        private void cancelSettle() {
-            if (this.settleAnimator != null) {
-                this.returning = false;
-                this.settleAnimator.cancel();
-                this.settleAnimator = null;
-            }
-        }
-
-        void cancelMotion() {
-            cancelSettle();
-            scrollTo(pageScrollX(this.currentPage), 0);
-        }
-
-        @Override
-        public boolean performClick() {
-            return super.performClick();
-        }
+    private View detailReturnPreview() {
+        ImageView snapshot = new ImageView(this);
+        snapshot.setBackgroundColor(this.themeTokens == null ? this.PANEL : this.themeTokens.panel);
+        snapshot.setScaleType(ImageView.ScaleType.FIT_XY);
+        Bitmap bitmap = screenSnapshot(backTargetScreenKey());
+        if (bitmap != null && !bitmap.isRecycled()) snapshot.setImageBitmap(bitmap);
+        return snapshot;
     }
 
     private void updateDetailPagerTitle() {

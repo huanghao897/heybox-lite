@@ -130,6 +130,7 @@ HeyBoxCommunity/
 - **`Motions`** — 全局动效等级与通用动画工具。等级三挡：`LEVEL_OFF`(0) / `LEVEL_LITE`(1) / `LEVEL_FULL`(2)，由 `SessionStore` 持久化并在启动时注入。提供 `reset()`（取消动画并复位 alpha/translation/scale，防复用污染）、`enter()`（面板入场）、`listEnter()`（列表交错入场）、`dialogIn()`（弹窗缩放淡入，完整挡带回弹）。只操作 GPU 友好属性，关闭挡直接到位。
 - **`MotionSpec`** — 动效常量：各类时长阶梯、`EASE_OUT`（减速）与 `SPRING`（`OvershootInterpolator`，仅完整挡收尾）。
 - **`PageTransitionController`** — 真实双 View 页面转场。切换时新旧页面同时存在于容器中，顶层加透明遮罩挡触摸；**旧页原地不动**（不 detach，避免丢列表滚动位置），动画结束移除并 `reset()` 供缓存页复用。完整挡为滑动 + 视差、精简挡为交叉淡入、关闭挡直接硬切；旧内容若是加载圈则退化为一次淡入。`MainActivity.transitionTo()` 是统一入口，`pendingBackTransition` 决定前进/返回方向；详情页有自己的滑动返回机制，不走此转场。
+- **`DetailPager`** — 详情页正文/评论双页容器及右滑返回手势。只通过 `Listener` 查询能否返回、通知页签变化和完成返回，不持有 Activity；返回预览由 Activity 传入，手势阈值和 Animator 生命周期由该 View 自己管理。
 
 **首启选挡**：`SessionStore.motionLevel()` 首次读取时按设备判定 —— `ActivityManager.isLowRamDevice()` 或 `memoryClass <= 64` 判为关闭，否则精简；「完整」只由用户在设置里主动选择。判定结果固化，之后完全听用户设置。
 

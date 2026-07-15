@@ -97,6 +97,7 @@ HeyBoxCommunity/
 | `SessionStore` / `LocalCache` / `ModernCookieCrypto` | 本地登录态、设置、离线缓存、Cookie 加密 |
 | `RichContent` / `EmojiRenderer` / `ImageLoader` / `GifSupport` | 正文解析、表情、图片加载与离线缓存、GIF |
 | `Motions` / `PageTransitionController` / `MotionSpec` | 动效等级与页面转场 |
+| `DetailPager` | 正文/评论横向切换与详情右滑返回手势 |
 | `UpdateChecker` / `AnnouncementChecker` / `PresenceReporter` | 更新、公告、在线心跳 |
 | `SignInManager` + native 签名模块 | 签到（实验性，与主流程隔离，独立进程） |
 
