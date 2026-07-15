@@ -1,6 +1,8 @@
 package com.ronan.heyboxlite;
 
 import java.util.Iterator;
+import java.util.ArrayList;
+import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -93,6 +95,19 @@ final class SavedPostParser {
         } catch (Exception ignored) {
             return value;
         }
+    }
+
+    static List<FeedItem> feedItems(JSONObject body) {
+        List<FeedItem> items = new ArrayList<>();
+        JSONObject result = body == null ? null : body.optJSONObject("result");
+        JSONArray links = findLinks(result == null ? body : result);
+        if (links != null) {
+            for (int i = 0; i < links.length(); i++) {
+                JSONObject value = savedFeedValue(links.optJSONObject(i));
+                if (value != null) items.add(FeedItem.from(value));
+            }
+        }
+        return items.isEmpty() ? FeedCollection.parse(body) : items;
     }
 
     private static JSONArray findFolderArray(Object node, int depth) {

@@ -55,4 +55,27 @@ final class Format {
         if (count < 100_000_000) return compactDecimal(count / 10_000.0d) + "万";
         return compactDecimal(count / 100_000_000.0d) + "亿";
     }
+
+    static String announcementPreview(String value) {
+        if (value == null) return "";
+        String clean = value.replace('\r', '\n').replace("\n\n", "\n").trim();
+        return clean.length() <= 92 ? clean : clean.substring(0, 92) + "...";
+    }
+
+    static String announcementTime(String value) {
+        if (value == null) return "";
+        String clean = value.trim();
+        if (clean.isEmpty()) return "";
+        if (!clean.matches("\\d+")) {
+            return clean.contains("-") || clean.contains("/") || clean.contains(":") ? clean : "";
+        }
+        try {
+            long timestamp = Long.parseLong(clean);
+            if (timestamp <= 0) return "";
+            if (timestamp < 100_000_000_000L) timestamp *= 1000L;
+            return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(new Date(timestamp));
+        } catch (NumberFormatException ignored) {
+            return "";
+        }
+    }
 }

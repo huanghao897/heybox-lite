@@ -118,6 +118,9 @@ HeyBoxCommunity/
 - **`QrLoginController`** — 二维码获取和登录状态轮询。用请求代次号忽略过期回调，统一管理 2 秒轮询、网络错误退避和停止生命周期；Activity 只负责二维码绘制和登录后的页面更新。
 - **`WriteActionClient`** — 点赞、收藏、关注、评论点赞和发评论的请求编排。集中管理 2 秒操作间隔、风控冷却、官方参数优先、token 刷新及兼容参数重试；不持有 Activity 或 View。
 - **`SavedPostParser`** — 收藏夹、历史列表等接口响应的纯 JSON 解析。负责从多层包装中识别收藏夹和帖子，补齐计数与作者字段，不持有网络或页面状态。
+- **`FeedCollection`** — 信息流、搜索、收藏和历史共用的帖子集合处理。递归识别包装响应中的帖子，统一按 id 去重和关键词过滤；过滤结果不会保留空对象。
+- **`SearchState`** — 搜索页唯一状态源，集中保存关键词、结果、offset、请求代次、连续重复页和列表滚动位置。Activity 只负责发请求和渲染，不再单独维护一组容易不同步的分页字段。
+- **`AnnouncementListAdapter`** — 公告列表行渲染与空状态；公告时间、摘要截断由 `Format` 统一处理。
 - **`ThemeTokens`** — 主题令牌：由深色开关与主/辅色派生出背景、面板、文字、次要文字、分隔线、`onPrimary` 等一整套颜色，并提供 `blend()` / `contrast()` 静态工具。
 - **`UiComponents`** — 统一组件外观：卡片、主按钮、幽灵按钮、软胶囊、按压反馈 `press()`（尊重动效等级）。
 - **`Compat`** — API 兼容层：`setBackground`、`clipToOutline`、`setLetterSpacing`、系统栏着色、各类 tint、全屏 flag 等，集中处理 `Build.VERSION` 分支，业务代码不再散落版本判断。

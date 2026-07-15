@@ -40,7 +40,6 @@ import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.AbsListView;
-import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -149,16 +148,8 @@ public final class MainActivity extends Activity {
     private final Map<View, Boolean> searchBarStates = new HashMap();
     private boolean pendingBackTransition;
     private boolean pendingLateralPush;
-    private String lastSearchKeyword = "";
-    private final List<FeedItem> searchResultItems = new ArrayList();
-    private int searchOffset;
-    private boolean searchEndReached;
-    private boolean searchLoadingMore;
-    private int searchSession;
+    private final SearchState searchState = new SearchState();
     private ListView searchListView;
-    private int searchListPosition;
-    private int searchListTopOffset;
-    private int searchStaleRounds;
     private final Map<String, LikeState> linkLikeOverrides = new HashMap();
     private final Map<String, Bitmap> screenSnapshots = new HashMap();
     private final Map<String, Bitmap> fullScreenSnapshots = new HashMap();
@@ -1574,7 +1565,8 @@ public final class MainActivity extends Activity {
             return;
         }
         if (!coldLaunchRefresh && this.feed.isEmpty()) {
-            List<FeedItem> cached = filterItems(this.localCache.feedItems());
+            List<FeedItem> cached = FeedCollection.filter(this.localCache.feedItems(),
+                    this.session.blockKeywordList());
             if (!cached.isEmpty()) {
                 this.feed.addAll(cached);
                 this.feedOffset = this.feed.size();
@@ -1967,7 +1959,7 @@ public final class MainActivity extends Activity {
                             JSONObject item = links.optJSONObject(i);
                             if (item != null) {
                                 FeedItem parsed = FeedItem.from(item);
-                                if (!MainActivity.this.isBlocked(parsed)) {
+                                if (!FeedCollection.isBlocked(parsed, MainActivity.this.session.blockKeywordList())) {
                                     fresh.add(parsed);
                                 }
                                 returned++;
@@ -1983,7 +1975,7 @@ public final class MainActivity extends Activity {
                         if (reset) {
                             MainActivity.this.feed.clear();
                         }
-                        MainActivity.this.appendUnique(MainActivity.this.feed, fresh);
+                        FeedCollection.appendUnique(MainActivity.this.feed, fresh);
                         MainActivity.this.localCache.saveFeed(MainActivity.this.feed);
                     }
                     if (!reset && returned > 0 && fresh.isEmpty()) {
@@ -2021,7 +2013,8 @@ public final class MainActivity extends Activity {
                         MainActivity.this.feedOffset = Math.max(previousOffset, MainActivity.this.feed.size());
                     }
                     if (reset && MainActivity.this.feed.isEmpty() && !suppressCacheFallback) {
-                        List<FeedItem> cached = MainActivity.this.filterItems(MainActivity.this.localCache.feedItems());
+                        List<FeedItem> cached = FeedCollection.filter(MainActivity.this.localCache.feedItems(),
+                                MainActivity.this.session.blockKeywordList());
                         if (!cached.isEmpty()) {
                             MainActivity.this.feed.addAll(cached);
                             MainActivity.this.toast(MainActivity.MSG_OFFLINE_CACHE);
@@ -2114,15 +2107,15 @@ public final class MainActivity extends Activity {
         renderSearchHistory(recent, input, results);
         transitionTo(frameLayout);
         // 从详情返回时恢复上一次的搜索词和已加载结果，避免整页重来
-        if (restoreResults && !this.lastSearchKeyword.isEmpty() && !this.searchResultItems.isEmpty()) {
-            input.setText(this.lastSearchKeyword);
+        if (restoreResults && this.searchState.hasResults()) {
+            input.setText(this.searchState.keyword());
             input.setSelection(input.length());
             recent.setVisibility(8);
-            this.searchSession++;
-            this.searchLoadingMore = false;
+            this.searchState.invalidateRequests();
             renderSearchResultList(results, searchBar, "");
-            if (this.searchListView != null && this.searchListPosition > 0) {
-                this.searchListView.setSelectionFromTop(this.searchListPosition, this.searchListTopOffset);
+            if (this.searchListView != null && this.searchState.listPosition() > 0) {
+                this.searchListView.setSelectionFromTop(this.searchState.listPosition(),
+                        this.searchState.listTopOffset());
             }
         }
     }
@@ -2178,21 +2171,6 @@ public final class MainActivity extends Activity {
         return params;
     }
 
-    private int appendSearchResults(List<FeedItem> incoming) {
-        Set<String> seen = new HashSet<>();
-        for (FeedItem existing : this.searchResultItems) {
-            seen.add(existing.id);
-        }
-        int added = 0;
-        for (FeedItem item : incoming) {
-            if (item.id != null && !item.id.isEmpty() && seen.add(item.id)) {
-                this.searchResultItems.add(item);
-                added++;
-            }
-        }
-        return added;
-    }
-
     private void performSearch(String keyword, final FrameLayout results, final View searchBar) {
         results.setTag(searchBar);
         results.removeAllViews();
@@ -2200,33 +2178,22 @@ public final class MainActivity extends Activity {
         LoadingSpinnerView progress = new LoadingSpinnerView(this);
         progress.setColor(this.PRIMARY);
         results.addView(progress, new FrameLayout.LayoutParams(dp(38), dp(38), 17));
-        final int session = ++this.searchSession;
-        this.lastSearchKeyword = keyword;
-        this.searchOffset = 0;
-        this.searchEndReached = false;
-        this.searchLoadingMore = false;
-        this.searchStaleRounds = 0;
+        final int session = this.searchState.begin(keyword);
         this.api.get(EndpointProvider.search(), searchParams(keyword, 0), new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
-                if ("search".equals(MainActivity.this.screen) && session == MainActivity.this.searchSession) {
-                    List<FeedItem> items = new ArrayList<>();
-                    MainActivity.this.collectFeedItems(body, items, new HashMap(), 0);
-                    List<FeedItem> items2 = MainActivity.this.filterItems(items);
-                    MainActivity.this.searchResultItems.clear();
-                    MainActivity.this.appendSearchResults(items2);
-                    // offset 按服务器实际返回条数推进，页大小不固定也不会跳帖
-                    MainActivity.this.searchOffset = items.size();
-                    if (items.isEmpty()) {
-                        MainActivity.this.searchEndReached = true;
-                    }
+                if ("search".equals(MainActivity.this.screen) && MainActivity.this.searchState.isCurrent(session)) {
+                    List<FeedItem> items = FeedCollection.parse(body);
+                    List<FeedItem> items2 = FeedCollection.filter(items,
+                            MainActivity.this.session.blockKeywordList());
+                    MainActivity.this.searchState.replace(items2, items.size());
                     MainActivity.this.renderSearchResultList(results, searchBar, "没有找到相关帖子");
                 }
             }
 
             @Override
             public void onError(String message) {
-                if ("search".equals(MainActivity.this.screen) && session == MainActivity.this.searchSession) {
+                if ("search".equals(MainActivity.this.screen) && MainActivity.this.searchState.isCurrent(session)) {
                     MainActivity.this.localCache.log("search failed: " + message);
                     MainActivity.this.setSearchBarVisible(searchBar, true);
                     results.removeAllViews();
@@ -2240,7 +2207,7 @@ public final class MainActivity extends Activity {
 
     private void renderSearchResultList(FrameLayout parent, View searchBar, String emptyText) {
         parent.removeAllViews();
-        if (this.searchResultItems.isEmpty()) {
+        if (this.searchState.items().isEmpty()) {
             setSearchBarVisible(searchBar, true);
             TextView empty = text(emptyText, 13.0f, this.MUTED);
             empty.setGravity(17);
@@ -2255,11 +2222,11 @@ public final class MainActivity extends Activity {
         // 搜索栏常驻在顶部，列表内容从其下方开始，滚动不再隐藏搜索栏（避免“闪一下像刷新”）
         list.setPadding(0, dp(54), 0, dp(4));
         list.setClipToPadding(false);
-        final TextView footer = text(this.searchEndReached ? "没有更多了" : "上滑加载更多", 11.5f, this.MUTED);
+        final TextView footer = text(this.searchState.endReached() ? "没有更多了" : "上滑加载更多", 11.5f, this.MUTED);
         footer.setGravity(17);
         footer.setPadding(0, dp(10), 0, dp(12));
         list.addFooterView(footer, null, false);
-        final FeedAdapter adapter = new FeedAdapter(this, this.searchResultItems, this.session.noImage(),
+        final FeedAdapter adapter = new FeedAdapter(this, this.searchState.items(), this.session.noImage(),
                 this.session.uiScale() / 100.0f, this.session.textScale() / 100.0f, this.session.darkMode(),
                 this.PRIMARY, this.SECONDARY, this::showDetail, this::toggleFeedLike);
         list.setAdapter((ListAdapter) adapter);
@@ -2282,51 +2249,32 @@ public final class MainActivity extends Activity {
     }
 
     private void loadMoreSearchResults(final FeedAdapter adapter, final TextView footer) {
-        if (this.searchLoadingMore || this.searchEndReached || this.lastSearchKeyword.isEmpty()) {
-            return;
-        }
-        this.searchLoadingMore = true;
+        if (!this.searchState.beginLoadMore()) return;
         footer.setText("正在加载更多…");
-        final int session = this.searchSession;
-        this.api.get(EndpointProvider.search(), searchParams(this.lastSearchKeyword, this.searchOffset), new ApiClient.Callback() {
+        final int session = this.searchState.generation();
+        this.api.get(EndpointProvider.search(), searchParams(this.searchState.keyword(), this.searchState.offset()), new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
-                if (session != MainActivity.this.searchSession) {
+                if (!MainActivity.this.searchState.isCurrent(session)) {
                     return;
                 }
-                MainActivity.this.searchLoadingMore = false;
-                List<FeedItem> items = new ArrayList<>();
-                MainActivity.this.collectFeedItems(body, items, new HashMap(), 0);
-                if (items.isEmpty()) {
-                    // 服务器返回空页才是真的到底；只是去重/过滤掉不算
-                    MainActivity.this.searchEndReached = true;
-                    footer.setText("没有更多了");
-                    return;
-                }
-                MainActivity.this.searchOffset += items.size();
-                int added = MainActivity.this.appendSearchResults(MainActivity.this.filterItems(items));
+                List<FeedItem> items = FeedCollection.parse(body);
+                int added = MainActivity.this.searchState.appendPage(
+                        FeedCollection.filter(items, MainActivity.this.session.blockKeywordList()), items.size());
                 if (added > 0) {
-                    MainActivity.this.searchStaleRounds = 0;
                     footer.setText("上滑加载更多");
                     adapter.notifyDataSetChanged();
                     return;
                 }
-                // 连续几页都是重复内容说明接口在兜圈子，视为到底，避免无限请求
-                MainActivity.this.searchStaleRounds++;
-                if (MainActivity.this.searchStaleRounds >= 3) {
-                    MainActivity.this.searchEndReached = true;
-                    footer.setText("没有更多了");
-                } else {
-                    footer.setText("上滑加载更多");
-                }
+                footer.setText(MainActivity.this.searchState.endReached() ? "没有更多了" : "上滑加载更多");
             }
 
             @Override
             public void onError(String message) {
-                if (session != MainActivity.this.searchSession) {
+                if (!MainActivity.this.searchState.isCurrent(session)) {
                     return;
                 }
-                MainActivity.this.searchLoadingMore = false;
+                MainActivity.this.searchState.failLoadMore();
                 footer.setText("加载失败，点击重试");
             }
         });
@@ -2398,80 +2346,6 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void collectFeedItems(Object node, List<FeedItem> output, Map<String, Boolean> ids, int depth) {
-        if (node == null || depth > 7) {
-            return;
-        }
-        if (node instanceof JSONArray) {
-            JSONArray array = (JSONArray) node;
-            for (int i = 0; i < array.length(); i++) {
-                collectFeedItems(array.opt(i), output, ids, depth + 1);
-            }
-            return;
-        }
-        if (node instanceof JSONObject) {
-            JSONObject object = (JSONObject) node;
-            String id = object.optString("linkid", object.optString("link_id"));
-            String titleValue = object.optString("title");
-            if (!id.isEmpty() && (!titleValue.isEmpty() || object.has("text") || object.has("description") || object.has("content"))) {
-                if (!ids.containsKey(id)) {
-                    ids.put(id, true);
-                    output.add(FeedItem.from(object));
-                    return;
-                }
-                return;
-            }
-            Iterator<String> keys = object.keys();
-            while (keys.hasNext()) {
-                collectFeedItems(object.opt(keys.next()), output, ids, depth + 1);
-            }
-        }
-    }
-
-    private void appendUnique(List<FeedItem> target, List<FeedItem> incoming) {
-        Map<String, Boolean> ids = new HashMap<>();
-        Iterator<FeedItem> it = target.iterator();
-        while (it.hasNext()) {
-            ids.put(it.next().id, true);
-        }
-        for (FeedItem item : incoming) {
-            if (item != null && !ids.containsKey(item.id)) {
-                target.add(item);
-                ids.put(item.id, true);
-            }
-        }
-    }
-
-    private List<FeedItem> filterItems(List<FeedItem> items) {
-        List<FeedItem> filtered = new ArrayList<>();
-        if (items == null) {
-            return filtered;
-        }
-        for (FeedItem item : items) {
-            if (!isBlocked(item)) {
-                filtered.add(item);
-            }
-        }
-        return filtered;
-    }
-
-    private boolean isBlocked(FeedItem item) {
-        if (item == null) {
-            return false;
-        }
-        List<String> keywords = this.session.blockKeywordList();
-        if (keywords.isEmpty()) {
-            return false;
-        }
-        String haystack = (item.title + "\n" + item.description + "\n" + item.author).toLowerCase(Locale.US);
-        for (String keyword : keywords) {
-            if (!keyword.isEmpty() && haystack.contains(keyword)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private void setFeedRefreshBusy(boolean busy) {
         if (!"feed".equals(this.screen) || this.action == null) {
             return;
@@ -2526,11 +2400,10 @@ public final class MainActivity extends Activity {
             saveFeedScroll();
         }
         if ("search".equals(this.screen) && this.searchListView != null) {
-            this.searchListPosition = this.searchListView.getFirstVisiblePosition();
             View firstChild = this.searchListView.getChildCount() > 0 ? this.searchListView.getChildAt(0) : null;
             // setSelectionFromTop 的 y 不含 paddingTop，这里要减掉，否则恢复时会往下偏一个搜索栏
-            this.searchListTopOffset = firstChild == null ? 0
-                    : firstChild.getTop() - this.searchListView.getPaddingTop();
+            this.searchState.saveListPosition(this.searchListView.getFirstVisiblePosition(),
+                    firstChild == null ? 0 : firstChild.getTop() - this.searchListView.getPaddingTop());
         }
         View sourceChild = (this.content == null || this.content.getChildCount() == 0) ? null : this.content.getChildAt(0);
         captureShellSnapshot(this.screen, sourceChild);
@@ -5531,7 +5404,8 @@ public final class MainActivity extends Activity {
         hideLoading();
         prepareSavedPage(TITLE_FAVORITES);
         String cacheKey = savedCacheKey(TITLE_FAVORITES, EndpointProvider.favoriteLinks());
-        List<FeedItem> cached = filterItems(this.localCache.savedList(cacheKey));
+        List<FeedItem> cached = FeedCollection.filter(this.localCache.savedList(cacheKey),
+                this.session.blockKeywordList());
         if (!cached.isEmpty()) {
             toast(MSG_OFFLINE_CACHE);
             renderSavedItems(TITLE_FAVORITES, cached);
@@ -5597,25 +5471,12 @@ public final class MainActivity extends Activity {
         this.api.get(path, params, new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
-                JSONObject value;
                 MainActivity.this.hideLoading();
-                JSONObject result = body.optJSONObject("result");
-                JSONArray links = SavedPostParser.findLinks(result == null ? body : result);
-                List<FeedItem> items = new ArrayList<>();
-                if (links != null) {
-                    for (int i = 0; i < links.length(); i++) {
-                        JSONObject item = links.optJSONObject(i);
-                        if (item != null && (value = SavedPostParser.savedFeedValue(item)) != null) {
-                            items.add(FeedItem.from(value));
-                        }
-                    }
-                }
-                if (items.isEmpty()) {
-                    MainActivity.this.collectFeedItems(body, items, new HashMap(), 0);
-                }
-                List<FeedItem> items2 = MainActivity.this.filterItems(items);
+                List<FeedItem> items2 = FeedCollection.filter(SavedPostParser.feedItems(body),
+                        MainActivity.this.session.blockKeywordList());
                 if (items2.isEmpty()) {
-                    List<FeedItem> cached = MainActivity.this.filterItems(MainActivity.this.localCache.savedList(cacheKey));
+                    List<FeedItem> cached = FeedCollection.filter(MainActivity.this.localCache.savedList(cacheKey),
+                            MainActivity.this.session.blockKeywordList());
                     if (!cached.isEmpty()) {
                         MainActivity.this.toast(MainActivity.MSG_OFFLINE_CACHE);
                         MainActivity.this.renderSavedItems(pageTitle, cached);
@@ -5641,7 +5502,8 @@ public final class MainActivity extends Activity {
                 }
                 MainActivity.this.hideLoading();
                 MainActivity.this.localCache.log(pageTitle + " failed: " + message);
-                List<FeedItem> cached = MainActivity.this.filterItems(MainActivity.this.localCache.savedList(cacheKey));
+                List<FeedItem> cached = FeedCollection.filter(MainActivity.this.localCache.savedList(cacheKey),
+                        MainActivity.this.session.blockKeywordList());
                 if (!cached.isEmpty()) {
                     MainActivity.this.toast(MainActivity.MSG_OFFLINE_CACHE);
                     MainActivity.this.renderSavedItems(pageTitle, cached);
@@ -5659,25 +5521,12 @@ public final class MainActivity extends Activity {
         this.api.getSigned(path, params, HeyboxSigner.Algorithm.ANDROID, ApiClient.RequestProfile.MOBILE, new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
-                JSONObject value;
                 MainActivity.this.hideLoading();
-                JSONObject result = body.optJSONObject("result");
-                JSONArray links = SavedPostParser.findLinks(result == null ? body : result);
-                List<FeedItem> items = new ArrayList<>();
-                if (links != null) {
-                    for (int i = 0; i < links.length(); i++) {
-                        JSONObject item = links.optJSONObject(i);
-                        if (item != null && (value = SavedPostParser.savedFeedValue(item)) != null) {
-                            items.add(FeedItem.from(value));
-                        }
-                    }
-                }
-                if (items.isEmpty()) {
-                    MainActivity.this.collectFeedItems(body, items, new HashMap(), 0);
-                }
-                List<FeedItem> items2 = MainActivity.this.filterItems(items);
+                List<FeedItem> items2 = FeedCollection.filter(SavedPostParser.feedItems(body),
+                        MainActivity.this.session.blockKeywordList());
                 if (items2.isEmpty()) {
-                    List<FeedItem> cached = MainActivity.this.filterItems(MainActivity.this.localCache.savedList(cacheKey));
+                    List<FeedItem> cached = FeedCollection.filter(MainActivity.this.localCache.savedList(cacheKey),
+                            MainActivity.this.session.blockKeywordList());
                     if (!cached.isEmpty()) {
                         MainActivity.this.toast(MainActivity.MSG_OFFLINE_CACHE);
                         MainActivity.this.renderSavedItems(pageTitle, cached);
@@ -5707,7 +5556,8 @@ public final class MainActivity extends Activity {
                 if (MainActivity.this.localCache != null) {
                     MainActivity.this.localCache.log(pageTitle + " mobile failed: " + message);
                 }
-                List<FeedItem> cached = MainActivity.this.filterItems(MainActivity.this.localCache.savedList(cacheKey));
+                List<FeedItem> cached = FeedCollection.filter(MainActivity.this.localCache.savedList(cacheKey),
+                        MainActivity.this.session.blockKeywordList());
                 if (!cached.isEmpty()) {
                     MainActivity.this.toast(MainActivity.MSG_OFFLINE_CACHE);
                     MainActivity.this.renderSavedItems(pageTitle, cached);
@@ -5725,25 +5575,12 @@ public final class MainActivity extends Activity {
         this.api.getSigned(path, params, HeyboxSigner.Algorithm.ANDROID, ApiClient.RequestProfile.OFFICIAL_MOBILE_CLIENT, new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
-                JSONObject value;
                 MainActivity.this.hideLoading();
-                JSONObject result = body.optJSONObject("result");
-                JSONArray links = SavedPostParser.findLinks(result == null ? body : result);
-                List<FeedItem> items = new ArrayList<>();
-                if (links != null) {
-                    for (int i = 0; i < links.length(); i++) {
-                        JSONObject item = links.optJSONObject(i);
-                        if (item != null && (value = SavedPostParser.savedFeedValue(item)) != null) {
-                            items.add(FeedItem.from(value));
-                        }
-                    }
-                }
-                if (items.isEmpty()) {
-                    MainActivity.this.collectFeedItems(body, items, new HashMap(), 0);
-                }
-                List<FeedItem> items2 = MainActivity.this.filterItems(items);
+                List<FeedItem> items2 = FeedCollection.filter(SavedPostParser.feedItems(body),
+                        MainActivity.this.session.blockKeywordList());
                 if (items2.isEmpty()) {
-                    List<FeedItem> cached = MainActivity.this.filterItems(MainActivity.this.localCache.savedList(cacheKey));
+                    List<FeedItem> cached = FeedCollection.filter(MainActivity.this.localCache.savedList(cacheKey),
+                            MainActivity.this.session.blockKeywordList());
                     if (!cached.isEmpty()) {
                         MainActivity.this.toast(MainActivity.MSG_OFFLINE_CACHE);
                         MainActivity.this.renderSavedItems(pageTitle, cached);
@@ -5766,7 +5603,8 @@ public final class MainActivity extends Activity {
                 if (MainActivity.this.localCache != null) {
                     MainActivity.this.localCache.log(pageTitle + " official failed: " + message);
                 }
-                List<FeedItem> cached = MainActivity.this.filterItems(MainActivity.this.localCache.savedList(cacheKey));
+                List<FeedItem> cached = FeedCollection.filter(MainActivity.this.localCache.savedList(cacheKey),
+                        MainActivity.this.session.blockKeywordList());
                 if (!cached.isEmpty()) {
                     MainActivity.this.toast(MainActivity.MSG_OFFLINE_CACHE);
                     MainActivity.this.renderSavedItems(pageTitle, cached);
@@ -6417,7 +6255,9 @@ public final class MainActivity extends Activity {
         list.setCacheColorHint(0);
         list.setClipToPadding(false);
         list.setPadding(0, 0, 0, dp(12));
-        AnnouncementAdapter adapter = new AnnouncementAdapter();
+        AnnouncementListAdapter adapter = new AnnouncementListAdapter(this, this.themeTokens,
+                this.session.uiScale() / 100.0f, this.session.textScale() / 100.0f,
+                this::showAnnouncementDialog);
         list.setAdapter((ListAdapter) adapter);
         list.setPullRefreshAction(() -> {
             loadAnnouncementsInto(list, adapter);
@@ -6432,7 +6272,7 @@ public final class MainActivity extends Activity {
         loadAnnouncementsInto(list, adapter);
     }
 
-    private void loadAnnouncementsInto(final PullRefreshListView list, final AnnouncementAdapter adapter) {
+    private void loadAnnouncementsInto(final PullRefreshListView list, final AnnouncementListAdapter adapter) {
         if (list == null || adapter == null) {
             return;
         }
@@ -6516,11 +6356,11 @@ public final class MainActivity extends Activity {
                     TextView itemTitle = text(TextUtils.isEmpty(item.title) ? "公告" : item.title, 14.0f, this.TEXT);
                     itemTitle.setTypeface(appRegularTypeface(), 1);
                     card.addView(itemTitle);
-                    String updatedAt = formatAnnouncementTime(item.updatedAt);
+                    String updatedAt = Format.announcementTime(item.updatedAt);
                     if (!TextUtils.isEmpty(updatedAt)) {
                         addTop(card, text(updatedAt, 10.0f, this.MUTED), 4);
                     }
-                    TextView preview = text(announcementPreview(item.content), 12.0f, this.MUTED);
+                    TextView preview = text(Format.announcementPreview(item.content), 12.0f, this.MUTED);
                     preview.setLineSpacing(0.0f, 1.18f);
                     addTop(card, preview, 6);
                     card.setOnClickListener(view -> {
@@ -6539,108 +6379,6 @@ public final class MainActivity extends Activity {
         this.content.addView(scrollView, match());
         animateIn(scrollView);
     }
-    private final class AnnouncementAdapter extends BaseAdapter {
-        private final List<AnnouncementChecker.Item> items = new ArrayList();
-
-        private AnnouncementAdapter() {
-        }
-
-        void setItems(List<AnnouncementChecker.Item> value) {
-            this.items.clear();
-            if (value != null) {
-                for (AnnouncementChecker.Item item : value) {
-                    if (item != null && item.enabled) {
-                        this.items.add(item);
-                    }
-                }
-            }
-            notifyDataSetChanged();
-        }
-
-        @Override
-        public int getCount() {
-            if (this.items.isEmpty()) {
-                return 1;
-            }
-            return this.items.size();
-        }
-
-        @Override
-        public Object getItem(int position) {
-            if (this.items.isEmpty()) {
-                return null;
-            }
-            return this.items.get(position);
-        }
-
-        @Override
-        public long getItemId(int position) {
-            return position;
-        }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            if (this.items.isEmpty()) {
-                TextView empty = MainActivity.this.text("暂无公告", 13.0f, MainActivity.this.MUTED);
-                empty.setGravity(17);
-                empty.setMinHeight(MainActivity.this.dp(88));
-                return empty;
-            }
-            AnnouncementChecker.Item item = this.items.get(position);
-            LinearLayout row = MainActivity.this.vertical(MainActivity.this.BG);
-            row.setPadding(MainActivity.this.dp(8), MainActivity.this.dp(4), MainActivity.this.dp(8), MainActivity.this.dp(4));
-            LinearLayout card = MainActivity.this.card();
-            TextView itemTitle = MainActivity.this.text(TextUtils.isEmpty(item.title) ? "公告" : item.title, 14.0f, MainActivity.this.TEXT);
-            itemTitle.setTypeface(appRegularTypeface(), 1);
-            card.addView(itemTitle);
-            String updatedAt = MainActivity.this.formatAnnouncementTime(item.updatedAt);
-            if (!TextUtils.isEmpty(updatedAt)) {
-                MainActivity.this.addTop(card, MainActivity.this.text(updatedAt, 10.0f, MainActivity.this.MUTED), 4);
-            }
-            TextView preview = MainActivity.this.text(MainActivity.this.announcementPreview(item.content), 12.0f, MainActivity.this.MUTED);
-            preview.setLineSpacing(0.0f, 1.18f);
-            MainActivity.this.addTop(card, preview, 6);
-            card.setOnClickListener(view -> {
-                MainActivity.this.showAnnouncementDialog(item);
-            });
-            row.addView(card, new LinearLayout.LayoutParams(-1, -2));
-            return row;
-        }
-    }
-
-    private String announcementPreview(String value) {
-        if (value == null) {
-            return "";
-        }
-        String clean = value.replace('\r', '\n').replace("\n\n", "\n").trim();
-        return clean.length() <= 92 ? clean : clean.substring(0, 92) + "...";
-    }
-
-    private String formatAnnouncementTime(String value) {
-        if (value == null) {
-            return "";
-        }
-        String clean = value.trim();
-        if (clean.isEmpty()) {
-            return "";
-        }
-        if (!clean.matches("\\d+")) {
-            return (clean.contains("-") || clean.contains("/") || clean.contains(":")) ? clean : "";
-        }
-        try {
-            long timestamp = Long.parseLong(clean);
-            if (timestamp <= 0) {
-                return "";
-            }
-            if (timestamp < 100000000000L) {
-                timestamp *= 1000;
-            }
-            return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(new Date(timestamp));
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
     private void showAbout() {
         LinearLayout page = settingsPage("about", "关于");
         addSectionLabel(page, "应用");
@@ -7497,10 +7235,10 @@ public final class MainActivity extends Activity {
             this.content.addView(view, match());
         }
         // 离屏期间列表若收到过 notifyDataSetChanged（如加载更多回包），重挂载会丢滚动位置，这里强制回到进详情前的位置
-        if ("search".equals(this.screen) && this.searchListView != null && this.searchListPosition >= 0) {
+        if ("search".equals(this.screen) && this.searchListView != null) {
             final ListView list = this.searchListView;
-            final int position = this.searchListPosition;
-            final int offset = this.searchListTopOffset;
+            final int position = this.searchState.listPosition();
+            final int offset = this.searchState.listTopOffset();
             list.post(() -> {
                 if (list.getWindowToken() != null) {
                     list.setSelectionFromTop(position, offset);
