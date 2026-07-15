@@ -114,7 +114,10 @@ HeyBoxCommunity/
 ### 6.1 入口与外壳
 
 - **`SplashActivity`** — 启动页。安装崩溃处理器（`CrashReporter`），按设置显示打字机开屏动画后进入 `MainActivity`；关闭开屏时直接跳转。
-- **`MainActivity`** — 项目最大的类，承载底部胶囊导航、信息流、搜索、帖子详情、评论区、评论发布、我的、收藏、历史、动态空间、设置、公告、关于、更新弹窗、滑动返回与页面转场。页面状态用 `screen` 字符串维护（`feed` / `search` / `profile` / `detail` / `settings_home` / `saved` / `user_space` / `announcement_board` / …），各页通过 `show*()` 方法切换。历史演进导致其体量较大，后续若拆分建议按页面（Feed/Search/Detail/Comment/Profile/Settings/Navigation）切分，且优先保证功能不退化。
+- **`MainActivity`** — 页面 View、导航状态与 Activity 生命周期协调器。仍负责底部导航、信息流、搜索、帖子详情、评论、我的、设置和页面转场，但不再包含二维码轮询、写接口重试和收藏响应递归解析。页面状态用 `screen` 字符串维护（`feed` / `search` / `profile` / `detail` / `settings_home` / `saved` / `user_space` / `announcement_board` / …），各页通过 `show*()` 方法切换。后续继续拆页时，应先稳定页面状态模型，再按 Feed/Search/Detail/Profile/Settings 分离，不能用大量回调接口把现有耦合原样搬到新文件。
+- **`QrLoginController`** — 二维码获取和登录状态轮询。用请求代次号忽略过期回调，统一管理 2 秒轮询、网络错误退避和停止生命周期；Activity 只负责二维码绘制和登录后的页面更新。
+- **`WriteActionClient`** — 点赞、收藏、关注、评论点赞和发评论的请求编排。集中管理 2 秒操作间隔、风控冷却、官方参数优先、token 刷新及兼容参数重试；不持有 Activity 或 View。
+- **`SavedPostParser`** — 收藏夹、历史列表等接口响应的纯 JSON 解析。负责从多层包装中识别收藏夹和帖子，补齐计数与作者字段，不持有网络或页面状态。
 - **`ThemeTokens`** — 主题令牌：由深色开关与主/辅色派生出背景、面板、文字、次要文字、分隔线、`onPrimary` 等一整套颜色，并提供 `blend()` / `contrast()` 静态工具。
 - **`UiComponents`** — 统一组件外观：卡片、主按钮、幽灵按钮、软胶囊、按压反馈 `press()`（尊重动效等级）。
 - **`Compat`** — API 兼容层：`setBackground`、`clipToOutline`、`setLetterSpacing`、系统栏着色、各类 tint、全屏 flag 等，集中处理 `Build.VERSION` 分支，业务代码不再散落版本判断。
@@ -188,7 +191,7 @@ HeyBoxCommunity/
 
 ## 7. 关键流程
 
-**启动**：`SplashActivity` 装崩溃处理器 → 开屏动画（可关）→ `MainActivity.onCreate` 初始化 `SessionStore` / `ApiClient` / `LocalCache` / `ImageLoader.init` / 注入 `Motions` 等级 / `WriteTokenProvider` → 构建外壳 → `showFeed()` → 触发一次在线心跳、（可选）检查更新与公告。
+**启动**：`SplashActivity` 装崩溃处理器 → 开屏动画（可关）→ `MainActivity.onCreate` 初始化 `SessionStore` / `ApiClient` / `LocalCache` / `ImageLoader.init` / 注入 `Motions` 等级 / `WriteTokenProvider` / `WriteActionClient` / `QrLoginController` → 构建外壳 → `showFeed()` → 触发一次在线心跳、（可选）检查更新与公告。
 
 **信息流**：`showFeed()` 优先复用缓存容器（走转场恢复滚动位置）；否则先填离线缓存再请求，`collectFeedItems` 递归从任意 JSON 结构里按 id 去重抽出帖子，`FeedAdapter` 渲染，滚动接近底部自动加载下一页。
 

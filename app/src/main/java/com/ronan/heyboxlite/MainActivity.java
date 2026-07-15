@@ -54,13 +54,6 @@ import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
-import com.ronan.heyboxlite.AnnouncementChecker;
-import com.ronan.heyboxlite.ApiClient;
-import com.ronan.heyboxlite.HeyboxSigner;
-import com.ronan.heyboxlite.RichContent;
-import com.ronan.heyboxlite.SignInManager;
-import com.ronan.heyboxlite.UpdateChecker;
-import com.ronan.heyboxlite.WriteTokenProvider;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -70,7 +63,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -87,10 +79,6 @@ public final class MainActivity extends Activity {
     private static final String TRANSITION_OVERLAY_TAG = "shell_transition_overlay";
     private static final String WELCOME_ANNOUNCEMENT_ID = "welcome-heybox-lite-1.77";
     private static final boolean SIGN_IN_ENABLED = false;
-    private static final int MAX_WRITE_FALLBACK_ATTEMPTS = 2;
-    private static final long WRITE_FALLBACK_DELAY_MS = 1300L;
-    private static final long QR_POLL_INTERVAL_MS = 2000L;
-    private static final long QR_POLL_ERROR_INTERVAL_MS = 5000L;
     private static final long OFFLINE_MAX_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
     private static final String[] THEME_NAMES = {"默认蓝", "红色", "粉色", "紫色", "绿色", "青色", "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"};
     private static final int[][] THEME_COLORS = {new int[]{-14386760, -9193242}, new int[]{-3982790, -1083529}, new int[]{-2597743, -1006399}, new int[]{-9022795, -4744481}, new int[]{-14185897, -9320552}, new int[]{-15299695, -9713717}, new int[]{-2921692, -1007516}, new int[]{-3958250, -995480}, new int[]{-7894890, -5327686}, new int[]{-15253642, -10646588}, new int[]{-15263977, -3102658}, new int[]{-13530253, -7808833}};
@@ -108,6 +96,8 @@ public final class MainActivity extends Activity {
     private SessionStore session;
     private ApiClient api;
     private WriteTokenProvider writeTokenProvider;
+    private WriteActionClient writeActions;
+    private QrLoginController qrLoginController;
     private SignInManager signInManager;
     private ReadingTimeTracker readingTimeTracker;
     private LinearLayout shellRoot;
@@ -133,8 +123,6 @@ public final class MainActivity extends Activity {
     private DetailPager detailPager;
     private boolean shellAnimating;
     private LocalCache localCache;
-    private String qrKey;
-    private boolean pollingQr;
     private boolean feedLoadingMore;
     private boolean feedRefreshing;
     private boolean feedNoMore;
@@ -153,16 +141,8 @@ public final class MainActivity extends Activity {
     private int detailRequestToken;
     private long lastManualSignClickAt;
     private long lastExitBackAt;
-    private long lastWriteSubmitAt;
-    private long writeBlockedUntilAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final PageTransitionController pageTransitions = new PageTransitionController();
-    private final Runnable qrPollTask = new Runnable() {
-        @Override
-        public void run() {
-            MainActivity.this.pollQr();
-        }
-    };
     private final List<FeedItem> feed = new ArrayList();
     private String cachedProfileUserId = "";
     private final Map<View, Integer> searchBarHeights = new HashMap();
@@ -202,19 +182,6 @@ public final class MainActivity extends Activity {
     private interface ToggleListener {
         void onChanged(boolean z);
     }
-    private interface WriteRequest {
-        void start(ApiClient.Callback callback);
-    }
-    private static class WriteStep {
-        final String name;
-        final WriteRequest request;
-
-        WriteStep(String name, WriteRequest request) {
-            this.name = name;
-            this.request = request;
-        }
-    }
-
     private static final class CommentLikeControl {
         final LinearLayout root;
         final ImageView icon;
@@ -268,6 +235,11 @@ public final class MainActivity extends Activity {
             }
         });
         this.writeTokenProvider = new WriteTokenProvider(this, this.session, this.api);
+        this.writeActions = new WriteActionClient(this.api, this.session, this.writeTokenProvider,
+                this.handler, message -> {
+                    if (this.localCache != null) this.localCache.log(message);
+                });
+        this.qrLoginController = new QrLoginController(this.api, this.handler);
         if (SIGN_IN_ENABLED) {
             this.signInManager = new SignInManager(this.session, this.api, this.writeTokenProvider, message2 -> {
                 if (this.localCache != null) {
@@ -1516,22 +1488,9 @@ public final class MainActivity extends Activity {
             oldImage.setImageDrawable(null);
         }
         setQrStatus("正在获取二维码", this.MUTED);
-        Map<String, String> params = new LinkedHashMap<>();
-        params.put("app", "web");
-        params.put(SecureStrings.heyboxId(), "");
-        this.api.get(EndpointProvider.qrUrl(), params, new ApiClient.Callback() {
+        this.qrLoginController.start(new QrLoginController.Listener() {
             @Override
-            public void onSuccess(JSONObject body) {
-                JSONObject result = body.optJSONObject("result");
-                String url = result == null ? "" : result.optString("qr_url");
-                if (url.isEmpty()) {
-                    MainActivity.this.setQrStatus("二维码获取失败", MainActivity.this.PRIMARY);
-                    return;
-                }
-                MainActivity.this.qrKey = Uri.parse(url).getQueryParameter("qr");
-                if (MainActivity.this.qrKey == null || MainActivity.this.qrKey.isEmpty()) {
-                    MainActivity.this.qrKey = result.optString("qr");
-                }
+            public void onQrReady(String url) {
                 try {
                     int size = Math.round(MainActivity.this.getResources().getDisplayMetrics().widthPixels * 0.5f);
                     ImageView image = (ImageView) MainActivity.this.content.findViewWithTag("qr_image");
@@ -1539,74 +1498,32 @@ public final class MainActivity extends Activity {
                         image.setImageBitmap(QrCode.create(url, size));
                     }
                     MainActivity.this.setQrStatus("等待扫码", MainActivity.this.SECONDARY);
-                    MainActivity.this.pollingQr = true;
-                    MainActivity.this.handler.postDelayed(MainActivity.this.qrPollTask, QR_POLL_INTERVAL_MS);
                 } catch (Exception e) {
                     MainActivity.this.setQrStatus("二维码生成失败", MainActivity.this.PRIMARY);
+                    MainActivity.this.stopQrPolling();
                 }
+            }
+
+            @Override
+            public void onStatus(String status) {
+                int color = status.startsWith("网络") ? MainActivity.this.MUTED
+                        : "等待扫码".equals(status) ? MainActivity.this.SECONDARY : MainActivity.this.PRIMARY;
+                MainActivity.this.setQrStatus(status, color);
+            }
+
+            @Override
+            public void onLogin(JSONObject result) {
+                MainActivity.this.session.saveLogin(result);
+                MainActivity.this.feed.clear();
+                MainActivity.this.toast("登录成功");
+                EmojiStore.load(MainActivity.this.api, () -> {
+                });
+                MainActivity.this.showFeed();
             }
 
             @Override
             public void onError(String message) {
-                MainActivity.this.setQrStatus("获取失败：" + MainActivity.this.qrErrorMessage(message), MainActivity.this.PRIMARY);
-            }
-        });
-    }
-
-    private String qrErrorMessage(String message) {
-        if (message == null || message.isEmpty()) {
-            return "请稍后重试";
-        }
-        if (message.contains("HTTP 403")) {
-            return "请求过于频繁，请稍后重试";
-        }
-        String compact = message.replace('\n', ' ').trim();
-        return compact.length() > 28 ? compact.substring(0, 28) + "" : compact;
-    }
-
-    private void pollQr() {
-        if (!this.pollingQr || this.qrKey == null || this.qrKey.isEmpty()) {
-            return;
-        }
-        Map<String, String> params = new HashMap<>();
-        params.put("qr", this.qrKey);
-        params.put("app", "web");
-        this.api.get(EndpointProvider.qrState(), params, new ApiClient.Callback() {
-            @Override
-            public void onSuccess(JSONObject body) {
-                if (MainActivity.this.pollingQr) {
-                    JSONObject result = body.optJSONObject("result");
-                    String state = result == null ? "" : result.optString("error");
-                    if ("ok".equals(state)) {
-                        MainActivity.this.session.saveLogin(result);
-                        MainActivity.this.pollingQr = false;
-                        MainActivity.this.feed.clear();
-                        MainActivity.this.toast("登录成功");
-                        EmojiStore.load(MainActivity.this.api, () -> {
-                        });
-                        MainActivity.this.showFeed();
-                        return;
-                    }
-                    if ("ready".equals(state)) {
-                        MainActivity.this.setQrStatus("已扫码，请在手机确认", MainActivity.this.PRIMARY);
-                    } else {
-                        if ("cancel".equals(state)) {
-                            MainActivity.this.pollingQr = false;
-                            MainActivity.this.setQrStatus("登录已取消，请重新获取", MainActivity.this.PRIMARY);
-                            return;
-                        }
-                        MainActivity.this.setQrStatus("等待扫码", MainActivity.this.SECONDARY);
-                    }
-                    MainActivity.this.handler.postDelayed(MainActivity.this.qrPollTask, QR_POLL_INTERVAL_MS);
-                }
-            }
-
-            @Override
-            public void onError(String message) {
-                if (MainActivity.this.pollingQr) {
-                    MainActivity.this.setQrStatus("网络波动，正在重试", MainActivity.this.MUTED);
-                    MainActivity.this.handler.postDelayed(MainActivity.this.qrPollTask, QR_POLL_ERROR_INTERVAL_MS);
-                }
+                MainActivity.this.setQrStatus("获取失败：" + message, MainActivity.this.PRIMARY);
             }
         });
     }
@@ -1620,8 +1537,7 @@ public final class MainActivity extends Activity {
     }
 
     private void stopQrPolling() {
-        this.pollingQr = false;
-        this.handler.removeCallbacks(this.qrPollTask);
+        if (this.qrLoginController != null) this.qrLoginController.stop();
     }
 
     private void showFeed() {
@@ -3493,28 +3409,14 @@ public final class MainActivity extends Activity {
     }
 
     private boolean allowWriteAction(String actionName) {
-        long now = System.currentTimeMillis();
-        if (now < this.writeBlockedUntilAt) {
-            toast("官方风控暂时限制" + actionName + "，稍后再试");
-            return false;
-        }
-        if (now - this.lastWriteSubmitAt < 2000L) {
-            toast("操作太频繁了，稍等一下");
-            return false;
-        }
-        this.lastWriteSubmitAt = now;
-        return true;
-    }
-
-    private void noteWriteRiskControl() {
-        this.writeBlockedUntilAt = Math.max(this.writeBlockedUntilAt, System.currentTimeMillis() + 600000L);
+        String message = this.writeActions.begin(actionName);
+        if (message == null) return true;
+        toast(message);
+        return false;
     }
 
     private String writeErrorMessage(String actionName, String message) {
-        if (isRiskControlWriteError(message)) {
-            return "官方风控暂时限制" + actionName + "，先停一会儿再试";
-        }
-        return message;
+        return this.writeActions.errorMessage(actionName, message);
     }
 
     private void toggleLinkLike(final FeedItem item, final CommentLikeControl view) {
@@ -3607,45 +3509,14 @@ public final class MainActivity extends Activity {
     }
 
     private void postLinkLike(FeedItem item, boolean nextLiked, ApiClient.Callback callback) {
-        runWriteFallback(new WriteStep[]{writeStep("like-official", cb -> {
-            this.api.postForm(EndpointProvider.awardLink(), queryHsrc(item), awardBody(item.id, nextLiked), cb);
-        }), writeStep("like-compat", cb2 -> {
-            this.api.postForm(EndpointProvider.awardLink(), Collections.emptyMap(), awardBody(item.id, nextLiked), cb2);
-        })}, callback);
+        this.writeActions.like(item.id, hsrcFor(item), nextLiked, callback);
     }
 
     private void postFavorite(FeedItem item, boolean nextFavored, ApiClient.Callback callback) {
-        runWriteFallback(new WriteStep[]{writeStep("favorite-official", cb -> {
-            this.api.postForm(EndpointProvider.favourLink(), queryHsrc(item), favouriteBody(item.id, nextFavored ? "1" : "2", false), cb);
-        }), writeStep("favorite-folder-compat", cb2 -> {
-            this.api.postForm(EndpointProvider.favourLink(), queryHsrc(item), favouriteBody(item.id, nextFavored ? "1" : "2", true), cb2);
-        })}, callback);
+        this.writeActions.favorite(item.id, hsrcFor(item), nextFavored, callback);
     }
 
-    private Map<String, String> awardBody(String linkId, boolean liked) {
-        Map<String, String> body = new HashMap<>();
-        body.put("link_id", linkId);
-        body.put("award_type", liked ? "1" : "0");
-        return body;
-    }
-
-    private Map<String, String> linkIdBody(String linkId) {
-        Map<String, String> body = new HashMap<>();
-        body.put("link_id", linkId);
-        return body;
-    }
-
-    private Map<String, String> favouriteBody(String linkId, String type, boolean includeFolder) {
-        Map<String, String> body = linkIdBody(linkId);
-        body.put("favour_type", type);
-        if (includeFolder) {
-            body.put("folder_id", "");
-        }
-        return body;
-    }
-
-    private Map<String, String> queryHsrc(FeedItem item) {
-        Map<String, String> query = new HashMap<>();
+    private String hsrcFor(FeedItem item) {
         String value = item == null ? "" : item.hsrc;
         if (value.isEmpty() && item != null && item.id.equals(this.currentLinkId)) {
             value = this.currentLinkHsrc;
@@ -3653,160 +3524,7 @@ public final class MainActivity extends Activity {
         if (value.isEmpty() && item == null) {
             value = this.currentLinkHsrc;
         }
-        if (!value.isEmpty()) {
-            query.put("h_src", value);
-        }
-        return query;
-    }
-
-    private Map<String, String> commentCreateQuery() {
-        Map<String, String> query = queryHsrc(this.currentDetailItem);
-        if (!this.currentAuthCode.isEmpty()) {
-            query.put("auth_code", this.currentAuthCode);
-        }
-        return query;
-    }
-
-    private WriteStep writeStep(String name, WriteRequest request) {
-        return new WriteStep(name, request);
-    }
-
-    private void runWriteFallback(WriteStep[] requests, ApiClient.Callback callback) {
-        if (this.localCache != null) {
-            this.localCache.log("write cookie keys: " + this.session.authCookieKeysForLog());
-        }
-        runWriteFallback(requests, 0, "", "", false, callback);
-    }
-
-    private void runWriteFallback(final WriteStep[] requests, final int index, String lastError, final String importantError, final boolean tokenRetried, final ApiClient.Callback callback) {
-        if (index >= requests.length || index >= MAX_WRITE_FALLBACK_ATTEMPTS) {
-            String message = !importantError.isEmpty() ? importantError : lastError;
-            callback.onError((message == null || message.isEmpty()) ? "接口未返回可用结果" : message);
-            return;
-        }
-        WriteStep step = requests[index];
-        final String label = (step == null || step.name == null || step.name.isEmpty()) ? "step-" + index : step.name;
-        if (this.localCache != null) {
-            this.localCache.log("write fallback " + index + " start: " + label);
-        }
-        if (step == null || step.request == null) {
-            runWriteFallback(requests, index + 1, lastError, importantError, tokenRetried, callback);
-        } else {
-            step.request.start(new ApiClient.Callback() {
-                @Override
-                public void onSuccess(JSONObject body) {
-                    if (MainActivity.this.localCache != null) {
-                        MainActivity.this.localCache.log("write fallback " + index + " ok: " + label);
-                    }
-                    callback.onSuccess(body);
-                }
-
-                @Override
-                public void onError(final String message2) {
-                    if (MainActivity.this.localCache != null) {
-                        MainActivity.this.localCache.log("write fallback " + index + " failed: " + label + ": " + message2);
-                    }
-                    if (MainActivity.this.isRiskControlWriteError(message2)) {
-                        MainActivity.this.noteWriteRiskControl();
-                        if (MainActivity.this.localCache != null) {
-                            MainActivity.this.localCache.log("write risk control stop fallback: " + label);
-                        }
-                        callback.onError(message2);
-                        return;
-                    }
-                    boolean tokenError = MainActivity.this.isTokenWriteError(message2);
-                    boolean loginError = MainActivity.this.isLoginWriteError(message2);
-                    String nextImportant = importantError;
-                    if (MainActivity.this.isParameterWriteError(message2) || loginError) {
-                        nextImportant = message2;
-                    }
-                    final String retryImportant = nextImportant;
-                    if ((tokenError || loginError) && !tokenRetried && MainActivity.this.writeTokenProvider != null) {
-                        if (MainActivity.this.localCache != null) {
-                            MainActivity.this.localCache.log("write auth failed, refreshing token then retrying chain");
-                        }
-                        MainActivity.this.writeTokenProvider.refresh(new WriteTokenProvider.Callback() {
-                            @Override
-                            public void onReady() {
-                                MainActivity.this.scheduleWriteFallback(requests, index, message2, retryImportant, true, callback);
-                            }
-
-                            @Override
-                            public void onError(String tokenMessage) {
-                                if (MainActivity.this.localCache != null) {
-                                    MainActivity.this.localCache.log("write token refresh failed, continue fallback: " + tokenMessage);
-                                }
-                                callback.onError(message2);
-                            }
-                        });
-                    } else if (tokenError || loginError) {
-                        if (MainActivity.this.localCache != null) {
-                            MainActivity.this.localCache.log("write auth error stop fallback: " + label);
-                        }
-                        callback.onError(message2);
-                    } else if (MainActivity.this.isParameterWriteError(message2)) {
-                        MainActivity.this.scheduleWriteFallback(requests, index + 1, message2, nextImportant, tokenRetried, callback);
-                    } else {
-                        callback.onError(message2);
-                    }
-                }
-            });
-        }
-    }
-
-    private void scheduleWriteFallback(final WriteStep[] requests, final int nextIndex, final String lastError, final String importantError, final boolean tokenRetried, final ApiClient.Callback callback) {
-        if (nextIndex >= requests.length || nextIndex >= MAX_WRITE_FALLBACK_ATTEMPTS) {
-            String message = !importantError.isEmpty() ? importantError : lastError;
-            callback.onError((message == null || message.isEmpty()) ? "接口未返回可用结果" : message);
-            return;
-        }
-        if (this.localCache != null) {
-            this.localCache.log("write fallback delay next=" + nextIndex + " ms=" + WRITE_FALLBACK_DELAY_MS);
-        }
-        this.handler.postDelayed(() -> MainActivity.this.runWriteFallback(requests, nextIndex, lastError, importantError, tokenRetried, callback), WRITE_FALLBACK_DELAY_MS);
-    }
-
-    private boolean isTokenWriteError(String message) {
-        if (message == null) {
-            return false;
-        }
-        String lower = message.toLowerCase(Locale.US);
-        return lower.contains("lack_token") || lower.contains("x_xhh_tokenid") || lower.contains("tokenid") || lower.contains("token") || message.contains("令牌");
-    }
-
-    private boolean isLoginWriteError(String message) {
-        if (message == null) {
-            return false;
-        }
-        String lower = message.toLowerCase(Locale.US);
-        return lower.contains("login") || lower.contains("relogin") || message.contains("登录") || message.contains("重新登录");
-    }
-
-    private boolean isParameterWriteError(String message) {
-        if (message == null) {
-            return false;
-        }
-        String lower = message.toLowerCase(Locale.US);
-        return message.contains("验证参数") || message.contains("参数") || message.contains("非法请求") || lower.contains("param");
-    }
-
-    private boolean isRiskControlWriteError(String message) {
-        if (message == null) {
-            return false;
-        }
-        String lower = message.toLowerCase(Locale.US);
-        return message.contains("无法使用该功能")
-                || message.contains("有风险")
-                || message.contains("风险")
-                || message.contains("风控")
-                || message.contains("请求过于频繁")
-                || message.contains("完成验证")
-                || message.contains("验证码")
-                || message.contains("HTTP 429")
-                || lower.contains("show_captcha")
-                || lower.contains("captcha")
-                || lower.contains("frequent")
-                || lower.contains("risk_control");
+        return value;
     }
 
     private void updateFeedLike(String linkId, boolean liked, int likes) {
@@ -4294,21 +4012,7 @@ public final class MainActivity extends Activity {
     }
 
     private void postFollow(String targetUserId, boolean next, ApiClient.Callback callback) {
-        String path = next ? EndpointProvider.followUser() : EndpointProvider.unfollowUser();
-        runWriteFallback(new WriteStep[]{writeStep("follow-official", cb -> {
-            this.api.postForm(path, queryHsrc(this.currentDetailItem), followBody(targetUserId, next), cb);
-        }), writeStep("follow-compat", cb2 -> {
-            this.api.postForm(path, Collections.emptyMap(), followBody(targetUserId, next), cb2);
-        })}, callback);
-    }
-
-    private Map<String, String> followBody(String value, boolean following) {
-        Map<String, String> body = new HashMap<>();
-        body.put("following_id", value);
-        if (following) {
-            body.put("follows", "1");
-        }
-        return body;
+        this.writeActions.follow(targetUserId, hsrcFor(this.currentDetailItem), next, callback);
     }
 
     private boolean isFollowing(JSONObject link, JSONObject user) {
@@ -4952,19 +4656,8 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private Map<String, String> commentSupportBody(String id, boolean liked) {
-        Map<String, String> body = new HashMap<>();
-        body.put("comment_id", id);
-        body.put("support_type", liked ? "1" : "2");
-        return body;
-    }
-
     private void postCommentLike(String id, boolean liked, ApiClient.Callback callback) {
-        runWriteFallback(new WriteStep[]{writeStep("comment-like-official", cb -> {
-            this.api.postForm(EndpointProvider.supportComment(), queryHsrc(this.currentDetailItem), commentSupportBody(id, liked), cb);
-        }), writeStep("comment-like-compat", cb2 -> {
-            this.api.postForm(EndpointProvider.supportComment(), Collections.emptyMap(), commentSupportBody(id, liked), cb2);
-        })}, callback);
+        this.writeActions.commentLike(id, hsrcFor(this.currentDetailItem), liked, callback);
     }
 
     private void showCommentDialog(JSONObject replyTo) {
@@ -5085,23 +4778,8 @@ public final class MainActivity extends Activity {
     }
 
     private void postCreateComment(String value, String rootId, String replyId, ApiClient.Callback callback) {
-        runWriteFallback(new WriteStep[]{writeStep("comment-create-official", cb -> {
-            this.api.postForm(EndpointProvider.createComment(), commentCreateQuery(), commentCreateBody(value, rootId, replyId), cb);
-        }), writeStep("comment-create-compat", cb2 -> {
-            this.api.postForm(EndpointProvider.createComment(), Collections.emptyMap(), commentCreateBody(value, rootId, replyId), cb2);
-        })}, callback);
-    }
-
-    private Map<String, String> commentCreateBody(String value, String rootId, String replyId) {
-        Map<String, String> body = new HashMap<>();
-        body.put("link_id", this.currentLinkId);
-        body.put("text", value);
-        body.put("root_id", rootId == null ? "" : rootId);
-        body.put("reply_id", replyId == null ? "" : replyId);
-        body.put("imgs", "");
-        body.put("is_cy", "0");
-        body.put("recommend_state", "0");
-        return body;
+        this.writeActions.createComment(this.currentLinkId, hsrcFor(this.currentDetailItem),
+                this.currentAuthCode, value, rootId, replyId, callback);
     }
 
     private void addComment(LinearLayout linearLayout, JSONObject comment, boolean reply) {
@@ -5783,7 +5461,7 @@ public final class MainActivity extends Activity {
         this.api.get(EndpointProvider.favoriteTabs(), Collections.emptyMap(), new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
-                MainActivity.this.localCache.log("favorite tabs loaded: " + MainActivity.this.favoriteTabSummary(body));
+                MainActivity.this.localCache.log("favorite tabs loaded: " + SavedPostParser.favoriteTabSummary(body));
                 MainActivity.this.showFavoriteContents("tab ok");
             }
 
@@ -5815,10 +5493,10 @@ public final class MainActivity extends Activity {
         this.api.get(EndpointProvider.favoriteFolders(), folderParams, new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
-                JSONObject folder = MainActivity.this.firstFavoriteFolder(MainActivity.this.findFavoriteFolders(body));
-                String folderId = MainActivity.this.favoriteFolderId(folder);
+                JSONObject folder = SavedPostParser.firstFavoriteFolder(SavedPostParser.findFavoriteFolders(body));
+                String folderId = SavedPostParser.favoriteFolderId(folder);
                 if (folder == null) {
-                    MainActivity.this.localCache.log("favorite folders missing: " + MainActivity.this.favoriteFolderSummary(body));
+                    MainActivity.this.localCache.log("favorite folders missing: " + SavedPostParser.favoriteFolderSummary(body));
                     MainActivity.this.showFavoriteLegacyList("folders missing");
                 } else if (folderId.isEmpty()) {
                     MainActivity.this.localCache.log("favorite folder id missing: " + folder);
@@ -5849,15 +5527,6 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private String favoriteTabSummary(JSONObject body) {
-        if (body == null) {
-            return "no body";
-        }
-        JSONObject result = body.optJSONObject("result");
-        JSONArray tabs = result == null ? null : result.optJSONArray("tab_list");
-        return "status=" + body.optString("status") + ", tabs=" + (tabs == null ? -1 : tabs.length()) + ", msg=" + Json.first(body.optString("msg"), body.optString("message"));
-    }
-
     private void showFavoritesUnavailable(JSONObject body, String message) {
         hideLoading();
         prepareSavedPage(TITLE_FAVORITES);
@@ -5872,20 +5541,9 @@ public final class MainActivity extends Activity {
             this.localCache.log("favorite unavailable reason: " + message);
         }
         if (body != null) {
-            this.localCache.log("favorite unavailable body: " + favoriteFolderSummary(body));
+            this.localCache.log("favorite unavailable body: " + SavedPostParser.favoriteFolderSummary(body));
         }
         showMessage(MSG_FAVORITES_UNAVAILABLE);
-    }
-
-    private String favoriteFolderSummary(JSONObject body) {
-        if (body == null) {
-            return "no body";
-        }
-        JSONObject result = body.optJSONObject("result");
-        JSONObject source = result == null ? body : result;
-        JSONArray folders = source.optJSONArray("folders");
-        int folderCount = folders == null ? -1 : folders.length();
-        return "status=" + body.optString("status") + ", msg=" + Json.first(body.optString("msg"), body.optString("message")) + ", folders=" + folderCount + ", favour_post_num=" + source.optInt("favour_post_num", source.optInt("favor_post_num", source.optInt("favorite_post_num", -1)));
     }
 
     private Map<String, String> favoriteParams(String folderId) {
@@ -5900,121 +5558,6 @@ public final class MainActivity extends Activity {
         params.put("dw", "604");
         params.put("no_more", "false");
         return params;
-    }
-
-    private JSONArray findFavoriteFolders(JSONObject body) {
-        JSONObject result = body == null ? null : body.optJSONObject("result");
-        JSONArray folders = findFavoriteFolderArray(result, 0);
-        return folders == null ? findFavoriteFolderArray(body, 0) : folders;
-    }
-
-    private JSONArray findFavoriteFolderArray(Object node, int depth) {
-        if (node == null || depth > 5) {
-            return null;
-        }
-        if (node instanceof JSONArray) {
-            JSONArray array = (JSONArray) node;
-            if (looksLikeFolderArray(array)) {
-                return array;
-            }
-            return null;
-        }
-        if (!(node instanceof JSONObject)) {
-            return null;
-        }
-        JSONObject object = (JSONObject) node;
-        String[] keys = {"folders", "folder_list", "fav_folders", "favorite_folders", "collect_folders", "collections", "list", "items", "data"};
-        for (String key : keys) {
-            JSONArray array2 = object.optJSONArray(key);
-            if (array2 != null && looksLikeFolderArray(array2)) {
-                return array2;
-            }
-        }
-        Iterator<String> names = object.keys();
-        while (names.hasNext()) {
-            Object child = object.opt(names.next());
-            JSONArray found = findFavoriteFolderArray(child, depth + 1);
-            if (found != null) {
-                return found;
-            }
-        }
-        return null;
-    }
-
-    private boolean looksLikeFolderArray(JSONArray array) {
-        if (array == null || array.length() == 0) {
-            return false;
-        }
-        int limit = Math.min(6, array.length());
-        for (int i = 0; i < limit; i++) {
-            JSONObject item = array.optJSONObject(i);
-            if (item != null) {
-                JSONObject folder = unwrapFavoriteFolder(item);
-                if (!favoriteFolderId(folder).isEmpty()) {
-                    return true;
-                }
-                if (folder != null && !Json.first(folder.optString("folder_name"), folder.optString("name"), folder.optString("title")).isEmpty()) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private JSONObject firstFavoriteFolder(JSONArray folders) {
-        if (folders == null) {
-            return null;
-        }
-        JSONObject fallback = null;
-        for (int i = 0; i < folders.length(); i++) {
-            JSONObject folder = unwrapFavoriteFolder(folders.optJSONObject(i));
-            if (folder != null) {
-                if (fallback == null) {
-                    fallback = folder;
-                }
-                if (!favoriteFolderId(folder).isEmpty()) {
-                    return folder;
-                }
-            }
-        }
-        return fallback;
-    }
-
-    private JSONObject unwrapFavoriteFolder(JSONObject item) {
-        JSONObject current = item;
-        for (int depth = 0; depth < 4 && current != null; depth++) {
-            if (!favoriteFolderId(current).isEmpty()) {
-                return current;
-            }
-            JSONObject next = current.optJSONObject("folder");
-            if (next == null) {
-                next = current.optJSONObject("folder_info");
-            }
-            if (next == null) {
-                next = current.optJSONObject("fav_folder");
-            }
-            if (next == null) {
-                next = current.optJSONObject("collect_folder");
-            }
-            if (next == null) {
-                next = current.optJSONObject("collection");
-            }
-            if (next == null) {
-                next = current.optJSONObject("data");
-            }
-            if (next == null) {
-                next = current.optJSONObject("item");
-            }
-            if (next == current) {
-                break;
-            }
-            current = next;
-        }
-        return current;
-    }
-
-    private String favoriteFolderId(JSONObject folder) {
-        return folder == null ? "" : Json.first(folder.optString("folder_id"), folder.optString("folderid"), folder.optString("fav_folder_id"), folder.optString("collect_folder_id"), folder.optString("collection_id"), folder.optString("id"), folder.optString("fid"));
     }
 
     private void prepareSavedPage(String pageTitle) {
@@ -6057,12 +5600,12 @@ public final class MainActivity extends Activity {
                 JSONObject value;
                 MainActivity.this.hideLoading();
                 JSONObject result = body.optJSONObject("result");
-                JSONArray links = MainActivity.this.findLinks(result == null ? body : result);
+                JSONArray links = SavedPostParser.findLinks(result == null ? body : result);
                 List<FeedItem> items = new ArrayList<>();
                 if (links != null) {
                     for (int i = 0; i < links.length(); i++) {
                         JSONObject item = links.optJSONObject(i);
-                        if (item != null && (value = MainActivity.this.savedFeedValue(item)) != null) {
+                        if (item != null && (value = SavedPostParser.savedFeedValue(item)) != null) {
                             items.add(FeedItem.from(value));
                         }
                     }
@@ -6088,7 +5631,7 @@ public final class MainActivity extends Activity {
 
             @Override
             public void onError(String message) {
-                if (MainActivity.this.isLoginWriteError(message)) {
+                if (WriteActionClient.isLoginError(message)) {
                     MainActivity.this.localCache.log(pageTitle + " web failed, trying mobile: " + message);
                     Map<String, String> mobileParams = new HashMap<>((Map<? extends String, ? extends String>) params);
                     mobileParams.remove("x_os_type");
@@ -6119,12 +5662,12 @@ public final class MainActivity extends Activity {
                 JSONObject value;
                 MainActivity.this.hideLoading();
                 JSONObject result = body.optJSONObject("result");
-                JSONArray links = MainActivity.this.findLinks(result == null ? body : result);
+                JSONArray links = SavedPostParser.findLinks(result == null ? body : result);
                 List<FeedItem> items = new ArrayList<>();
                 if (links != null) {
                     for (int i = 0; i < links.length(); i++) {
                         JSONObject item = links.optJSONObject(i);
-                        if (item != null && (value = MainActivity.this.savedFeedValue(item)) != null) {
+                        if (item != null && (value = SavedPostParser.savedFeedValue(item)) != null) {
                             items.add(FeedItem.from(value));
                         }
                     }
@@ -6153,11 +5696,11 @@ public final class MainActivity extends Activity {
 
             @Override
             public void onError(String message) {
-                if (MainActivity.this.isLoginWriteError(message) || MainActivity.this.isParameterWriteError(message)) {
+                if (WriteActionClient.isLoginError(message) || WriteActionClient.isParameterError(message)) {
                     if (MainActivity.this.localCache != null) {
                         MainActivity.this.localCache.log(pageTitle + " mobile failed, trying official: " + message);
                     }
-                    MainActivity.this.requestSavedListOfficial(pageTitle, path, params, cacheKey, fallback, authSuspect || MainActivity.this.isLoginWriteError(message));
+                    MainActivity.this.requestSavedListOfficial(pageTitle, path, params, cacheKey, fallback, authSuspect || WriteActionClient.isLoginError(message));
                     return;
                 }
                 MainActivity.this.hideLoading();
@@ -6185,12 +5728,12 @@ public final class MainActivity extends Activity {
                 JSONObject value;
                 MainActivity.this.hideLoading();
                 JSONObject result = body.optJSONObject("result");
-                JSONArray links = MainActivity.this.findLinks(result == null ? body : result);
+                JSONArray links = SavedPostParser.findLinks(result == null ? body : result);
                 List<FeedItem> items = new ArrayList<>();
                 if (links != null) {
                     for (int i = 0; i < links.length(); i++) {
                         JSONObject item = links.optJSONObject(i);
-                        if (item != null && (value = MainActivity.this.savedFeedValue(item)) != null) {
+                        if (item != null && (value = SavedPostParser.savedFeedValue(item)) != null) {
                             items.add(FeedItem.from(value));
                         }
                     }
@@ -6344,214 +5887,6 @@ public final class MainActivity extends Activity {
             }
         });
         this.content.addView(frameLayout, match());
-    }
-
-    private JSONArray findLinks(JSONObject result) {
-        if (result == null) {
-            return null;
-        }
-        JSONArray links = result.optJSONArray("links");
-        if (links == null) {
-            links = result.optJSONArray("list");
-        }
-        if (links == null) {
-            links = result.optJSONArray("moments");
-        }
-        if (links == null) {
-            links = result.optJSONArray("history_visit");
-        }
-        if (links == null) {
-            links = result.optJSONArray("visits");
-        }
-        if (links == null) {
-            links = result.optJSONArray("history");
-        }
-        if (links == null) {
-            links = result.optJSONArray("data");
-        }
-        if (links == null) {
-            links = result.optJSONArray("items");
-        }
-        if (links == null) {
-            links = result.optJSONArray("rows");
-        }
-        if (links == null) {
-            links = result.optJSONArray("records");
-        }
-        if (links == null) {
-            links = result.optJSONArray("favorites");
-        }
-        if (links == null) {
-            links = result.optJSONArray("collects");
-        }
-        if (links == null) {
-            links = result.optJSONArray("link_list");
-        }
-        if (links == null) {
-            links = result.optJSONArray("links_list");
-        }
-        if (links == null) {
-            links = findNestedLinkArray(result, 0);
-        }
-        return links;
-    }
-
-    private JSONArray findNestedLinkArray(Object node, int depth) {
-        if (node == null || depth > 5) {
-            return null;
-        }
-        if (node instanceof JSONArray) {
-            JSONArray array = (JSONArray) node;
-            if (looksLikeLinkArray(array)) {
-                return array;
-            }
-            return null;
-        }
-        if (!(node instanceof JSONObject)) {
-            return null;
-        }
-        JSONObject object = (JSONObject) node;
-        Iterator<String> names = object.keys();
-        while (names.hasNext()) {
-            JSONArray found = findNestedLinkArray(object.opt(names.next()), depth + 1);
-            if (found != null) {
-                return found;
-            }
-        }
-        return null;
-    }
-
-    private boolean looksLikeLinkArray(JSONArray array) {
-        JSONObject value;
-        if (array == null || array.length() == 0) {
-            return false;
-        }
-        int limit = Math.min(8, array.length());
-        for (int i = 0; i < limit; i++) {
-            JSONObject item = array.optJSONObject(i);
-            if (item != null && (value = savedFeedValue(item)) != null) {
-                String id = value.optString("linkid", value.optString("link_id"));
-                if (!id.isEmpty()) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private JSONObject unwrapSavedItem(JSONObject item) {
-        JSONObject current = item;
-        for (int depth = 0; depth < 4; depth++) {
-            if (!current.optString("linkid", current.optString("link_id")).isEmpty()) {
-                return current;
-            }
-            JSONObject next = current.optJSONObject("link");
-            if (next == null) {
-                next = current.optJSONObject("link_info");
-            }
-            if (next == null) {
-                next = current.optJSONObject("link_detail");
-            }
-            if (next == null) {
-                next = current.optJSONObject("moment");
-            }
-            if (next == null) {
-                next = current.optJSONObject("post");
-            }
-            if (next == null) {
-                next = current.optJSONObject("favorite");
-            }
-            if (next == null) {
-                next = current.optJSONObject("fav");
-            }
-            if (next == null) {
-                next = current.optJSONObject("record");
-            }
-            if (next == null) {
-                next = current.optJSONObject("target");
-            }
-            if (next == null) {
-                next = current.optJSONObject("source");
-            }
-            if (next == null) {
-                next = current.optJSONObject("obj");
-            }
-            if (next == null) {
-                next = current.optJSONObject("content");
-            }
-            if (next == null) {
-                next = current.optJSONObject("data");
-            }
-            if (next == null) {
-                next = current.optJSONObject("item");
-            }
-            if (next == null || next == current) {
-                break;
-            }
-            current = next;
-        }
-        return current;
-    }
-
-    private JSONObject savedFeedValue(JSONObject wrapper) {
-        JSONObject value = unwrapSavedItem(wrapper);
-        if (value == null) {
-            return null;
-        }
-        try {
-            JSONObject merged = new JSONObject(value.toString());
-            copyFirstInt(wrapper, merged, "link_award_num", "link_award_num", "like_num", "award_num", "award_count", "like_count", "liked_num", "praise_num", "praise_count", "total_award_num", "award", "awards", "up_num", "up");
-            copyFirstInt(wrapper, merged, "comment_num", "comment_num", "comment_count", "reply_num", "reply_count", "comments_count", "total_comment_num", "comment", "comments");
-            if (merged.optJSONObject("user") == null) {
-                JSONObject user = Json.findObject(wrapper, 0, "user", "author", "account");
-                if (user != null) {
-                    merged.put("user", user);
-                } else {
-                    String author = findString(wrapper, 0, "author_name", "username", "nickname", "author");
-                    if (!author.isEmpty()) {
-                        JSONObject fallbackUser = new JSONObject();
-                        fallbackUser.put("username", author);
-                        merged.put("user", fallbackUser);
-                    }
-                }
-            }
-            return merged;
-        } catch (Exception e) {
-            return value;
-        }
-    }
-
-    private void copyFirstInt(JSONObject source, JSONObject target, String targetKey, String... keys) {
-        int value;
-        if (target.optInt(targetKey, 0) <= 0 && (value = Json.findInt(source, keys, 0)) > 0) {
-            try {
-                target.put(targetKey, value);
-            } catch (Exception e) {
-            }
-        }
-    }
-
-    private String findString(JSONObject source, int depth, String... keys) {
-        if (source == null || depth > 4) {
-            return "";
-        }
-        for (String key : keys) {
-            String value = source.optString(key);
-            if (!value.isEmpty() && !value.startsWith("{")) {
-                return value;
-            }
-        }
-        Iterator<String> names = source.keys();
-        while (names.hasNext()) {
-            Object child = source.opt(names.next());
-            if (child instanceof JSONObject) {
-                String found = findString((JSONObject) child, depth + 1, keys);
-                if (!found.isEmpty()) {
-                    return found;
-                }
-            }
-        }
-        return "";
     }
 
     private LinearLayout settingsPage(String key, String pageTitle) {
@@ -8243,6 +7578,7 @@ public final class MainActivity extends Activity {
         recycleSnapshots(this.screenSnapshots);
         recycleSnapshots(this.fullScreenSnapshots);
         this.retainedPages.clear();
+        if (this.writeActions != null) this.writeActions.close();
         this.handler.removeCallbacksAndMessages(null);
         if (this.writeTokenProvider != null) {
             this.writeTokenProvider.close();

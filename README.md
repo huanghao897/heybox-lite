@@ -88,7 +88,9 @@ HeyBoxCommunity/
 
 | 模块 | 职责 |
 |------|------|
-| `MainActivity` | 页面组织、信息流、详情、评论、搜索、我的、设置 |
+| `MainActivity` | 页面 View、导航状态与生命周期协调 |
+| `QrLoginController` / `WriteActionClient` | 二维码登录轮询、写操作节流与请求编排 |
+| `SavedPostParser` | 收藏、历史等不稳定响应结构的纯 JSON 解析 |
 | `ApiClient` / `EndpointProvider` / `HeyboxSigner` | 小黑盒接口请求、路径混淆、参数签名 |
 | `SessionStore` / `LocalCache` / `ModernCookieCrypto` | 本地登录态、设置、离线缓存、Cookie 加密 |
 | `RichContent` / `EmojiRenderer` / `ImageLoader` / `GifSupport` | 正文解析、表情、图片加载与离线缓存、GIF |
