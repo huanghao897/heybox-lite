@@ -30,15 +30,17 @@ final class AnnouncementChecker {
         final String level;
         final String updatedAt;
         final boolean enabled;
+        final boolean onceOnly;
 
         Item(String id, String title, String content, String level,
-                String updatedAt, boolean enabled) {
+                String updatedAt, boolean enabled, boolean onceOnly) {
             this.id = id;
             this.title = title;
             this.content = content;
             this.level = level;
             this.updatedAt = updatedAt;
             this.enabled = enabled;
+            this.onceOnly = onceOnly;
         }
     }
 
@@ -54,7 +56,9 @@ final class AnnouncementChecker {
     private static void request(Callback callback) {
         HttpURLConnection connection = null;
         try {
-            URL url = new URL(UpdateChecker.requireTrustedUrl(BuildConfig.ANNOUNCEMENT_API_URL));
+            String endpoint = UpdateChecker.requireTrustedUrl(BuildConfig.ANNOUNCEMENT_API_URL);
+            String separator = endpoint.contains("?") ? "&" : "?";
+            URL url = new URL(endpoint + separator + "versionCode=" + BuildConfig.VERSION_CODE);
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(4000);
             connection.setReadTimeout(5000);
@@ -113,7 +117,8 @@ final class AnnouncementChecker {
         String id = firstNonEmpty(object.optString("id"), updatedAt, title + "-" + index);
         String level = firstNonEmpty(object.optString("level"), "normal");
         boolean enabled = object.optBoolean("enabled", true);
-        return new Item(id, title, content, level, updatedAt, enabled);
+        boolean onceOnly = object.optBoolean("onceOnly", true);
+        return new Item(id, title, content, level, updatedAt, enabled, onceOnly);
     }
 
     private static String read(InputStream stream) throws Exception {

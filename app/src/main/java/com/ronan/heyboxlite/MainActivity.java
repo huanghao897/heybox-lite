@@ -249,6 +249,7 @@ public final class MainActivity extends Activity {
         }
         showFeed();
         PresenceReporter.ping(this.session, this.readingTimeTracker);
+        RemoteConfig.load(this.session.userId(), null);
         if (this.session.autoUpdateCheck()) {
             this.handler.postDelayed(this::checkUpdateOnLaunch, 650L);
         }
@@ -316,7 +317,8 @@ public final class MainActivity extends Activity {
     }
 
     private void checkUpdateOnLaunch() {
-        UpdateChecker.check(appVersion(), new UpdateChecker.Callback() {
+        UpdateChecker.check(appVersion(), this.session.userId(), this.session.testReleaseId(),
+                new UpdateChecker.Callback() {
             @Override
             public void onResult(UpdateChecker.Result result) {
                 if (!result.updateAvailable || MainActivity.this.isFinishing()) {
@@ -327,6 +329,7 @@ public final class MainActivity extends Activity {
                 } else {
                     String target = result.downloadUrl.isEmpty() ? result.releaseUrl : result.downloadUrl;
                     MainActivity.this.showLiteDialog("发现新版本 " + result.version, "heybox Lite 有新版本可用，是否前往下载", "下载", () -> {
+                        MainActivity.this.rememberTestRelease(result);
                         MainActivity.this.openUpdateUrl(target);
                     }, "稍后", null, null, null);
                 }
@@ -387,7 +390,7 @@ public final class MainActivity extends Activity {
     }
 
     private AnnouncementChecker.Item welcomeAnnouncement() {
-        return new AnnouncementChecker.Item(WELCOME_ANNOUNCEMENT_ID, "欢迎使用 heybox Lite", "欢迎使用 heybox Lite。这里会放版本公告和重要提醒。\n\n遇到 bug 或有建议，可以加入交流群：781941517。\n\n本项目仅用于学习、研究与个人使用，请在遵守平台规则的前提下使用", "normal", appVersion(), true);
+        return new AnnouncementChecker.Item(WELCOME_ANNOUNCEMENT_ID, "欢迎使用 heybox Lite", "欢迎使用 heybox Lite。这里会放版本公告和重要提醒。\n\n遇到 bug 或有建议，可以加入交流群：781941517。\n\n本项目仅用于学习、研究与个人使用，请在遵守平台规则的前提下使用", "normal", appVersion(), true, true);
     }
 
     private AnnouncementChecker.Item firstUnseenAnnouncement(List<AnnouncementChecker.Item> items) {
@@ -396,7 +399,8 @@ public final class MainActivity extends Activity {
         }
         for (AnnouncementChecker.Item item : items) {
             if (item != null && item.enabled && (!item.title.isEmpty() || !item.content.isEmpty())) {
-                if (item.id.isEmpty() || this.session == null || !this.session.isAnnouncementSeen(item.id)) {
+                if (!item.onceOnly || item.id.isEmpty() || this.session == null
+                        || !this.session.isAnnouncementSeen(item.id)) {
                     return item;
                 }
             }
@@ -411,14 +415,14 @@ public final class MainActivity extends Activity {
         String titleValue = TextUtils.isEmpty(item.title) ? "公告" : item.title;
         String message = item.content == null ? "" : item.content;
         Runnable positive = () -> {
-            markAnnouncementSeen(item);
+            if (item.onceOnly) markAnnouncementSeen(item);
         };
         String neutralText = null;
         Runnable neutral = null;
         if (WELCOME_ANNOUNCEMENT_ID.equals(item.id)) {
             neutralText = "群二维码";
             neutral = () -> {
-                markAnnouncementSeen(item);
+                if (item.onceOnly) markAnnouncementSeen(item);
                 showFeedbackGroupQr();
             };
         }
@@ -449,8 +453,15 @@ public final class MainActivity extends Activity {
         message.append("\n\n更新内容：\n").append(notes);
         String target = TextUtils.isEmpty(result.downloadUrl) ? result.releaseUrl : result.downloadUrl;
         showLiteDialog("发现新版本 " + result.version, message.toString(), "下载", () -> {
+            rememberTestRelease(result);
             openUpdateUrl(target);
         }, "稍后", null, null, null);
+    }
+
+    private void rememberTestRelease(UpdateChecker.Result result) {
+        if (result != null && "test".equals(result.channel) && result.releaseId > 0) {
+            this.session.setTestReleaseId(result.releaseId);
+        }
     }
 
     private void showLiteDialog(String titleValue, String message, String positiveText, Runnable positiveAction, String negativeText, Runnable negativeAction, String neutralText, Runnable neutralAction) {
@@ -2421,6 +2432,7 @@ public final class MainActivity extends Activity {
         this.currentAuthCode = "";
         this.currentDetailItem = item;
         this.currentDetailBody = null;
+        this.localCache.rememberRecent(item);
         if (this.shellBar != null) {
             this.shellBar.setVisibility(8);
         }
@@ -3043,6 +3055,11 @@ public final class MainActivity extends Activity {
     }
 
     private boolean allowWriteAction(String actionName) {
+        String remoteMessage = RemoteConfig.blockedMessage(actionName);
+        if (!remoteMessage.isEmpty()) {
+            toast(remoteMessage);
+            return false;
+        }
         String message = this.writeActions.begin(actionName);
         if (message == null) return true;
         toast(message);
@@ -4323,6 +4340,19 @@ public final class MainActivity extends Activity {
             input.setGravity(8388659);
             input.setSingleLine(false);
             input.setHint(replyTo == null ? "友好交流，理性讨论" : "输入回复内容");
+            String draftKey = commentDraftKey(replyTo);
+            String draft = this.session.commentDraft(draftKey);
+            if (!draft.isEmpty()) {
+                input.setText(draft);
+                input.setSelection(draft.length());
+            }
+            input.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                    MainActivity.this.session.setCommentDraft(draftKey, s == null ? "" : s.toString());
+                }
+                @Override public void afterTextChanged(Editable s) {}
+            });
             int pad = dp(12);
             input.setPadding(pad, dp(10), pad, dp(10));
             Compat.setBackground(input, roundStroke(inputBg, 14, border, 1));
@@ -4389,6 +4419,7 @@ public final class MainActivity extends Activity {
         postCreateComment(value, rootId, replyId, new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
+                MainActivity.this.session.setCommentDraft(MainActivity.this.commentDraftKey(replyTo), "");
                 if (dialog != null && dialog.isShowing()) {
                     dialog.dismiss();
                 }
@@ -4414,6 +4445,11 @@ public final class MainActivity extends Activity {
     private void postCreateComment(String value, String rootId, String replyId, ApiClient.Callback callback) {
         this.writeActions.createComment(this.currentLinkId, hsrcFor(this.currentDetailItem),
                 this.currentAuthCode, value, rootId, replyId, callback);
+    }
+
+    private String commentDraftKey(JSONObject replyTo) {
+        String replyId = replyTo == null ? "root" : CommentData.commentId(replyTo);
+        return (this.currentLinkId == null ? "" : this.currentLinkId) + ":" + replyId;
     }
 
     private void addComment(LinearLayout linearLayout, JSONObject comment, boolean reply) {
@@ -4879,7 +4915,7 @@ public final class MainActivity extends Activity {
         LinearLayout panel = settingsList();
         addSettingEntry(panel, "显示与主题", "主题、字号、间距与界面预览", R.drawable.il_palette, this::showDisplaySettings);
         addSettingEntry(panel, "启动与更新", "开屏动画、自动检查更新", R.drawable.il_refresh, this::showStartupSettings);
-        addSettingEntry(panel, "内容与网络", "图片、缓存与登录状态", R.drawable.il_globe, this::showAppSettings);
+        addSettingEntry(panel, "内容与缓存", "图片、离线内容与登录状态", R.drawable.il_globe, this::showAppSettings);
         addSettingEntry(panel, "关于", appVersion(), R.drawable.il_info, this::showAbout);
         page.addView(panel);
         return scroll;
@@ -4942,27 +4978,15 @@ public final class MainActivity extends Activity {
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
         LinearLayout panel = settingsList();
-        addSettingEntry(panel, "阅读时长", readingEntrySummary(),
-                R.drawable.il_reading, this::showReadingStats);
-        addSettingEntry(panel, "稍后看", this.localCache.watchLaterItems().size() + " 篇离线内容", R.drawable.il_history,
-                this::showWatchLater);
+        addSettingEntry(panel, "阅读中心", readingEntrySummary() + " · "
+                        + this.localCache.watchLaterItems().size() + " 篇离线",
+                R.drawable.il_reading, this::showReadingCenter);
         addSettingEntry(panel, "收藏", "我收藏的帖子", R.drawable.il_bookmark, () -> {
             if (!this.session.isLoggedIn()) {
                 showLogin();
                 return;
             }
             showFavorites();
-        });
-        addSettingEntry(panel, "浏览历史", "最近看过的帖子", R.drawable.il_history, () -> {
-            if (!this.session.isLoggedIn()) {
-                showLogin();
-                return;
-            }
-            Map<String, String> params = new HashMap<>();
-            params.put("type", "all");
-            params.put("dw", "636");
-            params.put("no_more", "false");
-            showSavedList("浏览历史", EndpointProvider.history(), params);
         });
         addSettingEntry(panel, "每日签到", SIGN_IN_ENABLED ? "每日签到领取盒币" : "暂时关闭",
                 R.drawable.il_calendar, () -> {
@@ -4976,6 +5000,42 @@ public final class MainActivity extends Activity {
                 this::showSettingsHome);
         addTop(page, panel, 8);
         updateReadingTimeEntry();
+    }
+
+    private void showReadingCenter() {
+        prepareSavedPage("阅读中心");
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout page = vertical(this.BG);
+        page.setPadding(dp(8), dp(8), dp(8), dp(18));
+        scroll.addView(page);
+        List<FeedItem> recent = this.localCache.recentItems();
+        if (!recent.isEmpty()) {
+            FeedItem item = recent.get(0);
+            int progress = this.localCache.scroll(item.id);
+            LinearLayout continuePanel = settingsList();
+            addSettingEntry(continuePanel, "继续阅读", item.title,
+                    R.drawable.il_reading, () -> showDetail(item));
+            if (progress > 0) {
+                addTop(continuePanel, text("已记录上次阅读位置", 10.5f, this.MUTED), 0);
+            }
+            page.addView(continuePanel);
+        }
+        LinearLayout library = settingsList();
+        addSettingEntry(library, "阅读时长", readingEntrySummary(),
+                R.drawable.il_reading, this::showReadingStats);
+        addSettingEntry(library, "稍后看", this.localCache.watchLaterItems().size()
+                        + " 篇 · " + Format.cacheMb(this.localCache.offlineBytes()),
+                R.drawable.il_history, this::showWatchLater);
+        addSettingEntry(library, "浏览历史", recent.size() + " 篇本地记录",
+                R.drawable.il_history, () -> showLocalHistory(recent));
+        addTop(page, library, page.getChildCount() == 0 ? 0 : 8);
+        addBottomNavSafeSpace(page);
+        this.content.addView(scroll, match());
+    }
+
+    private void showLocalHistory(List<FeedItem> items) {
+        prepareSavedPage("浏览历史");
+        showHistoryList(items == null ? Collections.emptyList() : items);
     }
 
     private void showWatchLater() {
@@ -5806,7 +5866,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showAppSettings() {
-        LinearLayout page = settingsPage("app_settings", "内容与网络");
+        LinearLayout page = settingsPage("app_settings", "内容与缓存");
         addSectionLabel(page, "浏览与交互");
         LinearLayout panel = settingsList();
         addTop(panel, toggleRow("无图模式", this.session.noImage(), value -> {
@@ -5814,14 +5874,8 @@ public final class MainActivity extends Activity {
             this.feed.clear();
             invalidateFeedView();
         }), 0);
-        boolean zPlayGif = this.session.playGif();
-        SessionStore sessionStoreGif = this.session;
-        Objects.requireNonNull(sessionStoreGif);
-        addTop(panel, toggleRow("帖子内播放动图", zPlayGif, sessionStoreGif::setPlayGif), 0);
-        boolean zOriginalImages = this.session.originalImages();
-        SessionStore sessionStore = this.session;
-        Objects.requireNonNull(sessionStore);
-        addTop(panel, toggleRow("图片查看器允许查看原图", zOriginalImages, sessionStore::setOriginalImages), 0);
+        addSettingEntry(panel, "网络模式", networkModeLabel(), R.drawable.il_globe,
+                this::showNetworkModePicker);
         boolean zShellBackSwipe = this.session.shellBackSwipe();
         SessionStore sessionStore2 = this.session;
         Objects.requireNonNull(sessionStore2);
@@ -5879,6 +5933,8 @@ public final class MainActivity extends Activity {
                 }));
         addSettingEntry(maintain, "导出日志", "生成诊断文件用于反馈问题", R.drawable.il_scroll,
                 this::exportDiagnostics);
+        addSettingEntry(maintain, "运行自检", "检查网络、缓存、登录与更新服务", R.drawable.il_info,
+                this::runSelfTest);
         final TextView[] cacheDesc = new TextView[1];
         cacheDesc[0] = addSettingEntry(maintain, "清除缓存", "临时文件与图片缓存 " + Format.cacheMb(cacheBytes()),
                 R.drawable.il_cleanup, () -> {
@@ -6169,6 +6225,7 @@ public final class MainActivity extends Activity {
         updateDesc[0] = addSettingEntry(actions, "检查更新", "当前版本 " + appVersion(),
                 R.drawable.il_update, () -> {
                     if (found[0] != null) {
+                        rememberTestRelease(found[0]);
                         openUpdateUrl(found[0].downloadUrl.isEmpty()
                                 ? found[0].releaseUrl : found[0].downloadUrl);
                         return;
@@ -6178,7 +6235,8 @@ public final class MainActivity extends Activity {
                     }
                     checking[0] = true;
                     if (updateDesc[0] != null) updateDesc[0].setText("正在检查更新…");
-                    UpdateChecker.check(appVersion(), new UpdateChecker.Callback() {
+                    UpdateChecker.check(appVersion(), MainActivity.this.session.userId(),
+                            MainActivity.this.session.testReleaseId(), new UpdateChecker.Callback() {
                         @Override
                         public void onResult(UpdateChecker.Result result) {
                             if (MainActivity.this.isFinishing()) {
@@ -6618,6 +6676,38 @@ public final class MainActivity extends Activity {
             }
             showLiteDialog("无法打开安装器", "安装包已经下载完成，但系统安装器没有响应。可以改用浏览器下载后手动安装", "知道了", null, null, null, null, null);
         }
+    }
+
+    private String networkModeLabel() {
+        int mode = this.session.networkMode();
+        return mode == 0 ? "省流量" : mode == 2 ? "原图" : "标准";
+    }
+
+    private void showNetworkModePicker() {
+        showLiteDialog("网络模式", "省流量：缩略图且不播放动图\n标准：缩略图并播放动图\n原图：优先加载高清图片",
+                "标准", () -> setNetworkMode(1),
+                "省流量", () -> setNetworkMode(0),
+                "原图", () -> setNetworkMode(2));
+    }
+
+    private void setNetworkMode(int mode) {
+        this.session.setNetworkMode(mode);
+        this.feed.clear();
+        invalidateFeedView();
+        toast("已切换为" + networkModeLabel());
+        if ("app_settings".equals(this.screen)) showAppSettings();
+    }
+
+    private void runSelfTest() {
+        toast("正在自检");
+        DiagnosticsClient.selfTest(this, this.session, (success, report) -> {
+            if (isFinishing()) return;
+            showLiteDialog(success ? "自检完成" : "自检发现问题", report,
+                    "提交诊断", () -> DiagnosticsClient.upload(this.session, report,
+                            (uploaded, message) -> toast(message)),
+                    "知道了", null,
+                    "导出日志", this::exportDiagnostics);
+        });
     }
 
     private void exportDiagnostics() {

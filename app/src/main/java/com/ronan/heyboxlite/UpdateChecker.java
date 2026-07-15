@@ -30,15 +30,19 @@ final class UpdateChecker {
         final String notes;
         final String releaseUrl;
         final String downloadUrl;
+        final int releaseId;
+        final String channel;
 
         Result(boolean updateAvailable, String version, String title, String notes,
-                String releaseUrl, String downloadUrl) {
+                String releaseUrl, String downloadUrl, int releaseId, String channel) {
             this.updateAvailable = updateAvailable;
             this.version = version;
             this.title = title;
             this.notes = notes;
             this.releaseUrl = releaseUrl;
             this.downloadUrl = downloadUrl;
+            this.releaseId = releaseId;
+            this.channel = channel;
         }
     }
 
@@ -47,14 +51,16 @@ final class UpdateChecker {
 
     private UpdateChecker() {}
 
-    static void check(String currentVersion, Callback callback) {
-        EXECUTOR.execute(() -> request(currentVersion, callback));
+    static void check(String currentVersion, String userId, int testReleaseId, Callback callback) {
+        EXECUTOR.execute(() -> request(currentVersion, userId, testReleaseId, callback));
     }
 
-    private static void request(String currentVersion, Callback callback) {
+    private static void request(String currentVersion, String userId, int testReleaseId,
+                                Callback callback) {
         HttpURLConnection connection = null;
         try {
-            String endpoint = buildEndpoint(requireTrustedUrl(BuildConfig.UPDATE_API_URL));
+            String endpoint = buildEndpoint(requireTrustedUrl(BuildConfig.UPDATE_API_URL),
+                    userId, testReleaseId);
             URL url = new URL(endpoint);
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(4000);
@@ -81,7 +87,8 @@ final class UpdateChecker {
             if (releaseUrl.isEmpty()) releaseUrl = requireTrustedUrl(BuildConfig.UPDATE_FALLBACK_URL);
 
             Result result = new Result(isUpdateAvailable(payload, latest, currentVersion),
-                    latest, title, notes, releaseUrl, downloadUrl);
+                    latest, title, notes, releaseUrl, downloadUrl,
+                    payload.optInt("id", 0), payload.optString("channel", "stable"));
             if (result.updateAvailable && downloadUrl.isEmpty()) {
                 throw new IllegalStateException("未找到匹配的 APK 资源，可打开备用地址手动下载。");
             }
@@ -102,13 +109,18 @@ final class UpdateChecker {
         }
     }
 
-    private static String buildEndpoint(String endpoint) throws Exception {
+    private static String buildEndpoint(String endpoint, String userId,
+                                        int testReleaseId) throws Exception {
         String separator = endpoint.contains("?") ? "&" : "?";
-        return endpoint + separator
+        String result = endpoint + separator
                 + "versionCode=" + BuildConfig.VERSION_CODE
                 + "&currentVersionCode=" + BuildConfig.VERSION_CODE
+                + "&testReleaseId=" + Math.max(0, testReleaseId)
                 + "&versionName=" + URLEncoder.encode(BuildConfig.VERSION_NAME, "UTF-8")
                 + "&currentVersion=" + URLEncoder.encode(BuildConfig.VERSION_NAME, "UTF-8");
+        String cleanUserId = userId == null ? "" : userId.trim();
+        return cleanUserId.isEmpty() ? result
+                : result + "&userId=" + URLEncoder.encode(cleanUserId, "UTF-8");
     }
 
     private static boolean isUpdateAvailable(JSONObject payload, String latest,

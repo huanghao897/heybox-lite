@@ -63,6 +63,9 @@ final class SessionStore {
     private static final String AUTO_OFFLINE_CLEANUP = "auto_offline_cleanup";
     private static final String DOUBLE_TAP_COMMENT_REPLY = "double_tap_comment_reply";
     private static final String PLAY_GIF = "play_gif";
+    private static final String NETWORK_MODE = "network_mode";
+    private static final String COMMENT_DRAFT_PREFIX = "comment_draft_";
+    private static final String TEST_RELEASE_ID = "test_release_id";
     private static final String MOTION_LEVEL = "motion_level";
     private static final String LAST_ANNOUNCEMENT_ID = "last_announcement_id";
     private static final String SEEN_ANNOUNCEMENT_IDS = "seen_announcement_ids";
@@ -386,6 +389,43 @@ final class SessionStore {
 
     void setPlayGif(boolean value) {
         prefs.edit().putBoolean(PLAY_GIF, value).apply();
+    }
+
+    int networkMode() {
+        return Math.max(0, Math.min(2, prefs.getInt(NETWORK_MODE, 1)));
+    }
+
+    void setNetworkMode(int value) {
+        int mode = Math.max(0, Math.min(2, value));
+        prefs.edit()
+                .putInt(NETWORK_MODE, mode)
+                .putBoolean(ORIGINAL_IMAGES, mode == 2)
+                .putBoolean(PLAY_GIF, mode != 0)
+                .apply();
+    }
+
+    int testReleaseId() {
+        return Math.max(0, prefs.getInt(TEST_RELEASE_ID, 0));
+    }
+
+    void setTestReleaseId(int value) {
+        prefs.edit().putInt(TEST_RELEASE_ID, Math.max(0, value)).apply();
+    }
+
+    String commentDraft(String linkId) {
+        return prefs.getString(commentDraftKey(linkId), "");
+    }
+
+    void setCommentDraft(String linkId, String value) {
+        String key = commentDraftKey(linkId);
+        String clean = value == null ? "" : value;
+        if (clean.isEmpty()) prefs.edit().remove(key).apply();
+        else prefs.edit().putString(key, clean).apply();
+    }
+
+    private String commentDraftKey(String linkId) {
+        String value = linkId == null ? "" : linkId.trim();
+        return COMMENT_DRAFT_PREFIX + Integer.toHexString(value.hashCode());
     }
 
     /** 动画等级：0 关闭 / 1 精简 / 2 完整。首次按设备内存一次性判定并固化，之后完全听用户设置。 */
@@ -1812,6 +1852,8 @@ final class SessionStore {
         boolean autoOfflineCleanup = autoOfflineCleanup();
         boolean doubleTapCommentReply = doubleTapCommentReply();
         boolean playGif = playGif();
+        int networkMode = networkMode();
+        int testReleaseId = testReleaseId();
         int motionLevel = motionLevel();
         String lastAnnouncementId = lastAnnouncementId();
         String seenAnnouncementIds = prefs.getString(SEEN_ANNOUNCEMENT_IDS, "[]");
@@ -1847,6 +1889,8 @@ final class SessionStore {
                 .putBoolean(AUTO_OFFLINE_CLEANUP, autoOfflineCleanup)
                 .putBoolean(DOUBLE_TAP_COMMENT_REPLY, doubleTapCommentReply)
                 .putBoolean(PLAY_GIF, playGif)
+                .putInt(NETWORK_MODE, networkMode)
+                .putInt(TEST_RELEASE_ID, testReleaseId)
                 .putInt(MOTION_LEVEL, motionLevel)
                 .putString(LAST_ANNOUNCEMENT_ID, lastAnnouncementId)
                 .putString(SEEN_ANNOUNCEMENT_IDS, seenAnnouncementIds)

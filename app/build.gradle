@@ -27,6 +27,10 @@ android {
                 "\"http://8.138.134.236/\""
         buildConfigField "String", "ANNOUNCEMENT_API_URL",
                 "\"http://8.138.134.236/api/heybox-lite/announcement\""
+        buildConfigField "String", "CONFIG_API_URL",
+                "\"http://8.138.134.236/api/heybox-lite/config\""
+        buildConfigField "String", "DIAGNOSTICS_API_URL",
+                "\"http://8.138.134.236/api/diagnostics\""
     }
 
     buildFeatures {

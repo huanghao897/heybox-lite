@@ -27,6 +27,7 @@ final class LocalCache {
     private static final String FEED_ITEMS = "feed_items";
     private static final String FEED_SAVED_AT = "feed_saved_at";
     private static final String WATCH_LATER_FILE = "watch-later.json";
+    private static final String RECENT_ITEMS = "recent-items";
     private static final String SCROLL_PREFIX = "scroll_";
     private static final String OFFICIAL_NATIVE_DISABLED_CODE = "official_native_disabled_code";
     private static final String OFFICIAL_NATIVE_DISABLED_REASON = "official_native_disabled_reason";
@@ -112,6 +113,21 @@ final class LocalCache {
 
     List<FeedItem> savedList(String key) {
         return decodeItems(read(file(savedDir, key + ".json")));
+    }
+
+    synchronized void rememberRecent(FeedItem item) {
+        if (item == null || item.id.isEmpty()) return;
+        List<FeedItem> current = savedList(RECENT_ITEMS);
+        List<FeedItem> next = new ArrayList<>();
+        next.add(item);
+        for (FeedItem value : current) {
+            if (!item.id.equals(value.id) && next.size() < 50) next.add(value);
+        }
+        saveSavedList(RECENT_ITEMS, next);
+    }
+
+    List<FeedItem> recentItems() {
+        return savedList(RECENT_ITEMS);
     }
 
     void saveDetail(String linkId, JSONObject body) {
