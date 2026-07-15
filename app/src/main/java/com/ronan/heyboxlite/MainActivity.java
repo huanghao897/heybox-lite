@@ -155,6 +155,7 @@ public final class MainActivity extends Activity {
     private final Map<String, Bitmap> fullScreenSnapshots = new HashMap();
     private final Map<String, View> retainedPages = new HashMap();
     private String screen = "feed";
+    private String savedReturnScreen = "profile";
     private String detailReturn = "feed";
     private View detailReturnView;
     private String detailReturnTitle = "";
@@ -783,7 +784,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean canHeaderBack() {
-        return "detail".equals(this.screen) || "user_space".equals(this.screen) || "search".equals(this.screen) || "saved".equals(this.screen) || "reading_stats".equals(this.screen) || "announcement_board".equals(this.screen) || "settings_home".equals(this.screen) || "display_preview".equals(this.screen) || "display_settings".equals(this.screen) || "startup_settings".equals(this.screen) || "app_settings".equals(this.screen) || "about".equals(this.screen);
+        return "detail".equals(this.screen) || "user_space".equals(this.screen) || "search".equals(this.screen) || "saved".equals(this.screen) || "reading_center".equals(this.screen) || "reading_stats".equals(this.screen) || "announcement_board".equals(this.screen) || "settings_home".equals(this.screen) || "display_preview".equals(this.screen) || "display_settings".equals(this.screen) || "startup_settings".equals(this.screen) || "app_settings".equals(this.screen) || "about".equals(this.screen);
     }
 
     private int topLevelIndex() {
@@ -835,7 +836,21 @@ public final class MainActivity extends Activity {
     }
 
     private String backTargetScreenKey() {
-        return "detail".equals(this.screen) ? this.detailReturn : "user_space".equals(this.screen) ? "detail" : "search".equals(this.screen) ? "feed" : "saved".equals(this.screen) ? "profile" : "reading_stats".equals(this.screen) ? "profile" : "announcement_board".equals(this.screen) ? "about" : "display_preview".equals(this.screen) ? "display_settings" : ("display_settings".equals(this.screen) || "startup_settings".equals(this.screen) || "app_settings".equals(this.screen) || "about".equals(this.screen)) ? "settings_home" : "settings_home".equals(this.screen) ? "profile" : "feed";
+        if ("detail".equals(this.screen)) return this.detailReturn;
+        if ("user_space".equals(this.screen)) {
+            return this.userSpaceReturnItem == null ? this.userSpaceReturnScreen : "detail";
+        }
+        if ("search".equals(this.screen)) return "feed";
+        if ("saved".equals(this.screen)) return this.savedReturnScreen;
+        if ("reading_stats".equals(this.screen)) return "reading_center";
+        if ("reading_center".equals(this.screen)) return "profile";
+        if ("announcement_board".equals(this.screen)) return "about";
+        if ("display_preview".equals(this.screen)) return "display_settings";
+        if ("display_settings".equals(this.screen) || "startup_settings".equals(this.screen)
+                || "app_settings".equals(this.screen) || "about".equals(this.screen)) {
+            return "settings_home";
+        }
+        return "settings_home".equals(this.screen) ? "profile" : "feed";
     }
 
     private boolean canDetailSwipeBack() {
@@ -957,6 +972,8 @@ public final class MainActivity extends Activity {
             return;
         }
         if ("profile".equals(key)) {
+            this.userSpaceReturnItem = null;
+            this.userSpaceReturnScreen = "feed";
             activate("profile");
             updateReadingTimeEntry();
             this.title.setText("我的");
@@ -973,7 +990,22 @@ public final class MainActivity extends Activity {
             setBottomNavVisible(false, false);
             this.title.setText("阅读时长");
             this.leading.setVisibility(0);
-            this.leading.setOnClickListener(view -> showProfile());
+            this.leading.setOnClickListener(view -> {
+                this.pendingBackTransition = true;
+                showReadingCenter();
+            });
+            this.action.setVisibility(4);
+            return;
+        }
+        if ("reading_center".equals(key)) {
+            this.screen = key;
+            setBottomNavVisible(false, false);
+            this.title.setText("阅读中心");
+            this.leading.setVisibility(0);
+            this.leading.setOnClickListener(view -> {
+                this.pendingBackTransition = true;
+                showProfile();
+            });
             this.action.setVisibility(4);
             return;
         }
@@ -1679,7 +1711,7 @@ public final class MainActivity extends Activity {
         this.leading.setVisibility(0);
         this.leading.setOnClickListener(view -> {
             this.pendingBackTransition = true;
-            showProfile();
+            showReadingCenter();
         });
         this.title.setText("阅读时长");
         this.action.setVisibility(4);
@@ -3342,6 +3374,9 @@ public final class MainActivity extends Activity {
         if ("detail".equals(this.screen)) {
             this.userSpaceReturnItem = this.currentDetailItem;
             this.userSpaceReturnScreen = this.detailReturn;
+        } else {
+            this.userSpaceReturnItem = null;
+            this.userSpaceReturnScreen = this.screen;
         }
         activate("user_space");
         this.title.setText("动态");
@@ -4978,6 +5013,11 @@ public final class MainActivity extends Activity {
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
         LinearLayout panel = settingsList();
+        if (loggedIn) {
+            addSettingEntry(panel, "我的动态", "动态与投稿", R.drawable.il_person,
+                    () -> showUserSpace(this.session.userId(), this.session.userName(),
+                            this.session.avatar()));
+        }
         addSettingEntry(panel, "阅读中心", readingEntrySummary() + " · "
                         + this.localCache.watchLaterItems().size() + " 篇离线",
                 R.drawable.il_reading, this::showReadingCenter);
@@ -5003,7 +5043,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showReadingCenter() {
-        prepareSavedPage("阅读中心");
+        prepareReadingCenter();
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
         page.setPadding(dp(8), dp(8), dp(8), dp(18));
@@ -5026,20 +5066,47 @@ public final class MainActivity extends Activity {
         addSettingEntry(library, "稍后看", this.localCache.watchLaterItems().size()
                         + " 篇 · " + Format.cacheMb(this.localCache.offlineBytes()),
                 R.drawable.il_history, this::showWatchLater);
-        addSettingEntry(library, "浏览历史", recent.size() + " 篇本地记录",
-                R.drawable.il_history, () -> showLocalHistory(recent));
+        addSettingEntry(library, "历史记录", this.session.isLoggedIn()
+                        ? "与小黑盒账号同步" : "登录后查看小黑盒记录",
+                R.drawable.il_history, this::showCloudHistory);
         addTop(page, library, page.getChildCount() == 0 ? 0 : 8);
         addBottomNavSafeSpace(page);
+        this.retainedPages.put("reading_center", scroll);
         this.content.addView(scroll, match());
     }
 
-    private void showLocalHistory(List<FeedItem> items) {
-        prepareSavedPage("浏览历史");
-        showHistoryList(items == null ? Collections.emptyList() : items);
+    private void prepareReadingCenter() {
+        stopQrPolling();
+        ensureEmojiCatalog(() -> {
+        });
+        this.screen = "reading_center";
+        setBottomNavVisible(false);
+        this.leading.setVisibility(0);
+        this.leading.setOnClickListener(view -> {
+            this.pendingBackTransition = true;
+            showProfile();
+        });
+        this.title.setText("阅读中心");
+        this.action.setVisibility(4);
+        this.content.removeAllViews();
+        this.pendingBackTransition = false;
+    }
+
+    private void showCloudHistory() {
+        if (!this.session.isLoggedIn()) {
+            showLogin();
+            return;
+        }
+        Map<String, String> params = new HashMap<>();
+        params.put("type", "all");
+        params.put("dw", "636");
+        params.put("no_more", "false");
+        showSavedList("历史记录", EndpointProvider.history(), params, true, null,
+                "reading_center");
     }
 
     private void showWatchLater() {
-        prepareSavedPage("稍后看");
+        prepareSavedPage("稍后看", "reading_center");
         List<LocalCache.OfflineItem> items = this.localCache.watchLaterItems();
         if (items.isEmpty()) {
             showMessage("还没有稍后看的帖子\n打开帖子后点“稍后看”即可离线保存");
@@ -5256,15 +5323,18 @@ public final class MainActivity extends Activity {
     }
 
     private void prepareSavedPage(String pageTitle) {
+        prepareSavedPage(pageTitle, "profile");
+    }
+
+    private void prepareSavedPage(String pageTitle, String returnScreen) {
         stopQrPolling();
         ensureEmojiCatalog(() -> {
         });
         this.screen = "saved";
+        this.savedReturnScreen = TextUtils.isEmpty(returnScreen) ? "profile" : returnScreen;
         setBottomNavVisible(false);
         this.leading.setVisibility(0);
-        this.leading.setOnClickListener(view -> {
-            showProfile();
-        });
+        this.leading.setOnClickListener(view -> returnFromSavedPage());
         this.title.setText(pageTitle);
         this.action.setVisibility(4);
         this.content.removeAllViews();
@@ -5275,7 +5345,13 @@ public final class MainActivity extends Activity {
     }
 
     private void showSavedList(final String pageTitle, final String path, final Map<String, String> params, boolean includeUserId, final SavedListFallback fallback) {
-        prepareSavedPage(pageTitle);
+        showSavedList(pageTitle, path, params, includeUserId, fallback, "profile");
+    }
+
+    private void showSavedList(final String pageTitle, final String path,
+                               final Map<String, String> params, boolean includeUserId,
+                               final SavedListFallback fallback, String returnScreen) {
+        prepareSavedPage(pageTitle, returnScreen);
         showLoading();
         if (!params.containsKey("offset")) {
             params.put("offset", "0");
@@ -6963,8 +7039,12 @@ public final class MainActivity extends Activity {
             returnFromUserSpace();
             return;
         }
-        if ("reading_stats".equals(this.screen)) {
+        if ("reading_center".equals(this.screen)) {
             showProfile();
+            return;
+        }
+        if ("reading_stats".equals(this.screen)) {
+            showReadingCenter();
             return;
         }
         if (!"saved".equals(this.screen)) {
@@ -7000,7 +7080,7 @@ public final class MainActivity extends Activity {
             showAbout();
             return;
         }
-        showProfile();
+        returnFromSavedPage();
     }
 
     private void returnFromDetail() {
@@ -7031,16 +7111,20 @@ public final class MainActivity extends Activity {
             this.pageTransitions.finishNow();
             this.content.removeAllViews();
         }
-        if (!"saved".equals(this.detailReturn)) {
-            if (!"search".equals(this.detailReturn)) {
-                showFeed();
-                return;
-            } else {
-                showSearch(true);
-                return;
-            }
+        if ("saved".equals(this.detailReturn)) {
+            if ("reading_center".equals(this.savedReturnScreen)) showReadingCenter();
+            else showProfile();
+            return;
         }
-        showProfile();
+        if ("reading_center".equals(this.detailReturn)) {
+            showReadingCenter();
+            return;
+        }
+        if ("search".equals(this.detailReturn)) {
+            showSearch(true);
+            return;
+        }
+        showFeed();
     }
 
     private void returnFromDetailSmooth() {
@@ -7055,14 +7139,28 @@ public final class MainActivity extends Activity {
         if (item != null) {
             this.pendingDetailReturn = TextUtils.isEmpty(returnScreen) ? "feed" : returnScreen;
             showDetail(item);
+        } else if ("profile".equals(returnScreen)) {
+            showProfile();
+        } else if ("reading_center".equals(returnScreen)) {
+            showReadingCenter();
         } else {
             showFeed();
         }
     }
 
+    private void returnFromSavedPage() {
+        this.pendingBackTransition = true;
+        if ("reading_center".equals(this.savedReturnScreen)) {
+            showReadingCenter();
+        } else {
+            showProfile();
+        }
+    }
+
     private boolean shouldKeepDetailReturnView(String screenKey) {
         return "feed".equals(screenKey) || "search".equals(screenKey)
-                || "saved".equals(screenKey) || "user_space".equals(screenKey);
+                || "saved".equals(screenKey) || "reading_center".equals(screenKey)
+                || "user_space".equals(screenKey);
     }
 
     private boolean restoreDetailReturnView(boolean animate) {
