@@ -77,18 +77,8 @@ final class EmojiRenderer {
         SpannableString styled = new SpannableString(source);
         Matcher matcher = TOKEN.matcher(source);
         while (matcher.find()) {
-            String code = matcher.group();
+            String code = EmojiStore.longestResolvableCode(matcher.group(), darkMode);
             String url = EmojiStore.url(code, darkMode);
-            if (url.isEmpty()) {
-                String trimmed = trimBareToken(code);
-                if (!trimmed.equals(code)) {
-                    String trimmedUrl = EmojiStore.url(trimmed, darkMode);
-                    if (!trimmedUrl.isEmpty()) {
-                        code = trimmed;
-                        url = trimmedUrl;
-                    }
-                }
-            }
             if (url.isEmpty()) continue;
             String cacheKey = (darkMode ? "d:" : "l:") + code;
             Bitmap bitmap = BITMAPS.get(cacheKey);
@@ -122,17 +112,6 @@ final class EmojiRenderer {
             }
         }
         view.setText(styled);
-    }
-
-    private static String trimBareToken(String value) {
-        if (value == null || value.startsWith("[")) return value == null ? "" : value;
-        int end = value.length();
-        while (end > 0) {
-            char ch = value.charAt(end - 1);
-            if ("，。！？、,.?:;；：)）】".indexOf(ch) < 0) break;
-            end--;
-        }
-        return value.substring(0, end);
     }
 
     private static void waitFor(String cacheKey, TextView view, String source,

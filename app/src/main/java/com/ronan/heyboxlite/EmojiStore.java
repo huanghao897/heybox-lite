@@ -28,6 +28,20 @@ final class EmojiStore {
         return value == null ? "" : value;
     }
 
+    static String longestResolvableCode(String value, boolean darkMode) {
+        if (value == null || value.isEmpty()) return "";
+        if (!url(value, darkMode).isEmpty()) return value;
+        if (value.startsWith("[")) return "";
+
+        int separator = value.indexOf('_');
+        int minimumLength = separator < 0 ? 1 : separator + 2;
+        for (int end = value.length() - 1; end >= minimumLength; end--) {
+            String candidate = value.substring(0, end);
+            if (!url(candidate, darkMode).isEmpty()) return candidate;
+        }
+        return "";
+    }
+
     static void register(String code, String lightUrl, String darkUrl) {
         if (code == null || code.isEmpty()) return;
         String light = normalizeUrl(lightUrl);

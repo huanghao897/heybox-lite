@@ -2743,7 +2743,9 @@ public final class MainActivity extends Activity {
             addTop(article, fallbackNotice, 7);
         }
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
-        this.lastDetailDiagnostics = buildDetailDiagnostics(body, fallback, link, fallbackImages);
+        JSONArray comments = result == null ? null : result.optJSONArray("comments");
+        this.lastDetailDiagnostics = buildDetailDiagnostics(
+                body, fallback, link, fallbackImages, comments);
         this.localCache.log("detail diagnostics captured link=" + (fallback == null ? "" : fallback.id) + " title=" + compactLogText(heading, 48));
         addRichContent(article, link, fallback.description, fallbackImages);
         if (!fallback.article) {
@@ -2751,13 +2753,13 @@ public final class MainActivity extends Activity {
         }
         addDetailActions(article, fallback, link);
         page.addView(article);
-        addDetailCommentSection(page, result == null ? null : result.optJSONArray("comments"));
+        addDetailCommentSection(page, comments);
         ScrollView commentScroll = new ScrollView(this);
         commentScroll.setBackgroundColor(this.BG);
         LinearLayout commentPage = vertical(this.BG);
         commentPage.setPadding(pagePadding, dp(8), pagePadding, dp(18));
         commentScroll.addView(commentPage);
-        addDetailCommentSection(commentPage, result == null ? null : result.optJSONArray("comments"));
+        addDetailCommentSection(commentPage, comments);
         pager.setPages(detailReturnPreview(), articleScroll, commentScroll);
         pager.setReturnView(this.detailReturnView);
         transitionTo(pager);
@@ -4536,7 +4538,7 @@ public final class MainActivity extends Activity {
             });
             addTop(block, value, 5);
         }
-        List<String> commentImages = CommentData.commentImages(comment);
+        List<CommentData.CommentImage> commentImages = CommentData.commentImages(comment);
         if (!this.session.noImage() && !commentImages.isEmpty()) {
             addCommentImages(block, commentImages, reply);
         }
@@ -4565,15 +4567,16 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void addCommentImages(LinearLayout parent, List<String> urls, boolean reply) {
+    private void addCommentImages(LinearLayout parent, List<CommentData.CommentImage> images,
+                                  boolean reply) {
         LinearLayout gallery = vertical(0);
         int size = reply ? 68 : 82;
-        for (int start = 0; start < urls.size(); start += 3) {
+        for (int start = 0; start < images.size(); start += 3) {
             LinearLayout row = new LinearLayout(this);
             row.setGravity(3);
-            int end = Math.min(start + 3, urls.size());
+            int end = Math.min(start + 3, images.size());
             for (int i = start; i < end; i++) {
-                ImageView image = commentImage(urls.get(i), size);
+                ImageView image = commentImage(images.get(i), size);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(size), dp(size));
                 if (i > start) params.leftMargin = dp(5);
                 row.addView(image, params);
@@ -4587,7 +4590,8 @@ public final class MainActivity extends Activity {
         parent.addView(gallery, galleryParams);
     }
 
-    private ImageView commentImage(String url, int sizeDp) {
+    private ImageView commentImage(CommentData.CommentImage source, int sizeDp) {
+        String url = source.url;
         ImageView image = new ImageView(this);
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
         int placeholder = this.session.darkMode() ? Color.rgb(28, 30, 32)
@@ -4597,6 +4601,10 @@ public final class MainActivity extends Activity {
         image.setOnClickListener(view -> openImage(image, url));
         ImageLoader.intoMeasuredRevealStable(image, url, Math.max(240, dp(sizeDp) * 2),
                 (success, bitmap) -> {
+                    if (success && this.session.playGif()
+                            && (source.animated || GifSupport.isGifUrl(url))) {
+                        ImageLoader.intoGif(image, url);
+                    }
                     if (!success && image.getDrawable() == null) {
                         image.setImageDrawable(Compat.tintedDrawable(this,
                                 R.drawable.il_image, this.MUTED));
@@ -6922,7 +6930,8 @@ public final class MainActivity extends Activity {
         return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date(millis));
     }
 
-    private String buildDetailDiagnostics(JSONObject body, FeedItem fallback, JSONObject link, JSONArray fallbackImages) {
+    private String buildDetailDiagnostics(JSONObject body, FeedItem fallback, JSONObject link,
+                                          JSONArray fallbackImages, JSONArray comments) {
         StringBuilder out = new StringBuilder();
         out.append("detail screen: ").append(this.screen).append('\n');
         out.append("currentLinkId: ").append(this.currentLinkId).append('\n');
@@ -6949,7 +6958,40 @@ public final class MainActivity extends Activity {
             out.append("has imgs: ").append(link.has("imgs")).append(" count=").append(link.optJSONArray("imgs") == null ? 0 : link.optJSONArray("imgs").length()).append('\n');
             out.append(RichContent.diagnostics(link, fallbackImages));
         }
+        appendCommentDiagnostics(out, comments);
         return out.toString();
+    }
+
+    private void appendCommentDiagnostics(StringBuilder out, JSONArray groups) {
+        out.append("\ncomment diagnostics:\n");
+        if (groups == null) {
+            out.append("groups: null\n");
+            return;
+        }
+        out.append("groups: ").append(groups.length()).append('\n');
+        int limit = Math.min(groups.length(), 5);
+        for (int i = 0; i < limit; i++) {
+            JSONObject group = groups.optJSONObject(i);
+            JSONArray thread = group == null ? null : group.optJSONArray("comment");
+            JSONObject comment = thread == null ? group : thread.optJSONObject(0);
+            if (comment == null) continue;
+            String parsed = RichContent.commentText(comment.optString("text"),
+                    comment.optString("content"), comment.optString("html"),
+                    comment.optString("description"), comment.optString("desc_extra"),
+                    comment.optString("rich_text"), comment.optString("hb_rich_texts"));
+            out.append('[').append(i).append("] id=")
+                    .append(CommentData.commentId(comment))
+                    .append(" parsed=").append(compactLogText(parsed, 180)).append('\n');
+            out.append("  text=").append(compactLogText(comment.optString("text"), 180)).append('\n');
+            List<CommentData.CommentImage> images = CommentData.commentImages(comment);
+            out.append("  images=").append(images.size());
+            for (CommentData.CommentImage image : images) {
+                out.append(" [mime=").append(image.mimeType)
+                        .append(" animated=").append(image.animated)
+                        .append(" url=").append(compactLogText(image.url, 100)).append(']');
+            }
+            out.append('\n');
+        }
     }
 
     private String compactLogText(String value, int max) {

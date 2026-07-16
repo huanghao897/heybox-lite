@@ -157,9 +157,9 @@ public class CommentDataTest {
                 .put("https://img/1.jpg");
         assertEquals(2, CommentData.commentImages(new JSONObject().put("imgs", images)).size());
         assertEquals("https://img/1.jpg",
-                CommentData.commentImages(new JSONObject().put("imgs", images)).get(0));
+                CommentData.commentImages(new JSONObject().put("imgs", images)).get(0).url);
         assertEquals("https://img/2.jpg",
-                CommentData.commentImages(new JSONObject().put("imgs", images)).get(1));
+                CommentData.commentImages(new JSONObject().put("imgs", images)).get(1).url);
     }
 
     @Test
@@ -167,6 +167,18 @@ public class CommentDataTest {
         JSONObject comment = new JSONObject().put("imgs",
                 "[{\"url\":\"https://img/1.jpg\"},{\"src\":\"https://img/2.jpg\"}]");
         assertEquals(2, CommentData.commentImages(comment).size());
+    }
+
+    @Test
+    public void commentImages_preservesGifMimeType() throws Exception {
+        JSONObject image = new JSONObject()
+                .put("url", "https://img/comment.webp")
+                .put("mimetype", "image/gif");
+        CommentData.CommentImage parsed = CommentData.commentImages(
+                new JSONObject().put("imgs", new JSONArray().put(image))).get(0);
+
+        assertEquals("image/gif", parsed.mimeType);
+        assertTrue(parsed.animated);
     }
 
     @Test

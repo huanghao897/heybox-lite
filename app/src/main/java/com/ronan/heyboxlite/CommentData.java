@@ -8,6 +8,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -15,6 +16,31 @@ import java.util.Set;
  * 从 MainActivity 抽出，只依赖 {@link Json}，便于复用与单测；视图渲染仍在 MainActivity。
  */
 final class CommentData {
+    static final class CommentImage {
+        final String url;
+        final String mimeType;
+        final boolean animated;
+
+        CommentImage(String url, String mimeType, boolean animated) {
+            this.url = url;
+            this.mimeType = mimeType;
+            this.animated = animated || isAnimatedMime(mimeType) || isGifUrl(url);
+        }
+
+        private static boolean isAnimatedMime(String value) {
+            String mime = value == null ? "" : value.toLowerCase(Locale.ROOT);
+            return mime.contains("gif") || mime.contains("animated");
+        }
+
+        private static boolean isGifUrl(String value) {
+            if (value == null) return false;
+            String url = value.toLowerCase(Locale.ROOT);
+            int query = url.indexOf('?');
+            if (query >= 0) url = url.substring(0, query);
+            return url.endsWith(".gif");
+        }
+    }
+
     private CommentData() {}
 
     static int userLevel(JSONObject user) {
@@ -57,8 +83,8 @@ final class CommentData {
         return root.isEmpty() ? commentId(comment) : root;
     }
 
-    static List<String> commentImages(JSONObject comment) {
-        List<String> result = new ArrayList<>();
+    static List<CommentImage> commentImages(JSONObject comment) {
+        List<CommentImage> result = new ArrayList<>();
         if (comment == null) return result;
         Set<String> seen = new HashSet<>();
         addCommentImages(result, seen, comment.opt("imgs"));
@@ -67,7 +93,8 @@ final class CommentData {
         return result;
     }
 
-    private static void addCommentImages(List<String> result, Set<String> seen, Object value) {
+    private static void addCommentImages(List<CommentImage> result, Set<String> seen,
+                                         Object value) {
         if (value instanceof String) {
             String text = ((String) value).trim();
             if (text.startsWith("[")) {
@@ -86,18 +113,29 @@ final class CommentData {
             Object item = images.opt(i);
             if (item instanceof JSONObject) {
                 JSONObject image = (JSONObject) item;
-                addCommentImage(result, seen, Json.first(image.optString("url"),
-                        image.optString("original"), image.optString("origin_url"),
-                        image.optString("large_url"), image.optString("src")));
+                String url = Json.first(image.optString("url"), image.optString("original"),
+                        image.optString("origin_url"), image.optString("large_url"),
+                        image.optString("src"));
+                String mimeType = Json.first(image.optString("mimetype"),
+                        image.optString("mime_type"), image.optString("content_type"));
+                boolean animated = Json.truthy(image, "is_animated", "animated", "is_gif");
+                addCommentImage(result, seen, url, mimeType, animated);
             } else if (item instanceof String) {
                 addCommentImage(result, seen, (String) item);
             }
         }
     }
 
-    private static void addCommentImage(List<String> result, Set<String> seen, String url) {
+    private static void addCommentImage(List<CommentImage> result, Set<String> seen, String url) {
+        addCommentImage(result, seen, url, "", false);
+    }
+
+    private static void addCommentImage(List<CommentImage> result, Set<String> seen, String url,
+                                        String mimeType, boolean animated) {
         String value = url == null ? "" : url.trim();
-        if (!value.isEmpty() && seen.add(value)) result.add(value);
+        if (!value.isEmpty() && seen.add(value)) {
+            result.add(new CommentImage(value, mimeType == null ? "" : mimeType.trim(), animated));
+        }
     }
 
     static String commentLocation(JSONObject comment) {
