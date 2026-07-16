@@ -165,6 +165,8 @@ public final class MainActivity extends Activity {
     private String lastDetailDiagnostics = "";
     private JSONObject currentDetailBody;
     private boolean activityResumed;
+    private boolean accountBlockedScreen;
+    private TextView accountBlockedMessage;
     private interface IntListener {
         void onChanged(int i);
     }
@@ -249,12 +251,65 @@ public final class MainActivity extends Activity {
             });
         }
         showFeed();
-        PresenceReporter.ping(this.session, this.readingTimeTracker);
-        RemoteConfig.load(this.session.userId(), null);
-        if (this.session.autoUpdateCheck()) {
+        if (this.session.appBlocked()) {
+            showAccountBlocked(this.session.appBlockMessage());
+        }
+        PresenceReporter.ping(this.session, this.readingTimeTracker, this::applyAccessStatus);
+        RemoteConfig.load(this.session.userId(), () ->
+                applyAccessStatus(RemoteConfig.accessStatus()));
+        if (!this.accountBlockedScreen && this.session.autoUpdateCheck()) {
             this.handler.postDelayed(this::checkUpdateOnLaunch, 650L);
         }
-        this.handler.postDelayed(this::checkAnnouncementOnLaunch, 950L);
+        if (!this.accountBlockedScreen) {
+            this.handler.postDelayed(this::checkAnnouncementOnLaunch, 950L);
+        }
+    }
+
+    private void applyAccessStatus(AccessStatus status) {
+        if (status == null || isFinishing()) return;
+        this.session.setAppBlocked(status.banned, status.message);
+        if (status.banned) {
+            showAccountBlocked(status.message);
+        } else if (this.accountBlockedScreen) {
+            this.accountBlockedScreen = false;
+            recreate();
+        }
+    }
+
+    private void showAccountBlocked(String message) {
+        String text = TextUtils.isEmpty(message) ? "该账号或设备已被停用。" : message;
+        if (this.accountBlockedScreen && this.accountBlockedMessage != null) {
+            this.accountBlockedMessage.setText(text);
+            return;
+        }
+        this.accountBlockedScreen = true;
+        this.handler.removeCallbacksAndMessages(null);
+        if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
+        if (this.api != null) this.api.close();
+
+        LinearLayout page = vertical(this.BG);
+        page.setGravity(17);
+        page.setPadding(dp(24), dp(24), dp(24), dp(24));
+        TextView title = text("无法使用", 20.0f, this.TEXT);
+        title.setTypeface(appRegularTypeface(), 1);
+        title.setGravity(17);
+        page.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+        this.accountBlockedMessage = text(text, 12.5f, this.MUTED);
+        this.accountBlockedMessage.setGravity(17);
+        this.accountBlockedMessage.setLineSpacing(dp(2), 1.15f);
+        addTop(page, this.accountBlockedMessage, 10);
+
+        TextView retry = text("重新检查", 12.5f, Color.WHITE);
+        retry.setGravity(17);
+        retry.setPadding(dp(18), 0, dp(18), 0);
+        Compat.setBackground(retry, round(this.PRIMARY, 8));
+        retry.setOnClickListener(view -> PresenceReporter.pingNow(
+                this.session, this.readingTimeTracker, this::applyAccessStatus));
+        LinearLayout.LayoutParams retryParams = new LinearLayout.LayoutParams(-2, dp(38));
+        retryParams.topMargin = dp(18);
+        page.addView(retry, retryParams);
+        setContentView(page);
     }
 
     @Override
@@ -1553,6 +1608,11 @@ public final class MainActivity extends Activity {
                 EmojiStore.load(MainActivity.this.api, () -> {
                 });
                 MainActivity.this.showFeed();
+                PresenceReporter.pingNow(MainActivity.this.session,
+                        MainActivity.this.readingTimeTracker,
+                        MainActivity.this::applyAccessStatus);
+                RemoteConfig.load(MainActivity.this.session.userId(), () ->
+                        MainActivity.this.applyAccessStatus(RemoteConfig.accessStatus()));
             }
 
             @Override
@@ -7309,11 +7369,16 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         this.activityResumed = true;
+        if (this.accountBlockedScreen) {
+            PresenceReporter.pingNow(this.session, this.readingTimeTracker,
+                    this::applyAccessStatus);
+            return;
+        }
         if ("detail".equals(this.screen) && this.currentDetailBody != null
                 && this.currentDetailItem != null && this.readingTimeTracker != null) {
             this.readingTimeTracker.start(this.currentDetailItem.article, this.currentDetailItem.id);
         }
-        PresenceReporter.ping(this.session, this.readingTimeTracker);
+        PresenceReporter.ping(this.session, this.readingTimeTracker, this::applyAccessStatus);
         this.handler.removeCallbacks(this.presenceTick);
         this.handler.postDelayed(this.presenceTick, 600_000L);
     }
@@ -7331,7 +7396,8 @@ public final class MainActivity extends Activity {
     private final Runnable presenceTick = new Runnable() {
         @Override
         public void run() {
-            PresenceReporter.ping(MainActivity.this.session, MainActivity.this.readingTimeTracker);
+            PresenceReporter.ping(MainActivity.this.session, MainActivity.this.readingTimeTracker,
+                    MainActivity.this::applyAccessStatus);
             MainActivity.this.handler.postDelayed(this, 600_000L);
         }
     };

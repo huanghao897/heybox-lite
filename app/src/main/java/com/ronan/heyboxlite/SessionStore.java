@@ -96,6 +96,8 @@ final class SessionStore {
     private static final String SEARCH_HISTORY = "search_history";
     private static final String BLOCK_KEYWORDS = "block_keywords";
     private static final String PRESENCE_IDENTITY_UPLOADED = "presence_identity_uploaded_";
+    private static final String APP_BLOCKED = "app_blocked";
+    private static final String APP_BLOCK_MESSAGE = "app_block_message";
     static final String DEFAULT_SPLASH_TEXT = "方寸之间，看见热爱";
     private static final String LEGACY_PREFIX = "L1:";
     private static final String SIGNIN_SECRET_PREFIX = "HBLSEC1:";
@@ -182,6 +184,21 @@ final class SessionStore {
         if (!id.isEmpty()) {
             prefs.edit().putBoolean(PRESENCE_IDENTITY_UPLOADED + id, true).apply();
         }
+    }
+
+    boolean appBlocked() {
+        return prefs.getBoolean(APP_BLOCKED, false);
+    }
+
+    String appBlockMessage() {
+        return prefs.getString(APP_BLOCK_MESSAGE, "");
+    }
+
+    void setAppBlocked(boolean blocked, String message) {
+        prefs.edit()
+                .putBoolean(APP_BLOCKED, blocked)
+                .putString(APP_BLOCK_MESSAGE, blocked && message != null ? message.trim() : "")
+                .apply();
     }
 
     boolean noImage() {
@@ -1861,6 +1878,8 @@ final class SessionStore {
         String blockKeywords = blockKeywords();
         String nativeRndCode = nativeRndCode();
         int nativeRndVersion = nativeRndVersion();
+        boolean appBlocked = appBlocked();
+        String appBlockMessage = appBlockMessage();
         prefs.edit().clear()
                 .putString(SecureStrings.deviceId(), deviceId)
                 .putBoolean(NO_IMAGE, noImage)
@@ -1898,6 +1917,8 @@ final class SessionStore {
                 .putString(BLOCK_KEYWORDS, blockKeywords)
                 .putString(NATIVE_RND_CODE, nativeRndCode)
                 .putInt(NATIVE_RND_VERSION, nativeRndVersion)
+                .putBoolean(APP_BLOCKED, appBlocked)
+                .putString(APP_BLOCK_MESSAGE, appBlockMessage)
                 .apply();
     }
 

@@ -20,13 +20,14 @@ final class RemoteConfig {
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final Map<String, Feature> FEATURES = new HashMap<>();
+    private static volatile AccessStatus accessStatus = new AccessStatus(false, "");
 
     private RemoteConfig() {}
 
     static void load(String userId, Runnable complete) {
         EXECUTOR.execute(() -> {
-            request(userId);
-            if (complete != null) MAIN.post(complete);
+            boolean loaded = request(userId);
+            if (loaded && complete != null) MAIN.post(complete);
         });
     }
 
@@ -39,7 +40,11 @@ final class RemoteConfig {
         return feature.message.isEmpty() ? actionName + "暂时不可用" : feature.message;
     }
 
-    private static void request(String userId) {
+    static AccessStatus accessStatus() {
+        return accessStatus;
+    }
+
+    private static boolean request(String userId) {
         HttpURLConnection connection = null;
         try {
             String endpoint = UpdateChecker.requireTrustedUrl(BuildConfig.CONFIG_API_URL);
@@ -53,10 +58,11 @@ final class RemoteConfig {
             connection.setReadTimeout(4000);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("User-Agent", "heybox-Lite/" + BuildConfig.VERSION_NAME);
-            if (connection.getResponseCode() / 100 != 2) return;
+            if (connection.getResponseCode() / 100 != 2) return false;
             JSONObject payload = new JSONObject(read(connection.getInputStream()));
+            accessStatus = AccessStatus.from(payload);
             JSONObject values = payload.optJSONObject("features");
-            if (values == null) return;
+            if (values == null) return true;
             Map<String, Feature> next = new HashMap<>();
             java.util.Iterator<String> keys = values.keys();
             while (keys.hasNext()) {
@@ -71,7 +77,9 @@ final class RemoteConfig {
                 FEATURES.clear();
                 FEATURES.putAll(next);
             }
+            return true;
         } catch (Exception ignored) {
+            return false;
         } finally {
             if (connection != null) connection.disconnect();
         }
