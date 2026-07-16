@@ -383,7 +383,8 @@ final class RichContent {
         if (value.isEmpty()) return true;
         int arrayStart = value.indexOf('[');
         int arrayEnd = value.lastIndexOf(']');
-        if (arrayStart > 0 && arrayEnd > arrayStart) {
+        if (arrayStart > 0 && arrayEnd > arrayStart
+                && isLikelyJsonArray(value.substring(arrayStart, arrayEnd + 1))) {
             String prefix = value.substring(0, arrayStart).trim();
             try {
                 JSONArray array = new JSONArray(value.substring(arrayStart, arrayEnd + 1));
@@ -395,12 +396,28 @@ final class RichContent {
             } catch (Exception ignored) {
             }
         }
-        try {
-            addArray(blocks, imageUrls, new JSONArray(value));
-            return true;
-        } catch (Exception ignored) {
+        if (isLikelyJsonArray(value)) {
+            try {
+                addArray(blocks, imageUrls, new JSONArray(value));
+                return true;
+            } catch (Exception ignored) {
+            }
         }
         return addObjectStream(blocks, imageUrls, value);
+    }
+
+    private static boolean isLikelyJsonArray(String value) {
+        if (value == null) return false;
+        int index = 0;
+        while (index < value.length() && Character.isWhitespace(value.charAt(index))) index++;
+        if (index >= value.length() || value.charAt(index) != '[') return false;
+        index++;
+        while (index < value.length() && Character.isWhitespace(value.charAt(index))) index++;
+        if (index >= value.length()) return false;
+        char first = value.charAt(index);
+        return first == ']' || first == '{' || first == '[' || first == '"'
+                || first == '-' || Character.isDigit(first)
+                || first == 't' || first == 'f' || first == 'n';
     }
 
     private static void addArray(List<Block> blocks, Set<String> imageUrls, JSONArray content) {
@@ -674,7 +691,7 @@ final class RichContent {
     private static boolean looksStructured(String value) {
         if (value == null) return false;
         String clean = value.trim();
-        return clean.startsWith("{") || clean.startsWith("[")
+        return clean.startsWith("{") || isLikelyJsonArray(clean)
                 || clean.contains("\",\"type\"") || clean.contains("\"url\":");
     }
 
@@ -705,6 +722,10 @@ final class RichContent {
     }
 
     private static String inlineText(String source) {
+        String decoded = decodeTransport(source);
+        if (decoded.indexOf('<') < 0 && !looksStructured(decoded)) {
+            return normalizeInlineText(decoded);
+        }
         List<Block> blocks = parse(source, null);
         StringBuilder value = new StringBuilder();
         for (Block block : blocks) {
@@ -712,7 +733,11 @@ final class RichContent {
             if (value.length() > 0) value.append(' ');
             value.append(block.value);
         }
-        return value.toString()
+        return normalizeInlineText(value.toString());
+    }
+
+    private static String normalizeInlineText(String value) {
+        return value
                 .replace('\u00a0', ' ')
                 .replaceAll("[ \\t]*\\n[ \\t]*", " ")
                 .replaceAll("\\s{2,}", " ")

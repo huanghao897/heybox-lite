@@ -4603,7 +4603,10 @@ public final class MainActivity extends Activity {
                 (success, bitmap) -> {
                     if (success && this.session.playGif()
                             && (source.animated || GifSupport.isGifUrl(url))) {
-                        ImageLoader.intoGif(image, url);
+                        ImageLoader.intoGif(image, url, animated -> {
+                            this.localCache.log("comment gif " + (animated ? "started " : "failed ")
+                                    + compactLogText(url, 120));
+                        });
                     }
                     if (!success && image.getDrawable() == null) {
                         image.setImageDrawable(Compat.tintedDrawable(this,
@@ -6938,6 +6941,7 @@ public final class MainActivity extends Activity {
         out.append("fallbackId: ").append(fallback == null ? "" : fallback.id).append('\n');
         out.append("fallbackTitle: ").append(compactLogText(fallback == null ? "" : fallback.title, 180)).append('\n');
         out.append("fallbackArticle: ").append(fallback != null && fallback.article).append('\n');
+        out.append("playGif: ").append(this.session.playGif()).append('\n');
         out.append("bodyKeys: ");
         if (body != null) {
             Iterator<String> keys = body.keys();

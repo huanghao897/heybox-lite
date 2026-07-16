@@ -359,17 +359,28 @@ final class ImageLoader {
 
     /** 详情页动图：拉原始 GIF 字节，后台解码，成功后替换已显示的静态缩略图。 */
     static void intoGif(ImageView view, String sourceUrl) {
+        intoGif(view, sourceUrl, null);
+    }
+
+    static void intoGif(ImageView view, String sourceUrl, IntoCallback callback) {
         String url = originalUrl(sourceUrl);
-        if (view == null || url.isEmpty()) return;
+        if (view == null || url.isEmpty()) {
+            if (callback != null) MAIN.post(() -> callback.onComplete(false));
+            return;
+        }
         final String tag = "gif:" + url;
         view.setTag(tag);
         EXECUTOR.execute(() -> {
             byte[] bytes = downloadBytes(url, GifSupport.MAX_GIF_BYTES);
             android.graphics.drawable.Drawable drawable = GifSupport.decode(bytes);
-            if (drawable == null) return;
+            if (drawable == null) {
+                if (callback != null) MAIN.post(() -> callback.onComplete(false));
+                return;
+            }
             MAIN.post(() -> {
                 if (tag.equals(view.getTag())) {
                     GifSupport.apply(view, drawable);
+                    if (callback != null) callback.onComplete(true);
                 }
             });
         });

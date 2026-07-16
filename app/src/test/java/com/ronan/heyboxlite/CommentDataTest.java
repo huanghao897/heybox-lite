@@ -188,4 +188,16 @@ public class CommentDataTest {
                 .put("commentText", "哇，atm发帖了");
         assertEquals("哇，atm发帖了", RichContent.firstText(segment));
     }
+
+    @Test
+    public void richCommentText_preservesTextAfterBracketedEmoji() {
+        assertEquals("[cube_惊讶]哇，atm发帖了",
+                RichContent.commentText("[cube_惊讶]哇，atm发帖了"));
+    }
+
+    @Test
+    public void richCommentText_preservesEmojiAtEndOfSentence() {
+        assertEquals("下次发红包给她对象发一份呗还能怎么办[cube_上学-乐]",
+                RichContent.commentText("下次发红包给她对象发一份呗还能怎么办[cube_上学-乐]"));
+    }
 }
