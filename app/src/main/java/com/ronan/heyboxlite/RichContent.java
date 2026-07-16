@@ -67,7 +67,7 @@ final class RichContent {
             "content_attr", "contentAttr", "raw_content", "rawContent"
     };
     private static final String[] TEXT_KEYS = {
-            "text", "content", "html", "value", "caption",
+            "commentText", "comment_text", "text", "content", "html", "value", "caption",
             "title", "desc", "description"
     };
     private static final String[] IMAGE_KEYS = {
@@ -528,7 +528,7 @@ final class RichContent {
         return text != null && text.replaceAll("\\s+", "").length() > 0;
     }
 
-    private static String firstText(JSONObject item) {
+    static String firstText(JSONObject item) {
         for (String key : TEXT_KEYS) {
             Object value = item.opt(key);
             if (value instanceof String && !((String) value).isEmpty()) return (String) value;

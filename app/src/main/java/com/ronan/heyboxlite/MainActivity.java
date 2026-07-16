@@ -4513,7 +4513,8 @@ public final class MainActivity extends Activity {
         long created = CommentData.commentTime(comment);
         String visibleComment = RichContent.commentText(comment.optString("text"),
                 comment.optString("content"), comment.optString("html"),
-                comment.optString("description"));
+                comment.optString("description"), comment.optString("desc_extra"),
+                comment.optString("rich_text"), comment.optString("hb_rich_texts"));
         if (reply) {
             addCompactReply(block, comment, author, target, visibleComment, created);
         } else {
@@ -4535,12 +4536,9 @@ public final class MainActivity extends Activity {
             });
             addTop(block, value, 5);
         }
-        String commentImage = CommentData.commentImage(comment);
-        if (!this.session.noImage() && !commentImage.isEmpty()) {
-            View image = postImageBlock(commentImage, 720, reply ? 92 : 115);
-            LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(-1, dp(reply ? 92 : 115));
-            imageParams.topMargin = dp(6);
-            block.addView(image, imageParams);
+        List<String> commentImages = CommentData.commentImages(comment);
+        if (!this.session.noImage() && !commentImages.isEmpty()) {
+            addCommentImages(block, commentImages, reply);
         }
         if (!reply) {
             CommentLikeControl likes = commentLikeControl();
@@ -4565,6 +4563,47 @@ public final class MainActivity extends Activity {
             divider.setBackgroundColor(blend(this.BG, this.MUTED, this.session.darkMode() ? 0.10f : 0.05f));
             linearLayout.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
         }
+    }
+
+    private void addCommentImages(LinearLayout parent, List<String> urls, boolean reply) {
+        LinearLayout gallery = vertical(0);
+        int size = reply ? 68 : 82;
+        for (int start = 0; start < urls.size(); start += 3) {
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(3);
+            int end = Math.min(start + 3, urls.size());
+            for (int i = start; i < end; i++) {
+                ImageView image = commentImage(urls.get(i), size);
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(size), dp(size));
+                if (i > start) params.leftMargin = dp(5);
+                row.addView(image, params);
+            }
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, dp(size));
+            if (start > 0) rowParams.topMargin = dp(5);
+            gallery.addView(row, rowParams);
+        }
+        LinearLayout.LayoutParams galleryParams = new LinearLayout.LayoutParams(-1, -2);
+        galleryParams.topMargin = dp(6);
+        parent.addView(gallery, galleryParams);
+    }
+
+    private ImageView commentImage(String url, int sizeDp) {
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        int placeholder = this.session.darkMode() ? Color.rgb(28, 30, 32)
+                : Color.rgb(235, 237, 240);
+        Compat.setBackground(image, round(placeholder, 6));
+        Compat.clipToOutline(image);
+        image.setOnClickListener(view -> openImage(image, url));
+        ImageLoader.intoMeasuredRevealStable(image, url, Math.max(240, dp(sizeDp) * 2),
+                (success, bitmap) -> {
+                    if (!success && image.getDrawable() == null) {
+                        image.setImageDrawable(Compat.tintedDrawable(this,
+                                R.drawable.il_image, this.MUTED));
+                        image.setPadding(dp(18), dp(18), dp(18), dp(18));
+                    }
+                });
+        return image;
     }
 
     private void addCompactReply(LinearLayout block, JSONObject comment, String author,

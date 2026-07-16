@@ -5,6 +5,11 @@ import android.graphics.Color;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
  * 评论 JSON 的无状态取值：id / 时间 / 点赞 / 归属地 / 等级 / 置顶与 Cy 判定、回复对象等。
  * 从 MainActivity 抽出，只依赖 {@link Json}，便于复用与单测；视图渲染仍在 MainActivity。
@@ -52,16 +57,47 @@ final class CommentData {
         return root.isEmpty() ? commentId(comment) : root;
     }
 
-    static String commentImage(JSONObject comment) {
-        JSONArray images = comment.optJSONArray("imgs");
-        if (images == null || images.length() == 0) {
-            return "";
+    static List<String> commentImages(JSONObject comment) {
+        List<String> result = new ArrayList<>();
+        if (comment == null) return result;
+        Set<String> seen = new HashSet<>();
+        addCommentImages(result, seen, comment.opt("imgs"));
+        if (result.isEmpty()) addCommentImages(result, seen, comment.opt("images"));
+        if (result.isEmpty()) addCommentImages(result, seen, comment.opt("pictures"));
+        return result;
+    }
+
+    private static void addCommentImages(List<String> result, Set<String> seen, Object value) {
+        if (value instanceof String) {
+            String text = ((String) value).trim();
+            if (text.startsWith("[")) {
+                try {
+                    addCommentImages(result, seen, new JSONArray(text));
+                    return;
+                } catch (Exception ignored) {
+                }
+            }
+            addCommentImage(result, seen, text);
+            return;
         }
-        JSONObject object = images.optJSONObject(0);
-        if (object != null) {
-            return Json.first(object.optString("url"), Json.first(object.optString("src"), object.optString("original")));
+        if (!(value instanceof JSONArray)) return;
+        JSONArray images = (JSONArray) value;
+        for (int i = 0; i < images.length(); i++) {
+            Object item = images.opt(i);
+            if (item instanceof JSONObject) {
+                JSONObject image = (JSONObject) item;
+                addCommentImage(result, seen, Json.first(image.optString("url"),
+                        image.optString("original"), image.optString("origin_url"),
+                        image.optString("large_url"), image.optString("src")));
+            } else if (item instanceof String) {
+                addCommentImage(result, seen, (String) item);
+            }
         }
-        return images.optString(0);
+    }
+
+    private static void addCommentImage(List<String> result, Set<String> seen, String url) {
+        String value = url == null ? "" : url.trim();
+        if (!value.isEmpty() && seen.add(value)) result.add(value);
     }
 
     static String commentLocation(JSONObject comment) {

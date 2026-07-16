@@ -148,4 +148,32 @@ public class CommentDataTest {
         assertEquals(12, CommentData.userLevel(new JSONObject().put("level", 12)));
         assertEquals(0, CommentData.userLevel(null));
     }
+
+    @Test
+    public void commentImages_returnsEveryImageAndRemovesDuplicates() throws Exception {
+        JSONArray images = new JSONArray()
+                .put(new JSONObject().put("url", "https://img/1.jpg"))
+                .put(new JSONObject().put("original", "https://img/2.jpg"))
+                .put("https://img/1.jpg");
+        assertEquals(2, CommentData.commentImages(new JSONObject().put("imgs", images)).size());
+        assertEquals("https://img/1.jpg",
+                CommentData.commentImages(new JSONObject().put("imgs", images)).get(0));
+        assertEquals("https://img/2.jpg",
+                CommentData.commentImages(new JSONObject().put("imgs", images)).get(1));
+    }
+
+    @Test
+    public void commentImages_acceptsSerializedArray() throws Exception {
+        JSONObject comment = new JSONObject().put("imgs",
+                "[{\"url\":\"https://img/1.jpg\"},{\"src\":\"https://img/2.jpg\"}]");
+        assertEquals(2, CommentData.commentImages(comment).size());
+    }
+
+    @Test
+    public void richCommentText_prefersCommentTextOverGeneratedImageValue() throws Exception {
+        JSONObject segment = new JSONObject()
+                .put("text", "[cube_emoji]")
+                .put("commentText", "哇，atm发帖了");
+        assertEquals("哇，atm发帖了", RichContent.firstText(segment));
+    }
 }
