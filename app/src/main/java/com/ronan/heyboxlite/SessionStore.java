@@ -96,6 +96,7 @@ final class SessionStore {
     private static final String SEARCH_HISTORY = "search_history";
     private static final String BLOCK_KEYWORDS = "block_keywords";
     private static final String PRESENCE_IDENTITY_UPLOADED = "presence_identity_uploaded_";
+    private static final String PRESENCE_DEVICE_ID = "presence_device_id";
     private static final String APP_BLOCKED = "app_blocked";
     private static final String APP_BLOCK_MESSAGE = "app_block_message";
     static final String DEFAULT_SPLASH_TEXT = "方寸之间，看见热爱";
@@ -122,6 +123,9 @@ final class SessionStore {
             String id = androidId == null || androidId.isEmpty()
                     ? UUID.randomUUID().toString().replace("-", "") : androidId;
             prefs.edit().putString(SecureStrings.deviceId(), id).apply();
+        }
+        if (prefs.getString(PRESENCE_DEVICE_ID, "").isEmpty()) {
+            prefs.edit().putString(PRESENCE_DEVICE_ID, createPresenceDeviceId()).apply();
         }
         migrateSignInSecrets();
     }
@@ -1016,6 +1020,35 @@ final class SessionStore {
         return prefs.getString(SecureStrings.deviceId(), "");
     }
 
+    String presenceDeviceIdentifier() {
+        return prefs.getString(PRESENCE_DEVICE_ID, "");
+    }
+
+    private String createPresenceDeviceId() {
+        String source = "";
+        try {
+            source = Settings.Secure.getString(
+                    context.getContentResolver(), Settings.Secure.ANDROID_ID);
+        } catch (Throwable ignored) {
+        }
+        if (source == null || source.trim().isEmpty()
+                || "9774d56d682e549c".equalsIgnoreCase(source.trim())
+                || source.matches("0+")) {
+            source = UUID.randomUUID().toString();
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update("heybox-lite-presence-v1:".getBytes("UTF-8"));
+            digest.update(source.trim().getBytes("UTF-8"));
+            byte[] bytes = digest.digest();
+            StringBuilder value = new StringBuilder(bytes.length * 2);
+            for (byte item : bytes) value.append(String.format(Locale.US, "%02x", item & 0xff));
+            return value.toString();
+        } catch (Exception ignored) {
+            return UUID.randomUUID().toString().replace("-", "");
+        }
+    }
+
     Map<String, String> officialMobileParams(boolean includeDeviceParams) {
         Map<String, String> result = new LinkedHashMap<>();
         String id = userId();
@@ -1843,6 +1876,7 @@ final class SessionStore {
 
     void clearSession() {
         String deviceId = prefs.getString(SecureStrings.deviceId(), "");
+        String presenceDeviceId = prefs.getString(PRESENCE_DEVICE_ID, "");
         boolean noImage = noImage();
         int uiScale = uiScale();
         int textScale = textScale();
@@ -1882,6 +1916,7 @@ final class SessionStore {
         String appBlockMessage = appBlockMessage();
         prefs.edit().clear()
                 .putString(SecureStrings.deviceId(), deviceId)
+                .putString(PRESENCE_DEVICE_ID, presenceDeviceId)
                 .putBoolean(NO_IMAGE, noImage)
                 .putInt(UI_SCALE, uiScale)
                 .putInt(TEXT_SCALE, textScale)

@@ -65,7 +65,7 @@ final class PresenceReporter {
                 body.put("readingTimeSeconds", readingTime.stats().totalMs() / 1000L);
             }
             if (session != null) {
-                body.put("deviceId", session.deviceIdentifier());
+                body.put("deviceId", session.presenceDeviceIdentifier());
                 if (session.isLoggedIn()) {
                     body.put("userId", session.userId());
                 }
