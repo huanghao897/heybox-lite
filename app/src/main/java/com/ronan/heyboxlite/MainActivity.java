@@ -878,12 +878,7 @@ public final class MainActivity extends Activity {
                 }
             }, 160L);
         }
-        if (this.feedListView instanceof PullRefreshListView) {
-            ((PullRefreshListView) this.feedListView).setRefreshing(true);
-        }
-        if (!loadFeed(true) && (this.feedListView instanceof PullRefreshListView)) {
-            ((PullRefreshListView) this.feedListView).setRefreshing(false);
-        }
+        loadFeed(true);
     }
 
     private String screenKeyForTopLevel(int index) {
@@ -1687,9 +1682,7 @@ public final class MainActivity extends Activity {
         list.setOverScrollMode(View.OVER_SCROLL_NEVER);
         list.setSelector(new ColorDrawable(this.session.darkMode() ? Color.rgb(50, 50, 50) : Color.rgb(225, 228, 232)));
         list.setPullRefreshAction(() -> {
-            if (!loadFeed(true)) {
-                list.setRefreshing(false);
-            }
+            loadFeed(true);
         });
         list.addHeaderView(feedTopBar(), null, false);
         this.feedFooter = feedFooterView();
@@ -2033,9 +2026,11 @@ public final class MainActivity extends Activity {
         if (reset) {
             this.suppressNextFeedCacheFallback = false;
         }
+        final PullRefreshListView refreshList = reset && this.feedListView instanceof PullRefreshListView
+                ? (PullRefreshListView) this.feedListView : null;
         if (reset) {
             this.feedOffset = 0;
-            setFeedRefreshBusy(true);
+            setFeedRefreshBusy(true, refreshList);
             if (this.feed.isEmpty()) {
                 showLoading();
             }
@@ -2046,12 +2041,16 @@ public final class MainActivity extends Activity {
         this.api.get(EndpointProvider.feeds(), params, new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
+                boolean accepted = requestSerial >= MainActivity.this.feedResetSerial;
                 if (reset) {
-                    MainActivity.this.feedRefreshing = false;
+                    if (accepted) MainActivity.this.feedRefreshing = false;
                 } else {
                     MainActivity.this.feedLoadingMore = false;
                 }
-                if (reset || requestSerial >= MainActivity.this.feedResetSerial) {
+                if (reset) {
+                    MainActivity.this.setFeedRefreshBusy(false, refreshList, requestSerial);
+                }
+                if (accepted) {
                     MainActivity.this.hideLoading();
                     JSONObject result = body.optJSONObject("result");
                     JSONArray links = result == null ? null : result.optJSONArray("links");
@@ -2087,7 +2086,6 @@ public final class MainActivity extends Activity {
                     if (returned > 0) {
                         MainActivity.this.feedOffset += Math.max(returned, 30);
                     }
-                    MainActivity.this.setFeedRefreshBusy(false);
                     MainActivity.this.updateFeedFooter();
                     if (MainActivity.this.feedAdapter != null) {
                         MainActivity.this.feedAdapter.notifyDataSetChanged();
@@ -2100,14 +2098,17 @@ public final class MainActivity extends Activity {
 
             @Override
             public void onError(String message) {
+                boolean accepted = requestSerial >= MainActivity.this.feedResetSerial;
                 if (reset) {
-                    MainActivity.this.feedRefreshing = false;
+                    if (accepted) MainActivity.this.feedRefreshing = false;
                 } else {
                     MainActivity.this.feedLoadingMore = false;
                 }
-                if (reset || requestSerial >= MainActivity.this.feedResetSerial) {
+                if (reset) {
+                    MainActivity.this.setFeedRefreshBusy(false, refreshList, requestSerial);
+                }
+                if (accepted) {
                     MainActivity.this.hideLoading();
-                    MainActivity.this.setFeedRefreshBusy(false);
                     MainActivity.this.localCache.log((reset ? "feed refresh failed: " : "feed load more failed: ") + message);
                     if (reset && previous != null && MainActivity.this.feed.isEmpty()) {
                         MainActivity.this.feed.addAll(previous);
@@ -2449,14 +2450,29 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void setFeedRefreshBusy(boolean busy) {
-        if (!"feed".equals(this.screen) || this.action == null) {
+    private void setFeedRefreshBusy(boolean busy, PullRefreshListView list) {
+        if (list != null) {
+            list.setRefreshing(busy);
+        }
+        if (!"feed".equals(this.screen) || this.action == null || this.feedListView != list) {
             return;
         }
         this.action.setEnabled(!busy);
         this.action.setAlpha(busy ? 0.45f : 1.0f);
-        if (this.feedListView instanceof PullRefreshListView) {
-            ((PullRefreshListView) this.feedListView).setRefreshing(busy);
+    }
+
+    private void setFeedRefreshBusy(boolean busy, PullRefreshListView list, int requestSerial) {
+        if (list == null) {
+            return;
+        }
+        if (list != this.feedListView || requestSerial >= this.feedResetSerial) {
+            list.setRefreshing(busy);
+        }
+        if (list == this.feedListView && requestSerial >= this.feedResetSerial) {
+            if (this.action != null) {
+                this.action.setEnabled(!busy);
+                this.action.setAlpha(busy ? 0.45f : 1.0f);
+            }
         }
     }
 
@@ -2485,6 +2501,9 @@ public final class MainActivity extends Activity {
     }
 
     private void invalidateFeedView() {
+        if (this.feedListView instanceof PullRefreshListView) {
+            ((PullRefreshListView) this.feedListView).cancelRefresh();
+        }
         this.cachedFeedListView = null;
         this.cachedFeedContainer = null;
         this.feedListView = null;
@@ -6317,8 +6336,10 @@ public final class MainActivity extends Activity {
             loadAnnouncementsInto(list, adapter);
         });
         this.action.setOnClickListener(view2 -> {
-            list.setRefreshing(true);
-            loadAnnouncementsInto(list, adapter);
+            if (!list.isRefreshing()) {
+                list.setRefreshing(true);
+                loadAnnouncementsInto(list, adapter);
+            }
         });
         this.content.addView(list, match());
         animateIn(list);
@@ -6333,19 +6354,19 @@ public final class MainActivity extends Activity {
         AnnouncementChecker.load(new AnnouncementChecker.Callback() {
             @Override
             public void onResult(List<AnnouncementChecker.Item> items) {
+                list.setRefreshing(false);
                 if (MainActivity.this.isFinishing() || !"announcement_board".equals(MainActivity.this.screen)) {
                     return;
                 }
-                list.setRefreshing(false);
                 adapter.setItems(MainActivity.this.withWelcomeAnnouncement(items));
             }
 
             @Override
             public void onError(String message) {
+                list.setRefreshing(false);
                 if (MainActivity.this.isFinishing() || !"announcement_board".equals(MainActivity.this.screen)) {
                     return;
                 }
-                list.setRefreshing(false);
                 MainActivity.this.toast("公告加载失败，已显示本地欢迎公告");
                 adapter.setItems(Collections.singletonList(MainActivity.this.welcomeAnnouncement()));
             }
