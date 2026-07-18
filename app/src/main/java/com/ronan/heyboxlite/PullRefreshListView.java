@@ -6,6 +6,7 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewConfiguration;
 import android.view.ViewParent;
@@ -250,7 +251,12 @@ final class PullRefreshListView extends ListView {
     }
 
     private boolean isAtTop() {
-        return !canScrollVertically(-1);
+        if (!canScrollVertically(-1)) {
+            return true;
+        }
+        View firstChild = getChildAt(0);
+        return getFirstVisiblePosition() <= 1 && firstChild != null
+                && firstChild.getTop() >= getPaddingTop();
     }
 
     private int headerHeight() {
