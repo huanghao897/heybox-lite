@@ -3441,23 +3441,26 @@ public final class MainActivity extends Activity {
             this.userSpaceReturnScreen = this.screen;
         }
         activate("user_space");
-        this.title.setText("动态");
+        this.title.setText("个人主页");
         this.action.setVisibility(4);
         this.leading.setOnClickListener(view -> {
             returnFromUserSpace();
         });
         this.content.removeAllViews();
         ScrollView scroll = new ScrollView(this);
-        LinearLayout page = vertical(this.BG);
-        page.setPadding(0, 0, 0, dp(12));
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(this.PANEL);
+        LinearLayout page = vertical(this.PANEL);
+        page.setPadding(0, 0, 0, dp(10));
         scroll.addView(page);
         LinearLayout profile = userSpaceHeader(fallbackName, userId, fallbackAvatar, null);
         page.addView(profile);
         final List<FeedItem> userItems = new ArrayList<>();
         final boolean[] articlesOnly = {false};
         TextView status = text("正在加载动态", 12.0f, this.MUTED);
-        status.setPadding(dp(16), dp(10), dp(16), dp(4));
-        LinearLayout events = vertical(this.BG);
+        status.setGravity(17);
+        status.setPadding(dp(16), dp(22), dp(16), dp(22));
+        LinearLayout events = vertical(this.PANEL);
         Runnable render = () -> renderUserEvents(userItems, events, status, articlesOnly[0]);
         LinearLayout tabs = userSpaceTabs(articlesOnly, render);
         page.addView(tabs);
@@ -3470,35 +3473,43 @@ public final class MainActivity extends Activity {
 
     private LinearLayout userSpaceHeader(String nameValue, String userId, String avatarUrl, JSONObject user) {
         LinearLayout profile = vertical(this.PANEL);
-        profile.setPadding(dp(16), dp(14), dp(16), dp(14));
+        profile.setPadding(dp(14), dp(12), dp(14), dp(10));
         LinearLayout top = new LinearLayout(this);
         top.setGravity(16);
         ImageView avatar = new ImageView(this);
         avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        Compat.setBackground(avatar, round(this.session.darkMode() ? Color.rgb(46, 46, 46) : Color.rgb(235, 235, 235), 34));
+        Compat.setBackground(avatar, round(this.session.darkMode()
+                ? Color.rgb(46, 48, 52) : Color.rgb(232, 234, 236), 28));
         Compat.clipToOutline(avatar);
-        top.addView(avatar, new LinearLayout.LayoutParams(dp(74), dp(74)));
+        top.addView(avatar, new LinearLayout.LayoutParams(dp(58), dp(58)));
         String resolvedAvatar = Json.first(user == null ? "" : user.optString("avatar", user.optString("avartar")), avatarUrl);
         if (!this.session.noImage() && !resolvedAvatar.isEmpty()) {
-            ImageLoader.intoPlain(avatar, resolvedAvatar, 160);
+            ImageLoader.intoPlain(avatar, resolvedAvatar, 144);
         }
         LinearLayout copy = vertical(0);
         LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        copyParams.leftMargin = dp(14);
+        copyParams.leftMargin = dp(11);
         top.addView(copy, copyParams);
         String resolvedName = Json.first(user == null ? "" : user.optString("username", user.optString("nickname", user.optString("name"))), nameValue, "小黑盒用户");
-        TextView name = text(resolvedName, 20.0f, this.TEXT);
+        LinearLayout nameRow = new LinearLayout(this);
+        nameRow.setGravity(16);
+        TextView name = text(resolvedName, 17.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
-        copy.addView(name);
+        nameRow.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        addLevelBadge(nameRow, user, false);
+        copy.addView(nameRow);
+        TextView id = text("ID " + userId, 10.0f, this.MUTED);
+        id.setSingleLine(true);
+        addTop(copy, id, 2);
         String signature = user == null ? "" : Json.first(user.optString("signature"), user.optString("desc"));
         if (!signature.isEmpty()) {
-            TextView desc = text(signature, 12.0f, this.MUTED);
-            desc.setLineSpacing(0.0f, 1.18f);
-            addTop(copy, desc, 7);
-        } else {
-            addTop(copy, text("ID " + userId, 11.0f, this.MUTED), 7);
+            TextView desc = text(signature, 11.0f, this.MUTED);
+            desc.setMaxLines(2);
+            desc.setEllipsize(TextUtils.TruncateAt.END);
+            desc.setLineSpacing(0.0f, 1.12f);
+            addTop(copy, desc, 4);
         }
         profile.addView(top);
         JSONObject bbs = user == null ? null : user.optJSONObject("bbs_info");
@@ -3507,65 +3518,75 @@ public final class MainActivity extends Activity {
         addUserStat(stats, firstJsonInt(user, bbs, "follow_num", "following_num", "attention_num"), "关注");
         addUserStat(stats, firstJsonInt(user, bbs, "fan_num", "fans_num", "follower_num"), "粉丝");
         addUserStat(stats, awardAndFavoriteCount(user, bbs), "获赞与收藏");
-        addTop(profile, stats, 16);
+        addTop(profile, stats, 11);
         View divider = new View(this);
         divider.setBackgroundColor(this.themeTokens == null ? this.MUTED : this.themeTokens.hairline);
-        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, 1);
-        dividerParams.topMargin = dp(14);
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1));
+        dividerParams.topMargin = dp(10);
         profile.addView(divider, dividerParams);
         return profile;
     }
 
     private LinearLayout userSpaceTabs(boolean[] articlesOnly, Runnable render) {
         LinearLayout row = new LinearLayout(this);
-        row.setPadding(dp(16), dp(10), dp(16), dp(8));
+        row.setPadding(dp(12), 0, dp(12), 0);
         row.setBackgroundColor(this.PANEL);
-        TextView dynamic = userSpaceTab("动态", !articlesOnly[0]);
-        TextView articles = userSpaceTab("投稿", articlesOnly[0]);
+        LinearLayout dynamic = userSpaceTab("动态", !articlesOnly[0]);
+        LinearLayout articles = userSpaceTab("投稿", articlesOnly[0]);
         dynamic.setOnClickListener(view -> {
+            if (!articlesOnly[0]) return;
             articlesOnly[0] = false;
             updateUserSpaceTabs(row, false);
             render.run();
         });
         articles.setOnClickListener(view -> {
+            if (articlesOnly[0]) return;
             articlesOnly[0] = true;
             updateUserSpaceTabs(row, true);
             render.run();
         });
-        row.addView(dynamic, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
-        row.addView(articles, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
+        row.addView(dynamic, new LinearLayout.LayoutParams(0, dp(43), 1.0f));
+        row.addView(articles, new LinearLayout.LayoutParams(0, dp(43), 1.0f));
         return row;
     }
 
-    private TextView userSpaceTab(String label, boolean active) {
-        TextView view = text(label, 14.0f, active ? this.TEXT : this.MUTED);
-        view.setGravity(17);
-        view.setTypeface(appRegularTypeface(), active ? 1 : 0);
-        Compat.setBackground(view, round(active
-                ? (this.session.darkMode() ? Color.rgb(34, 34, 34) : Color.WHITE)
-                : (this.session.darkMode() ? Color.rgb(24, 24, 24) : Color.rgb(246, 247, 248)), 4));
-        return view;
+    private LinearLayout userSpaceTab(String label, boolean active) {
+        LinearLayout tab = vertical(this.PANEL);
+        tab.setGravity(17);
+        TextView textView = text(label, 13.5f, active ? this.TEXT : this.MUTED);
+        textView.setGravity(17);
+        textView.setTypeface(appRegularTypeface(), active ? 1 : 0);
+        tab.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1.0f));
+        View indicator = new View(this);
+        Compat.setBackground(indicator, round(this.themeTokens.accent, 1));
+        indicator.setVisibility(active ? 0 : 4);
+        LinearLayout.LayoutParams indicatorParams = new LinearLayout.LayoutParams(dp(24), dp(2));
+        indicatorParams.gravity = 1;
+        tab.addView(indicator, indicatorParams);
+        return tab;
     }
 
     private void updateUserSpaceTabs(LinearLayout row, boolean articlesOnly) {
         for (int i = 0; i < row.getChildCount(); i++) {
-            TextView tab = (TextView) row.getChildAt(i);
+            LinearLayout tab = (LinearLayout) row.getChildAt(i);
+            TextView label = (TextView) tab.getChildAt(0);
+            View indicator = tab.getChildAt(1);
             boolean active = articlesOnly ? i == 1 : i == 0;
-            tab.setTextColor(active ? this.TEXT : this.MUTED);
-            tab.setTypeface(appRegularTypeface(), active ? 1 : 0);
-            Compat.setBackground(tab, round(active
-                    ? (this.session.darkMode() ? Color.rgb(34, 34, 34) : Color.WHITE)
-                    : (this.session.darkMode() ? Color.rgb(24, 24, 24) : Color.rgb(246, 247, 248)), 4));
+            label.setTextColor(active ? this.TEXT : this.MUTED);
+            label.setTypeface(appRegularTypeface(), active ? 1 : 0);
+            indicator.setVisibility(active ? 0 : 4);
         }
     }
 
     private void addUserStat(LinearLayout row, int value, String label) {
         LinearLayout item = vertical(0);
         item.setGravity(17);
-        TextView number = text(String.valueOf(Math.max(0, value)), 20.0f, this.TEXT);
+        TextView number = text(Format.commentLikeCount(Math.max(0, value)), 15.5f, this.TEXT);
         number.setGravity(17);
-        TextView caption = text(label, 11.0f, this.MUTED);
+        number.setTypeface(appRegularTypeface(), 1);
+        TextView caption = text(label, 9.5f, this.MUTED);
         caption.setGravity(17);
+        caption.setSingleLine(true);
         item.addView(number);
         item.addView(caption);
         row.addView(item, new LinearLayout.LayoutParams(0, -2, 1.0f));
@@ -3639,6 +3660,7 @@ public final class MainActivity extends Activity {
             }
 
             @Override public void onError(String message) {
+                status.setVisibility(0);
                 status.setText("动态加载失败");
                 MainActivity.this.localCache.log("user events failed: " + message);
             }
@@ -3653,10 +3675,20 @@ public final class MainActivity extends Activity {
             if (articlesOnly && !item.article) {
                 continue;
             }
+            if (count > 0) {
+                View divider = new View(this);
+                divider.setBackgroundColor(this.themeTokens.hairline);
+                LinearLayout.LayoutParams dividerParams =
+                        new LinearLayout.LayoutParams(-1, dp(1));
+                dividerParams.leftMargin = dp(14);
+                dividerParams.rightMargin = dp(14);
+                events.addView(divider, dividerParams);
+            }
             events.addView(userEventCard(item));
             count++;
         }
-        status.setText(count == 0 ? (articlesOnly ? "暂无投稿" : "暂无动态") : (articlesOnly ? "投稿" : "动态"));
+        status.setVisibility(count == 0 ? 0 : 8);
+        if (count == 0) status.setText(articlesOnly ? "暂无投稿" : "暂无动态");
         addBottomNavSafeSpace(events);
     }
 
@@ -3676,46 +3708,105 @@ public final class MainActivity extends Activity {
 
     private View userEventCard(FeedItem item) {
         LinearLayout card = new LinearLayout(this);
-        card.setGravity(16);
-        card.setPadding(dp(16), dp(12), dp(16), dp(12));
+        card.setGravity(48);
+        card.setPadding(dp(14), dp(11), dp(14), dp(10));
         card.setBackgroundColor(this.PANEL);
         LinearLayout copy = vertical(0);
         card.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        LinearLayout meta = new LinearLayout(this);
+        meta.setGravity(16);
         if (item.pinned) {
-            TextView pinned = text("置顶", 10.0f, contrast(this.SECONDARY));
-            pinned.setGravity(17);
+            TextView pinned = text("置顶", 9.5f, this.themeTokens.accent);
             pinned.setTypeface(appRegularTypeface(), 1);
-            Compat.setBackground(pinned, round(this.SECONDARY, 4));
-            LinearLayout.LayoutParams pinnedParams = new LinearLayout.LayoutParams(dp(42), dp(20));
-            copy.addView(pinned, pinnedParams);
+            LinearLayout.LayoutParams pinnedParams = new LinearLayout.LayoutParams(-2, -2);
+            pinnedParams.rightMargin = dp(7);
+            meta.addView(pinned, pinnedParams);
         }
-        String titleText = RichContent.plainText(Json.first(item.title, item.description, "无标题内容"));
-        TextView titleView = text(titleText, 14.0f, this.TEXT);
+        List<String> metaParts = new ArrayList<>();
+        if (item.article) metaParts.add("投稿");
+        if (!TextUtils.isEmpty(item.topicName)) metaParts.add(item.topicName);
+        if (item.createdAt > 0L) metaParts.add(commentDisplayTime(item.createdAt));
+        if (!metaParts.isEmpty()) {
+            TextView metaText = text(TextUtils.join(" · ", metaParts), 9.5f, this.MUTED);
+            metaText.setSingleLine(true);
+            metaText.setEllipsize(TextUtils.TruncateAt.END);
+            meta.addView(metaText, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        }
+        if (meta.getChildCount() > 0) copy.addView(meta);
+
+        String titleText = RichContent.plainText(Json.first(item.title, item.description, "暂无内容"));
+        TextView titleView = text(titleText, 14.5f, this.TEXT);
         titleView.setTypeface(appRegularTypeface(), 1);
         titleView.setMaxLines(2);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
+        titleView.setLineSpacing(0.0f, 1.08f);
         EmojiRenderer.set(titleView, titleText, this.session.darkMode());
-        addTop(copy, titleView, item.pinned ? 5 : 0);
-        if (!TextUtils.isEmpty(item.description) && !item.description.equals(item.title)) {
-            TextView desc = text(RichContent.plainText(item.description), 11.0f, this.MUTED);
+        addTop(copy, titleView, meta.getChildCount() > 0 ? 5 : 0);
+        String description = RichContent.plainText(item.description);
+        if (!TextUtils.isEmpty(description) && !description.equals(titleText)) {
+            TextView desc = text(description, 11.0f, this.MUTED);
             desc.setMaxLines(2);
-            EmojiRenderer.set(desc, RichContent.plainText(item.description), this.session.darkMode());
-            addTop(copy, desc, 5);
+            desc.setEllipsize(TextUtils.TruncateAt.END);
+            desc.setLineSpacing(0.0f, 1.08f);
+            EmojiRenderer.set(desc, description, this.session.darkMode());
+            addTop(copy, desc, 4);
         }
-        addTop(copy, text("" + item.likes + "   评论 " + item.comments, 10.0f, this.MUTED), 7);
+
+        LinearLayout stats = new LinearLayout(this);
+        stats.setGravity(16);
+        stats.addView(new View(this), new LinearLayout.LayoutParams(0, dp(22), 1.0f));
+        stats.addView(userEventStat(R.drawable.official_comment_like_line, item.likes));
+        LinearLayout.LayoutParams commentParams = new LinearLayout.LayoutParams(-2, dp(22));
+        commentParams.leftMargin = dp(13);
+        stats.addView(userEventStat(R.drawable.official_detail_comment, item.comments), commentParams);
+        addTop(copy, stats, 6);
+
         if (!this.session.noImage() && !TextUtils.isEmpty(item.image)) {
+            DisplayMetrics metrics = getResources().getDisplayMetrics();
+            boolean narrow = metrics.widthPixels / Math.max(1.0f, metrics.density) < 300.0f;
+            int imageWidth = dp(narrow ? 76 : 94);
+            int imageHeight = dp(narrow ? 58 : 68);
+            FrameLayout imageFrame = new FrameLayout(this);
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            Compat.setBackground(image, round(this.session.darkMode() ? Color.rgb(42, 42, 42) : Color.rgb(238, 238, 238), 6));
+            Compat.setBackground(image, round(this.session.darkMode()
+                    ? Color.rgb(42, 44, 48) : Color.rgb(232, 234, 236), 5));
             Compat.clipToOutline(image);
-            LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(dp(118), dp(72));
+            imageFrame.addView(image, new FrameLayout.LayoutParams(-1, -1));
+            if (item.images.length > 1) {
+                TextView count = text(item.images.length + " 图", 8.5f, Color.WHITE);
+                count.setGravity(17);
+                count.setPadding(dp(5), 0, dp(5), 0);
+                Compat.setBackground(count, round(Color.argb(180, 20, 21, 23), 3));
+                FrameLayout.LayoutParams countParams =
+                        new FrameLayout.LayoutParams(-2, dp(18), 85);
+                countParams.rightMargin = dp(4);
+                countParams.bottomMargin = dp(4);
+                imageFrame.addView(count, countParams);
+            }
+            LinearLayout.LayoutParams imageParams =
+                    new LinearLayout.LayoutParams(imageWidth, imageHeight);
             imageParams.leftMargin = dp(12);
-            card.addView(image, imageParams);
+            card.addView(imageFrame, imageParams);
             ImageLoader.intoPlain(image, item.image, 260);
         }
-        card.setOnClickListener(view -> showDetail(item));
+        card.setOnClickListener(view -> runWithPressFeedback(view, () -> showDetail(item)));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         card.setLayoutParams(params);
         return card;
+    }
+
+    private TextView userEventStat(int icon, int value) {
+        TextView stat = text(Format.commentLikeCount(Math.max(0, value)), 9.5f, this.MUTED);
+        stat.setGravity(17);
+        Drawable drawable = Compat.tintedDrawable(this, icon, this.MUTED);
+        if (drawable != null) {
+            drawable.setBounds(0, 0, dp(13), dp(13));
+            stat.setCompoundDrawables(drawable, null, null, null);
+            stat.setCompoundDrawablePadding(dp(3));
+        }
+        return stat;
     }
 
     private void toggleFollow(final TextView follow, final JSONObject link, final JSONObject user, String targetUserId) {
@@ -7355,7 +7446,7 @@ public final class MainActivity extends Activity {
         this.leading.setVisibility(0);
         this.leading.setOnClickListener(v -> onBackPressed());
         this.action.setVisibility(4);
-        if ("user_space".equals(this.screen)) this.title.setText("动态");
+        if ("user_space".equals(this.screen)) this.title.setText("个人主页");
     }
 
     private void saveCurrentDetailProgress() {
