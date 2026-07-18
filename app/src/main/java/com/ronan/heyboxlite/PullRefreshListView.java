@@ -110,19 +110,34 @@ final class PullRefreshListView extends ListView {
                 beginTouch(event);
                 break;
             case MotionEvent.ACTION_MOVE:
-                if (this.refreshing || (!this.trackingPull && !this.pulling)) {
+                if (this.refreshing) {
                     return super.onTouchEvent(event);
                 }
                 float dx = event.getX() - this.startX;
                 float dy = event.getY() - this.startY;
-                if (isHorizontalGesture(dx, dy) || dy <= 0.0f || !isAtTop()) {
+                if (isHorizontalGesture(dx, dy)) {
                     cancelPullGesture();
                     return super.onTouchEvent(event);
                 }
-                this.pulling = true;
-                requestParentDisallowIntercept(true);
-                updatePullHeader(dy);
-                return true;
+                if (this.pulling) {
+                    if (dy <= 0.0f) {
+                        cancelPullGesture();
+                        return super.onTouchEvent(event);
+                    }
+                    updatePullHeader(dy);
+                    return true;
+                }
+                if (this.trackingPull && dy > this.touchSlop) {
+                    this.pulling = true;
+                    requestParentDisallowIntercept(true);
+                    updatePullHeader(dy);
+                    return true;
+                }
+                if (dy <= 0.0f || !isAtTop()) {
+                    cancelPullGesture();
+                    return super.onTouchEvent(event);
+                }
+                break;
             case MotionEvent.ACTION_UP:
                 if (this.pulling) {
                     finishPullGesture(true);
@@ -151,19 +166,23 @@ final class PullRefreshListView extends ListView {
                 beginTouch(event);
                 break;
             case MotionEvent.ACTION_MOVE:
-                if (!this.refreshing && this.trackingPull) {
+                if (this.refreshing) {
+                    break;
+                }
+                if (this.pulling) {
+                    requestParentDisallowIntercept(true);
+                    return true;
+                }
+                if (this.trackingPull) {
                     float dx = event.getX() - this.startX;
                     float dy = event.getY() - this.startY;
-                    if (isHorizontalGesture(dx, dy) || dy <= 0.0f || !isAtTop()) {
+                    if (isHorizontalGesture(dx, dy)) {
                         cancelPullGesture();
                     } else if (dy > this.touchSlop) {
                         this.pulling = true;
                         requestParentDisallowIntercept(true);
                         return true;
                     }
-                } else if (this.pulling) {
-                    requestParentDisallowIntercept(true);
-                    return true;
                 }
                 break;
             case MotionEvent.ACTION_UP:
@@ -254,9 +273,12 @@ final class PullRefreshListView extends ListView {
         if (!canScrollVertically(-1)) {
             return true;
         }
-        View firstChild = getChildAt(0);
-        return getFirstVisiblePosition() <= 1 && firstChild != null
-                && firstChild.getTop() >= getPaddingTop();
+        int firstPosition = getFirstVisiblePosition();
+        if (firstPosition >= getHeaderViewsCount()) {
+            return false;
+        }
+        View firstChild = getChildCount() == 0 ? null : getChildAt(0);
+        return firstChild != null && firstChild.getTop() >= getPaddingTop();
     }
 
     private int headerHeight() {
