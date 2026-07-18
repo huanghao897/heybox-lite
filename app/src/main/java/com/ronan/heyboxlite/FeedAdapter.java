@@ -80,6 +80,7 @@ final class FeedAdapter extends BaseAdapter {
         Holder holder;
         if (reusable == null) {
             LinearLayout outer = new LinearLayout(context);
+            outer.setBackgroundColor(tokens.background);
             outer.setPadding(dp(7), dp(4), dp(7), dp(4));
 
             LinearLayout card = new LinearLayout(context);

@@ -74,6 +74,7 @@ final class PullRefreshListView extends ListView {
             this.refreshing = true;
             this.trackingPull = false;
             this.pulling = false;
+            clearPressedRows();
             requestParentDisallowIntercept(false);
             cancelHeaderAnimation();
             setHeaderHeight(Math.max(this.triggerHeight, headerHeight()));
@@ -86,6 +87,7 @@ final class PullRefreshListView extends ListView {
         this.refreshing = false;
         this.trackingPull = false;
         this.pulling = false;
+        clearPressedRows();
         requestParentDisallowIntercept(false);
         if (headerHeight() == 0) {
             hideHeaderImmediately();
@@ -99,6 +101,7 @@ final class PullRefreshListView extends ListView {
         this.refreshing = false;
         this.trackingPull = false;
         this.pulling = false;
+        clearPressedRows();
         requestParentDisallowIntercept(false);
         hideHeaderImmediately();
     }
@@ -128,8 +131,7 @@ final class PullRefreshListView extends ListView {
                     return true;
                 }
                 if (this.trackingPull && dy > this.touchSlop) {
-                    this.pulling = true;
-                    requestParentDisallowIntercept(true);
+                    startPull();
                     updatePullHeader(dy);
                     return true;
                 }
@@ -179,8 +181,7 @@ final class PullRefreshListView extends ListView {
                     if (isHorizontalGesture(dx, dy)) {
                         cancelPullGesture();
                     } else if (dy > this.touchSlop) {
-                        this.pulling = true;
-                        requestParentDisallowIntercept(true);
+                        startPull();
                         return true;
                     }
                 }
@@ -238,6 +239,7 @@ final class PullRefreshListView extends ListView {
         boolean wasPulling = this.pulling;
         this.trackingPull = false;
         this.pulling = false;
+        clearPressedRows();
         requestParentDisallowIntercept(false);
         if (wasPulling || headerHeight() > 0) {
             animateHeaderTo(0);
@@ -248,6 +250,36 @@ final class PullRefreshListView extends ListView {
         this.trackingPull = false;
         this.pulling = false;
         requestParentDisallowIntercept(false);
+    }
+
+    private void startPull() {
+        if (this.pulling) {
+            return;
+        }
+        this.pulling = true;
+        clearPressedRows();
+        requestParentDisallowIntercept(true);
+    }
+
+    private void clearPressedRows() {
+        setPressed(false);
+        for (int i = 0; i < getChildCount(); i++) {
+            clearPressedState(getChildAt(i));
+        }
+    }
+
+    private void clearPressedState(View view) {
+        if (view == null) {
+            return;
+        }
+        view.setPressed(false);
+        if (!(view instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            clearPressedState(group.getChildAt(i));
+        }
     }
 
     private void updatePullHeader(float dy) {

@@ -1677,10 +1677,11 @@ public final class MainActivity extends Activity {
         this.feedListView = list;
         this.cachedFeedListView = list;
         list.setBackgroundColor(this.BG);
+        list.setCacheColorHint(this.BG);
         list.setDivider(new ColorDrawable(0));
         list.setDividerHeight(dp(2));
         list.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        list.setSelector(new ColorDrawable(this.session.darkMode() ? Color.rgb(50, 50, 50) : Color.rgb(225, 228, 232)));
+        list.setSelector(new ColorDrawable(0));
         list.setPullRefreshAction(() -> {
             loadFeed(true);
         });
@@ -2047,9 +2048,6 @@ public final class MainActivity extends Activity {
                 } else {
                     MainActivity.this.feedLoadingMore = false;
                 }
-                if (reset) {
-                    MainActivity.this.setFeedRefreshBusy(false, refreshList, requestSerial);
-                }
                 if (accepted) {
                     MainActivity.this.hideLoading();
                     JSONObject result = body.optJSONObject("result");
@@ -2090,6 +2088,9 @@ public final class MainActivity extends Activity {
                     if (MainActivity.this.feedAdapter != null) {
                         MainActivity.this.feedAdapter.notifyDataSetChanged();
                     }
+                    if (reset) {
+                        MainActivity.this.setFeedRefreshBusy(false, refreshList, requestSerial);
+                    }
                     if (MainActivity.this.feed.isEmpty()) {
                         MainActivity.this.showMessage("暂时没有获取到社区内容");
                     }
@@ -2103,9 +2104,6 @@ public final class MainActivity extends Activity {
                     if (accepted) MainActivity.this.feedRefreshing = false;
                 } else {
                     MainActivity.this.feedLoadingMore = false;
-                }
-                if (reset) {
-                    MainActivity.this.setFeedRefreshBusy(false, refreshList, requestSerial);
                 }
                 if (accepted) {
                     MainActivity.this.hideLoading();
@@ -2129,6 +2127,9 @@ public final class MainActivity extends Activity {
                     MainActivity.this.updateFeedFooter();
                     if (MainActivity.this.feedAdapter != null) {
                         MainActivity.this.feedAdapter.notifyDataSetChanged();
+                    }
+                    if (reset) {
+                        MainActivity.this.setFeedRefreshBusy(false, refreshList, requestSerial);
                     }
                     if (!MainActivity.this.feed.isEmpty()) {
                         MainActivity.this.toast("刷新失败，已保留原内容");
@@ -6354,21 +6355,23 @@ public final class MainActivity extends Activity {
         AnnouncementChecker.load(new AnnouncementChecker.Callback() {
             @Override
             public void onResult(List<AnnouncementChecker.Item> items) {
-                list.setRefreshing(false);
                 if (MainActivity.this.isFinishing() || !"announcement_board".equals(MainActivity.this.screen)) {
+                    list.setRefreshing(false);
                     return;
                 }
                 adapter.setItems(MainActivity.this.withWelcomeAnnouncement(items));
+                list.setRefreshing(false);
             }
 
             @Override
             public void onError(String message) {
-                list.setRefreshing(false);
                 if (MainActivity.this.isFinishing() || !"announcement_board".equals(MainActivity.this.screen)) {
+                    list.setRefreshing(false);
                     return;
                 }
                 MainActivity.this.toast("公告加载失败，已显示本地欢迎公告");
                 adapter.setItems(Collections.singletonList(MainActivity.this.welcomeAnnouncement()));
+                list.setRefreshing(false);
             }
         });
     }
