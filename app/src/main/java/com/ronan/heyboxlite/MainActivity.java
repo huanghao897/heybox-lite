@@ -3449,21 +3449,25 @@ public final class MainActivity extends Activity {
         this.content.removeAllViews();
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(this.PANEL);
-        LinearLayout page = vertical(this.PANEL);
-        page.setPadding(0, 0, 0, dp(10));
+        scroll.setBackgroundColor(this.BG);
+        LinearLayout page = vertical(this.BG);
+        page.setPadding(dp(8), dp(8), dp(8), dp(12));
         scroll.addView(page);
         LinearLayout profile = userSpaceHeader(fallbackName, userId, fallbackAvatar, null);
-        page.addView(profile);
+        LinearLayout.LayoutParams profileParams = new LinearLayout.LayoutParams(-1, -2);
+        profileParams.bottomMargin = dp(8);
+        page.addView(profile, profileParams);
         final List<FeedItem> userItems = new ArrayList<>();
         final boolean[] articlesOnly = {false};
         TextView status = text("正在加载动态", 12.0f, this.MUTED);
         status.setGravity(17);
         status.setPadding(dp(16), dp(22), dp(16), dp(22));
-        LinearLayout events = vertical(this.PANEL);
+        LinearLayout events = vertical(this.BG);
         Runnable render = () -> renderUserEvents(userItems, events, status, articlesOnly[0]);
         LinearLayout tabs = userSpaceTabs(articlesOnly, render);
-        page.addView(tabs);
+        LinearLayout.LayoutParams tabsParams = new LinearLayout.LayoutParams(-1, -2);
+        tabsParams.bottomMargin = dp(8);
+        page.addView(tabs, tabsParams);
         page.addView(status);
         page.addView(events);
         this.content.addView(scroll, match());
@@ -3474,6 +3478,8 @@ public final class MainActivity extends Activity {
     private LinearLayout userSpaceHeader(String nameValue, String userId, String avatarUrl, JSONObject user) {
         LinearLayout profile = vertical(this.PANEL);
         profile.setPadding(dp(14), dp(12), dp(14), dp(10));
+        Compat.setBackground(profile, round(this.PANEL, 12));
+        Compat.clipToOutline(profile);
         LinearLayout top = new LinearLayout(this);
         top.setGravity(16);
         ImageView avatar = new ImageView(this);
@@ -3529,8 +3535,9 @@ public final class MainActivity extends Activity {
 
     private LinearLayout userSpaceTabs(boolean[] articlesOnly, Runnable render) {
         LinearLayout row = new LinearLayout(this);
-        row.setPadding(dp(12), 0, dp(12), 0);
-        row.setBackgroundColor(this.PANEL);
+        row.setPadding(dp(4), dp(4), dp(4), dp(4));
+        Compat.setBackground(row, round(this.PANEL, 10));
+        Compat.clipToOutline(row);
         LinearLayout dynamic = userSpaceTab("动态", !articlesOnly[0]);
         LinearLayout articles = userSpaceTab("投稿", articlesOnly[0]);
         dynamic.setOnClickListener(view -> {
@@ -3553,6 +3560,7 @@ public final class MainActivity extends Activity {
     private LinearLayout userSpaceTab(String label, boolean active) {
         LinearLayout tab = vertical(this.PANEL);
         tab.setGravity(17);
+        Compat.setBackground(tab, round(active ? this.themeTokens.faintAccent() : Color.TRANSPARENT, 7));
         TextView textView = text(label, 13.5f, active ? this.TEXT : this.MUTED);
         textView.setGravity(17);
         textView.setTypeface(appRegularTypeface(), active ? 1 : 0);
@@ -3574,6 +3582,7 @@ public final class MainActivity extends Activity {
             boolean active = articlesOnly ? i == 1 : i == 0;
             label.setTextColor(active ? this.TEXT : this.MUTED);
             label.setTypeface(appRegularTypeface(), active ? 1 : 0);
+            Compat.setBackground(tab, round(active ? this.themeTokens.faintAccent() : Color.TRANSPARENT, 7));
             indicator.setVisibility(active ? 0 : 4);
         }
     }
@@ -3675,15 +3684,6 @@ public final class MainActivity extends Activity {
             if (articlesOnly && !item.article) {
                 continue;
             }
-            if (count > 0) {
-                View divider = new View(this);
-                divider.setBackgroundColor(this.themeTokens.hairline);
-                LinearLayout.LayoutParams dividerParams =
-                        new LinearLayout.LayoutParams(-1, dp(1));
-                dividerParams.leftMargin = dp(14);
-                dividerParams.rightMargin = dp(14);
-                events.addView(divider, dividerParams);
-            }
             events.addView(userEventCard(item));
             count++;
         }
@@ -3710,7 +3710,8 @@ public final class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setGravity(48);
         card.setPadding(dp(14), dp(11), dp(14), dp(10));
-        card.setBackgroundColor(this.PANEL);
+        Compat.setBackground(card, round(this.PANEL, 10));
+        Compat.clipToOutline(card);
         LinearLayout copy = vertical(0);
         card.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
@@ -3793,6 +3794,9 @@ public final class MainActivity extends Activity {
         }
         card.setOnClickListener(view -> runWithPressFeedback(view, () -> showDetail(item)));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.leftMargin = dp(2);
+        params.rightMargin = dp(2);
+        params.bottomMargin = dp(7);
         card.setLayoutParams(params);
         return card;
     }
