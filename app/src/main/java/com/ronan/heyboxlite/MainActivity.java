@@ -3471,8 +3471,8 @@ public final class MainActivity extends Activity {
         page.addView(status);
         page.addView(events);
         this.content.addView(scroll, match());
-        loadUserProfile(userId, fallbackName, fallbackAvatar, profile);
-        loadUserEvents(userId, userItems, events, status, articlesOnly);
+        loadUserEvents(userId, fallbackName, fallbackAvatar, profile,
+                userItems, events, status, articlesOnly);
     }
 
     private LinearLayout userSpaceHeader(String nameValue, String userId, String avatarUrl, JSONObject user) {
@@ -3518,12 +3518,11 @@ public final class MainActivity extends Activity {
             addTop(copy, desc, 4);
         }
         profile.addView(top);
-        JSONObject bbs = user == null ? null : user.optJSONObject("bbs_info");
         LinearLayout stats = new LinearLayout(this);
         stats.setGravity(17);
-        addUserStat(stats, firstJsonInt(user, bbs, "follow_num", "following_num", "attention_num"), "关注");
-        addUserStat(stats, firstJsonInt(user, bbs, "fan_num", "fans_num", "follower_num"), "粉丝");
-        addUserStat(stats, awardAndFavoriteCount(user, bbs), "获赞与收藏");
+        addUserStat(stats, ProfileData.followCount(user), "关注");
+        addUserStat(stats, ProfileData.fanCount(user), "粉丝");
+        addUserStat(stats, ProfileData.likeCount(user), "获赞");
         addTop(profile, stats, 11);
         View divider = new View(this);
         divider.setBackgroundColor(this.themeTokens == null ? this.MUTED : this.themeTokens.hairline);
@@ -3601,68 +3600,29 @@ public final class MainActivity extends Activity {
         row.addView(item, new LinearLayout.LayoutParams(0, -2, 1.0f));
     }
 
-    private int awardAndFavoriteCount(JSONObject user, JSONObject bbs) {
-        int combined = firstJsonInt(user, bbs, "award_favour_num", "award_favorite_num",
-                "award_collect_num", "up_fav_num", "liked_fav_num", "total_award_fav_num");
-        if (combined > 0) return combined;
-        int awards = firstJsonInt(user, bbs, "up_num", "award_num", "award_count",
-                "like_num", "liked_num", "praise_num", "praise_count", "link_award_num");
-        int favorites = firstJsonInt(user, bbs, "fav_num", "favor_num", "favour_num",
-                "favorite_num", "collect_num", "collection_num", "collected_num");
-        return awards + favorites;
-    }
-
-    private int firstJsonInt(JSONObject first, JSONObject second, String... keys) {
-        int value = firstJsonInt(first, keys);
-        return value != 0 ? value : firstJsonInt(second, keys);
-    }
-
-    private int firstJsonInt(JSONObject object, String... keys) {
-        if (object == null) return 0;
-        for (String key : keys) {
-            if (object.has(key)) return object.optInt(key, 0);
-        }
-        return 0;
-    }
-
-    private void loadUserProfile(String userId, String fallbackName, String fallbackAvatar,
-                                 LinearLayout profile) {
-        this.api.get(EndpointProvider.profile(), Collections.singletonMap(SecureStrings.userid(), userId), new ApiClient.Callback() {
-            @Override public void onSuccess(JSONObject body) {
-                JSONObject user = profileUser(body);
-                if (user == null || profile.getParent() == null) {
-                    return;
-                }
-                ViewGroup parent = (ViewGroup) profile.getParent();
-                int index = parent.indexOfChild(profile);
-                parent.removeView(profile);
-                parent.addView(userSpaceHeader(fallbackName, userId, fallbackAvatar, user), index);
-            }
-
-            @Override public void onError(String message) {
-                MainActivity.this.localCache.log("user profile failed: " + message);
-            }
-        });
-    }
-
-    private JSONObject profileUser(JSONObject body) {
-        JSONObject result = body == null ? null : body.optJSONObject("result");
-        if (result == null) return null;
-        JSONObject account = result.optJSONObject("account_detail");
-        if (account != null) return account;
-        JSONObject user = result.optJSONObject("user");
-        return user != null ? user : result.optJSONObject("profile");
-    }
-
-    private void loadUserEvents(String userId, List<FeedItem> items, LinearLayout events,
-                                TextView status, boolean[] articlesOnly) {
+    private Map<String, String> profileUserLinkParams(String userId, int limit) {
         Map<String, String> params = new HashMap<>();
         params.put(SecureStrings.userid(), userId);
-        params.put("user_id", userId);
-        params.put("list_type", "moment");
         params.put("offset", "0");
-        this.api.get(EndpointProvider.profileEvents(), params, new ApiClient.Callback() {
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        return params;
+    }
+
+    private void loadUserEvents(String userId, String fallbackName, String fallbackAvatar,
+                                LinearLayout profile, List<FeedItem> items,
+                                LinearLayout events, TextView status, boolean[] articlesOnly) {
+        this.api.get(EndpointProvider.profileUserLinks(), profileUserLinkParams(userId, 20),
+                new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
+                JSONObject user = ProfileData.user(body);
+                if (user != null && profile.getParent() instanceof ViewGroup) {
+                    ViewGroup parent = (ViewGroup) profile.getParent();
+                    int index = parent.indexOfChild(profile);
+                    ViewGroup.LayoutParams layoutParams = profile.getLayoutParams();
+                    parent.removeView(profile);
+                    parent.addView(userSpaceHeader(fallbackName, userId, fallbackAvatar, user),
+                            index, layoutParams);
+                }
                 items.clear();
                 items.addAll(parseUserEvents(body));
                 renderUserEvents(items, events, status, articlesOnly[0]);
@@ -3693,8 +3653,7 @@ public final class MainActivity extends Activity {
     }
 
     private List<FeedItem> parseUserEvents(JSONObject body) {
-        JSONObject result = body == null ? null : body.optJSONObject("result");
-        JSONArray array = Json.firstArray(result, "links", "list", "events", "moments", "data");
+        JSONArray array = ProfileData.posts(body);
         List<FeedItem> items = new ArrayList<>();
         if (array == null) return items;
         for (int i = 0; i < array.length(); i++) {
@@ -4993,7 +4952,8 @@ public final class MainActivity extends Activity {
             transitionTo(this.cachedProfileContainer);
         } else {
             transitionTo(detailLoadingPage());
-            this.api.get(EndpointProvider.profile(), Collections.singletonMap(SecureStrings.userid(), this.session.userId()), new ApiClient.Callback() {
+            this.api.get(EndpointProvider.profileUserLinks(),
+                    profileUserLinkParams(this.session.userId(), 1), new ApiClient.Callback() {
                 @Override
                 public void onSuccess(JSONObject body) {
                     if (!"profile".equals(MainActivity.this.screen) || MainActivity.this.isFinishing()) return;
@@ -5067,11 +5027,7 @@ public final class MainActivity extends Activity {
     }
 
     private void renderProfile(JSONObject body) {
-        JSONObject result = body.optJSONObject("result");
-        JSONObject account = result == null ? null : result.optJSONObject("account_detail");
-        if (account == null && result != null) {
-            account = result.optJSONObject("user");
-        }
+        JSONObject account = ProfileData.user(body);
         ScrollView scrollView = new ScrollView(this);
         LinearLayout linearLayoutVertical = vertical(this.BG);
         linearLayoutVertical.setPadding(dp(8), dp(8), dp(8), dp(12));
@@ -5101,10 +5057,10 @@ public final class MainActivity extends Activity {
         name.setTypeface(appRegularTypeface(), 1);
         headCopy.addView(name);
         headCopy.addView(text("ID " + this.session.userId(), 11.0f, this.MUTED));
-        JSONObject bbs = account == null ? null : account.optJSONObject("bbs_info");
-        if (bbs != null) {
-            TextView stats = text("关注 " + bbs.optInt("follow_num") + "  粉丝 "
-                    + bbs.optInt("fan_num") + "  获赞 " + bbs.optInt("up_num"), 12.0f, this.SECONDARY);
+        if (account != null) {
+            TextView stats = text("关注 " + ProfileData.followCount(account) + "  粉丝 "
+                    + ProfileData.fanCount(account) + "  获赞 "
+                    + ProfileData.likeCount(account), 12.0f, this.SECONDARY);
             LinearLayout.LayoutParams statsParams = new LinearLayout.LayoutParams(-2, -2);
             statsParams.topMargin = dp(4);
             headCopy.addView(stats, statsParams);
