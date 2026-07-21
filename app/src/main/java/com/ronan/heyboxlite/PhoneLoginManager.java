@@ -65,7 +65,7 @@ final class PhoneLoginManager {
                 Map<String, String> body = new LinkedHashMap<>();
                 body.put("phone_num", encryptedPhone);
                 api.postSignedIsolated(EndpointProvider.mobileLoginCode(),
-                        Collections.emptyMap(), body, HeyboxSigner.Algorithm.ANDROID,
+                        Collections.emptyMap(), body, HeyboxSigner.Algorithm.NONE,
                         ApiClient.RequestProfile.OFFICIAL_MOBILE_LOGIN,
                         new ApiClient.Callback() {
                             @Override public void onResponseCookies(List<String> cookies) {
@@ -113,7 +113,7 @@ final class PhoneLoginManager {
                 Map<String, String> body = new LinkedHashMap<>();
                 body.put("phone_num", encryptedPhone);
                 api.postSignedIsolated(EndpointProvider.mobileLogin(), query, body,
-                        HeyboxSigner.Algorithm.ANDROID,
+                        HeyboxSigner.Algorithm.NONE,
                         ApiClient.RequestProfile.OFFICIAL_MOBILE_LOGIN,
                         new ApiClient.Callback() {
                             @Override public void onResponseCookies(List<String> cookies) {

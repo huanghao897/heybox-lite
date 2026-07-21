@@ -162,7 +162,7 @@ final class ApiClient {
                          boolean mergeResponseCookies, boolean useSignInCredentials) {
         HttpURLConnection connection = null;
         boolean taskRequest = isTaskPath(path);
-        boolean debugRequest = taskRequest || isWritePath(path);
+        boolean debugRequest = taskRequest || isWritePath(path) || isMobileLoginPath(path);
         try {
             if (closed || Thread.currentThread().isInterrupted()) return;
             Map<String, String> params = new LinkedHashMap<>(
@@ -198,12 +198,15 @@ final class ApiClient {
                         + " headers=" + requestHeaderSummary(connection));
                 logTask("api " + debugKind(path) + " final url path=" + path
                         + " host=" + url.getHost()
+                        + " resolvedPath=" + url.getPath()
                         + " query=" + querySummary(url));
             }
             if ("POST".equals(method)) {
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Content-Type",
-                        "application/x-www-form-urlencoded;charset=utf-8");
+                        isMobileLoginPath(path)
+                                ? "application/x-www-form-urlencoded"
+                                : "application/x-www-form-urlencoded;charset=utf-8");
                 byte[] bytes = encode(body == null ? new LinkedHashMap<>() : body)
                         .getBytes("UTF-8");
                 connection.setFixedLengthStreamingMode(bytes.length);
@@ -542,12 +545,13 @@ final class ApiClient {
     }
 
     private static String debugKind(String path) {
-        return isTaskPath(path) ? "task" : "write";
+        if (isTaskPath(path)) return "task";
+        return isMobileLoginPath(path) ? "mobile-login" : "write";
     }
 
-    private static Map<String, String> nativeSignParams(String method, RequestProfile profile,
-                                                        Map<String, String> query,
-                                                        Map<String, String> body) {
+    static Map<String, String> nativeSignParams(String method, RequestProfile profile,
+                                                Map<String, String> query,
+                                                Map<String, String> body) {
         Map<String, String> out = new LinkedHashMap<>();
         if (query != null) out.putAll(query);
         if ("POST".equals(method) && isOfficialNativeClient(profile)
@@ -854,7 +858,7 @@ final class ApiClient {
         return isTaskPath(path) || isMobileLoginPath(path);
     }
 
-    private static boolean isMobileLoginPath(String path) {
+    static boolean isMobileLoginPath(String path) {
         String clean = normalizePath(path);
         return normalizePath(EndpointProvider.mobileLoginCode()).equals(clean)
                 || normalizePath(EndpointProvider.mobileLogin()).equals(clean);

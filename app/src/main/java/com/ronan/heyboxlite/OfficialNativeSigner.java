@@ -234,13 +234,10 @@ final class OfficialNativeSigner {
         log(logger, "official native signer classes16 init done");
     }
 
-    private static String normalizeInterceptorPath(String path) {
+    static String normalizeInterceptorPath(String path) {
         String value = path == null ? "" : path.trim();
         if (value.isEmpty()) return "/";
         if (!value.startsWith("/")) value = "/" + value;
-        while (value.endsWith("/") && value.length() > 1) {
-            value = value.substring(0, value.length() - 1);
-        }
         return value;
     }
 

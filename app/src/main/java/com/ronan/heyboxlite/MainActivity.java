@@ -1641,6 +1641,7 @@ public final class MainActivity extends Activity {
         codeRow.addView(code, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
         Button sendCode = button("\u83b7\u53d6\u9a8c\u8bc1\u7801");
         sendCode.setTag("phone_login_send_code");
+        stylePhoneLoginButton(sendCode, false, 0);
         LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(dp(112), dp(42));
         sendParams.leftMargin = dp(5);
         codeRow.addView(sendCode, sendParams);
@@ -1648,17 +1649,19 @@ public final class MainActivity extends Activity {
         updatePhoneCodeButton(sendCode);
 
         Button login = button("\u767b\u5f55");
+        stylePhoneLoginButton(login, true, 0);
         LinearLayout.LayoutParams loginParams = new LinearLayout.LayoutParams(-1, dp(42));
         loginParams.topMargin = dp(12);
         page.addView(login, loginParams);
         Button qrLogin = button("\u8fd4\u56de\u626b\u7801\u767b\u5f55", R.drawable.il_qr);
+        stylePhoneLoginButton(qrLogin, false, R.drawable.il_qr);
         LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(-1, dp(40));
         qrParams.topMargin = dp(4);
         page.addView(qrLogin, qrParams);
 
         sendCode.setOnClickListener(view -> {
             if (this.phoneLoginManager == null) return;
-            sendCode.setEnabled(false);
+            setPhoneLoginButtonEnabled(sendCode, false);
             setPhoneLoginStatus("\u6b63\u5728\u83b7\u53d6\u9a8c\u8bc1\u7801", this.MUTED);
             this.phoneLoginManager.requestCode(phone.getText().toString(),
                     new PhoneLoginManager.CodeCallback() {
@@ -1678,8 +1681,8 @@ public final class MainActivity extends Activity {
         });
         login.setOnClickListener(view -> {
             if (this.phoneLoginManager == null) return;
-            login.setEnabled(false);
-            sendCode.setEnabled(false);
+            setPhoneLoginButtonEnabled(login, false);
+            setPhoneLoginButtonEnabled(sendCode, false);
             setPhoneLoginStatus("\u6b63\u5728\u767b\u5f55", this.MUTED);
             this.phoneLoginManager.login(phone.getText().toString(), code.getText().toString(),
                     new PhoneLoginManager.LoginCallback() {
@@ -1699,7 +1702,7 @@ public final class MainActivity extends Activity {
 
                         @Override public void onError(String message) {
                             setPhoneLoginStatus(message, PRIMARY);
-                            login.setEnabled(true);
+                            setPhoneLoginButtonEnabled(login, true);
                             updatePhoneCodeButton(sendCode);
                         }
                     });
@@ -1720,18 +1723,44 @@ public final class MainActivity extends Activity {
         long remainingMs = this.phoneCodeRetryAt - System.currentTimeMillis();
         if (remainingMs <= 0L) {
             button.setText("\u83b7\u53d6\u9a8c\u8bc1\u7801");
-            button.setEnabled(true);
+            setPhoneLoginButtonEnabled(button, true);
             return;
         }
         long seconds = Math.max(1L, (remainingMs + 999L) / 1000L);
         button.setText(seconds + "s");
-        button.setEnabled(false);
+        setPhoneLoginButtonEnabled(button, false);
         this.handler.postDelayed(() -> {
             if (!isFinishing() && "phone_login".equals(this.screen)
                     && button == this.content.findViewWithTag("phone_login_send_code")) {
                 updatePhoneCodeButton(button);
             }
         }, Math.min(1000L, remainingMs));
+    }
+
+    private void stylePhoneLoginButton(Button button, boolean primary, int iconRes) {
+        if (button == null) return;
+        ThemeTokens tokens = this.themeTokens == null
+                ? ThemeTokens.of(this.session != null && this.session.darkMode(),
+                this.PRIMARY, this.SECONDARY)
+                : this.themeTokens;
+        button.setTextColor(primary ? tokens.onPrimary : tokens.text);
+        button.setGravity(17);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            button.setTextAlignment(View.TEXT_ALIGNMENT_GRAVITY);
+        }
+        Compat.setBackground(button, primary
+                ? round(tokens.primary, 8)
+                : roundStroke(tokens.panelElevated, 8, tokens.hairline, 1));
+        if (iconRes != 0) {
+            setLeftIcon(button, iconRes, primary ? tokens.onPrimary : tokens.text, 15);
+            button.setCompoundDrawablePadding(dp(7));
+        }
+    }
+
+    private static void setPhoneLoginButtonEnabled(Button button, boolean enabled) {
+        if (button == null) return;
+        button.setEnabled(enabled);
+        button.setAlpha(enabled ? 1.0f : 0.55f);
     }
 
     private void requestQr() {
