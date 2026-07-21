@@ -41,8 +41,8 @@ final class SignInManager {
 
         static Result loggedOut() {
             return new Result(false, false, false, false,
-                    "\u767b\u5f55\u540e\u53ef\u4ee5\u7b7e\u5230",
-                    "\u626b\u7801\u767b\u5f55\u540e\u53ef\u4f7f\u7528\u6bcf\u65e5\u7b7e\u5230");
+                    "\u9700\u8981\u624b\u673a\u53f7\u767b\u5f55",
+                    "\u767b\u5f55\u540e\u4f1a\u4f7f\u7528\u72ec\u7acb\u7684\u79fb\u52a8\u7aef\u51ed\u636e\u7b7e\u5230");
         }
 
         static Result disabled() {
@@ -54,7 +54,7 @@ final class SignInManager {
         static Result pending() {
             return new Result(true, false, false, false,
                     "\u4eca\u65e5\u8fd8\u672a\u7b7e\u5230",
-                    "\u6253\u5f00\u8f6f\u4ef6\u540e\u4f1a\u81ea\u52a8\u5c1d\u8bd5\u4e00\u6b21\uff0c\u4e5f\u53ef\u4ee5\u624b\u52a8\u7b7e\u5230");
+                    "\u70b9\u51fb\u6309\u94ae\u624b\u52a8\u7b7e\u5230");
         }
 
         static Result running() {
@@ -84,20 +84,22 @@ final class SignInManager {
 
     private final SessionStore session;
     private final ApiClient api;
+    private final WriteTokenProvider tokenProvider;
     private final Logger logger;
     private final Handler main = new Handler(Looper.getMainLooper());
     private boolean inFlight;
 
-    SignInManager(SessionStore session, ApiClient api, WriteTokenProvider ignored,
+    SignInManager(SessionStore session, ApiClient api, WriteTokenProvider tokenProvider,
                   Logger logger) {
         this.session = session;
         this.api = api;
+        this.tokenProvider = tokenProvider;
         this.logger = logger;
     }
 
     Result currentState() {
         if (!ENABLED) return Result.disabled();
-        if (!session.isLoggedIn()) return Result.loggedOut();
+        if (!session.hasSignInCredentials()) return Result.loggedOut();
         if (inFlight) return Result.running();
         String today = today();
         String summary = session.signSummary();
@@ -110,7 +112,7 @@ final class SignInManager {
             dispatch(callback, Result.disabled());
             return;
         }
-        if (!session.isLoggedIn()) {
+        if (!session.hasSignInCredentials()) {
             dispatch(callback, Result.loggedOut());
             return;
         }
@@ -128,7 +130,7 @@ final class SignInManager {
             dispatch(callback, Result.disabled());
             return;
         }
-        if (!session.isLoggedIn()) {
+        if (!session.hasSignInCredentials()) {
             dispatch(callback, Result.loggedOut());
             return;
         }
@@ -144,7 +146,43 @@ final class SignInManager {
         String today = today();
         session.setLastSignAttemptDate(today);
         log("sign-in start");
-        checkState(today, callback);
+        if (session.signInXhhToken().isEmpty()
+                && !session.syncSignInXhhTokenFromMainSession()
+                && tokenProvider != null) {
+            log("sign-in fetching x_xhh_tokenid");
+            tokenProvider.ensure(new WriteTokenProvider.Callback() {
+                @Override public void onReady() {
+                    session.syncSignInXhhTokenFromMainSession();
+                    log("sign-in token ready");
+                    primeRnd(today, callback);
+                }
+                @Override public void onError(String message) {
+                    log("sign-in token failed: " + safe(message) + " — continuing without token");
+                    primeRnd(today, callback);
+                }
+            });
+        } else {
+            primeRnd(today, callback);
+        }
+    }
+
+    private void primeRnd(String today, Callback callback) {
+        api.getSigned(EndpointProvider.getuiFix(), java.util.Collections.emptyMap(),
+                HeyboxSigner.Algorithm.LEGACY, ApiClient.RequestProfile.WEB,
+                new ApiClient.Callback() {
+                    @Override public void onSuccess(JSONObject body) {
+                        if (session.saveNativeRndConfig(body)) {
+                            log("sign-in rnd config loaded");
+                        } else {
+                            log("sign-in rnd config not found in response");
+                        }
+                        checkState(today, callback);
+                    }
+                    @Override public void onError(String message) {
+                        log("sign-in rnd warmup failed: " + safe(message) + " — continuing without rnd");
+                        checkState(today, callback);
+                    }
+                });
     }
 
     private void checkState(String today, Callback callback) {

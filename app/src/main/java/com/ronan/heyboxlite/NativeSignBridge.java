@@ -25,7 +25,7 @@ final class NativeSignBridge {
         void log(String message);
     }
 
-    private static final long TIMEOUT_MS = 1600L;
+    private static final long TIMEOUT_MS = 8000L;
 
     private NativeSignBridge() {}
 
@@ -43,6 +43,13 @@ final class NativeSignBridge {
     static Map<String, String> sign(Context context, SessionStore session,
                                     String path, Map<String, String> requestParams,
                                     boolean forceFallback, Logger logger) {
+        return sign(context, session, path, requestParams, forceFallback, false, logger);
+    }
+
+    static Map<String, String> sign(Context context, SessionStore session,
+                                    String path, Map<String, String> requestParams,
+                                    boolean forceFallback, boolean anonymous,
+                                    Logger logger) {
         Map<String, String> empty = new LinkedHashMap<>();
         if (context == null || session == null) return empty;
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -89,6 +96,7 @@ final class NativeSignBridge {
                     data.putString(NativeSignService.EXTRA_PKEY, signPkey);
                     data.putString(NativeSignService.EXTRA_XHH_TOKEN, signToken);
                     data.putBoolean(NativeSignService.EXTRA_FORCE_FALLBACK, forceFallback);
+                    data.putBoolean(NativeSignService.EXTRA_ANONYMOUS, anonymous);
                     data.putString(NativeSignService.EXTRA_RND_CODE, session.nativeRndCode());
                     data.putInt(NativeSignService.EXTRA_RND_VERSION,
                             session.nativeRndVersion());

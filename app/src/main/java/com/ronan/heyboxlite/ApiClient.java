@@ -39,11 +39,13 @@ final class ApiClient {
         OFFICIAL_MOBILE_CLIENT_FALLBACK,
         OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS,
         OFFICIAL_MOBILE_CLIENT_RAW_COOKIE,
+        OFFICIAL_MOBILE_LOGIN,
         OFFICIAL_SPARSE,
         OFFICIAL_SPARSE_CLIENT
     }
 
     interface Callback {
+        default void onResponseCookies(List<String> cookies) {}
         void onSuccess(JSONObject body);
         void onError(String message);
     }
@@ -113,6 +115,14 @@ final class ApiClient {
         if (closed) return;
         executor.execute(() -> request("POST", path, queryExtra, body,
                 algorithm, profile, callback));
+    }
+
+    void postSignedIsolated(String path, Map<String, String> queryExtra,
+                            Map<String, String> body, HeyboxSigner.Algorithm algorithm,
+                            RequestProfile profile, Callback callback) {
+        if (closed) return;
+        executor.execute(() -> request("POST", path, queryExtra, body,
+                algorithm, profile, callback, false, false));
     }
 
     void postSignedQueryOnly(String path, Map<String, String> queryExtra,
@@ -265,7 +275,7 @@ final class ApiClient {
             }
             if (failed) throw new IllegalStateException(
                     first(json.optString("msg"), json.optString("message"), "接口返回失败"));
-            postSuccess(callback, json);
+            postSuccess(callback, json, setCookies);
         } catch (Exception error) {
             if (closed) return;
             String message = error.getMessage() == null
@@ -367,6 +377,7 @@ final class ApiClient {
         }
         Map<String, String> nativeParams = NativeSignBridge.sign(
                 session.appContext(), session, path, signParams, forceFallbackSigner(profile),
+                profile == RequestProfile.OFFICIAL_MOBILE_LOGIN,
                 this::logTask);
         if (nativeParams.isEmpty()) {
             logTask("native signer skipped path=" + path
@@ -388,6 +399,14 @@ final class ApiClient {
         if (!isTaskPath(path) || params == null || params.isEmpty()) return;
         params.put("channel", OFFICIAL_TASK_CHANNEL);
         params.put("x_app", OFFICIAL_TASK_APP);
+        if (OfficialContext.officialBuildCode() != null
+                && !OfficialContext.officialBuildCode().isEmpty()) {
+            params.put("build", OfficialContext.officialBuildCode());
+        }
+        if (OfficialContext.officialVersionName() != null
+                && !OfficialContext.officialVersionName().isEmpty()) {
+            params.put("version", OfficialContext.officialVersionName());
+        }
     }
 
     private void mergeNativeSecurityParams(String path, Map<String, String> params,
@@ -435,7 +454,7 @@ final class ApiClient {
 
     private boolean replaceWithOfficialNativeParams(String path, RequestProfile profile,
                                                     Map<String, String> nativeParams) {
-        if (!isOfficialNativeClient(profile) || !isTaskPath(path)
+        if (!isOfficialNativeClient(profile) || !isNativeSecurityPath(path)
                 || nativeParams == null || nativeParams.isEmpty()) {
             return false;
         }
@@ -451,9 +470,17 @@ final class ApiClient {
     }
 
     private void postSuccess(Callback callback, JSONObject json) {
+        postSuccess(callback, json, Collections.emptyList());
+    }
+
+    private void postSuccess(Callback callback, JSONObject json, List<String> responseCookies) {
         if (callback == null) return;
+        List<String> cookies = responseCookies == null
+                ? Collections.emptyList() : new ArrayList<>(responseCookies);
         main.post(() -> {
-            if (!closed) callback.onSuccess(json);
+            if (closed) return;
+            callback.onResponseCookies(Collections.unmodifiableList(cookies));
+            callback.onSuccess(json);
         });
     }
 
@@ -524,6 +551,7 @@ final class ApiClient {
         Map<String, String> out = new LinkedHashMap<>();
         if (query != null) out.putAll(query);
         if ("POST".equals(method) && isOfficialNativeClient(profile)
+                && profile != RequestProfile.OFFICIAL_MOBILE_LOGIN
                 && body != null && !body.isEmpty()) {
             for (Map.Entry<String, String> entry : body.entrySet()) {
                 String key = entry.getKey();
@@ -630,6 +658,13 @@ final class ApiClient {
     private Map<String, String> baseParams(RequestProfile profile,
                                            boolean useSignInCredentials) {
         if (profile == RequestProfile.MOBILE) return session.mobileCommonParams();
+        if (profile == RequestProfile.OFFICIAL_MOBILE_LOGIN) {
+            Map<String, String> params = new LinkedHashMap<>(session.officialMobileParams(true));
+            params.put(SecureStrings.heyboxId(), "-1");
+            params.remove(SecureStrings.userid());
+            params.remove(SecureStrings.userId());
+            return params;
+        }
         if (profile == RequestProfile.OFFICIAL_MOBILE
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MIN_COOKIE
@@ -652,6 +687,10 @@ final class ApiClient {
 
     private void applyHeaders(HttpURLConnection connection, RequestProfile profile,
                               boolean useSignInCredentials) {
+        if (profile == RequestProfile.OFFICIAL_MOBILE_LOGIN) {
+            HeaderProvider.applyOfficialAnonymous(connection, session);
+            return;
+        }
         if (profile == RequestProfile.MOBILE) {
             HeaderProvider.applyMobile(connection, session);
             return;
@@ -727,7 +766,8 @@ final class ApiClient {
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_KEYS
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_RAW_COOKIE;
+                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_RAW_COOKIE
+                || profile == RequestProfile.OFFICIAL_MOBILE_LOGIN;
     }
 
     private static boolean forceFallbackSigner(RequestProfile profile) {
@@ -742,7 +782,8 @@ final class ApiClient {
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_KEYS
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK
                 || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_RAW_COOKIE;
+                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_RAW_COOKIE
+                || profile == RequestProfile.OFFICIAL_MOBILE_LOGIN;
     }
 
     private static boolean isNativeSecurityParam(String key) {
@@ -810,7 +851,13 @@ final class ApiClient {
     }
 
     private static boolean isNativeSecurityPath(String path) {
-        return isTaskPath(path);
+        return isTaskPath(path) || isMobileLoginPath(path);
+    }
+
+    private static boolean isMobileLoginPath(String path) {
+        String clean = normalizePath(path);
+        return normalizePath(EndpointProvider.mobileLoginCode()).equals(clean)
+                || normalizePath(EndpointProvider.mobileLogin()).equals(clean);
     }
 
     private static String normalizePath(String path) {

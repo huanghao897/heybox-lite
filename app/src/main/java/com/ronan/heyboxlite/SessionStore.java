@@ -78,6 +78,8 @@ final class SessionStore {
     private static final String SIGNIN_MOBILE_USER_ID = "signin_mobile_user_id";
     private static final String SIGNIN_MOBILE_PKEY = "signin_mobile_pkey";
     private static final String SIGNIN_MOBILE_TOKEN = "signin_mobile_token";
+    private static final String SIGNIN_MOBILE_COOKIE = "signin_mobile_cookie";
+    private static final String SIGNIN_MOBILE_PENDING_COOKIE = "signin_mobile_pending_cookie";
     private static final String SIGNIN_MOBILE_DEVICE_ID = "signin_mobile_device_id";
     private static final String SIGNIN_MOBILE_DEVICE_INFO = "signin_mobile_device_info";
     private static final String SIGNIN_MOBILE_OS_VERSION = "signin_mobile_os_version";
@@ -105,6 +107,8 @@ final class SessionStore {
     private static final String[] SIGNIN_SECRET_KEYS = {
             SIGNIN_MOBILE_PKEY,
             SIGNIN_MOBILE_TOKEN,
+            SIGNIN_MOBILE_COOKIE,
+            SIGNIN_MOBILE_PENDING_COOKIE,
             SIGNIN_MOBILE_DEVICE_ID,
             SIGNIN_REPLAY_URL,
             SIGNIN_REPLAY_COOKIE
@@ -586,7 +590,7 @@ final class SessionStore {
     }
 
     boolean hasSignInCredentials() {
-        return !signInPkey().isEmpty();
+        return !signInPkey().isEmpty() && !signInUserId().isEmpty();
     }
 
     String signInUserId() {
@@ -604,6 +608,92 @@ final class SessionStore {
 
     String signInDeviceId() {
         return signInValue(SIGNIN_MOBILE_DEVICE_ID);
+    }
+
+    String pendingMobileLoginCookie() {
+        return signInValue(SIGNIN_MOBILE_PENDING_COOKIE);
+    }
+
+    void clearPendingMobileLoginCookies() {
+        prefs.edit().remove(SIGNIN_MOBILE_PENDING_COOKIE).apply();
+    }
+
+    void mergePendingMobileLoginCookies(List<String> headers) {
+        if (headers == null || headers.isEmpty()) return;
+        Map<String, String> values = cookieMap(pendingMobileLoginCookie());
+        mergeSetCookieHeaders(values, headers);
+        String cookie = joinCookies(values);
+        if (cookie.isEmpty()) return;
+        SharedPreferences.Editor editor = prefs.edit();
+        putIfPresent(editor, SIGNIN_MOBILE_PENDING_COOKIE, cookie);
+        editor.apply();
+    }
+
+    void saveMobileLogin(PhoneLoginResponse response) {
+        if (response == null) {
+            throw new IllegalArgumentException("\u767b\u5f55\u54cd\u5e94\u4e3a\u7a7a");
+        }
+        String currentUserId = userId();
+        boolean mainSessionLoggedIn = isLoggedIn();
+        if (mainSessionLoggedIn && !currentUserId.equals(response.userId)) {
+            throw new IllegalArgumentException(
+                    "\u624b\u673a\u53f7\u5bf9\u5e94\u7684\u8d26\u53f7\u4e0e\u5f53\u524d\u8d26\u53f7\u4e0d\u4e00\u81f4");
+        }
+
+        Map<String, String> cookies = cookieMap(pendingMobileLoginCookie());
+        cookies.put(officialPkeyKey(), response.pkey);
+        cookies.put(SecureStrings.userPkey(), response.pkey);
+        cookies.put(SecureStrings.xPkey(), response.pkey);
+        cookies.put(SecureStrings.userHeyboxId(), response.userId);
+        cookies.put(SecureStrings.xHeyboxId(), response.userId);
+        cookies.put(SecureStrings.heyboxId(), response.userId);
+        cookies.put(SecureStrings.userid(), response.userId);
+        cookies.put(SecureStrings.userId(), response.userId);
+        String token = firstCookieValue(cookies, SecureStrings.xXhhTokenId());
+        String mobileCookie = joinCookies(cookies);
+
+        SharedPreferences.Editor editor = prefs.edit()
+                .putString(SIGNIN_MOBILE_USER_ID, response.userId)
+                .putString(SIGNIN_MOBILE_SOURCE, "phone-login")
+                .putLong(SIGNIN_MOBILE_IMPORTED_AT, System.currentTimeMillis())
+                .remove(SIGNIN_MOBILE_PENDING_COOKIE);
+        putIfPresent(editor, SIGNIN_MOBILE_PKEY, response.pkey);
+        putIfPresent(editor, SIGNIN_MOBILE_COOKIE, mobileCookie);
+        putIfPresent(editor, SIGNIN_MOBILE_DEVICE_ID, androidDeviceIdentifier());
+        putIfPresent(editor, SIGNIN_MOBILE_DEVICE_INFO,
+                Build.MODEL == null ? "" : Build.MODEL);
+        putIfPresent(editor, SIGNIN_MOBILE_OS_VERSION,
+                Build.VERSION.RELEASE == null ? "" : Build.VERSION.RELEASE);
+        putIfPresent(editor, SIGNIN_MOBILE_VERSION, OfficialContext.officialVersionName());
+        putIfPresent(editor, SIGNIN_MOBILE_BUILD, OfficialContext.officialBuildCode());
+        putIfPresent(editor, SIGNIN_MOBILE_DW, com.max.xiaoheihe.utils.i.e());
+        putIfPresent(editor, SIGNIN_MOBILE_CHANNEL, "heybox_oppo");
+        putIfPresent(editor, SIGNIN_MOBILE_X_APP, "heybox");
+        if (token.isEmpty()) editor.remove(SIGNIN_MOBILE_TOKEN);
+        else putIfPresent(editor, SIGNIN_MOBILE_TOKEN, token);
+        editor.apply();
+
+        if (!hasSignInCredentials()) {
+            throw new IllegalStateException("无法安全保存移动端登录凭据");
+        }
+
+        if (!mainSessionLoggedIn) {
+            saveCookie(mobileCookie);
+            saveLogin(response.user);
+            SharedPreferences.Editor profile = prefs.edit();
+            if (!response.userName.isEmpty()) profile.putString(USER_NAME, response.userName);
+            if (!response.avatar.isEmpty()) profile.putString(AVATAR, response.avatar);
+            profile.apply();
+        }
+    }
+
+    boolean syncSignInXhhTokenFromMainSession() {
+        String token = officialXhhToken();
+        if (token.isEmpty()) return false;
+        SharedPreferences.Editor editor = prefs.edit();
+        putIfPresent(editor, SIGNIN_MOBILE_TOKEN, token);
+        editor.apply();
+        return true;
     }
 
     String importSignInCredentialsFromText(String text) {
@@ -665,6 +755,8 @@ final class SessionStore {
                 .remove(SIGNIN_MOBILE_USER_ID)
                 .remove(SIGNIN_MOBILE_PKEY)
                 .remove(SIGNIN_MOBILE_TOKEN)
+                .remove(SIGNIN_MOBILE_COOKIE)
+                .remove(SIGNIN_MOBILE_PENDING_COOKIE)
                 .remove(SIGNIN_MOBILE_DEVICE_ID)
                 .remove(SIGNIN_MOBILE_DEVICE_INFO)
                 .remove(SIGNIN_MOBILE_OS_VERSION)
@@ -880,7 +972,7 @@ final class SessionStore {
     }
 
     private Map<String, String> signInCookieMap() {
-        Map<String, String> values = new LinkedHashMap<>();
+        Map<String, String> values = cookieMap(signInValue(SIGNIN_MOBILE_COOKIE));
         String pkey = signInPkey();
         String id = signInUserId();
         String token = signInXhhToken();
@@ -1381,6 +1473,14 @@ final class SessionStore {
     void mergeCookies(List<String> headers) {
         if (headers == null || headers.isEmpty()) return;
         Map<String, String> values = cookieMap(getCookie());
+        mergeSetCookieHeaders(values, headers);
+        normalizeAuthCookies(values);
+        String cookie = joinCookies(values);
+        saveCookie(cookie);
+        persistUserIdFromCookie(cookie);
+    }
+
+    private void mergeSetCookieHeaders(Map<String, String> values, List<String> headers) {
         for (String header : headers) {
             if (header == null) continue;
             String first = header.split(";", 2)[0];
@@ -1391,10 +1491,6 @@ final class SessionStore {
             if (value.isEmpty()) values.remove(key);
             else values.put(key, value);
         }
-        normalizeAuthCookies(values);
-        String cookie = joinCookies(values);
-        saveCookie(cookie);
-        persistUserIdFromCookie(cookie);
     }
 
     boolean hasCookieValue(String key) {

@@ -7,8 +7,8 @@ public final class a {
     public static final String f78325d = "xiaoheiheHeybox";
     public static final String f78326e = "xiaoheihe";
     public static final String f78327f = "heybox";
-    public static String f78328g = "1055";
-    public static String f78329h = "1.3.379";
+    public static String f78328g = "1112";
+    public static String f78329h = "1.3.391";
     public static final String f78330i = "";
     public static final String f78331j = "null";
 

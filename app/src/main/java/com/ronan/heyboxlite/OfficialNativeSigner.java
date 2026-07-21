@@ -45,11 +45,6 @@ final class OfficialNativeSigner {
         if (unavailable || context == null) return out;
         try {
             Context app = context.getApplicationContext();
-            if (LocalCache.isOfficialNativeDisabled(app)) {
-                log(logger, "official native signer skipped disabled reason="
-                        + LocalCache.officialNativeDisabledReason(app));
-                return out;
-            }
             Context officialBase = officialBaseContext(app, logger);
             configureOfficialAppInfo(officialBase, logger);
             Context officialContext = new OfficialContext(officialBase);

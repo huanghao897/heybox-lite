@@ -55,23 +55,56 @@ public final class NativeLibraryLoader {
         }
     }
 
-    public static synchronized boolean tryLoadFromNativeLibDir(Context context, String name) {
+    public static synchronized boolean tryLoadFromOfficialApk(Context context, String name) {
         if (LOADED.contains(name)) return true;
         if (context == null) return false;
         try {
-            String libDir = context.getApplicationInfo().nativeLibraryDir;
-            if (libDir == null || libDir.isEmpty()) return false;
-            File file = new File(libDir, "lib" + name + ".so");
-            if (!file.exists() || !file.canRead()) return false;
-            LocalCache.appendNativeSignLog(context.getApplicationContext(),
-                    "native loader loading from installed app libDir=" + libDir
-                            + " file=" + file.getName());
-            System.load(file.getAbsolutePath());
+            Context app = context.getApplicationContext();
+            android.content.pm.PackageManager pm = app.getPackageManager();
+            android.content.pm.ApplicationInfo info;
+            try {
+                info = pm.getApplicationInfo(OfficialContext.PACKAGE_NAME, 0);
+            } catch (Throwable notFound) {
+                return false;
+            }
+            String apkPath = info == null ? null : info.sourceDir;
+            if (apkPath == null || apkPath.isEmpty()) return false;
+            String abi = selectedAbi();
+            String entryName = "lib/" + abi + "/lib" + name + ".so";
+            File outDir = nativeDir(app);
+            File outFile = new File(outDir, "official_lib" + name + ".so");
+            LocalCache.appendNativeSignLog(app, "native loader extracting from official apk="
+                    + apkPath + " entry=" + entryName);
+            extractFromApk(apkPath, entryName, outFile);
+            System.load(outFile.getAbsolutePath());
             LOADED.add(name);
+            LocalCache.appendNativeSignLog(app, "native loader loaded official " + name);
             return true;
-        } catch (Throwable ignored) {
+        } catch (Throwable error) {
+            LocalCache.appendNativeSignLog(context.getApplicationContext(),
+                    "native loader official apk extract failed for " + name + ": "
+                            + error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage()));
             return false;
         }
+    }
+
+    private static void extractFromApk(String apkPath, String entryName, File outFile) throws Exception {
+        File parent = outFile.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IllegalStateException("cannot create native dir");
+        }
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(apkPath)) {
+            java.util.zip.ZipEntry entry = zip.getEntry(entryName);
+            if (entry == null) throw new IllegalStateException("entry not found: " + entryName);
+            try (InputStream input = zip.getInputStream(entry);
+                 FileOutputStream output = new FileOutputStream(outFile, false)) {
+                byte[] buffer = new byte[BUFFER_SIZE];
+                int count;
+                while ((count = input.read(buffer)) > 0) output.write(buffer, 0, count);
+            }
+        }
+        outFile.setReadable(true, true);
+        outFile.setExecutable(true, true);
     }
 
     private static File nativeDir(Context app) {

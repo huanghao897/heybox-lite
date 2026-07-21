@@ -12,8 +12,8 @@ import java.util.List;
 public final class f {
     public static ChangeQuickRedirect changeQuickRedirect;
     private static String deviceId = "";
-    private static String appVersion = "1.3.379";
-    private static String buildCode = "1055";
+    private static String appVersion = "1.3.391";
+    private static String buildCode = "1112";
 
     private f() {}
 

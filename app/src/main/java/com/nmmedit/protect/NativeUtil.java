@@ -11,10 +11,6 @@ public final class NativeUtil {
 
     public static synchronized void load(Context context) {
         if (loaded) return;
-        if (NativeLibraryLoader.tryLoadFromNativeLibDir(context, "ailab")) {
-            loaded = true;
-            return;
-        }
         NativeLibraryLoader.load(context, "ailab");
         loaded = true;
     }

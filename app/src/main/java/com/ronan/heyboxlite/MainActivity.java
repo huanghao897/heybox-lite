@@ -77,7 +77,7 @@ public final class MainActivity extends Activity {
     private static final int AXIS_ROTARY_SCROLL = 26;
     private static final String TRANSITION_OVERLAY_TAG = "shell_transition_overlay";
     private static final String WELCOME_ANNOUNCEMENT_ID = "welcome-heybox-lite-1.77";
-    private static final boolean SIGN_IN_ENABLED = false;
+    private static final boolean SIGN_IN_ENABLED = true;
     private static final long OFFLINE_MAX_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
     private static final String[] THEME_NAMES = {"默认蓝", "红色", "粉色", "紫色", "绿色", "青色", "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"};
     private static final int[][] THEME_COLORS = {new int[]{-14386760, -9193242}, new int[]{-3982790, -1083529}, new int[]{-2597743, -1006399}, new int[]{-9022795, -4744481}, new int[]{-14185897, -9320552}, new int[]{-15299695, -9713717}, new int[]{-2921692, -1007516}, new int[]{-3958250, -995480}, new int[]{-7894890, -5327686}, new int[]{-15253642, -10646588}, new int[]{-15263977, -3102658}, new int[]{-13530253, -7808833}};
@@ -97,6 +97,7 @@ public final class MainActivity extends Activity {
     private WriteTokenProvider writeTokenProvider;
     private WriteActionClient writeActions;
     private QrLoginController qrLoginController;
+    private PhoneLoginManager phoneLoginManager;
     private SignInManager signInManager;
     private ReadingTimeTracker readingTimeTracker;
     private LinearLayout shellRoot;
@@ -139,6 +140,7 @@ public final class MainActivity extends Activity {
     private String pendingDetailReturn = "";
     private int detailRequestToken;
     private long lastManualSignClickAt;
+    private long phoneCodeRetryAt;
     private long lastExitBackAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final PageTransitionController pageTransitions = new PageTransitionController();
@@ -234,6 +236,9 @@ public final class MainActivity extends Activity {
                     if (this.localCache != null) this.localCache.log(message);
                 });
         this.qrLoginController = new QrLoginController(this.api, this.handler);
+        this.phoneLoginManager = new PhoneLoginManager(this, this.session, this.api, message -> {
+            if (this.localCache != null) this.localCache.log(message);
+        });
         if (SIGN_IN_ENABLED) {
             this.signInManager = new SignInManager(this.session, this.api, this.writeTokenProvider, message2 -> {
                 if (this.localCache != null) {
@@ -1252,7 +1257,8 @@ public final class MainActivity extends Activity {
         private boolean canUseShellSwipe() {
             return !MainActivity.this.shellAnimating && !MainActivity.this.pageTransitions.isRunning()
                     && !"detail".equals(MainActivity.this.screen)
-                    && !"login".equals(MainActivity.this.screen);
+                    && !"login".equals(MainActivity.this.screen)
+                    && !"phone_login".equals(MainActivity.this.screen);
         }
 
         private boolean hasShellSwipeTarget(float dx) {
@@ -1554,6 +1560,11 @@ public final class MainActivity extends Activity {
             requestQr();
         });
         page.addView(retry, new LinearLayout.LayoutParams(dp(150), dp(38)));
+        Button phoneLogin = button("\u624b\u673a\u53f7\u767b\u5f55", R.drawable.il_person);
+        phoneLogin.setOnClickListener(view -> showPhoneLogin());
+        LinearLayout.LayoutParams phoneLoginParams = new LinearLayout.LayoutParams(dp(150), dp(38));
+        phoneLoginParams.topMargin = dp(7);
+        page.addView(phoneLogin, phoneLoginParams);
         Button guest = button("游客浏览", R.drawable.ic_home);
         guest.setOnClickListener(view2 -> {
             showFeed();
@@ -1563,6 +1574,164 @@ public final class MainActivity extends Activity {
         page.addView(guest, guestParams);
         this.content.addView(page, match());
         requestQr();
+    }
+
+    private void showPhoneLogin() {
+        stopQrPolling();
+        this.screen = "phone_login";
+        if (this.shellBar != null) this.shellBar.setVisibility(8);
+        setBottomNavVisible(false);
+        this.leading.setVisibility(4);
+        this.action.setVisibility(4);
+        this.title.setText("\u624b\u673a\u53f7\u767b\u5f55");
+        this.content.removeAllViews();
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout page = vertical(this.BG);
+        page.setPadding(dp(18), dp(18), dp(18), dp(18));
+        scroll.addView(page);
+
+        TextView heading = text("\u624b\u673a\u53f7\u767b\u5f55", 19.0f, this.TEXT);
+        heading.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        page.addView(heading);
+
+        TextView status = text(this.session.hasSignInCredentials()
+                ? "\u5df2\u6709\u7b7e\u5230\u51ed\u636e\uff0c\u53ef\u91cd\u65b0\u767b\u5f55"
+                : "", 11.0f, this.MUTED);
+        status.setTag("phone_login_status");
+        status.setMinHeight(dp(28));
+        status.setGravity(16);
+        page.addView(status, new LinearLayout.LayoutParams(-1, dp(32)));
+
+        LinearLayout phoneRow = new LinearLayout(this);
+        phoneRow.setGravity(16);
+        TextView prefix = text("+86", 13.0f, this.TEXT);
+        prefix.setGravity(17);
+        phoneRow.addView(prefix, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        EditText phone = new EditText(this);
+        phone.setTag("phone_login_number");
+        phone.setSingleLine(true);
+        phone.setTextColor(this.TEXT);
+        phone.setHintTextColor(this.MUTED);
+        phone.setHint("\u624b\u673a\u53f7");
+        phone.setTextSize(sp(13.0f));
+        phone.setInputType(InputType.TYPE_CLASS_PHONE);
+        phone.setPadding(dp(10), 0, dp(10), 0);
+        Compat.setBackground(phone, roundStroke(this.themeTokens.panelElevated, 6,
+                this.themeTokens.hairline, 1));
+        LinearLayout.LayoutParams phoneParams = new LinearLayout.LayoutParams(0, dp(42), 1.0f);
+        phoneRow.addView(phone, phoneParams);
+        page.addView(phoneRow);
+
+        LinearLayout codeRow = new LinearLayout(this);
+        codeRow.setGravity(16);
+        LinearLayout.LayoutParams codeRowParams = new LinearLayout.LayoutParams(-1, dp(42));
+        codeRowParams.topMargin = dp(9);
+        EditText code = new EditText(this);
+        code.setTag("phone_login_code");
+        code.setSingleLine(true);
+        code.setTextColor(this.TEXT);
+        code.setHintTextColor(this.MUTED);
+        code.setHint("\u9a8c\u8bc1\u7801");
+        code.setTextSize(sp(13.0f));
+        code.setInputType(InputType.TYPE_CLASS_NUMBER);
+        code.setPadding(dp(10), 0, dp(10), 0);
+        Compat.setBackground(code, roundStroke(this.themeTokens.panelElevated, 6,
+                this.themeTokens.hairline, 1));
+        codeRow.addView(code, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
+        Button sendCode = button("\u83b7\u53d6\u9a8c\u8bc1\u7801");
+        sendCode.setTag("phone_login_send_code");
+        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(dp(112), dp(42));
+        sendParams.leftMargin = dp(5);
+        codeRow.addView(sendCode, sendParams);
+        page.addView(codeRow, codeRowParams);
+        updatePhoneCodeButton(sendCode);
+
+        Button login = button("\u767b\u5f55");
+        LinearLayout.LayoutParams loginParams = new LinearLayout.LayoutParams(-1, dp(42));
+        loginParams.topMargin = dp(12);
+        page.addView(login, loginParams);
+        Button qrLogin = button("\u8fd4\u56de\u626b\u7801\u767b\u5f55", R.drawable.il_qr);
+        LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(-1, dp(40));
+        qrParams.topMargin = dp(4);
+        page.addView(qrLogin, qrParams);
+
+        sendCode.setOnClickListener(view -> {
+            if (this.phoneLoginManager == null) return;
+            sendCode.setEnabled(false);
+            setPhoneLoginStatus("\u6b63\u5728\u83b7\u53d6\u9a8c\u8bc1\u7801", this.MUTED);
+            this.phoneLoginManager.requestCode(phone.getText().toString(),
+                    new PhoneLoginManager.CodeCallback() {
+                        @Override public void onCodeSent(int retryAfterSeconds) {
+                            phoneCodeRetryAt = System.currentTimeMillis()
+                                    + retryAfterSeconds * 1000L;
+                            setPhoneLoginStatus("\u9a8c\u8bc1\u7801\u5df2\u53d1\u9001", SECONDARY);
+                            updatePhoneCodeButton(sendCode);
+                            code.requestFocus();
+                        }
+
+                        @Override public void onError(String message) {
+                            setPhoneLoginStatus(message, PRIMARY);
+                            updatePhoneCodeButton(sendCode);
+                        }
+                    });
+        });
+        login.setOnClickListener(view -> {
+            if (this.phoneLoginManager == null) return;
+            login.setEnabled(false);
+            sendCode.setEnabled(false);
+            setPhoneLoginStatus("\u6b63\u5728\u767b\u5f55", this.MUTED);
+            this.phoneLoginManager.login(phone.getText().toString(), code.getText().toString(),
+                    new PhoneLoginManager.LoginCallback() {
+                        @Override public void onSuccess(PhoneLoginResponse response) {
+                            cachedProfileContainer = null;
+                            cachedProfileUserId = "";
+                            feed.clear();
+                            invalidateFeedView();
+                            toast("\u624b\u673a\u53f7\u767b\u5f55\u6210\u529f");
+                            EmojiStore.load(api, () -> {
+                            });
+                            showProfile();
+                            handler.postDelayed(() -> {
+                                if (!isFinishing()) showSignInDialog();
+                            }, 220L);
+                        }
+
+                        @Override public void onError(String message) {
+                            setPhoneLoginStatus(message, PRIMARY);
+                            login.setEnabled(true);
+                            updatePhoneCodeButton(sendCode);
+                        }
+                    });
+        });
+        qrLogin.setOnClickListener(view -> showLogin());
+        this.content.addView(scroll, match());
+    }
+
+    private void setPhoneLoginStatus(String value, int color) {
+        TextView status = (TextView) this.content.findViewWithTag("phone_login_status");
+        if (status == null) return;
+        status.setText(value == null ? "" : value);
+        status.setTextColor(color);
+    }
+
+    private void updatePhoneCodeButton(Button button) {
+        if (button == null) return;
+        long remainingMs = this.phoneCodeRetryAt - System.currentTimeMillis();
+        if (remainingMs <= 0L) {
+            button.setText("\u83b7\u53d6\u9a8c\u8bc1\u7801");
+            button.setEnabled(true);
+            return;
+        }
+        long seconds = Math.max(1L, (remainingMs + 999L) / 1000L);
+        button.setText(seconds + "s");
+        button.setEnabled(false);
+        this.handler.postDelayed(() -> {
+            if (!isFinishing() && "phone_login".equals(this.screen)
+                    && button == this.content.findViewWithTag("phone_login_send_code")) {
+                updatePhoneCodeButton(button);
+            }
+        }, Math.min(1000L, remainingMs));
     }
 
     private void requestQr() {
@@ -5103,7 +5272,8 @@ public final class MainActivity extends Activity {
     }
 
     private String signInButtonText(SignInManager.Result state) {
-        return (state == null || !state.loggedIn) ? "去登录" : state.inFlight ? "签到" : state.success ? "重新检查" : "签到";
+        return (state == null || !state.loggedIn) ? "手机号登录"
+                : state.inFlight ? "签到" : state.success ? "重新检查" : "签到";
     }
 
     private void showSettingsHome() {
@@ -5362,9 +5532,9 @@ public final class MainActivity extends Activity {
         Button action = button(signInButtonText(state), R.drawable.ic_refresh);
         action.setEnabled(!state.inFlight);
         action.setOnClickListener(view -> {
-            if (!this.session.isLoggedIn()) {
+            if (!this.session.hasSignInCredentials()) {
                 dialog.dismiss();
-                showLogin();
+                showPhoneLogin();
                 return;
             }
             long now = System.currentTimeMillis();
@@ -7245,6 +7415,11 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         this.pendingBackTransition = true;
+        if ("phone_login".equals(this.screen)) {
+            this.pendingBackTransition = false;
+            showLogin();
+            return;
+        }
         if ("detail".equals(this.screen)) {
             if (this.detailPager != null && this.detailPager.showingComments()) {
                 this.pendingBackTransition = false;
@@ -7482,6 +7657,7 @@ public final class MainActivity extends Activity {
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
         saveCurrentDetailProgress();
         stopQrPolling();
+        if (this.phoneLoginManager != null) this.phoneLoginManager.close();
         this.pageTransitions.cancelNow();
         if (this.detailPager != null) this.detailPager.cancelMotion();
         if (this.content instanceof BackSwipeFrameLayout) {

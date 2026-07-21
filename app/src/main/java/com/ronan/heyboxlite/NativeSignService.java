@@ -18,6 +18,8 @@ import java.util.Set;
 public final class NativeSignService extends Service {
     static final int MSG_SIGN = 1;
     static final int MSG_RESULT = 2;
+    static final int MSG_ENCRYPT_PHONE = 3;
+    static final int MSG_ENCRYPT_PHONE_RESULT = 4;
     static final String EXTRA_PATH = "path";
     static final String EXTRA_USER_ID = "user_id";
     static final String EXTRA_PKEY = "pkey";
@@ -31,11 +33,19 @@ public final class NativeSignService extends Service {
     static final String EXTRA_PARAM_KEYS = "param_keys";
     static final String EXTRA_NATIVE_URL = "native_url";
     static final String EXTRA_HKEY_ALIAS = "native_security_value";
+    static final String EXTRA_ANONYMOUS = "anonymous";
+    static final String EXTRA_PHONE = "phone";
+    static final String EXTRA_ENCRYPTED_PHONE = "encrypted_phone";
+    static final String EXTRA_ERROR = "error";
 
     private final Messenger messenger = new Messenger(new Handler(Looper.getMainLooper()) {
         @Override public void handleMessage(Message msg) {
             if (msg.what == MSG_SIGN) {
                 handleSign(msg);
+                return;
+            }
+            if (msg.what == MSG_ENCRYPT_PHONE) {
+                handleEncryptPhone(msg);
                 return;
             }
             super.handleMessage(msg);
@@ -59,6 +69,12 @@ public final class NativeSignService extends Service {
         String userId = input == null ? "" : input.getString(EXTRA_USER_ID, "");
         String pkey = input == null ? "" : input.getString(EXTRA_PKEY, "");
         String xhhToken = input == null ? "" : input.getString(EXTRA_XHH_TOKEN, "");
+        boolean anonymous = input != null && input.getBoolean(EXTRA_ANONYMOUS, false);
+        if (anonymous) {
+            userId = "";
+            pkey = "";
+            xhhToken = "";
+        }
         boolean forceFallback = input != null && input.getBoolean(EXTRA_FORCE_FALLBACK, false);
         Map<String, String> requestParams = readParams(input == null
                 ? null : input.getBundle(EXTRA_REQUEST_PARAMS),
@@ -95,6 +111,30 @@ public final class NativeSignService extends Service {
         }
         output.putStringArrayList(EXTRA_LOGS, logs);
         Message result = Message.obtain(null, MSG_RESULT);
+        result.setData(output);
+        try {
+            if (msg.replyTo != null) msg.replyTo.send(result);
+        } catch (RemoteException ignored) {
+        }
+    }
+
+    private void handleEncryptPhone(Message msg) {
+        Bundle input = msg.getData();
+        String phone = input == null ? "" : input.getString(EXTRA_PHONE, "");
+        Bundle output = new Bundle();
+        try {
+            output.putString(EXTRA_ENCRYPTED_PHONE,
+                    MobileLoginCrypto.encrypt(getApplicationContext(), phone));
+            LocalCache.appendNativeSignLog(this,
+                    "mobile login phone encrypted inputLen=" + phone.length());
+        } catch (Exception error) {
+            String message = error.getMessage();
+            output.putString(EXTRA_ERROR, message == null || message.trim().isEmpty()
+                    ? error.getClass().getSimpleName() : message.trim());
+            LocalCache.appendNativeSignLog(this,
+                    "mobile login phone encryption failed: " + error.getClass().getSimpleName());
+        }
+        Message result = Message.obtain(null, MSG_ENCRYPT_PHONE_RESULT);
         result.setData(output);
         try {
             if (msg.replyTo != null) msg.replyTo.send(result);

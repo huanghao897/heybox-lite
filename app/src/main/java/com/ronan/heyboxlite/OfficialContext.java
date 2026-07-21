@@ -32,8 +32,8 @@ import java.util.List;
 
 final class OfficialContext extends ContextWrapper {
     static final String PACKAGE_NAME = "com.max.xiaoheihe";
-    private static int officialVersionCode = 1055;
-    private static String officialVersionName = "1.3.379";
+    private static int officialVersionCode = 1112;
+    private static String officialVersionName = "1.3.391";
     private static final String OFFICIAL_CERT_DER_BASE64 =
             "MIIDczCCAlugAwIBAgIEaFwjLDANBgkqhkiG9w0BAQsFADBqMQswCQYDVQQGEwJDTjEQMA4GA1UECBMHYmVpamluZzEQMA4GA1UEBxMHYmVpamluZzERMA8GA1UEChMIcWluZ2ZlbmcxETAPBgNVBAsTCHFpbmdmZW5nMREwDwYDVQQDEwhxaW5nZmVuZzAeFw0xNTA1MDgxMTU0NThaFw00NTA0MzAxMTU0NThaMGoxCzAJBgNVBAYTAkNOMRAwDgYDVQQIEwdiZWlqaW5nMRAwDgYDVQQHEwdiZWlqaW5nMREwDwYDVQQKEwhxaW5nZmVuZzERMA8GA1UECxMIcWluZ2ZlbmcxETAPBgNVBAMTCHFpbmdmZW5nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtzzoShoY+U0LBrETsFBVDrZmbTKgtRAU/AQOtJoz/ty0ZmfEx2FC+xDFF1o5mqWiVan8+r+3j9cxqN0cn3BD8tNiq9UtLgJ/17YtJs2y4N7N0Crh9zP9/8aaqmPaTTlmPmnFYE0xwY0gJTVZMBNtQbFgYayQVQ2v1l+jYGFHpBPWPPyGX9AfdNigis7zEN2Y0aAoxQqGd+v7YiA2zd+ii2HOpmtsEUfRoF7DkGnWndVQseuxu7VHhVyFGqEr7wT8XTZbTJv+SmA6CEj73mkv+N5Kd9X3Ndgf7lhpmPdDyhEnr2rP/0kqT3A9V1+5B1a3ygOvyMtvQTZb8HReAodkEQIDAQABoyEwHzAdBgNVHQ4EFgQU7pPe6rxRG/YQxn9kWAl+IN+rImUwDQYJKoZIhvcNAQELBQADggEBAJqq+VP3di/FD6LdUh9CYoVA0XTeXthyds6AdD/8iO5Y1eRZt6E2GppAKwePSit8otzUYa2YUDYzIIqHVspu/x5g/3X/tLhGjpithD/pODJHZaSbu4wgznEukhzaU4471Bd20O2YEqEISSggLNLm6eoN504kQkCCozBf/fJ5dPbxzh8mpZ3VQ1KJhb0I5p/+ZWMDEMN1f+Zt0exERRIBIwTor73roZH75i6mInLHjIIapfuZFB0VyMN4TKgcTg33CjKJFLiuAtTLIRiC1w7BBQxyjjmrQbXkofVOOb4BF/DY3rjyQ+q4etRAW3G1vUmemTZaSomCqobULPvaaURQBGE=";
     private static final Signature[] OFFICIAL_SIGNATURES = new Signature[] {

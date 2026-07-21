@@ -19,10 +19,6 @@ public final class ShaderManager {
 
     public static synchronized void load(Context context) {
         if (loaded) return;
-        if (NativeLibraryLoader.tryLoadFromNativeLibDir(context, "glesv3_1")) {
-            loaded = true;
-            return;
-        }
         NativeLibraryLoader.load(context, "glesv3_1");
         loaded = true;
     }

@@ -38,6 +38,16 @@ final class HeaderProvider {
         if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
     }
 
+    static void applyOfficialAnonymous(HttpURLConnection connection, SessionStore session) {
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9");
+        connection.setRequestProperty("Referer", OFFICIAL_REFERER);
+        connection.setRequestProperty("User-Agent", mobileUserAgent());
+        connection.setRequestProperty("X-Requested-With", "com.max.xiaoheihe");
+        String cookie = session.pendingMobileLoginCookie();
+        if (!cookie.isEmpty()) connection.setRequestProperty(SecureStrings.cookieHeader(), cookie);
+    }
+
     static void applyOfficialRequest(HttpURLConnection connection, SessionStore session,
                                      boolean includeClientKeys) {
         connection.setRequestProperty("Referer", OFFICIAL_REFERER);
