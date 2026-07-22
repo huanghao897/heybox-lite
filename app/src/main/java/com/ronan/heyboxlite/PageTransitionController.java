@@ -1,5 +1,6 @@
 package com.ronan.heyboxlite;
 
+import android.annotation.TargetApi;
 import android.os.Build;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -112,6 +113,7 @@ final class PageTransitionController {
         });
     }
 
+    @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
     private void runLite(Transition transition, Runnable end, int width,
                          boolean forward, boolean push) {
         View oldView = transition.oldView;
