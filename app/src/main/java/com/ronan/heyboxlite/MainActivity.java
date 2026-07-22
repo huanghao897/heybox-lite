@@ -637,13 +637,13 @@ public final class MainActivity extends Activity {
         body.addView(this.content, match());
         this.bottom = new LinearLayout(this);
         this.bottom.setGravity(17);
-        this.bottom.setPadding(dp(6), dp(3), dp(6), dp(3));
+        this.bottom.setPadding(dp(4), dp(2), dp(4), dp(2));
         Compat.setBackground(this.bottom, UiComponents.dock(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
         UiComponents.elevate(this.bottom, 10);
         this.bottom.setVisibility(8);
         this.bottom.setAlpha(0.0f);
-        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(dp(144), dp(48), 81);
+        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(dp(122), dp(44), 81);
         bottomParams.setMargins(0, 0, 0, dp(8));
         body.addView(this.bottom, bottomParams);
         addNav("社区", "feed", R.drawable.ic_home, this::onFeedNavClick);
@@ -721,7 +721,7 @@ public final class MainActivity extends Activity {
     private void addNav(String label, String key, int drawable, Runnable click) {
         ImageView item = new ImageView(this);
         item.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        item.setPadding(dp(9), dp(7), dp(9), dp(7));
+        item.setPadding(dp(7), dp(6), dp(7), dp(6));
         item.setAdjustViewBounds(false);
         item.setImageDrawable(navIcon(drawable, this.MUTED));
         item.setColorFilter(this.MUTED);
@@ -730,8 +730,8 @@ public final class MainActivity extends Activity {
         item.setOnClickListener(view -> {
             runWithPressFeedback(item, click);
         });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(42), 1.0f);
-        params.setMargins(dp(3), 0, dp(3), 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
+        params.setMargins(dp(2), 0, dp(2), 0);
         this.bottom.addView(item, params);
     }
 
@@ -827,7 +827,7 @@ public final class MainActivity extends Activity {
             return;
         }
         View spacer = new View(this);
-        page.addView(spacer, new LinearLayout.LayoutParams(-1, dp(76)));
+        page.addView(spacer, new LinearLayout.LayoutParams(-1, dp(62)));
     }
 
     private Drawable navIcon(int drawable, int color) {
@@ -1740,27 +1740,23 @@ public final class MainActivity extends Activity {
 
     private View feedTopBar() {
         LinearLayout wrap = vertical(this.BG);
-        wrap.setPadding(dp(9), dp(5), dp(9), dp(5));
+        wrap.setPadding(dp(8), dp(4), dp(8), dp(4));
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(16);
-        heading.setPadding(dp(3), 0, dp(3), 0);
-        TextView name = text("社区", 22.0f, this.TEXT);
+        heading.setPadding(dp(2), 0, dp(2), 0);
+        TextView name = text("社区", 18.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        heading.addView(name, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
-        TextView time = text(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 10.5f, this.MUTED);
-        time.setGravity(21);
-        heading.addView(time, new LinearLayout.LayoutParams(dp(52), dp(40)));
+        heading.addView(name, new LinearLayout.LayoutParams(-1, dp(32)));
         wrap.addView(heading);
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
         row.setPadding(dp(10), 0, dp(6), 0);
         ThemeTokens tokens = this.themeTokens == null ? ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY) : this.themeTokens;
-        Compat.setBackground(row, UiComponents.selectable(this, tokens.surfaceContainerHigh,
+        Compat.setBackground(row, UiComponents.selectable(this, tokens.surfaceContainer,
                 tokens.surfaceContainerHighest, tokens.primary, 14,
                 this.session.uiScale() / 100.0f));
-        UiComponents.elevate(row, 1);
-        wrap.addView(row, new LinearLayout.LayoutParams(-1, dp(44)));
-        TextView search = text("搜索帖子、作者或关键词", 12.0f, this.MUTED);
+        wrap.addView(row, new LinearLayout.LayoutParams(-1, dp(38)));
+        TextView search = text("搜索帖子、作者或关键词", 11.5f, this.MUTED);
         search.setGravity(16);
         search.setSingleLine(true);
         setLeftIcon(search, R.drawable.ic_search, this.MUTED, 18);
@@ -5030,38 +5026,37 @@ public final class MainActivity extends Activity {
         }
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(8), dp(8), dp(8), dp(12));
+        page.setPadding(dp(7), dp(6), dp(7), dp(10));
         scroll.addView(page);
         LinearLayout profile = card();
-        Compat.setBackground(profile, UiComponents.elevatedCard(this, this.themeTokens,
+        Compat.setBackground(profile, UiComponents.card(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
-        UiComponents.elevate(profile, 1);
         LinearLayout headRow = new LinearLayout(this);
         headRow.setGravity(16);
         ImageView avatar = new ImageView(this);
         avatar.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        Compat.setBackground(avatar, round(this.themeTokens.primaryContainer, 24));
+        Compat.setBackground(avatar, round(this.themeTokens.primaryContainer, 21));
         Drawable personIcon = Compat.tintedDrawable(this, R.drawable.il_person,
                 this.themeTokens.primary);
         if (personIcon != null) {
             avatar.setImageDrawable(personIcon);
         }
-        avatar.setPadding(dp(11), dp(11), dp(11), dp(11));
-        headRow.addView(avatar, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        avatar.setPadding(dp(10), dp(10), dp(10), dp(10));
+        headRow.addView(avatar, new LinearLayout.LayoutParams(dp(42), dp(42)));
         LinearLayout headCopy = vertical(0);
-        TextView name = text("未登录", 18.0f, this.TEXT);
+        TextView name = text("未登录", 16.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
         headCopy.addView(name);
-        headCopy.addView(text("登录后可点赞、收藏和评论", 12.0f, this.MUTED));
+        headCopy.addView(text("登录后可点赞、收藏和评论", 10.5f, this.MUTED));
         LinearLayout.LayoutParams headCopyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        headCopyParams.leftMargin = dp(12);
+        headCopyParams.leftMargin = dp(10);
         headRow.addView(headCopy, headCopyParams);
         profile.addView(headRow);
         Button login = button("扫码登录", R.drawable.il_qr);
         login.setOnClickListener(view -> {
             showLogin();
         });
-        addTop(profile, login, 13);
+        addTop(profile, login, 10);
         page.addView(profile);
         addProfileMenu(page, false);
         addBottomNavSafeSpace(page);
@@ -5075,17 +5070,16 @@ public final class MainActivity extends Activity {
         JSONObject account = ProfileData.user(body);
         ScrollView scrollView = new ScrollView(this);
         LinearLayout linearLayoutVertical = vertical(this.BG);
-        linearLayoutVertical.setPadding(dp(8), dp(8), dp(8), dp(12));
+        linearLayoutVertical.setPadding(dp(7), dp(6), dp(7), dp(10));
         scrollView.addView(linearLayoutVertical);
         LinearLayout profile = card();
-        Compat.setBackground(profile, UiComponents.elevatedCard(this, this.themeTokens,
+        Compat.setBackground(profile, UiComponents.card(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
-        UiComponents.elevate(profile, 1);
         LinearLayout headRow = new LinearLayout(this);
         headRow.setGravity(16);
         ImageView avatar = new ImageView(this);
         avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        Compat.setBackground(avatar, round(this.themeTokens.primaryContainer, 28));
+        Compat.setBackground(avatar, round(this.themeTokens.primaryContainer, 24));
         Compat.clipToOutline(avatar);
         String avatarUrl = account == null ? this.session.avatar() : account.optString("avatar", this.session.avatar());
         if (!this.session.noImage() && !avatarUrl.isEmpty()) {
@@ -5095,26 +5089,26 @@ public final class MainActivity extends Activity {
                     this.themeTokens.primary);
             if (placeholder != null) {
                 avatar.setImageDrawable(placeholder);
-                avatar.setPadding(dp(13), dp(13), dp(13), dp(13));
+                avatar.setPadding(dp(11), dp(11), dp(11), dp(11));
             }
         }
-        headRow.addView(avatar, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        headRow.addView(avatar, new LinearLayout.LayoutParams(dp(48), dp(48)));
         LinearLayout headCopy = vertical(0);
         String nameValue = account == null ? this.session.userName() : account.optString("username", this.session.userName());
-        TextView name = text(nameValue.isEmpty() ? "小黑盒用户" : nameValue, 18.0f, this.TEXT);
+        TextView name = text(nameValue.isEmpty() ? "小黑盒用户" : nameValue, 16.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
         headCopy.addView(name);
-        headCopy.addView(text("ID " + this.session.userId(), 11.0f, this.MUTED));
+        headCopy.addView(text("ID " + this.session.userId(), 10.0f, this.MUTED));
         LinearLayout.LayoutParams headCopyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        headCopyParams.leftMargin = dp(12);
+        headCopyParams.leftMargin = dp(10);
         headRow.addView(headCopy, headCopyParams);
         profile.addView(headRow);
         String signature = account == null ? "" : account.optString("signature");
         if (!signature.isEmpty()) {
-            addTop(profile, text(signature, 13.0f, this.TEXT), 11);
+            addTop(profile, text(signature, 11.5f, this.TEXT), 8);
         }
         if (account != null) {
-            addTop(profile, profileStatsRow(account), 12);
+            addTop(profile, profileStatsRow(account), 9);
         }
         linearLayoutVertical.addView(profile);
         addProfileMenu(linearLayoutVertical, true);
@@ -5141,11 +5135,11 @@ public final class MainActivity extends Activity {
     private View profileMetric(String label, int value) {
         LinearLayout metric = vertical(0);
         metric.setGravity(17);
-        TextView number = text(formatMetric(value), 15.0f, this.TEXT);
+        TextView number = text(formatMetric(value), 14.0f, this.TEXT);
         number.setTypeface(appRegularTypeface(), Typeface.BOLD);
         number.setGravity(17);
         metric.addView(number, new LinearLayout.LayoutParams(-1, -2));
-        TextView name = text(label, 9.5f, this.MUTED);
+        TextView name = text(label, 9.0f, this.MUTED);
         name.setGravity(17);
         LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, -2);
         nameParams.topMargin = dp(1);
@@ -5188,7 +5182,7 @@ public final class MainActivity extends Activity {
     private View buildSettingsHomeContent() {
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(10), dp(7), dp(10), dp(16));
+        page.setPadding(dp(8), dp(5), dp(8), dp(14));
         scroll.addView(page);
         page.addView(settingsTopCard("设置"));
         LinearLayout panel = settingsList();
@@ -5206,13 +5200,13 @@ public final class MainActivity extends Activity {
             divider.setBackgroundColor(this.themeTokens.hairline);
             LinearLayout.LayoutParams dividerParams =
                     new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-            dividerParams.leftMargin = dp(52);
+            dividerParams.leftMargin = dp(47);
             parent.addView(divider, dividerParams);
         }
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
-        row.setPadding(dp(7), dp(10), dp(7), dp(10));
-        row.setMinimumHeight(dp(58));
+        row.setPadding(dp(6), dp(7), dp(6), dp(7));
+        row.setMinimumHeight(dp(50));
         Compat.setBackground(row, UiComponents.selectableRow(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
         ImageView marker = new ImageView(this);
@@ -5221,20 +5215,20 @@ public final class MainActivity extends Activity {
         if (iconDrawable != null) {
             marker.setImageDrawable(iconDrawable);
         }
-        marker.setPadding(dp(7), dp(7), dp(7), dp(7));
+        marker.setPadding(dp(6), dp(6), dp(6), dp(6));
         Compat.setBackground(marker, UiComponents.softPill(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
-        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(32), dp(32));
-        markerParams.rightMargin = dp(11);
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(30), dp(30));
+        markerParams.rightMargin = dp(9);
         row.addView(marker, markerParams);
         LinearLayout copy = vertical(0);
-        TextView titleView = text(name, 14.0f,
+        TextView titleView = text(name, 13.0f,
                 name.startsWith("退出登录") ? this.themeTokens.error : this.TEXT);
         titleView.setTypeface(appRegularTypeface(), 1);
         copy.addView(titleView);
         TextView descView = null;
         if (description != null && !description.isEmpty()) {
-            descView = text(description, 10.5f, this.MUTED);
+            descView = text(description, 9.8f, this.MUTED);
             descView.setPadding(0, dp(1), 0, 0);
             copy.addView(descView);
         }
@@ -5282,7 +5276,7 @@ public final class MainActivity extends Activity {
                 });
         addSettingEntry(panel, "设置", "主题、缓存与关于", R.drawable.il_settings,
                 this::showSettingsHome);
-        addTop(page, panel, 8);
+        addTop(page, panel, 6);
         updateReadingTimeEntry();
     }
 
@@ -7649,7 +7643,7 @@ public final class MainActivity extends Activity {
     private LinearLayout card() {
         ThemeTokens themeTokensOf;
         LinearLayout card = vertical(this.PANEL);
-        card.setPadding(dp(12), dp(11), dp(12), dp(11));
+        card.setPadding(dp(10), dp(9), dp(10), dp(9));
         if (this.themeTokens == null) {
             themeTokensOf = ThemeTokens.of(this.session != null && this.session.darkMode(), this.PRIMARY, this.SECONDARY);
         } else {
@@ -7657,7 +7651,6 @@ public final class MainActivity extends Activity {
         }
         ThemeTokens tokens = themeTokensOf;
         Compat.setBackground(card, UiComponents.groupCard(this, tokens, this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
-        UiComponents.elevate(card, 1);
         return card;
     }
 
@@ -7666,10 +7659,9 @@ public final class MainActivity extends Activity {
                 ? ThemeTokens.of(this.session != null && this.session.darkMode(),
                 this.PRIMARY, this.SECONDARY) : this.themeTokens;
         LinearLayout list = vertical(tokens.surfaceContainerLow);
-        list.setPadding(dp(4), dp(4), dp(4), dp(4));
+        list.setPadding(dp(2), dp(2), dp(2), dp(2));
         Compat.setBackground(list, UiComponents.groupCard(this, tokens,
                 this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
-        UiComponents.elevate(list, 1);
         return list;
     }
 
@@ -7712,8 +7704,8 @@ public final class MainActivity extends Activity {
         button.setTypeface(appRegularTypeface(), Typeface.BOLD);
         button.setPadding(dp(12), 0, dp(12), 0);
         button.setGravity(17);
-        button.setMinHeight(dp(42));
-        button.setMinimumHeight(dp(42));
+        button.setMinHeight(dp(38));
+        button.setMinimumHeight(dp(38));
         if (Build.VERSION.SDK_INT >= 21) {
             button.setStateListAnimator(null);
         }

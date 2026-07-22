@@ -16,15 +16,15 @@ final class UiComponents {
     private UiComponents() {}
 
     static GradientDrawable card(Context context, ThemeTokens tokens, float scale) {
-        return round(context, tokens.surfaceContainer, 12, scale);
+        return round(context, tokens.surfaceContainer, 9, scale);
     }
 
     static GradientDrawable elevatedCard(Context context, ThemeTokens tokens, float scale) {
-        return round(context, tokens.surfaceContainerHigh, 14, scale);
+        return round(context, tokens.surfaceContainerHigh, 11, scale);
     }
 
     static GradientDrawable outlinedCard(Context context, ThemeTokens tokens, float scale) {
-        GradientDrawable drawable = round(context, tokens.surface, 12, scale);
+        GradientDrawable drawable = round(context, tokens.surface, 10, scale);
         drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.outlineVariant);
         return drawable;
     }
@@ -38,7 +38,7 @@ final class UiComponents {
     }
 
     static GradientDrawable groupCard(Context context, ThemeTokens tokens, float scale) {
-        return round(context, tokens.surfaceContainerLow, 12, scale);
+        return round(context, tokens.surfaceContainerLow, 9, scale);
     }
 
     static GradientDrawable dock(Context context, ThemeTokens tokens, float scale) {
@@ -66,7 +66,7 @@ final class UiComponents {
 
     static Drawable selectableCard(Context context, ThemeTokens tokens, float scale) {
         return selectable(context, tokens.surfaceContainer,
-                tokens.pressedSurface(), tokens.primary, 12, scale);
+                tokens.pressedSurface(), tokens.primary, 9, scale);
     }
 
     static Drawable selectableRow(Context context, ThemeTokens tokens, float scale) {
