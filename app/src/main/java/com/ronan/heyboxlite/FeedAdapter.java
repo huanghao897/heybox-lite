@@ -72,16 +72,25 @@ final class FeedAdapter extends BaseAdapter {
         Holder holder;
         if (reusable == null) {
             LinearLayout outer = new LinearLayout(context);
+            outer.setOrientation(LinearLayout.VERTICAL);
             outer.setBackgroundColor(tokens.background);
-            outer.setPadding(dp(7), dp(3), dp(7), dp(3));
+            outer.setPadding(dp(9), dp(2), dp(9), 0);
 
             LinearLayout card = new LinearLayout(context);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setPadding(dp(10), dp(8), dp(10), dp(7));
+            card.setPadding(dp(3), dp(7), dp(3), dp(7));
             Compat.setBackground(card, UiComponents.selectable(context,
-                    tokens.surfaceContainerLow, tokens.surfaceContainerHigh,
-                    tokens.primary, 9, uiScale));
+                    tokens.background, tokens.surfaceContainerLow,
+                    tokens.primary, 4, uiScale));
             outer.addView(card, new LinearLayout.LayoutParams(-1, -2));
+
+            View divider = new View(context);
+            divider.setBackgroundColor(tokens.hairline);
+            LinearLayout.LayoutParams dividerParams =
+                    new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
+            dividerParams.leftMargin = dp(3);
+            dividerParams.rightMargin = dp(3);
+            outer.addView(divider, dividerParams);
 
             LinearLayout info = new LinearLayout(context);
             info.setGravity(Gravity.CENTER_VERTICAL);
@@ -123,7 +132,7 @@ final class FeedAdapter extends BaseAdapter {
 
             ImageView cover = new ImageView(context);
             cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            Compat.setBackground(cover, round(tokens.surfaceContainerHighest, 7));
+            Compat.setBackground(cover, round(tokens.surfaceContainerHighest, 5));
             Compat.clipToOutline(cover);
             LinearLayout.LayoutParams coverParams = new LinearLayout.LayoutParams(dp(82), dp(62));
             coverParams.leftMargin = dp(8);
@@ -182,7 +191,7 @@ final class FeedAdapter extends BaseAdapter {
         copyParams.rightMargin = showImage ? 0 : dp(2);
         holder.copy.setLayoutParams(copyParams);
         if (showImage) {
-            Compat.setBackground(holder.cover, round(tokens.surfaceContainerHighest, 7));
+            Compat.setBackground(holder.cover, round(tokens.surfaceContainerHighest, 5));
             ImageLoader.intoPlain(holder.cover, item.image, 320);
         } else {
             ImageLoader.cancel(holder.cover);

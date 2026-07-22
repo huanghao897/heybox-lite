@@ -79,8 +79,8 @@ public final class MainActivity extends Activity {
     private static final String WELCOME_ANNOUNCEMENT_ID = "welcome-heybox-lite-1.77";
     private static final boolean SIGN_IN_ENABLED = false;
     private static final long OFFLINE_MAX_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
-    private static final String[] THEME_NAMES = {"默认蓝", "红色", "粉色", "紫色", "绿色", "青色", "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"};
-    private static final int[][] THEME_COLORS = {new int[]{-14386760, -9193242}, new int[]{-3982790, -1083529}, new int[]{-2597743, -1006399}, new int[]{-9022795, -4744481}, new int[]{-14185897, -9320552}, new int[]{-15299695, -9713717}, new int[]{-2921692, -1007516}, new int[]{-3958250, -995480}, new int[]{-7894890, -5327686}, new int[]{-15253642, -10646588}, new int[]{-15263977, -3102658}, new int[]{-13530253, -7808833}};
+    private static final String[] THEME_NAMES = {"黑灰", "红色", "粉色", "紫色", "绿色", "青色", "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"};
+    private static final int[][] THEME_COLORS = {new int[]{Color.rgb(86, 87, 92), Color.rgb(145, 145, 152)}, new int[]{-3982790, -1083529}, new int[]{-2597743, -1006399}, new int[]{-9022795, -4744481}, new int[]{-14185897, -9320552}, new int[]{-15299695, -9713717}, new int[]{-2921692, -1007516}, new int[]{-3958250, -995480}, new int[]{-7894890, -5327686}, new int[]{-15253642, -10646588}, new int[]{-15263977, -3102658}, new int[]{-13530253, -7808833}};
     private static final String TITLE_FAVORITES = "我的收藏";
     private static final String MSG_OFFLINE_CACHE = "已显示离线缓存";
     private static final String MSG_EMPTY_CONTENT = "暂无内容";
@@ -700,8 +700,8 @@ public final class MainActivity extends Activity {
     }
 
     private void applyPalette() {
-        this.PRIMARY = parseThemeColor(this.session.primaryColor(), Color.rgb(36, 121, 184));
-        this.SECONDARY = parseThemeColor(this.session.secondaryColor(), Color.rgb(94, 158, 255));
+        this.PRIMARY = parseThemeColor(this.session.primaryColor(), Color.rgb(86, 87, 92));
+        this.SECONDARY = parseThemeColor(this.session.secondaryColor(), Color.rgb(145, 145, 152));
         this.themeTokens = ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY);
         this.PRIMARY = this.themeTokens.primary;
         this.SECONDARY = this.themeTokens.secondary;
@@ -5209,26 +5209,24 @@ public final class MainActivity extends Activity {
             divider.setBackgroundColor(this.themeTokens.hairline);
             LinearLayout.LayoutParams dividerParams =
                     new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-            dividerParams.leftMargin = dp(47);
+            dividerParams.leftMargin = dp(38);
             parent.addView(divider, dividerParams);
         }
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
-        row.setPadding(dp(6), dp(7), dp(6), dp(7));
+        row.setPadding(dp(5), dp(7), dp(5), dp(7));
         row.setMinimumHeight(dp(50));
         Compat.setBackground(row, UiComponents.selectableRow(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
         ImageView marker = new ImageView(this);
         marker.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        Drawable iconDrawable = Compat.tintedDrawable(this, icon, this.themeTokens.primary);
+        Drawable iconDrawable = Compat.tintedDrawable(this, icon, this.themeTokens.muted);
         if (iconDrawable != null) {
             marker.setImageDrawable(iconDrawable);
         }
-        marker.setPadding(dp(6), dp(6), dp(6), dp(6));
-        Compat.setBackground(marker, UiComponents.softPill(this, this.themeTokens,
-                this.session.uiScale() / 100.0f));
-        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(30), dp(30));
-        markerParams.rightMargin = dp(9);
+        marker.setPadding(dp(3), dp(3), dp(3), dp(3));
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(26), dp(26));
+        markerParams.rightMargin = dp(8);
         row.addView(marker, markerParams);
         LinearLayout copy = vertical(0);
         TextView titleView = text(name, 13.0f,
@@ -5935,28 +5933,29 @@ public final class MainActivity extends Activity {
         divider.setBackgroundColor(this.themeTokens.hairline);
         LinearLayout.LayoutParams dividerParams =
                 new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-        dividerParams.leftMargin = dp(47);
+        dividerParams.leftMargin = dp(38);
         row.addView(divider, dividerParams);
 
-        LinearLayout content = new LinearLayout(this);
-        content.setGravity(16);
+        LinearLayout content = vertical(0);
         content.setPadding(dp(7), dp(8), dp(7), dp(8));
+
+        LinearLayout heading = new LinearLayout(this);
+        heading.setGravity(16);
 
         ImageView icon = new ImageView(this);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        icon.setPadding(dp(7), dp(7), dp(7), dp(7));
+        icon.setPadding(dp(3), dp(3), dp(3), dp(3));
         Drawable iconDrawable = Compat.tintedDrawable(this, R.drawable.il_splash,
-                this.themeTokens.primary);
+                this.themeTokens.muted);
         if (iconDrawable != null) icon.setImageDrawable(iconDrawable);
-        Compat.setBackground(icon, UiComponents.softPill(this, this.themeTokens,
-                this.session.uiScale() / 100.0f));
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(32), dp(32));
-        iconParams.rightMargin = dp(10);
-        content.addView(icon, iconParams);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(26), dp(26));
+        iconParams.rightMargin = dp(8);
+        heading.addView(icon, iconParams);
 
         TextView title = text("动画效果", 13.0f, this.TEXT);
         title.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        content.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        content.addView(heading, new LinearLayout.LayoutParams(-1, -2));
 
         LinearLayout segments = new LinearLayout(this);
         segments.setGravity(17);
@@ -5990,10 +5989,13 @@ public final class MainActivity extends Activity {
                 Motions.selected(option);
             });
             options[i] = option;
-            segments.addView(option, new LinearLayout.LayoutParams(dp(43), dp(28)));
+            segments.addView(option, new LinearLayout.LayoutParams(0, dp(28), 1.0f));
         }
         repaint.run();
-        content.addView(segments, new LinearLayout.LayoutParams(-2, dp(32)));
+        LinearLayout.LayoutParams segmentParams = new LinearLayout.LayoutParams(-1, dp(32));
+        segmentParams.leftMargin = dp(34);
+        segmentParams.topMargin = dp(5);
+        content.addView(segments, segmentParams);
         row.addView(content, new LinearLayout.LayoutParams(-1, -2));
         return row;
     }
@@ -6702,7 +6704,7 @@ public final class MainActivity extends Activity {
         return toggleRow(label, "", initial, listener);
     }
 
-    /** 统一行式开关：图标芯片 + 标题（可带副标题）+ 滑块，底部带缩进分隔线。 */
+    /** Standard settings row: icon, copy and switch with an inset divider. */
     private LinearLayout toggleRow(String label, String description,
                                    boolean initial, ToggleListener listener) {
         LinearLayout row = new LinearLayout(this);
@@ -6715,16 +6717,14 @@ public final class MainActivity extends Activity {
 
         ImageView icon = new ImageView(this);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        icon.setPadding(dp(7), dp(7), dp(7), dp(7));
+        icon.setPadding(dp(3), dp(3), dp(3), dp(3));
         Drawable drawable = Compat.tintedDrawable(this, settingToggleIcon(label),
-                this.themeTokens.primary);
+                this.themeTokens.muted);
         if (drawable != null) {
             icon.setImageDrawable(drawable);
         }
-        Compat.setBackground(icon, UiComponents.softPill(this, this.themeTokens,
-                this.session.uiScale() / 100.0f));
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(32), dp(32));
-        iconParams.rightMargin = dp(11);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(26), dp(26));
+        iconParams.rightMargin = dp(8);
         content.addView(icon, iconParams);
 
         LinearLayout copy = vertical(0);
@@ -6764,7 +6764,7 @@ public final class MainActivity extends Activity {
         divider.setBackgroundColor(this.themeTokens.hairline);
         LinearLayout.LayoutParams dividerParams =
                 new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-        dividerParams.leftMargin = dp(52);
+        dividerParams.leftMargin = dp(38);
         row.addView(divider, dividerParams);
         content.setOnClickListener(view -> {
             value[0] = !value[0];
@@ -7766,11 +7766,7 @@ public final class MainActivity extends Activity {
         ThemeTokens tokens = this.themeTokens == null
                 ? ThemeTokens.of(this.session != null && this.session.darkMode(),
                 this.PRIMARY, this.SECONDARY) : this.themeTokens;
-        LinearLayout list = vertical(tokens.surfaceContainerLow);
-        list.setPadding(dp(2), dp(2), dp(2), dp(2));
-        Compat.setBackground(list, UiComponents.groupCard(this, tokens,
-                this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
-        return list;
+        return vertical(tokens.background);
     }
 
     private TextView icon(String value) {
