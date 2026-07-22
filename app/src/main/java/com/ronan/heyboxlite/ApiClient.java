@@ -505,8 +505,7 @@ final class ApiClient {
     private static boolean isWritePath(String path) {
         String clean = normalizePath(path);
         if (clean.isEmpty()) return false;
-        return normalizePath(EndpointProvider.linkLikeCombo()).equals(clean)
-                || normalizePath(EndpointProvider.awardLink()).equals(clean)
+        return normalizePath(EndpointProvider.awardLink()).equals(clean)
                 || normalizePath(EndpointProvider.favourLink()).equals(clean)
                 || normalizePath(EndpointProvider.followUser()).equals(clean)
                 || normalizePath(EndpointProvider.unfollowUser()).equals(clean)
@@ -612,7 +611,7 @@ final class ApiClient {
         if (status == null) return "\u63a5\u53e3\u8fd4\u56de\u5931\u8d25";
         String value = String.valueOf(status);
         if ("lack_token".equalsIgnoreCase(value)) {
-            return "\u7f3a\u5c11\u5b89\u5168\u4ee4\u724c\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55\u6216\u7a0d\u540e\u518d\u8bd5";
+            return "lack_token: \u7f3a\u5c11\u5b89\u5168\u4ee4\u724c\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55\u6216\u7a0d\u540e\u518d\u8bd5";
         }
         if ("login".equalsIgnoreCase(value) || "relogin".equalsIgnoreCase(value)) {
             return "\u767b\u5f55\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55";

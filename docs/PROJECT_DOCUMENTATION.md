@@ -115,8 +115,8 @@ HeyBoxCommunity/
 
 - **`SplashActivity`** — 启动页。安装崩溃处理器（`CrashReporter`），按设置显示打字机开屏动画后进入 `MainActivity`；关闭开屏时直接跳转。
 - **`MainActivity`** — 页面 View、导航状态与 Activity 生命周期协调器。仍负责底部导航、信息流、搜索、帖子详情、评论、我的、设置和页面转场，但不再包含二维码轮询、写接口重试和收藏响应递归解析。页面状态用 `screen` 字符串维护（`feed` / `search` / `profile` / `detail` / `settings_home` / `saved` / `user_space` / `announcement_board` / …），各页通过 `show*()` 方法切换。后续继续拆页时，应先稳定页面状态模型，再按 Feed/Search/Detail/Profile/Settings 分离，不能用大量回调接口把现有耦合原样搬到新文件。
-- **`QrLoginController`** — 二维码获取和登录状态轮询。用请求代次号忽略过期回调，统一管理 2 秒轮询、网络错误退避和停止生命周期；Activity 只负责二维码绘制和登录后的页面更新。
-- **`WriteActionClient`** — 点赞、收藏、关注、评论点赞和发评论的请求编排。集中管理 2 秒操作间隔、风控冷却、官方参数优先、token 刷新及兼容参数重试；不持有 Activity 或 View。
+- **`QrLoginController`** — 二维码获取和登录状态轮询。用请求代次号忽略过期回调，只在登录页处于前台时每 2 秒查询；网络错误退避到 5 秒，二维码最长轮询 5 分钟。Activity 只负责二维码绘制和登录后的页面更新。
+- **`WriteActionClient`** — 点赞、收藏、关注、评论点赞和发评论的请求编排。每项操作固定使用一条与官方 App 对齐的路径和参数，不再切换兼容参数重复提交；只有响应明确指出 `lack_token` / `x_xhh_tokenid` 时才刷新 token 并原样重试一次。另有 2 秒操作间隔和风控冷却；不持有 Activity 或 View。
 - **`SavedPostParser`** — 收藏夹、历史列表等接口响应的纯 JSON 解析。负责从多层包装中识别收藏夹和帖子，补齐计数与作者字段，不持有网络或页面状态。
 - **`FeedCollection`** — 信息流、搜索、收藏和历史共用的帖子集合处理。递归识别包装响应中的帖子，统一按 id 去重和关键词过滤；过滤结果不会保留空对象。
 - **`SearchState`** — 搜索页唯一状态源，集中保存关键词、结果、offset、请求代次、连续重复页和列表滚动位置。Activity 只负责发请求和渲染，不再单独维护一组容易不同步的分页字段。
@@ -145,7 +145,7 @@ HeyBoxCommunity/
 
   能力：正文图片按顺序显示、图片间文字不丢、官方表情转可渲染 token；`h1–h6`/`figcaption` 拆为**标题**块、`blockquote` 与 JSON `quote` 类型拆为**引用块**（保留内部换行与列表）、`<img>` 的 `desc`/`data-desc`/`data-caption` 及 JSON `caption` 拆为**图注**块；评论用 `commentText()` 从多个候选字段选最完整文本并把内联表情压回同一行；避免把 JSON 噪声当正文。
 
-- **`EmojiStore` / `EmojiRenderer` / `OfficialEmojiFallback`** — 官方表情三层：`EmojiStore` 保存 token→URL 映射（接口拉取 + 多形态变体），`OfficialEmojiFallback` 内置常见表情 URL，`EmojiRenderer` 在 `TextView` 中把 token 替换成 `ImageSpan`。`EmojiRenderer` 还提供 **`Decorator`** 回调：在每次 `setText`（含表情异步加载完成后的重绘）前重新套用额外样式 —— 二级评论正是用它保证用户名颜色 span 不被异步刷新冲掉。
+- **`EmojiStore` / `EmojiRenderer` / `OfficialEmojiFallback`** — 官方表情三层：`EmojiStore` 保存 token→URL 映射（接口拉取 + 多形态变体），目录成功后本进程不重复请求，失败后至少等待 5 分钟再试；`OfficialEmojiFallback` 内置常见表情 URL，`EmojiRenderer` 在 `TextView` 中把 token 替换成 `ImageSpan`。`EmojiRenderer` 还提供 **`Decorator`** 回调：在每次 `setText`（含表情异步加载完成后的重绘）前重新套用额外样式 —— 二级评论正是用它保证用户名颜色 span 不被异步刷新冲掉。
 
 - **`ImageLoader`** — 图片加载、缓存、解码与**离线缓存**。内存 LruCache + 磁盘离线缓存（`offline-cache/images`，URL 哈希命名，上限约 96 MB，按时间 `pruneOffline`）。缩略图与原图策略分离，限制最大 Bitmap 尺寸/像素防 OOM；列表图失败不清空旧内容，正文图支持渐进 reveal，Activity 销毁时取消请求。关键入口：`into*`（缩略图/稳定/渐进）、`intoOriginal*`、`loadOriginal`、`prefetchOffline`（预取信息流/详情图）、`intoGif`（见下）、`offlineBytes`（统计用量）。
 - **`GifSupport`** — 详情页 GIF 动图播放。`ImageLoader.intoGif` 拉原始 `.gif` 字节（上限 8 MB）后台解码：API 28+ 用系统 `AnimatedImageDrawable`（硬件解码），低版本用 `Movie` 软件渲染；超过 1280 px 或体积超限则放弃、保留静态缩略图，防低配手表 OOM。静态缩略图先显示，动图解好后原地替换。受设置「帖子内播放动图」开关控制。
@@ -160,7 +160,8 @@ HeyBoxCommunity/
 ### 6.5 网络层
 
 - **`ApiClient`** — 小黑盒接口请求层。拼接 baseUrl+path、装配请求头、加签名参数、处理 GET/POST、超时控制、gzip 解码、JSON 解析、错误归一化、写诊断日志、按 `RequestProfile`（Web / Mobile / 多种 Official 变体）切换凭据与头，并在官方原生客户端场景下经 `NativeSignBridge` 追加原生安全参数。任务/写入类请求会额外记录调试日志（键名与顺序，不含敏感值）。
-- **`EndpointProvider`** — 集中保存接口路径，经异或混淆存储（运行时解码），避免明文接口散落。覆盖：信息流、帖子详情（v1/v2）、二维码登录、评论（子评论/点赞/发布）、用户资料与动态、历史、收藏（标签/文件夹/链接/列表）、表情、搜索、互动（点赞组合/打赏/收藏/关注/取关）、签到（v2/v3 及状态）等。**这些不是公开稳定 API，path 与参数可能随官方版本变化，修接口前先看诊断日志，不要盲改。**
+- **`OfficialRequestParams`** — 官方接口参数的唯一构造点。信息流游标、详情、楼中楼、搜索、用户动态、历史、收藏和全部写操作都在这里定义，单元测试锁定必填字段并禁止旧别名回流。
+- **`EndpointProvider`** — 集中保存当前实际使用的接口路径，经异或混淆存储（运行时解码），避免明文接口散落。覆盖信息流、帖子详情 v2、二维码登录、评论、用户资料与动态、历史、收藏、表情、搜索、互动和已禁用的签到 v3。已删除无人调用的旧详情、旧收藏、旧签到与兼容写接口。**这些不是公开稳定 API，path 与参数可能随官方版本变化，修接口前先对照官方 APK 和诊断日志。**
 - **`HeaderProvider`** — 按请求档位组装请求头与 Cookie（Web UA / 移动端 UA / 官方各变体），签到走独立的凭据来源，与普通登录态隔离。
 - **`HeyboxSigner`** — 请求签名（Legacy / Android 等算法）。
 - **`SecureStrings`** — 敏感字符串（Cookie 键名、参数名、pkey/token/heyboxid 字段名等）异或编码，避免明文出现在反编译结果里。
@@ -182,7 +183,7 @@ HeyBoxCommunity/
 
 ### 6.8 签到与 native（实验，隔离）
 
-签到是实验功能：真实小黑盒签到涉及移动端凭据、签名、风控与官方 App 行为。**2.0.4 已在 `SignInManager` 顶部用开关默认关闭**（服务端风控，第三方无法稳定通过校验），入口在设置里提示「已暂停」，底层 `currentState/autoSignInIfNeeded/signIn` 全部拦截、零请求。相关代码保留，改回开关即可恢复。
+签到是实验功能：真实小黑盒签到涉及移动端凭据、签名、风控与官方 App 行为。`MainActivity.SIGN_IN_ENABLED` 与 `SignInManager.ENABLED` 当前均为 `false`，入口提示「已暂停」，自动与手动流程都在发请求前返回，形成双重零请求保护。
 
 - **`SignInManager`** — 签到流程编排（当前被开关禁用）。曾尝试公开接口、`task/sign_v3`、移动端参数、pkey/imei/token、官方 Provider、native signer、请求重放等多路径。
 - **`WriteTokenProvider`** — 通过隐藏 WebView 拿写入验证 token（点赞/收藏/关注/评论等写操作需要）。

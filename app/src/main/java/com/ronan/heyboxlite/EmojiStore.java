@@ -11,10 +11,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 final class EmojiStore {
+    private static final long RETRY_COOLDOWN_MS = 5 * 60 * 1000L;
     private static final Map<String, String> URLS = new ConcurrentHashMap<>();
     private static final Map<String, String> DARK_URLS = new ConcurrentHashMap<>();
     private static boolean loading;
     private static boolean catalogLoaded;
+    private static long lastFailureAt;
     private static final List<Runnable> READY = new ArrayList<>();
 
     private EmojiStore() {}
@@ -64,6 +66,10 @@ final class EmojiStore {
             ready.run();
             return;
         }
+        if (System.currentTimeMillis() - lastFailureAt < RETRY_COOLDOWN_MS) {
+            ready.run();
+            return;
+        }
         READY.add(ready);
         if (loading) return;
         loading = true;
@@ -73,11 +79,14 @@ final class EmojiStore {
                 JSONObject result = body.optJSONObject("result");
                 parse(result == null ? body : result);
                 catalogLoaded = !URLS.isEmpty() || !DARK_URLS.isEmpty();
+                if (catalogLoaded) lastFailureAt = 0L;
+                else lastFailureAt = System.currentTimeMillis();
                 notifyReady();
             }
 
             @Override public void onError(String message) {
                 loading = false;
+                lastFailureAt = System.currentTimeMillis();
                 notifyReady();
             }
         });

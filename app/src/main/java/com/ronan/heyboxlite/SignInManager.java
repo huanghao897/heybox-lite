@@ -11,7 +11,7 @@ import java.util.Date;
 import java.util.Locale;
 
 final class SignInManager {
-    private static final boolean ENABLED = true;
+    private static final boolean ENABLED = false;
 
     interface Callback {
         void onResult(Result result);

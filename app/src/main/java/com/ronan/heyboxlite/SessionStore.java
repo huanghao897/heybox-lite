@@ -279,9 +279,7 @@ final class SessionStore {
 
     String primaryColor() {
         String value = prefs.getString(PRIMARY_COLOR, "");
-        if (value.isEmpty()) value = prefs.getString(ACCENT_COLOR, "");
-        return usesLegacyDefaultTheme(value, prefs.getString(SECONDARY_COLOR, ""))
-                ? "" : value;
+        return value.isEmpty() ? prefs.getString(ACCENT_COLOR, "") : value;
     }
 
     void setPrimaryColor(String value) {
@@ -292,14 +290,7 @@ final class SessionStore {
     }
 
     String secondaryColor() {
-        String value = prefs.getString(SECONDARY_COLOR, "");
-        return usesLegacyDefaultTheme(prefs.getString(PRIMARY_COLOR, ""), value)
-                ? "" : value;
-    }
-
-    private boolean usesLegacyDefaultTheme(String primary, String secondary) {
-        return "#2479B8".equalsIgnoreCase(primary)
-                && "#73B8E6".equalsIgnoreCase(secondary);
+        return prefs.getString(SECONDARY_COLOR, "");
     }
 
     void setSecondaryColor(String value) {
@@ -990,8 +981,8 @@ final class SessionStore {
                 .putBoolean(ROUND_SCREEN, false)
                 .putInt(SCREEN_PADDING_H_PERCENT, 0)
                 .putInt(SCREEN_PADDING_V_PERCENT, 0)
-                .remove(PRIMARY_COLOR)
-                .remove(SECONDARY_COLOR)
+                .putString(PRIMARY_COLOR, "#2479B8")
+                .putString(SECONDARY_COLOR, "#73B8E6")
                 .remove(ACCENT_COLOR)
                 .putInt(BODY_TEXT_SCALE, 100)
                 .putInt(BODY_LETTER_SPACING, 0)

@@ -30,7 +30,7 @@ public final class SplashActivity extends Activity {
         }
         startedAt = System.currentTimeMillis();
         splashText = session.splashText();
-        int secondary = parseColor(session.secondaryColor(), Color.rgb(145, 145, 152));
+        int secondary = parseColor(session.secondaryColor(), Color.rgb(115, 184, 230));
         int background = session.darkMode() ? Color.rgb(14, 15, 16) : Color.rgb(246, 247, 249);
         int foreground = session.darkMode() ? Color.WHITE : Color.rgb(24, 26, 28);
         boolean dark = session.darkMode();

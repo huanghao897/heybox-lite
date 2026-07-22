@@ -10,6 +10,7 @@ import org.json.JSONObject;
 final class QrLoginController {
     private static final long POLL_INTERVAL_MS = 2000L;
     private static final long ERROR_INTERVAL_MS = 5000L;
+    private static final long QR_LIFETIME_MS = 5 * 60 * 1000L;
 
     interface Listener {
         void onQrReady(String url);
@@ -28,6 +29,8 @@ final class QrLoginController {
     private String qrKey = "";
     private int requestId;
     private boolean active;
+    private boolean foreground;
+    private long expiresAt;
 
     QrLoginController(ApiClient api, Handler handler) {
         this.api = api;
@@ -38,6 +41,8 @@ final class QrLoginController {
         stop();
         this.listener = listener;
         this.active = true;
+        this.foreground = true;
+        this.expiresAt = System.currentTimeMillis() + QR_LIFETIME_MS;
         int currentRequest = this.requestId;
         Map<String, String> params = new LinkedHashMap<>();
         params.put("app", "web");
@@ -71,14 +76,31 @@ final class QrLoginController {
 
     void stop() {
         this.active = false;
+        this.foreground = false;
         this.requestId++;
         this.qrKey = "";
+        this.expiresAt = 0L;
         this.listener = null;
         this.handler.removeCallbacks(this.pollTask);
     }
 
-    private void poll() {
+    void pause() {
+        this.foreground = false;
+        this.handler.removeCallbacks(this.pollTask);
+    }
+
+    void resume() {
         if (!this.active || this.qrKey.isEmpty()) return;
+        this.foreground = true;
+        schedule(0L);
+    }
+
+    private void poll() {
+        if (!this.active || !this.foreground || this.qrKey.isEmpty()) return;
+        if (isExpired()) {
+            expire();
+            return;
+        }
         int currentRequest = this.requestId;
         Map<String, String> params = new HashMap<>();
         params.put("qr", this.qrKey);
@@ -120,7 +142,23 @@ final class QrLoginController {
 
     private void schedule(long delayMs) {
         this.handler.removeCallbacks(this.pollTask);
-        this.handler.postDelayed(this.pollTask, delayMs);
+        if (!this.active || !this.foreground) return;
+        long remaining = this.expiresAt - System.currentTimeMillis();
+        if (remaining <= 0L) {
+            expire();
+            return;
+        }
+        this.handler.postDelayed(this.pollTask, Math.min(delayMs, remaining));
+    }
+
+    private boolean isExpired() {
+        return this.expiresAt > 0L && System.currentTimeMillis() >= this.expiresAt;
+    }
+
+    private void expire() {
+        Listener current = this.listener;
+        stop();
+        if (current != null) current.onStatus("二维码已过期，请重新获取");
     }
 
     private void fail(String message) {
