@@ -62,7 +62,7 @@ final class DetailPager extends FrameLayout {
         if (this.returnPreview != null) removeView(this.returnPreview);
         this.returnPreview = view;
         this.realReturnView = true;
-        Motions.resetTree(view);
+        Motions.reset(view);
         addView(view, 0, new FrameLayout.LayoutParams(-1, -1));
         requestLayout();
     }
@@ -73,7 +73,7 @@ final class DetailPager extends FrameLayout {
         removeView(view);
         this.returnPreview = null;
         this.realReturnView = false;
-        Motions.resetTree(view);
+        Motions.reset(view);
         return view;
     }
 

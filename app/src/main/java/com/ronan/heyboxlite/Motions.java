@@ -41,13 +41,15 @@ final class Motions {
         view.setScaleY(1.0f);
     }
 
-    static void resetTree(View view) {
+    static void cancelTree(View view) {
         if (view == null) return;
-        reset(view);
+        view.animate().cancel();
+        view.setScaleX(1.0f);
+        view.setScaleY(1.0f);
         if (!(view instanceof ViewGroup)) return;
         ViewGroup group = (ViewGroup) view;
         for (int i = 0; i < group.getChildCount(); i++) {
-            resetTree(group.getChildAt(i));
+            cancelTree(group.getChildAt(i));
         }
     }
 

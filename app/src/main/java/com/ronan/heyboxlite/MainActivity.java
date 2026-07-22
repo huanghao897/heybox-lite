@@ -1480,7 +1480,7 @@ public final class MainActivity extends Activity {
                 resetShellDrag();
                 return;
             }
-            Motions.resetTree(target);
+            Motions.reset(target);
             if (oldChild != null && oldChild.getParent() == this) {
                 super.removeView(oldChild);
             }
@@ -7683,7 +7683,7 @@ public final class MainActivity extends Activity {
         if (this.content instanceof BackSwipeFrameLayout) {
             ((BackSwipeFrameLayout) this.content).cancelMotion();
         }
-        Motions.resetTree(this.shellRoot);
+        Motions.cancelTree(this.shellRoot);
         this.shellAnimating = false;
         this.pendingBackTransition = false;
         this.pendingLateralPush = false;
