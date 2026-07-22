@@ -64,6 +64,12 @@ final class UiComponents {
         return round(context, tokens.surfaceContainerHighest, 12, scale);
     }
 
+    static GradientDrawable outlinedTextField(Context context, ThemeTokens tokens, float scale) {
+        GradientDrawable drawable = round(context, Color.TRANSPARENT, 8, scale);
+        drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.outlineVariant);
+        return drawable;
+    }
+
     static Drawable selectableCard(Context context, ThemeTokens tokens, float scale) {
         return selectable(context, tokens.surfaceContainer,
                 tokens.pressedSurface(), tokens.primary, 9, scale);
