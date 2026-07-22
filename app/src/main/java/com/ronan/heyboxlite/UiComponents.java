@@ -41,6 +41,39 @@ final class UiComponents {
         return round(context, tokens.surfaceContainerLow, 9, scale);
     }
 
+    static GradientDrawable settingsGroup(Context context, ThemeTokens tokens, float scale) {
+        int fill = tokens.dark ? Color.rgb(28, 28, 30) : Color.WHITE;
+        return round(context, fill, 15, scale);
+    }
+
+    static GradientDrawable settingsIconTile(Context context, ThemeTokens tokens, float scale) {
+        int fill = tokens.dark ? Color.rgb(58, 58, 60) : Color.rgb(229, 229, 234);
+        return round(context, fill, 7, scale);
+    }
+
+    static Drawable settingsRow(Context context, ThemeTokens tokens, float scale) {
+        int normal = tokens.dark ? Color.rgb(28, 28, 30) : Color.WHITE;
+        int pressed = tokens.dark ? Color.rgb(44, 44, 46) : Color.rgb(229, 229, 234);
+        return selectable(context, normal, pressed, tokens.muted, 0, scale);
+    }
+
+    static GradientDrawable settingsSegmentTrack(Context context, ThemeTokens tokens,
+                                                  float scale) {
+        int fill = tokens.dark ? Color.rgb(44, 44, 46) : Color.rgb(229, 229, 234);
+        return round(context, fill, 10, scale);
+    }
+
+    static GradientDrawable settingsSegmentSelection(Context context, ThemeTokens tokens,
+                                                      float scale) {
+        int fill = tokens.dark ? Color.rgb(99, 99, 102) : Color.WHITE;
+        GradientDrawable drawable = round(context, fill, 8, scale);
+        if (!tokens.dark) {
+            drawable.setStroke(Math.max(1, dp(context, 1, scale)),
+                    Color.rgb(209, 209, 214));
+        }
+        return drawable;
+    }
+
     static GradientDrawable dock(Context context, ThemeTokens tokens, float scale) {
         int alpha = tokens.dark ? 220 : 228;
         int fill = Color.argb(alpha, Color.red(tokens.surfaceContainerHigh),

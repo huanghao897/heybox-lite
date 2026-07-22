@@ -103,6 +103,7 @@ public final class MainActivity extends Activity {
     private LinearLayout shellBar;
     private FrameLayout content;
     private LinearLayout bottom;
+    private ResponsiveDock.Dimensions bottomDockDimensions;
     private boolean bottomVisible;
     private int bottomNavAnimSerial;
     private boolean bottomNavShowPending;
@@ -636,16 +637,26 @@ public final class MainActivity extends Activity {
         linearLayoutVertical.addView(body, new LinearLayout.LayoutParams(-1, 0, 1.0f));
         this.content = new BackSwipeFrameLayout(this);
         body.addView(this.content, match());
+        DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
+        this.bottomDockDimensions = ResponsiveDock.fromScreen(
+                displayMetrics.widthPixels, displayMetrics.heightPixels);
         this.bottom = new LinearLayout(this);
         this.bottom.setGravity(17);
-        this.bottom.setPadding(dp(3), dp(2), dp(3), dp(2));
+        this.bottom.setPadding(this.bottomDockDimensions.paddingHorizontal,
+                this.bottomDockDimensions.paddingVertical,
+                this.bottomDockDimensions.paddingHorizontal,
+                this.bottomDockDimensions.paddingVertical);
         Compat.setBackground(this.bottom, UiComponents.dock(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
-        UiComponents.elevate(this.bottom, 10);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            this.bottom.setElevation(Math.max(4.0f,
+                    this.bottomDockDimensions.height * 0.14f));
+        }
         this.bottom.setVisibility(8);
         this.bottom.setAlpha(0.0f);
-        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(dp(112), dp(38), 81);
-        bottomParams.setMargins(0, 0, 0, dp(4));
+        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
+                this.bottomDockDimensions.width, this.bottomDockDimensions.height, 81);
+        bottomParams.setMargins(0, 0, 0, this.bottomDockDimensions.marginBottom);
         body.addView(this.bottom, bottomParams);
         addNav("社区", "feed", R.drawable.ic_home, this::onFeedNavClick);
         addNav("我的", "profile", R.drawable.ic_person, () -> {
@@ -722,7 +733,21 @@ public final class MainActivity extends Activity {
     private void addNav(String label, String key, int drawable, Runnable click) {
         ImageView item = new ImageView(this);
         item.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        item.setPadding(dp(7), dp(6), dp(7), dp(6));
+        if (this.bottomDockDimensions != null) {
+            int itemWidth = Math.max(this.bottomDockDimensions.iconSize,
+                    (this.bottomDockDimensions.width
+                            - (this.bottomDockDimensions.paddingHorizontal * 2)
+                            - (this.bottomDockDimensions.itemMargin * 4)) / 2);
+            int itemHeight = Math.max(this.bottomDockDimensions.iconSize,
+                    this.bottomDockDimensions.height
+                            - (this.bottomDockDimensions.paddingVertical * 2));
+            int horizontalInset = Math.max(0,
+                    (itemWidth - this.bottomDockDimensions.iconSize) / 2);
+            int verticalInset = Math.max(0,
+                    (itemHeight - this.bottomDockDimensions.iconSize) / 2);
+            item.setPadding(horizontalInset, verticalInset,
+                    horizontalInset, verticalInset);
+        }
         item.setAdjustViewBounds(false);
         item.setImageDrawable(navIcon(drawable, this.MUTED));
         item.setColorFilter(this.MUTED);
@@ -731,8 +756,10 @@ public final class MainActivity extends Activity {
         item.setOnClickListener(view -> {
             runWithPressFeedback(item, click);
         });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(34), 1.0f);
-        params.setMargins(dp(2), 0, dp(2), 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -1, 1.0f);
+        int margin = this.bottomDockDimensions == null
+                ? dp(2) : this.bottomDockDimensions.itemMargin;
+        params.setMargins(margin, 0, margin, 0);
         this.bottom.addView(item, params);
     }
 
@@ -832,13 +859,18 @@ public final class MainActivity extends Activity {
             return;
         }
         View spacer = new View(this);
-        page.addView(spacer, new LinearLayout.LayoutParams(-1, dp(62)));
+        int dockHeight = this.bottomDockDimensions == null
+                ? dp(38) : this.bottomDockDimensions.height;
+        page.addView(spacer, new LinearLayout.LayoutParams(-1,
+                Math.max(dp(44), dockHeight + dp(14))));
     }
 
     private Drawable navIcon(int drawable, int color) {
         Drawable icon = Compat.tintedDrawable(this, drawable, color);
         if (icon != null) {
-            icon.setBounds(0, 0, dp(20), dp(20));
+            int size = this.bottomDockDimensions == null
+                    ? dp(20) : this.bottomDockDimensions.iconSize;
+            icon.setBounds(0, 0, size, size);
         }
         return icon;
     }
@@ -5195,65 +5227,81 @@ public final class MainActivity extends Activity {
         scroll.addView(page);
         page.addView(settingsTopCard("设置"));
         LinearLayout panel = settingsList();
-        addSettingEntry(panel, "显示", "主题、字号与屏幕适配", R.drawable.il_palette, this::showDisplaySettings);
-        addSettingEntry(panel, "启动与更新", "开屏动画、自动检查更新", R.drawable.il_refresh, this::showStartupSettings);
-        addSettingEntry(panel, "内容与缓存", "图片、离线内容与账号", R.drawable.il_globe, this::showAppSettings);
+        addSettingEntry(panel, "显示", "主题、字号与屏幕", R.drawable.il_palette, this::showDisplaySettings);
+        addSettingEntry(panel, "启动与更新", "开屏动画、检查更新", R.drawable.il_refresh, this::showStartupSettings);
+        addSettingEntry(panel, "内容与缓存", "图片、离线与账号", R.drawable.il_globe, this::showAppSettings);
         addSettingEntry(panel, "关于", appVersion(), R.drawable.il_info, this::showAbout);
         page.addView(panel);
         return scroll;
     }
 
     private TextView addSettingEntry(LinearLayout parent, String name, String description, int icon, Runnable action) {
-        if (parent.getChildCount() > 0) {
-            View divider = new View(this);
-            divider.setBackgroundColor(this.themeTokens.hairline);
-            LinearLayout.LayoutParams dividerParams =
-                    new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-            dividerParams.leftMargin = dp(38);
-            parent.addView(divider, dividerParams);
-        }
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
-        row.setPadding(dp(5), dp(7), dp(5), dp(7));
-        row.setMinimumHeight(dp(50));
-        Compat.setBackground(row, UiComponents.selectableRow(this, this.themeTokens,
+        row.setPadding(dp(10), dp(9), dp(10), dp(9));
+        row.setMinimumHeight(dp(56));
+        Compat.setBackground(row, UiComponents.settingsRow(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
         ImageView marker = new ImageView(this);
         marker.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        Drawable iconDrawable = Compat.tintedDrawable(this, icon, this.themeTokens.muted);
+        Drawable iconDrawable = Compat.tintedDrawable(this, icon,
+                blend(this.themeTokens.text, this.themeTokens.muted, 0.28f));
         if (iconDrawable != null) {
             marker.setImageDrawable(iconDrawable);
         }
-        marker.setPadding(dp(3), dp(3), dp(3), dp(3));
-        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(26), dp(26));
-        markerParams.rightMargin = dp(8);
+        marker.setPadding(dp(6), dp(6), dp(6), dp(6));
+        Compat.setBackground(marker, UiComponents.settingsIconTile(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(30), dp(30));
+        markerParams.rightMargin = dp(11);
         row.addView(marker, markerParams);
         LinearLayout copy = vertical(0);
-        TextView titleView = text(name, 13.0f,
+        TextView titleView = text(name, 14.0f,
                 name.startsWith("退出登录") ? this.themeTokens.error : this.TEXT);
-        titleView.setTypeface(appRegularTypeface(), 1);
+        titleView.setTypeface(appMediumTypeface());
+        titleView.setSingleLine(true);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
         copy.addView(titleView);
         TextView descView = null;
         if (description != null && !description.isEmpty()) {
-            descView = text(description, 9.8f, this.MUTED);
-            descView.setPadding(0, dp(1), 0, 0);
+            descView = text("", 10.5f, this.MUTED);
+            descView.setPadding(0, dp(2), 0, 0);
+            descView.setMaxLines(2);
+            descView.setEllipsize(TextUtils.TruncateAt.END);
+            EmojiRenderer.set(descView, description, this.session.darkMode());
             copy.addView(descView);
         }
         if ("阅读时长".equals(name)) {
             this.readingTodayView = descView;
         }
-        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        copyParams.rightMargin = dp(7);
+        row.addView(copy, copyParams);
         ImageView arrow = new ImageView(this);
         arrow.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         Drawable chevron = Compat.tintedDrawable(this, R.drawable.il_chevron, this.MUTED);
         if (chevron != null) {
             arrow.setImageDrawable(chevron);
         }
-        arrow.setAlpha(0.55f);
-        row.addView(arrow, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        arrow.setAlpha(0.38f);
+        row.addView(arrow, new LinearLayout.LayoutParams(dp(14), dp(14)));
         row.setOnClickListener(view -> action.run());
-        parent.addView(row);
+        addSettingsRow(parent, row);
         return descView;
+    }
+
+    private void addSettingsRow(LinearLayout parent, View row) {
+        if (parent.getChildCount() > 0) {
+            View divider = new View(this);
+            divider.setBackgroundColor(this.session.darkMode()
+                    ? Color.rgb(54, 54, 57) : Color.rgb(218, 218, 222));
+            LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
+                    -1, Math.max(1, dp(1) / 2));
+            dividerParams.leftMargin = dp(51);
+            dividerParams.rightMargin = dp(10);
+            parent.addView(divider, dividerParams);
+        }
+        parent.addView(row, new LinearLayout.LayoutParams(-1, -2));
     }
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
@@ -5888,7 +5936,7 @@ public final class MainActivity extends Activity {
         this.action.setVisibility(4);
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(10), dp(7), dp(10), dp(16));
+        page.setPadding(dp(10), dp(5), dp(10), dp(18));
         scroll.addView(page);
         page.addView(settingsTopCard(pageTitle));
         this.retainedPages.put(key, scroll);
@@ -5904,75 +5952,70 @@ public final class MainActivity extends Activity {
         return page;
     }
 
-    /** 卡外组名：小号加字距标签，站在分组卡上方，页面形成"标题—内容块"节奏。 */
     private void addSectionLabel(LinearLayout page, String label) {
-        TextView view = text(label, 10.0f, this.themeTokens.muted);
-        view.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        TextView view = text(label, 10.2f, this.themeTokens.subtle);
+        view.setTypeface(appRegularTypeface());
         Compat.setLetterSpacing(view, 0.0f);
-        view.setPadding(dp(5), 0, 0, dp(5));
-        addTop(page, view, 14);
+        view.setPadding(dp(6), 0, 0, dp(6));
+        addTop(page, view, 16);
     }
 
     private View settingsTopCard(String pageTitle) {
         LinearLayout box = new LinearLayout(this);
         box.setGravity(16);
-        box.setPadding(dp(3), 0, dp(3), 0);
+        box.setPadding(dp(4), 0, dp(4), 0);
         box.setBackgroundColor(this.BG);
-        TextView name = text(pageTitle, 20.0f, this.TEXT);
-        name.setTypeface(appRegularTypeface(), 1);
-        box.addView(name, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
-        TextView time = text(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 11.0f, this.MUTED);
+        TextView name = text(pageTitle, 21.0f, this.TEXT);
+        name.setTypeface(appMediumTypeface());
+        box.addView(name, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
+        TextView time = text(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 11.5f, this.MUTED);
         time.setGravity(21);
-        box.addView(time, new LinearLayout.LayoutParams(dp(54), dp(40)));
+        box.addView(time, new LinearLayout.LayoutParams(dp(54), dp(42)));
         return box;
     }
 
     private View motionLevelRow() {
-        LinearLayout row = vertical(0);
-        View divider = new View(this);
-        divider.setBackgroundColor(this.themeTokens.hairline);
-        LinearLayout.LayoutParams dividerParams =
-                new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-        dividerParams.leftMargin = dp(38);
-        row.addView(divider, dividerParams);
-
         LinearLayout content = vertical(0);
-        content.setPadding(dp(7), dp(8), dp(7), dp(8));
+        content.setPadding(dp(10), dp(9), dp(10), dp(10));
+        Compat.setBackground(content, UiComponents.settingsRow(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
 
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(16);
 
         ImageView icon = new ImageView(this);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        icon.setPadding(dp(3), dp(3), dp(3), dp(3));
+        icon.setPadding(dp(6), dp(6), dp(6), dp(6));
         Drawable iconDrawable = Compat.tintedDrawable(this, R.drawable.il_splash,
-                this.themeTokens.muted);
+                blend(this.themeTokens.text, this.themeTokens.muted, 0.28f));
         if (iconDrawable != null) icon.setImageDrawable(iconDrawable);
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(26), dp(26));
-        iconParams.rightMargin = dp(8);
+        Compat.setBackground(icon, UiComponents.settingsIconTile(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(30), dp(30));
+        iconParams.rightMargin = dp(11);
         heading.addView(icon, iconParams);
 
-        TextView title = text("动画效果", 13.0f, this.TEXT);
-        title.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        TextView title = text("动画效果", 14.0f, this.TEXT);
+        title.setTypeface(appMediumTypeface());
         heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
         content.addView(heading, new LinearLayout.LayoutParams(-1, -2));
 
         LinearLayout segments = new LinearLayout(this);
         segments.setGravity(17);
         segments.setPadding(dp(2), dp(2), dp(2), dp(2));
-        Compat.setBackground(segments, round(this.themeTokens.surfaceContainerHighest, 18));
+        Compat.setBackground(segments, UiComponents.settingsSegmentTrack(this,
+                this.themeTokens, this.session.uiScale() / 100.0f));
         String[] names = {"关闭", "精简", "完整"};
         TextView[] options = new TextView[names.length];
         Runnable repaint = () -> {
             int selected = this.session.motionLevel();
             for (int i = 0; i < options.length; i++) {
                 boolean active = i == selected;
-                options[i].setTextColor(active
-                        ? this.themeTokens.onPrimary : this.themeTokens.muted);
+                options[i].setTextColor(active ? this.TEXT : this.themeTokens.muted);
                 options[i].setTypeface(appRegularTypeface(),
                         active ? Typeface.BOLD : Typeface.NORMAL);
                 Compat.setBackground(options[i], active
-                        ? UiComponents.primaryButton(this, this.themeTokens,
+                        ? UiComponents.settingsSegmentSelection(this, this.themeTokens,
                         this.session.uiScale() / 100.0f) : null);
             }
         };
@@ -5993,11 +6036,10 @@ public final class MainActivity extends Activity {
         }
         repaint.run();
         LinearLayout.LayoutParams segmentParams = new LinearLayout.LayoutParams(-1, dp(32));
-        segmentParams.leftMargin = dp(34);
+        segmentParams.leftMargin = dp(41);
         segmentParams.topMargin = dp(5);
         content.addView(segments, segmentParams);
-        row.addView(content, new LinearLayout.LayoutParams(-1, -2));
-        return row;
+        return content;
     }
 
     private void showDisplaySettings() {
@@ -6007,12 +6049,12 @@ public final class MainActivity extends Activity {
         boolean[] dark = {this.session.darkMode()};
         boolean[] bodyBold = {this.session.bodyBold()};
         boolean[] roundScreen = {this.session.roundScreen()};
-        addTop(panel, toggleRow("夜间模式", dark[0], value -> {
+        addSettingsRow(panel, toggleRow("夜间模式", dark[0], value -> {
             dark[0] = value;
-        }), 0);
+        }));
         addSettingEntry(panel, "界面预览", "", R.drawable.il_eye,
                 this::showDisplayPreview);
-        panel.addView(motionLevelRow(), new LinearLayout.LayoutParams(-1, -2));
+        addSettingsRow(panel, motionLevelRow());
         linearLayout.addView(panel);
         addSectionLabel(linearLayout, "预览");
         LinearLayout livePreview = vertical(0);
@@ -6048,14 +6090,14 @@ public final class MainActivity extends Activity {
         })};
         ScaleControl[] screenPaddingV = {settingSlider(panel, "纵向边距", "%", 0, 30, this.session.screenPaddingVPercent(), value7 -> {
         })};
-        addTop(panel, toggleRow("圆屏适配", roundScreen[0], value5 -> {
+        addSettingsRow(panel, toggleRow("圆屏适配", roundScreen[0], value5 -> {
             roundScreen[0] = value5;
             int h = value5 ? 5 : 0;
             int v = value5 ? 3 : 0;
             setScaleControlValue(screenPaddingH[0], h, 0);
             setScaleControlValue(screenPaddingV[0], v, 0);
             updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, -1, -1, parseNumber(padding.input, 0, 30) == null ? this.session.pagePadding() : parseNumber(padding.input, 0, 30).intValue());
-        }), 0);
+        }));
         linearLayout.addView(panel);
         addSectionLabel(linearLayout, "正文排版");
         panel = settingsList();
@@ -6071,7 +6113,7 @@ public final class MainActivity extends Activity {
         ScaleControl lineSpacing = settingSlider(panel, "行距", "%", 100, 180, this.session.bodyLineSpacing(), value11 -> {
             previewBody.setLineSpacing(0.0f, value11 / 100.0f);
         });
-        addTop(panel, toggleRow("正文与一级评论稍加粗", bodyBold[0], value12 -> {
+        addSettingsRow(panel, toggleRow("正文与一级评论稍加粗", bodyBold[0], value12 -> {
             Typeface typefaceCreate;
             bodyBold[0] = value12;
             if (value12) {
@@ -6080,7 +6122,7 @@ public final class MainActivity extends Activity {
                 typefaceCreate = appRegularTypeface();
             }
             previewBody.setTypeface(typefaceCreate);
-        }), 0);
+        }));
         updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, this.session.uiScale(), this.session.textScale(), this.session.pagePadding());
         previewBody.setTextSize((12 * this.session.bodyTextScale()) / 100.0f);
         Compat.setLetterSpacing(previewBody, this.session.bodyLetterSpacing() / 200.0f);
@@ -6261,33 +6303,35 @@ public final class MainActivity extends Activity {
         LinearLayout page = settingsPage("app_settings", "内容与缓存");
         addSectionLabel(page, "浏览与交互");
         LinearLayout panel = settingsList();
-        addTop(panel, toggleRow("无图模式", this.session.noImage(), value -> {
+        addSettingsRow(panel, toggleRow("无图模式", this.session.noImage(), value -> {
             this.session.setNoImage(value);
             this.feed.clear();
             invalidateFeedView();
-        }), 0);
+        }));
         addSettingEntry(panel, "网络模式", networkModeLabel(), R.drawable.il_globe,
                 this::showNetworkModePicker);
         boolean zShellBackSwipe = this.session.shellBackSwipe();
         SessionStore sessionStore2 = this.session;
         Objects.requireNonNull(sessionStore2);
-        addTop(panel, toggleRow("右滑返回上一级", zShellBackSwipe,
-                sessionStore2::setShellBackSwipe), 0);
-        addTop(panel, toggleRow("退出确认", this.session.confirmExitOnBack(),
-                this.session::setConfirmExitOnBack), 0);
+        addSettingsRow(panel, toggleRow("右滑返回上一级", zShellBackSwipe,
+                sessionStore2::setShellBackSwipe));
+        addSettingsRow(panel, toggleRow("退出确认", this.session.confirmExitOnBack(),
+                this.session::setConfirmExitOnBack));
         boolean zRememberDetailScroll = this.session.rememberDetailScroll();
         SessionStore sessionStore3 = this.session;
         Objects.requireNonNull(sessionStore3);
-        addTop(panel, toggleRow("记住帖子阅读位置", zRememberDetailScroll, sessionStore3::setRememberDetailScroll), 0);
-        addTop(panel, toggleRow("自动清理（30 天）",
+        addSettingsRow(panel, toggleRow("记住帖子阅读位置", zRememberDetailScroll,
+                sessionStore3::setRememberDetailScroll));
+        addSettingsRow(panel, toggleRow("自动清理（30 天）",
                 this.session.autoOfflineCleanup(), value -> {
                     this.session.setAutoOfflineCleanup(value);
                     if (value) pruneOfflineCache(null);
-                }), 0);
+                }));
         boolean zDoubleTapCommentReply = this.session.doubleTapCommentReply();
         SessionStore sessionStore4 = this.session;
         Objects.requireNonNull(sessionStore4);
-        addTop(panel, toggleRow("双击评论回复", zDoubleTapCommentReply, sessionStore4::setDoubleTapCommentReply), 0);
+        addSettingsRow(panel, toggleRow("双击评论回复", zDoubleTapCommentReply,
+                sessionStore4::setDoubleTapCommentReply));
         page.addView(panel);
         addSectionLabel(page, "内容过滤");
         LinearLayout filter = settingsList();
@@ -6366,12 +6410,12 @@ public final class MainActivity extends Activity {
         LinearLayout panel = settingsList();
         boolean[] autoUpdate = {this.session.autoUpdateCheck()};
         boolean[] splashEnabled = {this.session.splashEnabled()};
-        addTop(panel, toggleRow("自动检查更新", autoUpdate[0], value -> {
+        addSettingsRow(panel, toggleRow("自动检查更新", autoUpdate[0], value -> {
             autoUpdate[0] = value;
-        }), 0);
-        addTop(panel, toggleRow("开屏动画", splashEnabled[0], value2 -> {
+        }));
+        addSettingsRow(panel, toggleRow("开屏动画", splashEnabled[0], value2 -> {
             splashEnabled[0] = value2;
-        }), 0);
+        }));
         EditText splashText = textField(panel, "开屏文字", this.session.splashText());
         ScaleControl duration = settingSlider(panel, "开屏时长", "ms", 500, 2600, this.session.splashDuration(), value3 -> {
         });
@@ -6704,32 +6748,31 @@ public final class MainActivity extends Activity {
         return toggleRow(label, "", initial, listener);
     }
 
-    /** Standard settings row: icon, copy and switch with an inset divider. */
     private LinearLayout toggleRow(String label, String description,
                                    boolean initial, ToggleListener listener) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(1);
         LinearLayout content = new LinearLayout(this);
         content.setGravity(16);
-        content.setPadding(dp(7), dp(9), dp(7), dp(9));
-        Compat.setBackground(content, UiComponents.selectableRow(this, this.themeTokens,
+        content.setPadding(dp(10), dp(9), dp(10), dp(9));
+        Compat.setBackground(content, UiComponents.settingsRow(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
 
         ImageView icon = new ImageView(this);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        icon.setPadding(dp(3), dp(3), dp(3), dp(3));
+        icon.setPadding(dp(6), dp(6), dp(6), dp(6));
         Drawable drawable = Compat.tintedDrawable(this, settingToggleIcon(label),
-                this.themeTokens.muted);
+                blend(this.themeTokens.text, this.themeTokens.muted, 0.28f));
         if (drawable != null) {
             icon.setImageDrawable(drawable);
         }
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(26), dp(26));
-        iconParams.rightMargin = dp(8);
+        Compat.setBackground(icon, UiComponents.settingsIconTile(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(30), dp(30));
+        iconParams.rightMargin = dp(11);
         content.addView(icon, iconParams);
 
         LinearLayout copy = vertical(0);
-        TextView title = text(label, 13.5f, this.TEXT);
-        title.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        TextView title = text(label, 14.0f, this.TEXT);
+        title.setTypeface(appMediumTypeface());
         copy.addView(title);
         if (description != null && !description.isEmpty()) {
             TextView desc = text(description, 10.5f, this.MUTED);
@@ -6749,23 +6792,16 @@ public final class MainActivity extends Activity {
         toggle.addView(thumb, thumbParams);
         final int travel = dp(16);
         Runnable paintTrack = () -> {
-            Compat.setBackground(toggle, round(value[0]
-                    ? this.themeTokens.primary
-                    : this.themeTokens.surfaceContainerHighest, 13));
+            int track = value[0] ? this.themeTokens.primary
+                    : this.session.darkMode() ? Color.rgb(57, 57, 59)
+                    : Color.rgb(209, 209, 214);
+            Compat.setBackground(toggle, round(track, 13));
             Compat.setBackground(thumb, round(valueColor(value[0]), 9));
         };
         paintTrack.run();
         thumb.setTranslationX(value[0] ? travel : 0.0f);
         content.addView(toggle, new LinearLayout.LayoutParams(dp(42), dp(26)));
-        content.setMinimumHeight(dp(52));
-        row.addView(content, new LinearLayout.LayoutParams(-1, -2));
-
-        View divider = new View(this);
-        divider.setBackgroundColor(this.themeTokens.hairline);
-        LinearLayout.LayoutParams dividerParams =
-                new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-        dividerParams.leftMargin = dp(38);
-        row.addView(divider, dividerParams);
+        content.setMinimumHeight(dp(56));
         content.setOnClickListener(view -> {
             value[0] = !value[0];
             paintTrack.run();
@@ -6786,7 +6822,7 @@ public final class MainActivity extends Activity {
                     .start();
             listener.onChanged(value[0]);
         });
-        return row;
+        return content;
     }
 
     private int settingToggleIcon(String label) {
@@ -6807,16 +6843,19 @@ public final class MainActivity extends Activity {
     }
 
     private int valueColor(boolean enabled) {
-        return enabled ? this.themeTokens.onPrimary : this.themeTokens.outline;
+        return this.session.darkMode() ? Color.rgb(245, 245, 247) : Color.WHITE;
     }
 
-    /** 两行式滑杆：标签与数值同一行（数值点按可键入），通栏轨道在下，白钮与开关圆钮同族。 */
     private ScaleControl settingSlider(LinearLayout parent, String label, String unit, final int min, int max, int current, final IntListener listener) {
         LinearLayout wrap = new LinearLayout(this);
         wrap.setOrientation(1);
+        wrap.setPadding(dp(11), dp(9), dp(11), dp(8));
+        Compat.setBackground(wrap, UiComponents.settingsRow(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
         LinearLayout head = new LinearLayout(this);
         head.setGravity(16);
-        TextView name = text(label, 11.0f, this.TEXT);
+        TextView name = text(label, 13.0f, this.TEXT);
+        name.setTypeface(appMediumTypeface());
         head.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
         final EditText input = new EditText(this);
         input.setSingleLine(true);
@@ -6845,7 +6884,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams sliderParams = new LinearLayout.LayoutParams(-1, dp(26));
         sliderParams.topMargin = dp(1);
         wrap.addView(slider, sliderParams);
-        addTop(parent, wrap, 6);
+        addSettingsRow(parent, wrap);
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -7304,7 +7343,11 @@ public final class MainActivity extends Activity {
     private EditText textField(LinearLayout parent, String label, String current) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
+        row.setPadding(dp(10), dp(7), dp(10), dp(7));
+        Compat.setBackground(row, UiComponents.settingsRow(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
         TextView fieldLabel = text(label, 12.5f, this.TEXT);
+        fieldLabel.setTypeface(appMediumTypeface());
         fieldLabel.setGravity(16);
         row.addView(fieldLabel, new LinearLayout.LayoutParams(0, dp(44), 1.0f));
         EditText input = new EditText(this);
@@ -7321,7 +7364,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(dp(102), dp(42));
         inputParams.leftMargin = dp(6);
         row.addView(input, inputParams);
-        addTop(parent, row, 3);
+        addSettingsRow(parent, row);
         return input;
     }
 
@@ -7766,10 +7809,13 @@ public final class MainActivity extends Activity {
         ThemeTokens tokens = this.themeTokens == null
                 ? ThemeTokens.of(this.session != null && this.session.darkMode(),
                 this.PRIMARY, this.SECONDARY) : this.themeTokens;
-        LinearLayout list = vertical(tokens.surfaceContainerLow);
-        list.setPadding(dp(2), dp(2), dp(2), dp(2));
-        Compat.setBackground(list, UiComponents.groupCard(this, tokens,
+        LinearLayout list = vertical(tokens.dark ? Color.rgb(28, 28, 30) : Color.WHITE);
+        list.setPadding(0, 0, 0, 0);
+        Compat.setBackground(list, UiComponents.settingsGroup(this, tokens,
                 this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            list.setClipToOutline(true);
+        }
         return list;
     }
 
@@ -7831,6 +7877,10 @@ public final class MainActivity extends Activity {
 
     private Typeface appRegularTypeface() {
         return Typeface.DEFAULT;
+    }
+
+    private Typeface appMediumTypeface() {
+        return Typeface.create("sans-serif-medium", Typeface.NORMAL);
     }
 
     private GradientDrawable round(int color, int radius) {
