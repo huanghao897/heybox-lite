@@ -214,6 +214,7 @@ public final class MainActivity extends Activity {
             return;
         }
         this.session = new SessionStore(this);
+        Motions.setLevel(this.session.motionLevel());
         this.localCache = new LocalCache(this);
         this.readingTimeTracker = new ReadingTimeTracker(this);
         ImageLoader.init(this);
@@ -769,19 +770,21 @@ public final class MainActivity extends Activity {
             this.bottomNavShowPending = false;
             this.bottom.setVisibility(0);
             if (animate) {
+                boolean fullMotion = Motions.full();
                 if (wasHidden || this.bottom.getAlpha() <= 0.0f) {
                     this.bottom.setAlpha(0.0f);
-                    this.bottom.setTranslationY(dp(24));
-                    this.bottom.setScaleX(0.90f);
-                    this.bottom.setScaleY(0.90f);
+                    this.bottom.setTranslationY(dp(fullMotion ? 24 : 8));
+                    this.bottom.setScaleX(fullMotion ? 0.90f : 1.0f);
+                    this.bottom.setScaleY(fullMotion ? 0.90f : 1.0f);
                 }
                 this.bottom.animate()
                         .alpha(1.0f)
                         .translationY(0.0f)
                         .scaleX(1.0f)
                         .scaleY(1.0f)
-                        .setDuration(240L)
-                        .setInterpolator(MotionSpec.SPRING)
+                        .setDuration(fullMotion ? 240L : 150L)
+                        .setInterpolator(fullMotion
+                                ? MotionSpec.SPRING : MotionSpec.EMPHASIZED_DECELERATE)
                         .start();
             } else {
                 this.bottom.setAlpha(1.0f);
@@ -797,12 +800,14 @@ public final class MainActivity extends Activity {
         }
         this.bottomVisible = false;
         if (animate) {
+            boolean fullMotion = Motions.full();
+            long hideDuration = fullMotion ? 150L : 100L;
             this.bottom.animate()
                     .alpha(0.0f)
-                    .translationY(dp(20))
-                    .scaleX(0.92f)
-                    .scaleY(0.92f)
-                    .setDuration(150L)
+                    .translationY(dp(fullMotion ? 20 : 6))
+                    .scaleX(fullMotion ? 0.92f : 1.0f)
+                    .scaleY(fullMotion ? 0.92f : 1.0f)
+                    .setDuration(hideDuration)
                     .setInterpolator(MotionSpec.STANDARD)
                     .start();
             this.bottom.postDelayed(() -> {
@@ -812,7 +817,7 @@ public final class MainActivity extends Activity {
                     MainActivity.this.bottom.setScaleX(1.0f);
                     MainActivity.this.bottom.setScaleY(1.0f);
                 }
-            }, 140L);
+            }, hideDuration);
         } else {
             this.bottom.setAlpha(0.0f);
             this.bottom.setTranslationY(0.0f);
@@ -5924,6 +5929,75 @@ public final class MainActivity extends Activity {
         return box;
     }
 
+    private View motionLevelRow() {
+        LinearLayout row = vertical(0);
+        View divider = new View(this);
+        divider.setBackgroundColor(this.themeTokens.hairline);
+        LinearLayout.LayoutParams dividerParams =
+                new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
+        dividerParams.leftMargin = dp(47);
+        row.addView(divider, dividerParams);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setGravity(16);
+        content.setPadding(dp(7), dp(8), dp(7), dp(8));
+
+        ImageView icon = new ImageView(this);
+        icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        icon.setPadding(dp(7), dp(7), dp(7), dp(7));
+        Drawable iconDrawable = Compat.tintedDrawable(this, R.drawable.il_splash,
+                this.themeTokens.primary);
+        if (iconDrawable != null) icon.setImageDrawable(iconDrawable);
+        Compat.setBackground(icon, UiComponents.softPill(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(32), dp(32));
+        iconParams.rightMargin = dp(10);
+        content.addView(icon, iconParams);
+
+        TextView title = text("动画效果", 13.0f, this.TEXT);
+        title.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        content.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        LinearLayout segments = new LinearLayout(this);
+        segments.setGravity(17);
+        segments.setPadding(dp(2), dp(2), dp(2), dp(2));
+        Compat.setBackground(segments, round(this.themeTokens.surfaceContainerHighest, 18));
+        String[] names = {"关闭", "精简", "完整"};
+        TextView[] options = new TextView[names.length];
+        Runnable repaint = () -> {
+            int selected = this.session.motionLevel();
+            for (int i = 0; i < options.length; i++) {
+                boolean active = i == selected;
+                options[i].setTextColor(active
+                        ? this.themeTokens.onPrimary : this.themeTokens.muted);
+                options[i].setTypeface(appRegularTypeface(),
+                        active ? Typeface.BOLD : Typeface.NORMAL);
+                Compat.setBackground(options[i], active
+                        ? UiComponents.primaryButton(this, this.themeTokens,
+                        this.session.uiScale() / 100.0f) : null);
+            }
+        };
+        for (int i = 0; i < names.length; i++) {
+            int level = i;
+            TextView option = text(names[i], 10.0f, this.MUTED);
+            option.setGravity(17);
+            option.setOnClickListener(view -> {
+                if (this.session.motionLevel() == level) return;
+                this.session.setMotionLevel(level);
+                Motions.setLevel(level);
+                cancelAllMotion();
+                repaint.run();
+                Motions.selected(option);
+            });
+            options[i] = option;
+            segments.addView(option, new LinearLayout.LayoutParams(dp(43), dp(28)));
+        }
+        repaint.run();
+        content.addView(segments, new LinearLayout.LayoutParams(-2, dp(32)));
+        row.addView(content, new LinearLayout.LayoutParams(-1, -2));
+        return row;
+    }
+
     private void showDisplaySettings() {
         LinearLayout linearLayout = settingsPage("display_settings", "显示");
         addSectionLabel(linearLayout, "显示");
@@ -5936,6 +6010,7 @@ public final class MainActivity extends Activity {
         }), 0);
         addSettingEntry(panel, "界面预览", "", R.drawable.il_eye,
                 this::showDisplayPreview);
+        panel.addView(motionLevelRow(), new LinearLayout.LayoutParams(-1, -2));
         linearLayout.addView(panel);
         addSectionLabel(linearLayout, "预览");
         LinearLayout livePreview = vertical(0);
@@ -6695,11 +6770,19 @@ public final class MainActivity extends Activity {
             value[0] = !value[0];
             paintTrack.run();
             thumb.animate().cancel();
+            if (Motions.off()) {
+                thumb.setTranslationX(value[0] ? travel : 0.0f);
+                thumb.setScaleX(1.0f);
+                thumb.setScaleY(1.0f);
+                listener.onChanged(value[0]);
+                return;
+            }
             thumb.animate().translationX(value[0] ? travel : 0.0f)
-                    .scaleX(value[0] ? 1.08f : 1.0f)
-                    .scaleY(value[0] ? 1.08f : 1.0f)
-                    .setDuration(190L)
-                    .setInterpolator(MotionSpec.SPRING)
+                    .scaleX(Motions.full() && value[0] ? 1.08f : 1.0f)
+                    .scaleY(Motions.full() && value[0] ? 1.08f : 1.0f)
+                    .setDuration(Motions.full() ? 190L : 130L)
+                    .setInterpolator(Motions.full()
+                            ? MotionSpec.SPRING : MotionSpec.EASE_OUT)
                     .start();
             listener.onChanged(value[0]);
         });
@@ -7592,6 +7675,28 @@ public final class MainActivity extends Activity {
             return;
         }
         this.pageTransitions.run(this.content, next, !back, push);
+    }
+
+    private void cancelAllMotion() {
+        this.pageTransitions.finishNow();
+        if (this.detailPager != null) this.detailPager.cancelMotion();
+        if (this.content instanceof BackSwipeFrameLayout) {
+            ((BackSwipeFrameLayout) this.content).cancelMotion();
+        }
+        Motions.resetTree(this.shellRoot);
+        this.shellAnimating = false;
+        this.pendingBackTransition = false;
+        this.pendingLateralPush = false;
+        this.bottomNavShowPending = false;
+        this.bottomNavAnimSerial++;
+        if (this.bottom != null) {
+            this.bottom.animate().cancel();
+            this.bottom.setTranslationY(0.0f);
+            this.bottom.setScaleX(1.0f);
+            this.bottom.setScaleY(1.0f);
+            this.bottom.setAlpha(this.bottomVisible ? 1.0f : 0.0f);
+            this.bottom.setVisibility(this.bottomVisible ? View.VISIBLE : View.GONE);
+        }
     }
 
     /** 页面不满屏时下半截透明，转场重叠期会透出旧页并在结束时闪变，这里统一兜底成不透明底色。 */

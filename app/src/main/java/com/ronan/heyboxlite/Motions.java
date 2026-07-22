@@ -4,19 +4,30 @@ import android.os.Build;
 import android.view.View;
 import android.view.ViewGroup;
 
-/**
- * 通用动画工具。动效恒为完整挡（三挡调节已移除），
- * 所有动画只操作 alpha/translation/scale 这类 GPU 友好属性。
- */
+/** Global motion level and lightweight property animations. */
 final class Motions {
+    static final int LEVEL_OFF = 0;
+    static final int LEVEL_LITE = 1;
+    static final int LEVEL_FULL = 2;
+
+    private static volatile int level = LEVEL_LITE;
+
     private Motions() {}
 
+    static void setLevel(int value) {
+        level = Math.max(LEVEL_OFF, Math.min(LEVEL_FULL, value));
+    }
+
+    static int level() {
+        return level;
+    }
+
     static boolean off() {
-        return false;
+        return level == LEVEL_OFF;
     }
 
     static boolean full() {
-        return true;
+        return level == LEVEL_FULL;
     }
 
     /** 取消 View 上的属性动画并复位常用变换，防止复用时状态污染。 */
@@ -49,13 +60,13 @@ final class Motions {
             return;
         }
         view.setAlpha(0.0f);
-        view.setTranslationY(full() ? translatePx : 0.0f);
+        view.setTranslationY(full() ? translatePx : translatePx * 0.35f);
         view.setScaleX(full() ? 0.992f : 1.0f);
         view.setScaleY(full() ? 0.992f : 1.0f);
         view.animate().alpha(1.0f).translationY(0.0f)
                 .scaleX(1.0f).scaleY(1.0f)
                 .setStartDelay(0L)
-                .setDuration(MotionSpec.ENTER_MS)
+                .setDuration(full() ? MotionSpec.ENTER_MS : MotionSpec.ENTER_LITE_MS)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
                 .start();
     }
@@ -69,13 +80,13 @@ final class Motions {
             return;
         }
         view.setAlpha(0.0f);
-        view.setTranslationY(full() ? translatePx : 0.0f);
+        view.setTranslationY(full() ? translatePx : translatePx * 0.30f);
         view.setScaleX(full() ? 0.985f : 1.0f);
         view.setScaleY(full() ? 0.985f : 1.0f);
         view.animate().alpha(1.0f).translationY(0.0f)
                 .scaleX(1.0f).scaleY(1.0f)
                 .setStartDelay(Math.max(0, index) * MotionSpec.STAGGER_MS)
-                .setDuration(MotionSpec.ENTER_MS)
+                .setDuration(full() ? MotionSpec.ENTER_MS : MotionSpec.ENTER_LITE_MS)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
                 .withEndAction(() -> {
                     view.setAlpha(1.0f);
@@ -91,13 +102,14 @@ final class Motions {
         if (content == null || off()) return;
         content.animate().cancel();
         content.setAlpha(0.0f);
-        content.setTranslationY(12.0f * content.getResources().getDisplayMetrics().density);
-        content.setScaleX(0.92f);
-        content.setScaleY(0.92f);
+        float density = content.getResources().getDisplayMetrics().density;
+        content.setTranslationY((full() ? 12.0f : 4.0f) * density);
+        content.setScaleX(full() ? 0.92f : 0.98f);
+        content.setScaleY(full() ? 0.92f : 0.98f);
         content.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
                 .translationY(0.0f)
                 .setStartDelay(0L)
-                .setDuration(MotionSpec.DIALOG_MS)
+                .setDuration(full() ? MotionSpec.DIALOG_MS : MotionSpec.DIALOG_LITE_MS)
                 .setInterpolator(full() ? MotionSpec.SPRING : MotionSpec.EASE_OUT)
                 .start();
     }
@@ -109,29 +121,35 @@ final class Motions {
             reset(view);
             return;
         }
-        view.setAlpha(0.72f);
-        view.setScaleX(0.82f);
-        view.setScaleY(0.82f);
+        view.setAlpha(full() ? 0.72f : 0.86f);
+        view.setScaleX(full() ? 0.82f : 0.94f);
+        view.setScaleY(full() ? 0.82f : 0.94f);
         view.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
-                .setDuration(210L)
-                .setInterpolator(MotionSpec.SPRING)
+                .setDuration(full() ? 210L : 130L)
+                .setInterpolator(full() ? MotionSpec.SPRING : MotionSpec.EASE_OUT)
                 .start();
     }
 
     static void fadeThrough(View outgoing, View incoming) {
         if (incoming == null) return;
+        if (off()) {
+            reset(outgoing);
+            reset(incoming);
+            if (outgoing != null) outgoing.setAlpha(0.0f);
+            return;
+        }
         if (outgoing != null) {
             outgoing.animate().cancel();
-            outgoing.animate().alpha(0.0f).setDuration(90L)
+            outgoing.animate().alpha(0.0f).setDuration(full() ? 90L : 70L)
                     .setInterpolator(MotionSpec.STANDARD).start();
         }
         incoming.animate().cancel();
         incoming.setAlpha(0.0f);
-        incoming.setScaleX(0.96f);
-        incoming.setScaleY(0.96f);
+        incoming.setScaleX(full() ? 0.96f : 0.99f);
+        incoming.setScaleY(full() ? 0.96f : 0.99f);
         incoming.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
-                .setStartDelay(70L)
-                .setDuration(180L)
+                .setStartDelay(full() ? 70L : 40L)
+                .setDuration(full() ? 180L : 120L)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
                 .start();
     }

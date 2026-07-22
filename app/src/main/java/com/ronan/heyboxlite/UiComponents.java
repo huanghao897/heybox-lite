@@ -136,6 +136,10 @@ final class UiComponents {
 
     private static void pressOut(View view) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) return;
+        if (Motions.off()) {
+            Motions.reset(view);
+            return;
+        }
         view.animate().cancel();
         view.animate().scaleX(1f).scaleY(1f).alpha(1f)
                 .setDuration(MotionSpec.PRESS_OUT_MS)
