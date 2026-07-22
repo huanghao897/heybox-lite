@@ -50,10 +50,13 @@ final class Motions {
         }
         view.setAlpha(0.0f);
         view.setTranslationY(full() ? translatePx : 0.0f);
+        view.setScaleX(full() ? 0.992f : 1.0f);
+        view.setScaleY(full() ? 0.992f : 1.0f);
         view.animate().alpha(1.0f).translationY(0.0f)
+                .scaleX(1.0f).scaleY(1.0f)
                 .setStartDelay(0L)
                 .setDuration(MotionSpec.ENTER_MS)
-                .setInterpolator(MotionSpec.EASE_OUT)
+                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
                 .start();
     }
 
@@ -67,13 +70,18 @@ final class Motions {
         }
         view.setAlpha(0.0f);
         view.setTranslationY(full() ? translatePx : 0.0f);
+        view.setScaleX(full() ? 0.985f : 1.0f);
+        view.setScaleY(full() ? 0.985f : 1.0f);
         view.animate().alpha(1.0f).translationY(0.0f)
+                .scaleX(1.0f).scaleY(1.0f)
                 .setStartDelay(Math.max(0, index) * MotionSpec.STAGGER_MS)
                 .setDuration(MotionSpec.ENTER_MS)
-                .setInterpolator(MotionSpec.EASE_OUT)
+                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
                 .withEndAction(() -> {
                     view.setAlpha(1.0f);
                     view.setTranslationY(0.0f);
+                    view.setScaleX(1.0f);
+                    view.setScaleY(1.0f);
                 })
                 .start();
     }
@@ -83,12 +91,48 @@ final class Motions {
         if (content == null || off()) return;
         content.animate().cancel();
         content.setAlpha(0.0f);
-        content.setScaleX(0.94f);
-        content.setScaleY(0.94f);
+        content.setTranslationY(12.0f * content.getResources().getDisplayMetrics().density);
+        content.setScaleX(0.92f);
+        content.setScaleY(0.92f);
         content.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
+                .translationY(0.0f)
                 .setStartDelay(0L)
                 .setDuration(MotionSpec.DIALOG_MS)
                 .setInterpolator(full() ? MotionSpec.SPRING : MotionSpec.EASE_OUT)
+                .start();
+    }
+
+    static void selected(View view) {
+        if (view == null) return;
+        view.animate().cancel();
+        if (off() || Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+            reset(view);
+            return;
+        }
+        view.setAlpha(0.72f);
+        view.setScaleX(0.82f);
+        view.setScaleY(0.82f);
+        view.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
+                .setDuration(210L)
+                .setInterpolator(MotionSpec.SPRING)
+                .start();
+    }
+
+    static void fadeThrough(View outgoing, View incoming) {
+        if (incoming == null) return;
+        if (outgoing != null) {
+            outgoing.animate().cancel();
+            outgoing.animate().alpha(0.0f).setDuration(90L)
+                    .setInterpolator(MotionSpec.STANDARD).start();
+        }
+        incoming.animate().cancel();
+        incoming.setAlpha(0.0f);
+        incoming.setScaleX(0.96f);
+        incoming.setScaleY(0.96f);
+        incoming.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
+                .setStartDelay(70L)
+                .setDuration(180L)
+                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
                 .start();
     }
 }
