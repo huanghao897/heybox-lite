@@ -42,7 +42,7 @@ final class UiComponents {
     }
 
     static GradientDrawable dock(Context context, ThemeTokens tokens, float scale) {
-        int alpha = tokens.dark ? 244 : 248;
+        int alpha = tokens.dark ? 220 : 228;
         int fill = Color.argb(alpha, Color.red(tokens.surfaceContainerHigh),
                 Color.green(tokens.surfaceContainerHigh), Color.blue(tokens.surfaceContainerHigh));
         return round(context, fill, 24, scale);
