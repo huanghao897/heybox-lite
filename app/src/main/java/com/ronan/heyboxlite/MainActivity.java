@@ -1792,7 +1792,7 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(this.BG);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(8), dp(8), dp(8), dp(18));
+        page.setPadding(dp(8), dp(5), dp(8), dp(14));
         scroll.addView(page);
         page.addView(settingsTopCard("阅读时长"));
         addSectionLabel(page, "今日");
@@ -2933,6 +2933,7 @@ public final class MainActivity extends Activity {
     private void addDetailActions(LinearLayout article, FeedItem item, JSONObject link) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
+        row.setPadding(0, dp(2), 0, dp(2));
         CommentLikeControl like = detailCountAction(R.drawable.official_comment_like_line,
                 Math.max(0, item.likes));
         LikeState state = linkLikeState(link, item);
@@ -2968,7 +2969,8 @@ public final class MainActivity extends Activity {
     }
 
     private void addDetailAction(LinearLayout dock, View item) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
+        UiComponents.installPressFeedback(item);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
         params.leftMargin = dp(2);
         params.rightMargin = dp(2);
         dock.addView(item, params);
@@ -2980,18 +2982,23 @@ public final class MainActivity extends Activity {
         control.icon.setColorFilter(this.MUTED);
         control.count.setText(Format.commentLikeCount(count));
         control.count.setTextColor(this.MUTED);
-        Compat.setBackground(control.root, roundStroke(this.PANEL, 8,
-                this.themeTokens.hairline, 1));
+        Compat.setBackground(control.root, detailActionBackground(false));
         return control;
     }
 
     private ImageView detailIconAction() {
         ImageView view = new ImageView(this);
         view.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        view.setPadding(dp(11), dp(11), dp(11), dp(11));
-        Compat.setBackground(view, roundStroke(this.PANEL, 8,
-                this.themeTokens.hairline, 1));
+        view.setPadding(dp(9), dp(9), dp(9), dp(9));
+        Compat.setBackground(view, detailActionBackground(false));
         return view;
+    }
+
+    private Drawable detailActionBackground(boolean active) {
+        return UiComponents.selectable(this,
+                active ? this.themeTokens.primaryContainer : this.themeTokens.surfaceContainer,
+                this.themeTokens.surfaceContainerHighest, this.themeTokens.primary, 9,
+                this.session.uiScale() / 100.0f);
     }
 
     private void toggleWatchLater(FeedItem item, TextView button) {
@@ -3060,7 +3067,7 @@ public final class MainActivity extends Activity {
 
     private LinearLayout detailArticleSurface() {
         LinearLayout article = vertical(this.BG);
-        article.setPadding(dp(4), dp(8), dp(4), dp(12));
+        article.setPadding(dp(2), dp(6), dp(2), dp(10));
         return article;
     }
 
@@ -3081,8 +3088,7 @@ public final class MainActivity extends Activity {
         view.count.setText(Format.commentLikeCount(Math.max(0, likes)));
         view.count.setTextColor(color);
         view.root.setContentDescription(liked ? "取消点赞" : "点赞");
-        Compat.setBackground(view.root, roundStroke(liked ? this.themeTokens.softAccent() : this.PANEL,
-                8, this.themeTokens.hairline, 1));
+        Compat.setBackground(view.root, detailActionBackground(liked));
     }
 
     private void updateFavoriteView(ImageView view, boolean favored) {
@@ -3091,15 +3097,13 @@ public final class MainActivity extends Activity {
         view.setImageResource(favored ? R.drawable.official_favorite_filled
                 : R.drawable.official_favorite_line);
         view.setColorFilter(favored ? this.themeTokens.accent : this.MUTED);
-        Compat.setBackground(view, roundStroke(favored ? this.themeTokens.softAccent() : this.PANEL,
-                8, this.themeTokens.hairline, 1));
+        Compat.setBackground(view, detailActionBackground(favored));
     }
 
     private void updateDockItem(TextView view, boolean active, int icon) {
         int color = active ? this.themeTokens.accent : this.MUTED;
         view.setTextColor(color);
-        Compat.setBackground(view, roundStroke(active ? this.themeTokens.softAccent() : this.PANEL,
-                8, this.themeTokens.hairline, 1));
+        Compat.setBackground(view, detailActionBackground(active));
         setLeftIcon(view, icon, color, 15);
     }
 
@@ -3337,9 +3341,9 @@ public final class MainActivity extends Activity {
         linearLayout.setGravity(16);
         ImageView avatar = new ImageView(this);
         avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        Compat.setBackground(avatar, round(this.session.darkMode() ? Color.rgb(50, 53, 56) : Color.rgb(226, 229, 232), 18));
+        Compat.setBackground(avatar, round(this.themeTokens.surfaceContainerHighest, 16));
         Compat.clipToOutline(avatar);
-        linearLayout.addView(avatar, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        linearLayout.addView(avatar, new LinearLayout.LayoutParams(dp(32), dp(32)));
         String avatarUrl = user == null ? "" : user.optString("avatar", user.optString("avartar"));
         if (!this.session.noImage() && !avatarUrl.isEmpty()) {
             ImageLoader.intoPlain(avatar, avatarUrl, 96);
@@ -3348,11 +3352,11 @@ public final class MainActivity extends Activity {
         LinearLayout nameRow = new LinearLayout(this);
         nameRow.setGravity(16);
         String nameValue = user == null ? fallbackAuthor : Json.first(user.optString("username"), user.optString("nickname"), user.optString("name"), fallbackAuthor);
-        TextView name = text(nameValue.isEmpty() ? "小黑盒用户" : nameValue, 13.0f, this.TEXT);
+        TextView name = text(nameValue.isEmpty() ? "小黑盒用户" : nameValue, 12.5f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
-        name.setMaxWidth(dp(168));
+        name.setMaxWidth(dp(148));
         nameRow.addView(name, new LinearLayout.LayoutParams(-2, -2));
         int level = CommentData.userLevel(user);
         if (level > 0) {
@@ -3374,29 +3378,27 @@ public final class MainActivity extends Activity {
         String authorMeta = published.isEmpty() ? signature
                 : (signature.isEmpty() ? published : published + " · " + signature);
         if (!authorMeta.isEmpty()) {
-            TextView desc = text(authorMeta, 10.0f, this.MUTED);
+            TextView desc = text(authorMeta, 9.5f, this.MUTED);
             desc.setSingleLine(true);
             desc.setEllipsize(TextUtils.TruncateAt.END);
             addTop(linearLayoutVertical, desc, 1);
         }
         LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        copyParams.leftMargin = dp(9);
+        copyParams.leftMargin = dp(8);
         linearLayout.addView(linearLayoutVertical, copyParams);
-        int followBg = this.session.darkMode() ? blend(this.PANEL, this.TEXT, 0.12f) : blend(this.PANEL, this.TEXT, 0.06f);
-        TextView follow = text("+ 关注", 11.0f, this.TEXT);
+        TextView follow = text("+ 关注", 10.5f, this.TEXT);
         follow.setGravity(17);
         follow.setTypeface(appRegularTypeface(), 1);
-        Compat.setBackground(follow, round(followBg, 5));
         String targetUserId = authorUserId(link, user);
         View.OnClickListener openUser = view -> showUserSpace(targetUserId, nameValue, avatarUrl);
         avatar.setOnClickListener(openUser);
         linearLayoutVertical.setOnClickListener(openUser);
         updateFollowView(follow, isFollowing(link, user));
-        linearLayout.addView(follow, new LinearLayout.LayoutParams(dp(62), dp(30)));
+        linearLayout.addView(follow, new LinearLayout.LayoutParams(dp(58), dp(28)));
         follow.setOnClickListener(view -> {
             toggleFollow(follow, link, user, targetUserId);
         });
-        addTop(article, linearLayout, article.getChildCount() == 0 ? 0 : 14);
+        addTop(article, linearLayout, article.getChildCount() == 0 ? 0 : 11);
     }
 
     /** 官方同款话题标签：文章放作者行下方，普通帖放正文下方；同时供阅读统计按社区累计。 */
@@ -3461,8 +3463,7 @@ public final class MainActivity extends Activity {
         follow.setText(following ? "已关注" : "+ 关注");
         follow.setTextColor(this.themeTokens.accent);
         GradientDrawable drawable = round(following
-                ? this.themeTokens.softAccent() : Color.TRANSPARENT, 15);
-        drawable.setStroke(dp(1), this.themeTokens.accent);
+                ? this.themeTokens.softAccent() : this.themeTokens.surfaceContainer, 14);
         Compat.setBackground(follow, drawable);
     }
 
@@ -4244,7 +4245,7 @@ public final class MainActivity extends Activity {
                     }
                 }
                 LinearLayout linearLayoutCard = vertical(this.BG);
-                linearLayoutCard.setPadding(dp(4), dp(9), dp(4), dp(8));
+                linearLayoutCard.setPadding(dp(3), dp(6), dp(3), dp(6));
                 addComment(linearLayoutCard, root, false);
                 List<JSONObject> replies = new ArrayList<>();
                 if (comments != null) {
@@ -4262,12 +4263,11 @@ public final class MainActivity extends Activity {
                 if (!replies.isEmpty() || expected > 0) {
                     LinearLayout replySection = new LinearLayout(this);
                     replySection.setOrientation(1);
-                    replySection.setPadding(dp(8), dp(3), dp(8), dp(3));
-                    Compat.setBackground(replySection, roundStroke(this.themeTokens.faintAccent(),
-                            12, this.themeTokens.hairline, 1));
+                    replySection.setPadding(dp(7), dp(2), dp(7), dp(2));
+                    Compat.setBackground(replySection, round(this.themeTokens.faintAccent(), 6));
                     LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(-1, -2);
                     sectionParams.topMargin = dp(5);
-                    sectionParams.leftMargin = dp(44);
+                    sectionParams.leftMargin = dp(38);
                     linearLayoutCard.addView(replySection, sectionParams);
                     LinearLayout replyList = new LinearLayout(this);
                     replyList.setOrientation(1);
@@ -4276,8 +4276,16 @@ public final class MainActivity extends Activity {
                     boolean allLoaded = expected <= replies.size();
                     renderReplies(replyList, root, replies, expected, initial, allLoaded);
                 }
+                if (count > 0) {
+                    View divider = new View(this);
+                    divider.setBackgroundColor(this.themeTokens.hairline);
+                    LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1,
+                            Math.max(1, dp(1) / 2));
+                    dividerParams.leftMargin = dp(41);
+                    page.addView(divider, dividerParams);
+                }
                 addTop(page, CommentData.isPinnedComment(root) ? pinnedCommentCard(linearLayoutCard)
-                        : linearLayoutCard, count == 0 ? 0 : 2);
+                        : linearLayoutCard, 0);
                 count += 1 + replies.size();
             }
         }
@@ -4315,17 +4323,18 @@ public final class MainActivity extends Activity {
     }
 
     private TextView replyControl(String label, int icon) {
-        TextView control = text(label, 11.0f, this.themeTokens.accent);
+        TextView control = text(label, 10.5f, this.themeTokens.accent);
         control.setGravity(17);
-        control.setPadding(dp(8), 0, dp(8), 0);
-        Compat.setBackground(control, round(this.themeTokens.softAccent(), 13));
+        control.setPadding(dp(5), 0, dp(5), 0);
+        Compat.setBackground(control, UiComponents.selectableRow(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
         setLeftIcon(control, icon, this.themeTokens.accent, 12);
         return control;
     }
 
     private void addReplyControl(LinearLayout parent, TextView control) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(26));
-        params.topMargin = dp(3);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(24));
+        params.topMargin = dp(2);
         parent.addView(control, params);
     }
 
@@ -4432,15 +4441,15 @@ public final class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setGravity(17);
         root.setOrientation(LinearLayout.HORIZONTAL);
-        root.setPadding(dp(2), 0, dp(2), 0);
+        root.setPadding(dp(1), 0, dp(1), 0);
         ImageView icon = new ImageView(this);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        root.addView(icon, new LinearLayout.LayoutParams(dp(15), dp(15)));
-        TextView count = text("0", 10.0f, this.MUTED);
+        root.addView(icon, new LinearLayout.LayoutParams(dp(14), dp(14)));
+        TextView count = text("0", 9.5f, this.MUTED);
         count.setGravity(16);
         count.setSingleLine(true);
         LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(-2, -2);
-        countParams.leftMargin = dp(2);
+        countParams.leftMargin = dp(1);
         root.addView(count, countParams);
         return new CommentLikeControl(root, icon, count);
     }
@@ -4506,26 +4515,20 @@ public final class MainActivity extends Activity {
                 toast("没有打开的帖子");
                 return;
             }
-            int dialogBg = this.session.darkMode() ? Color.rgb(30, 31, 33) : Color.rgb(250, 250, 251);
-            int inputBg = this.session.darkMode() ? Color.rgb(12, 13, 14) : Color.rgb(241, 242, 244);
-            int border = this.session.darkMode() ? Color.rgb(66, 68, 72) : Color.rgb(218, 221, 225);
             LinearLayout panel = new LinearLayout(this);
             panel.setOrientation(LinearLayout.VERTICAL);
-            panel.setPadding(dp(16), dp(14), dp(16), dp(14));
-            Compat.setBackground(panel, roundStroke(dialogBg, 16, border, 1));
-            TextView title = text(replyTo == null ? "发表评论" : "回复评论", 16.0f, this.TEXT);
+            panel.setPadding(dp(14), dp(12), dp(14), dp(12));
+            Compat.setBackground(panel, UiComponents.elevatedCard(this, this.themeTokens,
+                    this.session.uiScale() / 100.0f));
+            TextView title = text(replyTo == null ? "发表评论" : "回复评论", 15.0f, this.TEXT);
             title.setTypeface(appRegularTypeface(), 1);
             panel.addView(title, new LinearLayout.LayoutParams(-1, -2));
-            TextView hint = text(replyTo == null ? "写下你的想法" : "回复这条评论", 11.0f, this.MUTED);
-            LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(-1, -2);
-            hintParams.topMargin = dp(4);
-            panel.addView(hint, hintParams);
             EditText input = new EditText(this);
             input.setTextColor(this.TEXT);
             input.setHintTextColor(this.MUTED);
-            input.setTextSize(sp(14.0f));
+            input.setTextSize(sp(13.0f));
             input.setMinLines(3);
-            input.setMaxLines(5);
+            input.setMaxLines(4);
             input.setGravity(8388659);
             input.setSingleLine(false);
             input.setHint(replyTo == null ? "友好交流，理性讨论" : "输入回复内容");
@@ -4542,21 +4545,22 @@ public final class MainActivity extends Activity {
                 }
                 @Override public void afterTextChanged(Editable s) {}
             });
-            int pad = dp(12);
-            input.setPadding(pad, dp(10), pad, dp(10));
-            Compat.setBackground(input, roundStroke(inputBg, 14, border, 1));
-            LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(-1, dp(118));
-            inputParams.topMargin = dp(12);
+            int pad = dp(10);
+            input.setPadding(pad, dp(8), pad, dp(8));
+            Compat.setBackground(input, UiComponents.textField(this, this.themeTokens,
+                    this.session.uiScale() / 100.0f));
+            LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(-1, dp(100));
+            inputParams.topMargin = dp(9);
             panel.addView(input, inputParams);
             AlertDialog dialog = new AlertDialog.Builder(this).setView(panel).create();
             LinearLayout actions = new LinearLayout(this);
             actions.setGravity(17);
-            actions.setPadding(0, dp(12), 0, 0);
+            actions.setPadding(0, dp(10), 0, 0);
             TextView cancel = commentDialogAction("取消", false);
             TextView send = commentDialogAction("发送", true);
-            LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-            LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-            sendParams.leftMargin = dp(9);
+            LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
+            LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
+            sendParams.leftMargin = dp(8);
             actions.addView(cancel, cancelParams);
             actions.addView(send, sendParams);
             panel.addView(actions);
@@ -4578,20 +4582,23 @@ public final class MainActivity extends Activity {
                 dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0));
                 dialog.getWindow().setDimAmount(this.session.darkMode() ? 0.56f : 0.36f);
                 int width = getResources().getDisplayMetrics().widthPixels;
-                dialog.getWindow().setLayout(Math.max(dp(240), Math.min(width - dp(28), dp(380))), -2);
+                dialog.getWindow().setLayout(Math.max(dp(140),
+                        Math.min(width - dp(20), dp(360))), -2);
             }
+            Motions.dialogIn(panel);
         }
     }
 
     private TextView commentDialogAction(String label, boolean primary) {
-        int fill = primary ? this.PRIMARY : blend(this.PANEL, this.MUTED, this.session.darkMode() ? 0.22f : 0.09f);
-        int stroke = primary ? this.PRIMARY : blend(this.PANEL, this.MUTED, 0.28f);
+        int fill = primary ? this.themeTokens.primary : this.themeTokens.surfaceContainerHighest;
         int color = primary ? contrast(fill) : this.TEXT;
-        TextView view = text(label, 13.0f, color);
+        TextView view = text(label, 12.0f, color);
         view.setTypeface(appRegularTypeface(), primary ? 1 : 0);
         view.setGravity(17);
         view.setPadding(dp(10), 0, dp(10), 0);
-        Compat.setBackground(view, roundStroke(fill, 19, stroke, 1));
+        Compat.setBackground(view, UiComponents.selectable(this, fill,
+                this.themeTokens.pressedSurface(), this.themeTokens.primary, 18,
+                this.session.uiScale() / 100.0f));
         return view;
     }
 
@@ -4644,15 +4651,15 @@ public final class MainActivity extends Activity {
     private void addComment(LinearLayout linearLayout, JSONObject comment, boolean reply) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(48);
-        row.setPadding(0, dp(reply ? 2 : 8), 0, dp(reply ? 2 : 8));
+        row.setPadding(0, dp(reply ? 1 : 5), 0, dp(reply ? 1 : 5));
         JSONObject user = comment.optJSONObject("user");
         String author = user == null ? "匿名用户" : user.optString("username", "匿名用户");
         if (!reply) {
             ImageView avatar = new ImageView(this);
             avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            Compat.setBackground(avatar, round(this.session.darkMode() ? Color.rgb(50, 53, 56) : Color.rgb(226, 229, 232), 20));
+            Compat.setBackground(avatar, round(this.themeTokens.surfaceContainerHighest, 15));
             Compat.clipToOutline(avatar);
-            row.addView(avatar, new LinearLayout.LayoutParams(dp(34), dp(34)));
+            row.addView(avatar, new LinearLayout.LayoutParams(dp(30), dp(30)));
             String avatarUrl = user == null ? "" : user.optString("avatar");
             if (!this.session.noImage() && !avatarUrl.isEmpty()) {
                 ImageLoader.intoPlain(avatar, avatarUrl, 96);
@@ -4661,7 +4668,7 @@ public final class MainActivity extends Activity {
         LinearLayout block = new LinearLayout(this);
         block.setOrientation(1);
         LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        blockParams.leftMargin = reply ? 0 : dp(10);
+        blockParams.leftMargin = reply ? 0 : dp(8);
         row.addView(block, blockParams);
         String target = CommentData.replyTarget(comment);
         long created = CommentData.commentTime(comment);
@@ -4675,11 +4682,11 @@ public final class MainActivity extends Activity {
             block.addView(commentNameRow(author, user, isPostAuthorComment(user, author)));
             String meta = commentSubMeta(comment, created);
             if (!meta.isEmpty()) {
-                TextView metaView = text(meta, 10.5f, this.MUTED);
+                TextView metaView = text(meta, 9.5f, this.MUTED);
                 addTop(block, metaView, 1);
             }
             String displayComment = CommentData.isCyComment(comment) ? "Cy " + visibleComment : visibleComment;
-            TextView value = text(displayComment, 13.0f, this.TEXT);
+            TextView value = text(displayComment, 12.5f, this.TEXT);
             value.setLineSpacing(dp(1), this.session.bodyLineSpacing() / 100.0f);
             Compat.setLetterSpacing(value, this.session.bodyLetterSpacing() / 200.0f);
             value.setTypeface(Typeface.create("sans-serif-medium", 0));
@@ -4688,7 +4695,7 @@ public final class MainActivity extends Activity {
                     applyInlineImageBadge(span, 0, 2, R.drawable.official_cy_badge, 15);
                 }
             });
-            addTop(block, value, 5);
+            addTop(block, value, 4);
         }
         List<CommentData.CommentImage> commentImages = CommentData.commentImages(comment);
         if (!this.session.noImage() && !commentImages.isEmpty()) {
@@ -4700,8 +4707,8 @@ public final class MainActivity extends Activity {
             likes.root.setOnClickListener(view -> {
                 toggleCommentLike(comment, likes);
             });
-            LinearLayout.LayoutParams likeParams = new LinearLayout.LayoutParams(-2, dp(26));
-            likeParams.leftMargin = dp(3);
+            LinearLayout.LayoutParams likeParams = new LinearLayout.LayoutParams(-2, dp(24));
+            likeParams.leftMargin = dp(2);
             row.addView(likes.root, likeParams);
         }
         View.OnLongClickListener copy = view -> {
@@ -4722,7 +4729,7 @@ public final class MainActivity extends Activity {
     private void addCommentImages(LinearLayout parent, List<CommentData.CommentImage> images,
                                   boolean reply) {
         LinearLayout gallery = vertical(0);
-        int size = reply ? 68 : 82;
+        int size = reply ? 52 : 58;
         for (int start = 0; start < images.size(); start += 3) {
             LinearLayout row = new LinearLayout(this);
             row.setGravity(3);
@@ -4730,15 +4737,15 @@ public final class MainActivity extends Activity {
             for (int i = start; i < end; i++) {
                 ImageView image = commentImage(images.get(i), size);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(size), dp(size));
-                if (i > start) params.leftMargin = dp(5);
+                if (i > start) params.leftMargin = dp(4);
                 row.addView(image, params);
             }
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, dp(size));
-            if (start > 0) rowParams.topMargin = dp(5);
+            if (start > 0) rowParams.topMargin = dp(4);
             gallery.addView(row, rowParams);
         }
         LinearLayout.LayoutParams galleryParams = new LinearLayout.LayoutParams(-1, -2);
-        galleryParams.topMargin = dp(6);
+        galleryParams.topMargin = dp(5);
         parent.addView(gallery, galleryParams);
     }
 
@@ -4793,9 +4800,9 @@ public final class MainActivity extends Activity {
         final int nameColor = this.SECONDARY;
         final int metaColor = this.MUTED;
 
-        TextView value = text(full, 12.5f, this.TEXT);
+        TextView value = text(full, 11.8f, this.TEXT);
         value.setLineSpacing(dp(1), this.session.bodyLineSpacing() / 100.0f);
-        value.setPadding(0, dp(2), 0, dp(3));
+        value.setPadding(0, dp(1), 0, dp(2));
         EmojiRenderer.set(value, full, this.session.darkMode(), span -> {
             span.setSpan(new android.text.style.ForegroundColorSpan(nameColor), 0, nameEnd,
                     android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -4896,7 +4903,7 @@ public final class MainActivity extends Activity {
 
     private TextView commentNameText(String author, boolean reply) {
         TextView name = text(author.isEmpty() ? "匿名用户" : author,
-                reply ? 11.5f : 12.5f, reply ? this.SECONDARY : this.TEXT);
+                reply ? 11.0f : 12.0f, reply ? this.SECONDARY : this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
@@ -5284,20 +5291,19 @@ public final class MainActivity extends Activity {
         prepareReadingCenter();
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(8), dp(8), dp(8), dp(18));
+        page.setPadding(dp(8), dp(5), dp(8), dp(14));
         scroll.addView(page);
+        page.addView(settingsTopCard("阅读中心"));
         List<FeedItem> recent = this.localCache.recentItems();
         if (!recent.isEmpty()) {
             FeedItem item = recent.get(0);
-            int progress = this.localCache.scroll(item.id);
+            addSectionLabel(page, "继续阅读");
             LinearLayout continuePanel = settingsList();
             addSettingEntry(continuePanel, "继续阅读", item.title,
                     R.drawable.il_reading, () -> showDetail(item));
-            if (progress > 0) {
-                addTop(continuePanel, text("已记录上次阅读位置", 10.5f, this.MUTED), 0);
-            }
             page.addView(continuePanel);
         }
+        addSectionLabel(page, "阅读");
         LinearLayout library = settingsList();
         addSettingEntry(library, "阅读时长", readingEntrySummary(),
                 R.drawable.il_reading, this::showReadingStats);
@@ -5307,8 +5313,7 @@ public final class MainActivity extends Activity {
         addSettingEntry(library, "历史记录", this.session.isLoggedIn()
                         ? "与小黑盒账号同步" : "登录后查看小黑盒记录",
                 R.drawable.il_history, this::showCloudHistory);
-        addTop(page, library, page.getChildCount() == 0 ? 0 : 8);
-        addBottomNavSafeSpace(page);
+        page.addView(library);
         this.retainedPages.put("reading_center", scroll);
         this.content.addView(scroll, match());
     }
@@ -5352,19 +5357,23 @@ public final class MainActivity extends Activity {
         }
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(7), dp(7), dp(7), dp(18));
+        page.setPadding(dp(7), dp(5), dp(7), dp(14));
         scroll.addView(page);
         for (LocalCache.OfflineItem entry : items) {
             page.addView(watchLaterCard(entry));
         }
-        addBottomNavSafeSpace(page);
         this.content.addView(scroll, match());
     }
 
     private View watchLaterCard(LocalCache.OfflineItem entry) {
-        LinearLayout block = vertical(this.PANEL);
-        Compat.setBackground(block, round(this.PANEL, 6));
-        block.addView(userEventCard(entry.item));
+        LinearLayout block = vertical(this.themeTokens.surfaceContainerLow);
+        Compat.setBackground(block, UiComponents.card(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
+        View post = userEventCard(entry.item);
+        Compat.setBackground(post, UiComponents.selectableRow(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
+        post.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+        block.addView(post);
         View divider = new View(this);
         divider.setBackgroundColor(this.themeTokens == null
                 ? blend(this.PANEL, this.MUTED, 0.14f) : this.themeTokens.hairline);
