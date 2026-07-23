@@ -76,6 +76,8 @@ public class CheckinSecurityConfigurationTest {
         assertFalse(captcha.contains("Log."));
         assertTrue(captcha.contains("handler.cancel()"));
         assertTrue(captcha.contains("FLAG_SECURE"));
+        assertTrue(captcha.contains("if (dataDirectoryConfigured) return;"));
+        assertTrue(captcha.contains("showRetry(result == null"));
         assertTrue(store.contains("ModernCookieCrypto.encrypt(token)"));
         assertFalse(store.contains("putString(DEVICE_TOKEN, token)"));
     }

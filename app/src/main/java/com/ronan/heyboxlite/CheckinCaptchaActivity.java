@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
@@ -36,14 +37,19 @@ public final class CheckinCaptchaActivity extends Activity {
     static final String EXTRA_TICKET = "checkin_captcha_ticket";
     static final String EXTRA_RANDSTR = "checkin_captcha_randstr";
     static final String EXTRA_ERROR = "checkin_captcha_error";
+    static final String EXTRA_DIAGNOSTIC = "checkin_captcha_diagnostic";
 
     private static final long TIMEOUT_MS = 180_000L;
+    private static final Object WEBVIEW_INIT_LOCK = new Object();
+    private static boolean dataDirectoryConfigured;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable timeout = () -> finishError("安全验证超时，请重试");
+    private final Runnable timeout = () -> finishError("安全验证超时，请重试", "timeout");
     private WebView webView;
     private TextView statusView;
+    private ImageButton retryButton;
     private String verificationUri = "";
+    private String lastDiagnosticCode = "";
     private boolean finished;
 
     static Intent intent(Context context, String verificationUri) {
@@ -58,15 +64,13 @@ public final class CheckinCaptchaActivity extends Activity {
                 | WindowManager.LayoutParams.FLAG_SECURE);
         verificationUri = getIntent().getStringExtra(EXTRA_URI);
         if (!CheckinCaptchaContract.isTrustedPageUri(verificationUri)) {
-            finishError("安全验证地址无效");
+            finishError("安全验证地址无效", "untrusted_uri");
             return;
         }
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                WebView.setDataDirectorySuffix("checkin_captcha");
-            }
+            configureDataDirectory();
         } catch (Throwable error) {
-            finishError("当前系统无法初始化安全验证");
+            finishError("当前系统无法初始化安全验证", "data_directory_init");
             return;
         }
         buildContent();
@@ -89,16 +93,29 @@ public final class CheckinCaptchaActivity extends Activity {
         statusView.setTextSize(16.0f);
         statusView.setGravity(Gravity.CENTER_VERTICAL);
         statusView.setSingleLine(true);
-        statusView.setPadding(0, 0, dp(48), 0);
+        statusView.setPadding(0, 0, dp(92), 0);
         toolbar.addView(statusView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
+
+        retryButton = new ImageButton(this);
+        retryButton.setImageDrawable(
+                Compat.tintedDrawable(this, R.drawable.ic_refresh, Color.WHITE));
+        retryButton.setBackgroundColor(Color.TRANSPARENT);
+        retryButton.setContentDescription("重新加载安全验证");
+        retryButton.setVisibility(View.GONE);
+        retryButton.setOnClickListener(view -> retryCaptcha());
+        FrameLayout.LayoutParams retryParams = new FrameLayout.LayoutParams(dp(44), dp(44));
+        retryParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+        retryParams.rightMargin = dp(44);
+        toolbar.addView(retryButton, retryParams);
 
         ImageButton close = new ImageButton(this);
         close.setImageDrawable(Compat.tintedDrawable(this, R.drawable.ic_close, Color.WHITE));
         close.setBackgroundColor(Color.TRANSPARENT);
         close.setContentDescription("关闭安全验证");
-        close.setOnClickListener(view -> finishError("已取消安全验证"));
+        close.setOnClickListener(view -> finishError("已取消安全验证",
+                lastDiagnosticCode.isEmpty() ? "user_cancelled" : lastDiagnosticCode));
         FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(44), dp(44));
         closeParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
         toolbar.addView(close, closeParams);
@@ -114,7 +131,7 @@ public final class CheckinCaptchaActivity extends Activity {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
         } catch (Throwable error) {
-            finishError("当前系统缺少可用的 WebView 组件");
+            finishError("当前系统缺少可用的 WebView 组件", "webview_unavailable");
         }
     }
 
@@ -156,7 +173,7 @@ public final class CheckinCaptchaActivity extends Activity {
                     CheckinCaptchaContract.Result result =
                             CheckinCaptchaContract.parsePrompt(url, message);
                     if (result == null || !result.successful) {
-                        finishError("安全验证未完成，请重试");
+                        showRetry(result == null ? "invalid_result" : result.diagnosticCode);
                     } else {
                         finishSuccess(result.ticket, result.randstr);
                     }
@@ -166,8 +183,33 @@ public final class CheckinCaptchaActivity extends Activity {
             handler.postDelayed(timeout, TIMEOUT_MS);
             webView.loadUrl(verificationUri);
         } catch (Throwable error) {
-            finishError("当前系统无法打开安全验证");
+            finishError("当前系统无法打开安全验证", "webview_start");
         }
+    }
+
+    private static void configureDataDirectory() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return;
+        synchronized (WEBVIEW_INIT_LOCK) {
+            if (dataDirectoryConfigured) return;
+            WebView.setDataDirectorySuffix("checkin_captcha");
+            dataDirectoryConfigured = true;
+        }
+    }
+
+    private void showRetry(String diagnosticCode) {
+        lastDiagnosticCode = safeDiagnosticCode(diagnosticCode);
+        if (statusView != null) statusView.setText("安全验证未完成，请重试");
+        if (retryButton != null) retryButton.setVisibility(View.VISIBLE);
+    }
+
+    private void retryCaptcha() {
+        if (webView == null || finished) return;
+        lastDiagnosticCode = "";
+        if (retryButton != null) retryButton.setVisibility(View.GONE);
+        if (statusView != null) statusView.setText("正在重新加载安全验证");
+        handler.removeCallbacks(timeout);
+        handler.postDelayed(timeout, TIMEOUT_MS);
+        webView.loadUrl(verificationUri);
     }
 
     private final class CaptchaWebViewClient extends WebViewClient {
@@ -194,7 +236,7 @@ public final class CheckinCaptchaActivity extends Activity {
         public void onReceivedError(WebView view, int errorCode, String description,
                                     String failingUrl) {
             if (verificationUri.equals(failingUrl)) {
-                finishError("安全验证页面加载失败，请检查网络");
+                finishError("安全验证页面加载失败，请检查网络", "page_load");
             }
         }
 
@@ -203,7 +245,7 @@ public final class CheckinCaptchaActivity extends Activity {
         public void onReceivedHttpError(WebView view, WebResourceRequest request,
                                         WebResourceResponse errorResponse) {
             if (request.isForMainFrame()) {
-                finishError("安全验证服务暂时不可用");
+                finishError("安全验证服务暂时不可用", "http_error");
             }
         }
 
@@ -211,14 +253,14 @@ public final class CheckinCaptchaActivity extends Activity {
         public void onReceivedSslError(WebView view, SslErrorHandler handler,
                                        SslError error) {
             handler.cancel();
-            finishError("安全验证证书校验失败");
+            finishError("安全验证证书校验失败", "tls_error");
         }
 
         @TargetApi(Build.VERSION_CODES.O)
         @Override
         public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
             destroyWebView();
-            finishError("安全验证组件已停止，请重试");
+            finishError("安全验证组件已停止，请重试", "renderer_gone");
             return true;
         }
     }
@@ -250,12 +292,24 @@ public final class CheckinCaptchaActivity extends Activity {
         finish();
     }
 
-    private void finishError(String message) {
+    private void finishError(String message, String diagnosticCode) {
         if (finished) return;
         finished = true;
-        setResult(RESULT_CANCELED,
-                new Intent().putExtra(EXTRA_ERROR, message == null ? "安全验证失败" : message));
+        setResult(RESULT_CANCELED, new Intent()
+                .putExtra(EXTRA_ERROR, message == null ? "安全验证失败" : message)
+                .putExtra(EXTRA_DIAGNOSTIC, safeDiagnosticCode(diagnosticCode)));
         finish();
+    }
+
+    private static String safeDiagnosticCode(String value) {
+        if (value == null || !value.matches("[a-z0-9_]{1,48}")) return "unknown";
+        return value;
+    }
+
+    @Override
+    public void onBackPressed() {
+        finishError("已取消安全验证",
+                lastDiagnosticCode.isEmpty() ? "system_back" : lastDiagnosticCode);
     }
 
     @Override

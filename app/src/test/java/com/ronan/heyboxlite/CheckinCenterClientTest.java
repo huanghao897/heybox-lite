@@ -94,6 +94,21 @@ public class CheckinCenterClientTest {
     }
 
     @Test
+    public void captchaPromptPreservesSafeProviderFailureCode() throws Exception {
+        String page = "https://8.138.134.236/checkin/lite/captcha?appid=2076842290";
+        String payload = "{\"ret\":2,\"error_code\":1001}";
+        String prompt = CheckinCaptchaContract.PROMPT_PREFIX
+                + URLEncoder.encode(payload, "UTF-8");
+
+        CheckinCaptchaContract.Result result =
+                CheckinCaptchaContract.parsePrompt(page, prompt);
+
+        assertNotNull(result);
+        assertFalse(result.successful);
+        assertEquals("provider_2_1001", result.diagnosticCode);
+    }
+
+    @Test
     public void signingOperationsWaitForServerSideSigner() {
         assertEquals(25_000, CheckinCenterClient.readTimeoutMillis(
                 CheckinCenterClient.Operation.PAIR_START));

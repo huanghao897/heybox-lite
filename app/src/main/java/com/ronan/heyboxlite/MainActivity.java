@@ -7278,12 +7278,23 @@ public final class MainActivity extends Activity {
             String randstr = data.getStringExtra(CheckinCaptchaActivity.EXTRA_RANDSTR);
             if (CheckinCenterClient.captchaProofValid(ticket, randstr)
                     && ticket != null && !ticket.trim().isEmpty()) {
+                if (this.localCache != null) {
+                    this.localCache.log("captcha result=success");
+                }
                 this.checkinCenterPage.onCaptchaResult(ticket, randstr);
                 return;
             }
         }
         String message = data == null ? "安全验证已取消"
                 : data.getStringExtra(CheckinCaptchaActivity.EXTRA_ERROR);
+        String diagnosticCode = data == null ? "no_result"
+                : data.getStringExtra(CheckinCaptchaActivity.EXTRA_DIAGNOSTIC);
+        if (diagnosticCode == null || !diagnosticCode.matches("[a-z0-9_]{1,48}")) {
+            diagnosticCode = "unknown";
+        }
+        if (this.localCache != null) {
+            this.localCache.log("captcha result=cancelled reason=" + diagnosticCode);
+        }
         this.checkinCenterPage.onCaptchaCancelled(message);
     }
 

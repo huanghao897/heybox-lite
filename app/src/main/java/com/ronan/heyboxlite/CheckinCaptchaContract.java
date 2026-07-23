@@ -12,19 +12,22 @@ final class CheckinCaptchaContract {
         final boolean successful;
         final String ticket;
         final String randstr;
+        final String diagnosticCode;
 
-        private Result(boolean successful, String ticket, String randstr) {
+        private Result(boolean successful, String ticket, String randstr,
+                       String diagnosticCode) {
             this.successful = successful;
             this.ticket = ticket;
             this.randstr = randstr;
+            this.diagnosticCode = diagnosticCode;
         }
 
         static Result success(String ticket, String randstr) {
-            return new Result(true, ticket, randstr);
+            return new Result(true, ticket, randstr, "");
         }
 
-        static Result failure() {
-            return new Result(false, "", "");
+        static Result failure(String diagnosticCode) {
+            return new Result(false, "", "", diagnosticCode);
         }
     }
 
@@ -55,15 +58,21 @@ final class CheckinCaptchaContract {
         try {
             String encoded = message.substring(PROMPT_PREFIX.length());
             JSONObject value = new JSONObject(URLDecoder.decode(encoded, "UTF-8"));
-            if (value.optInt("ret", 1) != 0) return Result.failure();
+            int ret = value.optInt("ret", 1);
+            if (ret != 0) {
+                int errorCode = value.optInt("error_code", -1);
+                return Result.failure(errorCode < 0
+                        ? "provider_" + ret
+                        : "provider_" + ret + "_" + errorCode);
+            }
             String ticket = value.optString("ticket", "").trim();
             String randstr = value.optString("randstr", "").trim();
             return CheckinCenterClient.captchaProofValid(ticket, randstr)
                     && !ticket.isEmpty()
                     ? Result.success(ticket, randstr)
-                    : Result.failure();
+                    : Result.failure("invalid_proof");
         } catch (Exception ignored) {
-            return Result.failure();
+            return Result.failure("invalid_result");
         }
     }
 }
