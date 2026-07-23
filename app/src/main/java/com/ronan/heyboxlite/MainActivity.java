@@ -97,7 +97,8 @@ public final class MainActivity extends Activity {
     private WriteTokenProvider writeTokenProvider;
     private WriteActionClient writeActions;
     private QrLoginController qrLoginController;
-    private SignInManager signInManager;
+    private CheckinCenterCoordinator checkinCenterCoordinator;
+    private CheckinCenterPage checkinCenterPage;
     private ReadingTimeTracker readingTimeTracker;
     private LinearLayout shellRoot;
     private LinearLayout shellBar;
@@ -142,7 +143,6 @@ public final class MainActivity extends Activity {
     private String pendingDetailReturn = "";
     private int detailRequestToken;
     private int savedRequestSerial;
-    private long lastManualSignClickAt;
     private long lastExitBackAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final PageTransitionController pageTransitions = new PageTransitionController();
@@ -226,6 +226,14 @@ public final class MainActivity extends Activity {
             return;
         }
         this.session = new SessionStore(this);
+        this.checkinCenterCoordinator = new CheckinCenterCoordinator(this, this.session);
+        this.checkinCenterCoordinator.setAuthorizationListener(paired -> {
+            this.cachedProfileContainer = null;
+            if (!paired && this.checkinCenterPage != null
+                    && "checkin_center".equals(this.screen)) {
+                this.checkinCenterPage.refresh();
+            }
+        });
         this.localCache = new LocalCache(this);
         this.readingTimeTracker = new ReadingTimeTracker(this);
         ImageLoader.init(this);
@@ -246,13 +254,6 @@ public final class MainActivity extends Activity {
                     if (this.localCache != null) this.localCache.log(message);
                 });
         this.qrLoginController = new QrLoginController(this.api, this.handler);
-        if (SIGN_IN_ENABLED) {
-            this.signInManager = new SignInManager(this.session, this.api, this.writeTokenProvider, message2 -> {
-                if (this.localCache != null) {
-                    this.localCache.log(message2);
-                }
-            });
-        }
         buildShell();
         if (this.session.isLoggedIn()) {
             EmojiStore.load(this.api, () -> {
@@ -275,6 +276,7 @@ public final class MainActivity extends Activity {
         if (!this.accountBlockedScreen) {
             this.handler.postDelayed(this::checkAnnouncementOnLaunch, 950L);
         }
+        this.checkinCenterCoordinator.syncIfNeeded();
     }
 
     private void applyAccessStatus(AccessStatus status) {
@@ -371,17 +373,6 @@ public final class MainActivity extends Activity {
             if (target != null) return target;
         }
         return null;
-    }
-
-    private void autoSignInOnLaunch() {
-        if (!SIGN_IN_ENABLED || isFinishing() || this.signInManager == null || !this.session.isLoggedIn()) {
-            return;
-        }
-        this.signInManager.autoSignInIfNeeded(result -> {
-            if (!isFinishing() && "profile".equals(this.screen)) {
-                showProfile();
-            }
-        });
     }
 
     private void checkUpdateOnLaunch() {
@@ -627,6 +618,10 @@ public final class MainActivity extends Activity {
     }
 
     private void buildShell() {
+        if (this.checkinCenterPage != null) {
+            this.checkinCenterPage.close();
+            this.checkinCenterPage = null;
+        }
         LinearLayout linearLayoutVertical = vertical(this.BG);
         this.shellRoot = linearLayoutVertical;
         applyScreenInsets(linearLayoutVertical);
@@ -871,7 +866,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean canHeaderBack() {
-        return "detail".equals(this.screen) || "user_space".equals(this.screen) || "search".equals(this.screen) || "saved".equals(this.screen) || "reading_center".equals(this.screen) || "reading_stats".equals(this.screen) || "announcement_board".equals(this.screen) || "settings_home".equals(this.screen) || "display_preview".equals(this.screen) || "display_settings".equals(this.screen) || "startup_settings".equals(this.screen) || "app_settings".equals(this.screen) || "about".equals(this.screen);
+        return "detail".equals(this.screen) || "user_space".equals(this.screen) || "search".equals(this.screen) || "saved".equals(this.screen) || "reading_center".equals(this.screen) || "reading_stats".equals(this.screen) || "checkin_center".equals(this.screen) || "announcement_board".equals(this.screen) || "settings_home".equals(this.screen) || "display_preview".equals(this.screen) || "display_settings".equals(this.screen) || "startup_settings".equals(this.screen) || "app_settings".equals(this.screen) || "about".equals(this.screen);
     }
 
     private int topLevelIndex() {
@@ -926,6 +921,7 @@ public final class MainActivity extends Activity {
         if ("saved".equals(this.screen)) return this.savedReturnScreen;
         if ("reading_stats".equals(this.screen)) return "reading_center";
         if ("reading_center".equals(this.screen)) return "profile";
+        if ("checkin_center".equals(this.screen)) return "profile";
         if ("announcement_board".equals(this.screen)) return "about";
         if ("display_preview".equals(this.screen)) return "display_settings";
         if ("display_settings".equals(this.screen) || "startup_settings".equals(this.screen)
@@ -1046,6 +1042,9 @@ public final class MainActivity extends Activity {
     }
 
     private void configureAdoptedShellScreen(String key) {
+        if ("checkin_center".equals(this.screen) && this.checkinCenterPage != null) {
+            this.checkinCenterPage.onPause();
+        }
         if ("feed".equals(key)) {
             activate("feed");
             this.title.setText("社区");
@@ -4953,6 +4952,9 @@ public final class MainActivity extends Activity {
     }
 
     private void showProfile() {
+        if ("checkin_center".equals(this.screen) && this.checkinCenterPage != null) {
+            this.checkinCenterPage.onPause();
+        }
         // 底部导航从社区切到“我的”：双页整体向左平移
         if ("feed".equals(this.screen)) {
             this.pendingLateralPush = true;
@@ -5105,10 +5107,6 @@ public final class MainActivity extends Activity {
         transitionTo(scrollView);
     }
 
-    private String signInButtonText(SignInManager.Result state) {
-        return (state == null || !state.loggedIn) ? "去登录" : state.inFlight ? "签到" : state.success ? "重新检查" : "签到";
-    }
-
     private void showSettingsHome() {
         stopQrPolling();
         this.screen = "settings_home";
@@ -5213,18 +5211,66 @@ public final class MainActivity extends Activity {
             }
             showFavorites();
         });
-        addSettingEntry(panel, "每日签到", SIGN_IN_ENABLED ? "每日签到领取盒币" : "暂时关闭",
-                R.drawable.il_calendar, () -> {
-                    if (SIGN_IN_ENABLED) {
-                        showSignInDialog();
-                    } else {
-                        toast("签到暂时关闭");
-                    }
-                });
+        addSettingEntry(panel, "小黑盒签到", checkinCenterSummary(),
+                R.drawable.il_calendar, this::showCheckinCenter);
         addSettingEntry(panel, "设置", "主题、缓存与关于", R.drawable.il_settings,
                 this::showSettingsHome);
         addTop(page, panel, 8);
         updateReadingTimeEntry();
+    }
+
+    private String checkinCenterSummary() {
+        if (this.checkinCenterCoordinator == null
+                || !this.checkinCenterCoordinator.supported()) {
+            return "需要 Android 7.0 或更高版本";
+        }
+        return this.checkinCenterCoordinator.paired()
+                ? "已连接自动签到服务" : "连接后由服务器每日签到";
+    }
+
+    private void showCheckinCenter() {
+        stopQrPolling();
+        this.screen = "checkin_center";
+        setBottomNavVisible(false);
+        this.leading.setVisibility(0);
+        this.leading.setOnClickListener(view -> {
+            this.pendingBackTransition = true;
+            showProfile();
+        });
+        this.title.setText("小黑盒签到");
+        this.action.setVisibility(0);
+        setIcon(this.action, R.drawable.ic_refresh, this.TEXT, 19);
+        this.action.setOnClickListener(view -> {
+            if (this.checkinCenterPage != null) this.checkinCenterPage.refresh();
+        });
+        if (this.checkinCenterPage == null) {
+            this.checkinCenterPage = new CheckinCenterPage(this, this.session,
+                    this.checkinCenterCoordinator, this.themeTokens,
+                    new CheckinCenterPage.Host() {
+                        @Override
+                        public void openLogin() {
+                            MainActivity.this.showLogin();
+                        }
+
+                        @Override
+                        public void confirmRevoke(Runnable confirmed) {
+                            MainActivity.this.showLiteDialog("撤销此设备",
+                                    "撤销后，这台设备需要重新连接才能查看或执行小黑盒签到。服务器中的定时任务不会自动删除。",
+                                    "撤销", confirmed, "取消", null, null, null);
+                        }
+
+                        @Override
+                        public void showMessage(String message) {
+                            MainActivity.this.toast(message);
+                        }
+                    });
+        } else {
+            this.checkinCenterPage.refresh();
+        }
+        this.checkinCenterPage.onResume();
+        View page = this.checkinCenterPage.view();
+        this.retainedPages.put("checkin_center", page);
+        transitionTo(page);
     }
 
     private void showReadingCenter() {
@@ -5332,69 +5378,6 @@ public final class MainActivity extends Activity {
         params.bottomMargin = dp(7);
         block.setLayoutParams(params);
         return block;
-    }
-
-    private void showSignInDialog() {
-        if (!SIGN_IN_ENABLED) {
-            toast("签到暂时关闭");
-            return;
-        }
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(1);
-        panel.setPadding(dp(16), dp(14), dp(16), dp(12));
-        Compat.setBackground(panel, round(this.PANEL, 14));
-        TextView heading = text("每日签到", 16.0f, this.TEXT);
-        heading.setTypeface(appRegularTypeface(), 1);
-        panel.addView(heading);
-        SignInManager.Result state = this.signInManager == null
-                ? SignInManager.Result.loggedOut() : this.signInManager.currentState();
-        TextView status = text(state.message, 13.0f, state.success ? this.SECONDARY : this.MUTED);
-        status.setTypeface(Typeface.create("sans-serif-medium", 0));
-        addTop(panel, status, 6);
-        TextView summary = text(state.summary, 11.0f, this.MUTED);
-        summary.setLineSpacing(0.0f, 1.18f);
-        addTop(panel, summary, 4);
-
-        ScrollView dialogScroll = new ScrollView(this);
-        dialogScroll.addView(panel);
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(dialogScroll).create();
-
-        Button action = button(signInButtonText(state), R.drawable.ic_refresh);
-        action.setEnabled(!state.inFlight);
-        action.setOnClickListener(view -> {
-            if (!this.session.isLoggedIn()) {
-                dialog.dismiss();
-                showLogin();
-                return;
-            }
-            long now = System.currentTimeMillis();
-            if (now - this.lastManualSignClickAt < 1200) {
-                return;
-            }
-            this.lastManualSignClickAt = now;
-            status.setText("正在签到");
-            summary.setText("正在向小黑盒提交请求");
-            action.setEnabled(false);
-            this.signInManager.signIn(result -> {
-                if (isFinishing()) {
-                    return;
-                }
-                status.setText(result.message);
-                summary.setText(result.summary);
-                action.setEnabled(true);
-                action.setText(signInButtonText(result));
-                this.cachedProfileContainer = null;
-            });
-        });
-        addTop(panel, action, 10);
-
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0));
-            int width = getResources().getDisplayMetrics().widthPixels;
-            dialog.getWindow().setLayout(
-                    Math.max(dp(220), Math.min(width - dp(24), dp(360))), -2);
-        }
     }
 
     private void showFavorites() {
@@ -7066,6 +7049,14 @@ public final class MainActivity extends Activity {
             showReadingCenter();
             return;
         }
+        if ("checkin_center".equals(this.screen)) {
+            if (this.checkinCenterPage != null && this.checkinCenterPage.handleBack()) {
+                this.pendingBackTransition = false;
+                return;
+            }
+            showProfile();
+            return;
+        }
         if (!"saved".equals(this.screen)) {
             if (!"announcement_board".equals(this.screen)) {
                 if (!"display_preview".equals(this.screen)) {
@@ -7243,6 +7234,10 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         this.activityResumed = true;
+        if (this.checkinCenterPage != null && "checkin_center".equals(this.screen)) {
+            this.checkinCenterPage.onResume();
+        }
+        if (this.checkinCenterCoordinator != null) this.checkinCenterCoordinator.syncIfNeeded();
         if ("login".equals(this.screen) && this.qrLoginController != null) {
             this.qrLoginController.resume();
         }
@@ -7263,6 +7258,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onPause() {
         this.activityResumed = false;
+        if (this.checkinCenterPage != null) this.checkinCenterPage.onPause();
         if (this.qrLoginController != null) this.qrLoginController.pause();
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
         this.handler.removeCallbacks(this.presenceTick);
@@ -7283,6 +7279,14 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
+        if (this.checkinCenterPage != null) {
+            this.checkinCenterPage.close();
+            this.checkinCenterPage = null;
+        }
+        if (this.checkinCenterCoordinator != null) {
+            this.checkinCenterCoordinator.close();
+            this.checkinCenterCoordinator = null;
+        }
         saveCurrentDetailProgress();
         stopQrPolling();
         this.pageTransitions.cancelNow();

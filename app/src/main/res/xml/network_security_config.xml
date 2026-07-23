@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Certificate pinning is intentionally disabled until a maintained backup pin exists. -->
-    <base-config cleartextTrafficPermitted="false" />
-    <!-- Temporary self-hosted update server. Remove this after binding a HTTPS domain. -->
-    <domain-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="false">8.138.134.236</domain>
-        <domain includeSubdomains="false">103.236.54.97</domain>
+        <trust-anchors>
+            <certificates src="@raw/checkin_server_ca" />
+        </trust-anchors>
     </domain-config>
 </network-security-config>

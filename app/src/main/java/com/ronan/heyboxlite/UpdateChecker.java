@@ -244,15 +244,19 @@ final class UpdateChecker {
             URI uri = new URI(clean);
             String scheme = uri.getScheme();
             String host = uri.getHost();
-            if (host == null) {
+            if (host == null || uri.getUserInfo() != null) {
                 throw new IllegalArgumentException("untrusted update url");
             }
             String normalizedHost = host.toLowerCase(Locale.US);
-            if ("https".equalsIgnoreCase(scheme) && isAllowedUpdateHost(normalizedHost)) {
+            int port = uri.getPort();
+            if ("https".equalsIgnoreCase(scheme) && isAllowedUpdateHost(normalizedHost)
+                    && (port == -1 || port == 443)) {
                 return clean;
             }
-            if ("http".equalsIgnoreCase(scheme) && isAllowedCleartextUpdateHost(normalizedHost)) {
-                return clean;
+            if ("http".equalsIgnoreCase(scheme) && isLegacyServerHost(normalizedHost)
+                    && (port == -1 || port == 80)) {
+                return new URI("https", null, host, -1, uri.getPath(), uri.getQuery(),
+                        uri.getFragment()).toASCIIString();
             }
         } catch (IllegalArgumentException error) {
             throw error;
@@ -272,8 +276,7 @@ final class UpdateChecker {
                 || "103.236.54.97".equals(host);
     }
 
-    private static boolean isAllowedCleartextUpdateHost(String host) {
-        return "8.138.134.236".equals(host)
-                || "103.236.54.97".equals(host);
+    private static boolean isLegacyServerHost(String host) {
+        return "8.138.134.236".equals(host);
     }
 }
