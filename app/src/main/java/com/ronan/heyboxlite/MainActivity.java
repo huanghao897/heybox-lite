@@ -5960,8 +5960,8 @@ public final class MainActivity extends Activity {
         blockKeywords.setGravity(48);
         Compat.tint(blockKeywords, this.themeTokens.accent);
         blockKeywords.setPadding(dp(8), dp(6), dp(8), dp(6));
-        Compat.setBackground(blockKeywords, roundStroke(this.themeTokens.panelElevated, 8,
-                this.themeTokens.hairline, 1));
+        Compat.setBackground(blockKeywords, UiComponents.outlinedTextField(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
         addTop(filter, blockKeywords, 5);
         Button saveFilter = button("保存内容过滤", R.drawable.ic_save);
         saveFilter.setOnClickListener(view -> {

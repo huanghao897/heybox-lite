@@ -1,6 +1,7 @@
 package com.ronan.heyboxlite;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.view.View;
@@ -48,6 +49,12 @@ final class UiComponents {
 
     static GradientDrawable ghostButton(Context context, ThemeTokens tokens, float scale) {
         GradientDrawable drawable = round(context, tokens.panelElevated, 12, scale);
+        drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.hairline);
+        return drawable;
+    }
+
+    static GradientDrawable outlinedTextField(Context context, ThemeTokens tokens, float scale) {
+        GradientDrawable drawable = round(context, Color.TRANSPARENT, 8, scale);
         drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.hairline);
         return drawable;
     }
