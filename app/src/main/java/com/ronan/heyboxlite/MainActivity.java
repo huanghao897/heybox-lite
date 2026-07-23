@@ -76,6 +76,7 @@ public final class MainActivity extends Activity {
     private static final int REPLY_PREVIEW_COUNT = 2;
     private static final int REPLY_PAGE_SIZE = 5;
     private static final int AXIS_ROTARY_SCROLL = 26;
+    private static final int REQUEST_CHECKIN_CAPTCHA = 9134;
     private static final String TRANSITION_OVERLAY_TAG = "shell_transition_overlay";
     private static final String WELCOME_ANNOUNCEMENT_ID = "welcome-heybox-lite-1.77";
     private static final boolean SIGN_IN_ENABLED = false;
@@ -5260,6 +5261,21 @@ public final class MainActivity extends Activity {
                         }
 
                         @Override
+                        public void openCaptcha(String verificationUri) {
+                            try {
+                                MainActivity.this.startActivityForResult(
+                                        CheckinCaptchaActivity.intent(
+                                                MainActivity.this, verificationUri),
+                                        REQUEST_CHECKIN_CAPTCHA);
+                            } catch (Throwable error) {
+                                if (MainActivity.this.checkinCenterPage != null) {
+                                    MainActivity.this.checkinCenterPage.onCaptchaCancelled(
+                                            "当前系统无法打开安全验证");
+                                }
+                            }
+                        }
+
+                        @Override
                         public void confirmRevoke(Runnable confirmed) {
                             MainActivity.this.showLiteDialog("撤销此设备",
                                     "撤销后，这台设备需要重新连接才能查看或执行小黑盒签到。服务器中的定时任务不会自动删除。",
@@ -7254,13 +7270,35 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_CHECKIN_CAPTCHA || this.checkinCenterPage == null) return;
+        if (resultCode == RESULT_OK && data != null) {
+            String ticket = data.getStringExtra(CheckinCaptchaActivity.EXTRA_TICKET);
+            String randstr = data.getStringExtra(CheckinCaptchaActivity.EXTRA_RANDSTR);
+            if (CheckinCenterClient.captchaProofValid(ticket, randstr)
+                    && ticket != null && !ticket.trim().isEmpty()) {
+                this.checkinCenterPage.onCaptchaResult(ticket, randstr);
+                return;
+            }
+        }
+        String message = data == null ? "安全验证已取消"
+                : data.getStringExtra(CheckinCaptchaActivity.EXTRA_ERROR);
+        this.checkinCenterPage.onCaptchaCancelled(message);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         this.activityResumed = true;
         if (this.checkinCenterPage != null && "checkin_center".equals(this.screen)) {
             this.checkinCenterPage.onResume();
         }
-        if (this.checkinCenterCoordinator != null) this.checkinCenterCoordinator.syncIfNeeded();
+        if (this.checkinCenterCoordinator != null
+                && (this.checkinCenterPage == null
+                || !this.checkinCenterPage.mobileLoginActive())) {
+            this.checkinCenterCoordinator.syncIfNeeded();
+        }
         if ("login".equals(this.screen) && this.qrLoginController != null) {
             this.qrLoginController.resume();
         }

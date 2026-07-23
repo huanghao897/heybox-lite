@@ -22,8 +22,15 @@ import java.util.Locale;
 final class CheckinCenterPage {
     interface Host {
         void openLogin();
+        void openCaptcha(String verificationUri);
         void confirmRevoke(Runnable confirmed);
         void showMessage(String message);
+    }
+
+    private enum CaptchaAction {
+        NONE,
+        SEND_SMS,
+        SUBMIT_SMS
     }
 
     private enum State {
@@ -68,6 +75,9 @@ final class CheckinCenterPage {
     private long smsRetryAtElapsed;
     private long smsExpiresAtElapsed;
     private boolean smsRequestInFlight;
+    private CaptchaAction captchaAction = CaptchaAction.NONE;
+    private String captchaPhone = "";
+    private String captchaCode = "";
     private boolean closed;
 
     CheckinCenterPage(Activity activity, SessionStore session,
@@ -87,6 +97,10 @@ final class CheckinCenterPage {
 
     View view() {
         return root;
+    }
+
+    boolean mobileLoginActive() {
+        return !closed && state == State.MOBILE_LOGIN;
     }
 
     void refresh() {
@@ -313,6 +327,7 @@ final class CheckinCenterPage {
         smsRetryAtElapsed = 0L;
         smsExpiresAtElapsed = 0L;
         smsRequestInFlight = false;
+        clearCaptchaRequest();
         errorMessage = "";
         state = State.MOBILE_LOGIN;
         render();
@@ -321,14 +336,21 @@ final class CheckinCenterPage {
     private void sendSmsCode() {
         if (smsRequestInFlight || smsPhoneInput == null) return;
         String phone = smsPhoneInput.getText().toString().trim();
+        requestSmsCode(phone, "", "", false);
+    }
+
+    private void requestSmsCode(String phone, String captchaTicket, String captchaRandstr,
+                                boolean captchaRetry) {
         smsRequestInFlight = true;
         setMobileLoginControls(false);
-        setMobileLoginStatus("正在发送验证码", tokens.muted);
-        coordinator.sendSmsCode(phone,
+        setMobileLoginStatus(captchaRetry ? "安全验证通过，正在发送验证码" : "正在发送验证码",
+                tokens.muted);
+        coordinator.sendSmsCode(phone, captchaTicket, captchaRandstr,
                 new CheckinCenterClient.Callback<CheckinCenterClient.SmsSession>() {
                     @Override
                     public void onSuccess(CheckinCenterClient.SmsSession value) {
                         if (closed || state != State.MOBILE_LOGIN) return;
+                        clearCaptchaRequest();
                         smsRequestInFlight = false;
                         smsSessionId = value.sessionId;
                         long now = SystemClock.elapsedRealtime();
@@ -346,9 +368,16 @@ final class CheckinCenterPage {
                     @Override
                     public void onError(CheckinCenterClient.ApiError error) {
                         if (closed || state != State.MOBILE_LOGIN) return;
+                        if (!captchaRetry && beginCaptcha(
+                                CaptchaAction.SEND_SMS, phone, "", error)) {
+                            return;
+                        }
+                        clearCaptchaRequest();
                         smsRequestInFlight = false;
                         setMobileLoginControls(true);
-                        setMobileLoginStatus(error.getMessage(), tokens.text);
+                        setMobileLoginStatus(captchaRetry && error.captchaRequired()
+                                ? "安全验证未通过，请重新发送验证码"
+                                : error.getMessage(), tokens.text);
                     }
                 });
     }
@@ -359,14 +388,21 @@ final class CheckinCenterPage {
             resetSmsSession("验证码已过期，请重新发送");
             return;
         }
+        requestSubmitSmsCode(smsCodeInput.getText().toString().trim(), "", "", false);
+    }
+
+    private void requestSubmitSmsCode(String code, String captchaTicket, String captchaRandstr,
+                                      boolean captchaRetry) {
         smsRequestInFlight = true;
         setMobileLoginControls(false);
-        setMobileLoginStatus("正在验证并连接账号", tokens.muted);
-        coordinator.submitSmsCode(smsSessionId, smsCodeInput.getText().toString(),
+        setMobileLoginStatus(captchaRetry ? "安全验证通过，正在继续登录" : "正在验证并连接账号",
+                tokens.muted);
+        coordinator.submitSmsCode(smsSessionId, code, captchaTicket, captchaRandstr,
                 new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
                     @Override
                     public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
                         if (closed || state != State.MOBILE_LOGIN) return;
+                        clearCaptchaRequest();
                         smsRequestInFlight = false;
                         smsSessionId = "";
                         host.showMessage("手机号登录成功");
@@ -376,13 +412,60 @@ final class CheckinCenterPage {
                     @Override
                     public void onError(CheckinCenterClient.ApiError error) {
                         if (closed || state != State.MOBILE_LOGIN) return;
+                        if (!captchaRetry && beginCaptcha(
+                                CaptchaAction.SUBMIT_SMS, "", code, error)) {
+                            return;
+                        }
+                        clearCaptchaRequest();
                         smsRequestInFlight = false;
                         smsCodeInput.setEnabled(true);
                         smsSubmitButton.setEnabled(true);
                         updateSmsCountdown();
-                        setMobileLoginStatus(error.getMessage(), tokens.text);
+                        setMobileLoginStatus(captchaRetry && error.captchaRequired()
+                                ? "安全验证未通过，请重新提交验证码"
+                                : error.getMessage(), tokens.text);
                     }
                 });
+    }
+
+    private boolean beginCaptcha(CaptchaAction action, String phone, String code,
+                                 CheckinCenterClient.ApiError error) {
+        if (!error.captchaRequired()) return false;
+        captchaAction = action;
+        captchaPhone = phone == null ? "" : phone;
+        captchaCode = code == null ? "" : code;
+        setMobileLoginStatus("请完成小黑盒安全验证", tokens.accent);
+        host.openCaptcha(error.captchaUri);
+        return true;
+    }
+
+    void onCaptchaResult(String ticket, String randstr) {
+        if (closed || state != State.MOBILE_LOGIN || captchaAction == CaptchaAction.NONE) return;
+        CaptchaAction action = captchaAction;
+        String phone = captchaPhone;
+        String code = captchaCode;
+        clearCaptchaRequest();
+        if (action == CaptchaAction.SEND_SMS) {
+            requestSmsCode(phone, ticket, randstr, true);
+        } else {
+            requestSubmitSmsCode(code, ticket, randstr, true);
+        }
+    }
+
+    void onCaptchaCancelled(String message) {
+        if (closed || state != State.MOBILE_LOGIN || captchaAction == CaptchaAction.NONE) return;
+        clearCaptchaRequest();
+        smsRequestInFlight = false;
+        setMobileLoginControls(true);
+        updateSmsCountdown();
+        setMobileLoginStatus(message == null || message.trim().isEmpty()
+                ? "安全验证已取消" : message, tokens.text);
+    }
+
+    private void clearCaptchaRequest() {
+        captchaAction = CaptchaAction.NONE;
+        captchaPhone = "";
+        captchaCode = "";
     }
 
     private void finishMobileLogin() {
@@ -391,6 +474,7 @@ final class CheckinCenterPage {
         smsSessionId = "";
         smsRetryAtElapsed = 0L;
         smsExpiresAtElapsed = 0L;
+        clearCaptchaRequest();
         clearSmsViews();
         state = State.SYNCING;
         errorMessage = "";
@@ -785,6 +869,7 @@ final class CheckinCenterPage {
         smsRetryAtElapsed = 0L;
         smsExpiresAtElapsed = 0L;
         smsRequestInFlight = false;
+        clearCaptchaRequest();
         if (smsCodeInput != null) smsCodeInput.setText("");
         setMobileLoginControls(true);
         if (smsSendButton != null) smsSendButton.setText("发送验证码");
@@ -964,6 +1049,7 @@ final class CheckinCenterPage {
     public void close() {
         closed = true;
         pairing = null;
+        clearCaptchaRequest();
         handler.removeCallbacksAndMessages(null);
         clearPairingViews();
         clearSmsViews();

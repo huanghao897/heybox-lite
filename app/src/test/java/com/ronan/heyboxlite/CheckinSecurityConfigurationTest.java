@@ -62,6 +62,7 @@ public class CheckinSecurityConfigurationTest {
         String coordinator = readSource("CheckinCenterCoordinator.java");
         String page = readSource("CheckinCenterPage.java");
         String store = readSource("CheckinCenterStore.java");
+        String captcha = readSource("CheckinCaptchaActivity.java");
 
         assertFalse(client.contains("http://"));
         assertFalse(client.contains("TrustManager"));
@@ -71,6 +72,10 @@ public class CheckinSecurityConfigurationTest {
         assertFalse(coordinator.contains("Log."));
         assertFalse(page.contains("android.webkit"));
         assertFalse(page.contains("WebView"));
+        assertFalse(captcha.contains("handler.proceed()"));
+        assertFalse(captcha.contains("Log."));
+        assertTrue(captcha.contains("handler.cancel()"));
+        assertTrue(captcha.contains("FLAG_SECURE"));
         assertTrue(store.contains("ModernCookieCrypto.encrypt(token)"));
         assertFalse(store.contains("putString(DEVICE_TOKEN, token)"));
     }

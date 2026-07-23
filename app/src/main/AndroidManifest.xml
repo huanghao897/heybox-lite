@@ -40,6 +40,12 @@
             android:exported="false"
             android:theme="@style/ImageViewerTheme" />
         <activity
+            android:name=".CheckinCaptchaActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:process=":captcha"
+            android:theme="@style/AppTheme" />
+        <activity
             android:name=".CrashRecoveryActivity"
             android:excludeFromRecents="true"
             android:exported="false"

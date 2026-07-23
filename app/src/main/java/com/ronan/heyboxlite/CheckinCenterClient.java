@@ -68,6 +68,7 @@ final class CheckinCenterClient {
         final int statusCode;
         final ErrorKind kind;
         final String diagnosticCode;
+        final String captchaUri;
 
         ApiError(Operation operation, int statusCode, String message) {
             this(operation, statusCode, message,
@@ -80,11 +81,17 @@ final class CheckinCenterClient {
 
         ApiError(Operation operation, int statusCode, String message, ErrorKind kind,
                  String diagnosticCode) {
+            this(operation, statusCode, message, kind, diagnosticCode, "");
+        }
+
+        ApiError(Operation operation, int statusCode, String message, ErrorKind kind,
+                 String diagnosticCode, String captchaUri) {
             super(message);
             this.operation = operation;
             this.statusCode = statusCode;
             this.kind = kind;
             this.diagnosticCode = diagnosticCode;
+            this.captchaUri = captchaUri;
         }
 
         boolean authorizationInvalid() {
@@ -93,6 +100,10 @@ final class CheckinCenterClient {
 
         boolean retryable() {
             return statusCode == 429 || statusCode == 502 || statusCode == 503;
+        }
+
+        boolean captchaRequired() {
+            return "captcha_required".equals(diagnosticCode) && !captchaUri.isEmpty();
         }
     }
 
@@ -330,6 +341,11 @@ final class CheckinCenterClient {
     }
 
     void sendSmsCode(String deviceToken, String phone, Callback<SmsSession> callback) {
+        sendSmsCode(deviceToken, phone, "", "", callback);
+    }
+
+    void sendSmsCode(String deviceToken, String phone, String captchaTicket,
+                     String captchaRandstr, Callback<SmsSession> callback) {
         final String token;
         try {
             token = requirePrefix(deviceToken, "ccdevice1_", Operation.SMS_SEND);
@@ -343,9 +359,17 @@ final class CheckinCenterClient {
                     "请输入正确的手机号"));
             return;
         }
+        String ticket = captchaTicket == null ? "" : captchaTicket.trim();
+        String randstr = captchaRandstr == null ? "" : captchaRandstr.trim();
+        if (!captchaProofValid(ticket, randstr)) {
+            deliverError(callback, new ApiError(Operation.SMS_SEND, 422,
+                    "安全验证结果无效，请重新验证"));
+            return;
+        }
         JSONObject body = new JSONObject();
         try {
             body.put("phone", normalizedPhone);
+            putCaptchaProof(body, ticket, randstr);
         } catch (JSONException impossible) {
             deliverError(callback, protocolError(Operation.SMS_SEND));
             return;
@@ -356,6 +380,12 @@ final class CheckinCenterClient {
     }
 
     void submitSmsCode(String deviceToken, String sessionId, String code,
+                       Callback<ConnectedAccount> callback) {
+        submitSmsCode(deviceToken, sessionId, code, "", "", callback);
+    }
+
+    void submitSmsCode(String deviceToken, String sessionId, String code,
+                       String captchaTicket, String captchaRandstr,
                        Callback<ConnectedAccount> callback) {
         final String token;
         try {
@@ -372,10 +402,18 @@ final class CheckinCenterClient {
                     "请输入正确的短信验证码"));
             return;
         }
+        String ticket = captchaTicket == null ? "" : captchaTicket.trim();
+        String randstr = captchaRandstr == null ? "" : captchaRandstr.trim();
+        if (!captchaProofValid(ticket, randstr)) {
+            deliverError(callback, new ApiError(Operation.SMS_SUBMIT, 422,
+                    "安全验证结果无效，请重新验证"));
+            return;
+        }
         JSONObject body = new JSONObject();
         try {
             body.put("session_id", normalizedSession);
             body.put("code", normalizedCode);
+            putCaptchaProof(body, ticket, randstr);
         } catch (JSONException impossible) {
             deliverError(callback, protocolError(Operation.SMS_SUBMIT));
             return;
@@ -682,6 +720,7 @@ final class CheckinCenterClient {
 
     static ApiError statusError(Operation operation, int status, String response) {
         String diagnosticCode = serverErrorCode(response);
+        String captchaUri = "";
         String message;
         switch (status) {
             case 401:
@@ -702,7 +741,10 @@ final class CheckinCenterClient {
             case 409:
                 if ((operation == Operation.SMS_SEND || operation == Operation.SMS_SUBMIT)
                         && "captcha_required".equals(diagnosticCode)) {
-                    message = "小黑盒要求额外安全验证，当前原生登录无法继续，请稍后重试";
+                    captchaUri = serverCaptchaUri(response);
+                    message = captchaUri.isEmpty()
+                            ? "小黑盒要求安全验证，但验证页面不可用"
+                            : "请完成小黑盒安全验证";
                 } else if (operation == Operation.CREDENTIAL_SYNC) {
                     message = "签到服务已绑定其他小黑盒账号，请先在网页解除旧绑定";
                 } else {
@@ -744,7 +786,41 @@ final class CheckinCenterClient {
                 message = "签到服务请求失败";
                 break;
         }
-        return new ApiError(operation, status, message, ErrorKind.HTTP, diagnosticCode);
+        return new ApiError(operation, status, message, ErrorKind.HTTP,
+                diagnosticCode, captchaUri);
+    }
+
+    static String serverCaptchaUri(String response) {
+        try {
+            String uri = new JSONObject(response).optString("verification_uri", "").trim();
+            return CheckinCaptchaContract.isTrustedPageUri(uri) ? uri : "";
+        } catch (JSONException ignored) {
+            return "";
+        }
+    }
+
+    static boolean captchaProofValid(String ticket, String randstr) {
+        String cleanTicket = ticket == null ? "" : ticket.trim();
+        String cleanRandstr = randstr == null ? "" : randstr.trim();
+        if (cleanTicket.isEmpty() && cleanRandstr.isEmpty()) return true;
+        return !cleanTicket.isEmpty() && !cleanRandstr.isEmpty()
+                && cleanTicket.length() <= 4096 && cleanRandstr.length() <= 512
+                && !hasControl(cleanTicket) && !hasControl(cleanRandstr);
+    }
+
+    private static void putCaptchaProof(JSONObject body, String ticket, String randstr)
+            throws JSONException {
+        if (ticket.isEmpty()) return;
+        body.put("captcha_ticket", ticket);
+        body.put("captcha_randstr", randstr);
+    }
+
+    private static boolean hasControl(String value) {
+        for (int index = 0; index < value.length(); index++) {
+            char item = value.charAt(index);
+            if (item < 0x20 || item == 0x7f) return true;
+        }
+        return false;
     }
 
     static String serverErrorCode(String response) {

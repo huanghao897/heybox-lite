@@ -149,22 +149,34 @@ final class CheckinCenterCoordinator {
 
     void sendSmsCode(String phone,
                      CheckinCenterClient.Callback<CheckinCenterClient.SmsSession> callback) {
+        sendSmsCode(phone, "", "", callback);
+    }
+
+    void sendSmsCode(String phone, String captchaTicket, String captchaRandstr,
+                     CheckinCenterClient.Callback<CheckinCenterClient.SmsSession> callback) {
         String token = store.deviceToken();
         if (token.isEmpty()) {
             fail(callback, CheckinCenterClient.Operation.SMS_SEND, "尚未连接签到服务");
             return;
         }
-        client.sendSmsCode(token, phone, authorizationAware(callback));
+        client.sendSmsCode(token, phone, captchaTicket, captchaRandstr,
+                authorizationAware(callback));
     }
 
     void submitSmsCode(String sessionId, String code,
+                       CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount> callback) {
+        submitSmsCode(sessionId, code, "", "", callback);
+    }
+
+    void submitSmsCode(String sessionId, String code, String captchaTicket,
+                       String captchaRandstr,
                        CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount> callback) {
         String token = store.deviceToken();
         if (token.isEmpty()) {
             fail(callback, CheckinCenterClient.Operation.SMS_SUBMIT, "尚未连接签到服务");
             return;
         }
-        client.submitSmsCode(token, sessionId, code,
+        client.submitSmsCode(token, sessionId, code, captchaTicket, captchaRandstr,
                 new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
                     @Override
                     public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
