@@ -227,6 +227,7 @@ public final class MainActivity extends Activity {
         }
         this.session = new SessionStore(this);
         this.localCache = new LocalCache(this);
+        boolean pendingCrashReport = !CrashReporter.pendingCrashReport(this).isEmpty();
         this.checkinCenterCoordinator = new CheckinCenterCoordinator(
                 this, this.session, this.localCache);
         this.checkinCenterCoordinator.setAuthorizationListener(paired -> {
@@ -271,11 +272,16 @@ public final class MainActivity extends Activity {
         PresenceReporter.ping(this.session, this.readingTimeTracker, this::applyAccessStatus);
         RemoteConfig.load(this.session.userId(), () ->
                 applyAccessStatus(RemoteConfig.accessStatus()));
+        if (!this.accountBlockedScreen && pendingCrashReport) {
+            this.handler.postDelayed(this::showPendingCrashDialog, 220L);
+        }
         if (!this.accountBlockedScreen && this.session.autoUpdateCheck()) {
-            this.handler.postDelayed(this::checkUpdateOnLaunch, 650L);
+            this.handler.postDelayed(this::checkUpdateOnLaunch,
+                    pendingCrashReport ? 1_800L : 650L);
         }
         if (!this.accountBlockedScreen) {
-            this.handler.postDelayed(this::checkAnnouncementOnLaunch, 950L);
+            this.handler.postDelayed(this::checkAnnouncementOnLaunch,
+                    pendingCrashReport ? 2_100L : 950L);
         }
         this.checkinCenterCoordinator.syncIfNeeded();
     }
@@ -6751,6 +6757,22 @@ public final class MainActivity extends Activity {
                     "知道了", null,
                     "导出日志", this::exportDiagnostics);
         });
+    }
+
+    private void showPendingCrashDialog() {
+        String crash = CrashReporter.pendingCrashReport(this);
+        if (crash.isEmpty() || isFinishing()) return;
+        String report = DiagnosticsClient.crashReport(this, this.session, crash);
+        File file = this.localCache.writeDiagnostics(report);
+        String details = DiagnosticSanitizer.redact(crash);
+        if (details.length() > 1_400) details = details.substring(0, 1_400) + "\n...";
+        CrashReporter.markHandled(this, crash);
+        showLiteDialog("上次运行出现异常",
+                "应用已经保存故障信息。日志不会自动上传。\n\n" + details,
+                "上传日志", () -> DiagnosticsClient.upload(this.session, report,
+                        (uploaded, message) -> toast(message)),
+                "知道了", null,
+                "保存日志", () -> saveDiagnosticsToDownloads(file.getName(), report));
     }
 
     private void exportDiagnostics() {

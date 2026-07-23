@@ -60,6 +60,7 @@ public class CheckinSecurityConfigurationTest {
     public void checkinClientContainsNoTlsBypassOrSecretLogging() throws Exception {
         String client = readSource("CheckinCenterClient.java");
         String coordinator = readSource("CheckinCenterCoordinator.java");
+        String page = readSource("CheckinCenterPage.java");
         String store = readSource("CheckinCenterStore.java");
 
         assertFalse(client.contains("http://"));
@@ -68,6 +69,8 @@ public class CheckinSecurityConfigurationTest {
         assertFalse(client.contains("setSSLSocketFactory"));
         assertFalse(client.contains("Log."));
         assertFalse(coordinator.contains("Log."));
+        assertFalse(page.contains("android.webkit"));
+        assertFalse(page.contains("WebView"));
         assertTrue(store.contains("ModernCookieCrypto.encrypt(token)"));
         assertFalse(store.contains("putString(DEVICE_TOKEN, token)"));
     }

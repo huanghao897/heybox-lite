@@ -39,6 +39,11 @@
             android:name=".ImageViewerActivity"
             android:exported="false"
             android:theme="@style/ImageViewerTheme" />
+        <activity
+            android:name=".CrashRecoveryActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:process=":crash" />
         <service
             android:name=".NativeSignService"
             android:exported="false"

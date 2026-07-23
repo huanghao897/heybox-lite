@@ -27,7 +27,7 @@ final class CheckinCenterClient {
     static final String TRUSTED_ORIGIN = "https://8.138.134.236";
     static final String API_BASE = TRUSTED_ORIGIN + "/checkin/api/lite";
     private static final String TRUSTED_HOST = "8.138.134.236";
-    private static final String WEB_PATH_PREFIX = "/checkin/";
+    private static final String PAIRING_PATH_PREFIX = "/checkin/";
     private static final int CONNECT_TIMEOUT_MS = 10_000;
     private static final int STANDARD_READ_TIMEOUT_MS = 25_000;
     private static final int SIGNING_READ_TIMEOUT_MS = 125_000;
@@ -35,8 +35,11 @@ final class CheckinCenterClient {
 
     enum Operation {
         PAIR_START,
+        PAIR_APPROVE,
         PAIR_POLL,
         CREDENTIAL_SYNC,
+        SMS_SEND,
+        SMS_SUBMIT,
         STATUS,
         RUN_NOW,
         REVOKE
@@ -96,15 +99,13 @@ final class CheckinCenterClient {
     static final class PairingStart {
         final String deviceCode;
         final String userCode;
-        final String verificationUri;
         final int expiresInSeconds;
         final int intervalSeconds;
 
-        PairingStart(String deviceCode, String userCode, String verificationUri,
+        PairingStart(String deviceCode, String userCode,
                      int expiresInSeconds, int intervalSeconds) {
             this.deviceCode = deviceCode;
             this.userCode = userCode;
-            this.verificationUri = verificationUri;
             this.expiresInSeconds = expiresInSeconds;
             this.intervalSeconds = intervalSeconds;
         }
@@ -133,6 +134,18 @@ final class CheckinCenterClient {
             this.displayName = displayName;
             this.externalIdMasked = externalIdMasked;
             this.taskEnabled = taskEnabled;
+        }
+    }
+
+    static final class SmsSession {
+        final String sessionId;
+        final int retryAfterSeconds;
+        final int expiresInSeconds;
+
+        SmsSession(String sessionId, int retryAfterSeconds, int expiresInSeconds) {
+            this.sessionId = sessionId;
+            this.retryAfterSeconds = retryAfterSeconds;
+            this.expiresInSeconds = expiresInSeconds;
         }
     }
 
@@ -272,6 +285,36 @@ final class CheckinCenterClient {
                 body, CheckinCenterClient::parsePairingPoll));
     }
 
+    void approvePairing(String userCode, String username, String password,
+                        Callback<Boolean> callback) {
+        String normalizedCode = userCode == null ? "" : userCode.trim();
+        String normalizedUsername = username == null ? "" : username.trim();
+        String rawPassword = password == null ? "" : password;
+        if (!normalizedCode.matches("[A-Z0-9]{4}-[A-Z0-9]{4}")
+                || normalizedUsername.length() < 3 || normalizedUsername.length() > 32
+                || rawPassword.length() < 12 || rawPassword.length() > 128) {
+            deliverError(callback, new ApiError(Operation.PAIR_APPROVE, 422,
+                    "请输入正确的签到服务账号和密码"));
+            return;
+        }
+        JSONObject body = new JSONObject();
+        try {
+            body.put("user_code", normalizedCode);
+            body.put("username", normalizedUsername);
+            body.put("password", rawPassword);
+        } catch (JSONException impossible) {
+            deliverError(callback, protocolError(Operation.PAIR_APPROVE));
+            return;
+        }
+        submit(callback, () -> request(Operation.PAIR_APPROVE, "POST", "/pair/approve", "",
+                body, value -> {
+                    if (!"approved".equals(value.optString("state", ""))) {
+                        throw protocolError(Operation.PAIR_APPROVE);
+                    }
+                    return Boolean.TRUE;
+                }));
+    }
+
     void syncCredentials(String deviceToken, JSONObject payload,
                          Callback<ConnectedAccount> callback) {
         final String token;
@@ -283,6 +326,62 @@ final class CheckinCenterClient {
         }
         submit(callback, () -> request(Operation.CREDENTIAL_SYNC, "POST",
                 "/credentials/heybox", token, payload,
+                CheckinCenterClient::parseConnectedAccount));
+    }
+
+    void sendSmsCode(String deviceToken, String phone, Callback<SmsSession> callback) {
+        final String token;
+        try {
+            token = requirePrefix(deviceToken, "ccdevice1_", Operation.SMS_SEND);
+        } catch (ApiError error) {
+            deliverError(callback, error);
+            return;
+        }
+        String normalizedPhone = phone == null ? "" : phone.trim();
+        if (!normalizedPhone.matches("[+0-9 -]{6,20}")) {
+            deliverError(callback, new ApiError(Operation.SMS_SEND, 422,
+                    "请输入正确的手机号"));
+            return;
+        }
+        JSONObject body = new JSONObject();
+        try {
+            body.put("phone", normalizedPhone);
+        } catch (JSONException impossible) {
+            deliverError(callback, protocolError(Operation.SMS_SEND));
+            return;
+        }
+        submit(callback, () -> request(Operation.SMS_SEND, "POST",
+                "/heybox/login/sms/send", token, body,
+                CheckinCenterClient::parseSmsSession));
+    }
+
+    void submitSmsCode(String deviceToken, String sessionId, String code,
+                       Callback<ConnectedAccount> callback) {
+        final String token;
+        try {
+            token = requirePrefix(deviceToken, "ccdevice1_", Operation.SMS_SUBMIT);
+        } catch (ApiError error) {
+            deliverError(callback, error);
+            return;
+        }
+        String normalizedSession = sessionId == null ? "" : sessionId.trim();
+        String normalizedCode = code == null ? "" : code.trim();
+        if (normalizedSession.isEmpty() || normalizedSession.length() > 128
+                || !normalizedCode.matches("[0-9]{4,8}")) {
+            deliverError(callback, new ApiError(Operation.SMS_SUBMIT, 422,
+                    "请输入正确的短信验证码"));
+            return;
+        }
+        JSONObject body = new JSONObject();
+        try {
+            body.put("session_id", normalizedSession);
+            body.put("code", normalizedCode);
+        } catch (JSONException impossible) {
+            deliverError(callback, protocolError(Operation.SMS_SUBMIT));
+            return;
+        }
+        submit(callback, () -> request(Operation.SMS_SUBMIT, "POST",
+                "/heybox/login/sms/submit", token, body,
                 CheckinCenterClient::parseConnectedAccount));
     }
 
@@ -327,13 +426,13 @@ final class CheckinCenterClient {
                 }));
     }
 
-    static URI requireTrustedWebUri(String value) throws ApiError {
+    static URI requireTrustedPairingUri(String value) throws ApiError {
         return requireTrustedUri(value, false, Operation.PAIR_START);
     }
 
-    static boolean isTrustedWebUri(String value) {
+    static boolean isTrustedPairingUri(String value) {
         try {
-            requireTrustedWebUri(value);
+            requireTrustedPairingUri(value);
             return true;
         } catch (ApiError ignored) {
             return false;
@@ -419,10 +518,10 @@ final class CheckinCenterClient {
         String deviceCode = required(value, "device_code", Operation.PAIR_START);
         String userCode = required(value, "user_code", Operation.PAIR_START);
         String verificationUri = required(value, "verification_uri", Operation.PAIR_START);
-        requireTrustedWebUri(verificationUri);
+        requireTrustedPairingUri(verificationUri);
         int expiresIn = positive(value.optInt("expires_in"), Operation.PAIR_START);
         int interval = positive(value.optInt("interval"), Operation.PAIR_START);
-        return new PairingStart(deviceCode, userCode, verificationUri, expiresIn, interval);
+        return new PairingStart(deviceCode, userCode, expiresIn, interval);
     }
 
     private static PairingPoll parsePairingPoll(JSONObject value) throws ApiError {
@@ -441,6 +540,14 @@ final class CheckinCenterClient {
         return new ConnectedAccount(value.optString("display_name", ""),
                 value.optString("external_id_masked", ""),
                 value.optBoolean("task_enabled", false));
+    }
+
+    private static SmsSession parseSmsSession(JSONObject value) throws ApiError {
+        String sessionId = required(value, "session_id", Operation.SMS_SEND);
+        if (sessionId.length() > 128) throw protocolError(Operation.SMS_SEND);
+        int retryAfter = positive(value.optInt("retry_after"), Operation.SMS_SEND);
+        int expiresIn = positive(value.optInt("expires_in"), Operation.SMS_SEND);
+        return new SmsSession(sessionId, retryAfter, expiresIn);
     }
 
     private static Status parseStatus(JSONObject value) throws ApiError {
@@ -477,7 +584,7 @@ final class CheckinCenterClient {
             String path = uri.getRawPath();
             boolean pathAllowed = api ? path != null && path.startsWith("/checkin/api/lite/")
                     : path != null && (path.equals("/checkin")
-                    || path.startsWith(WEB_PATH_PREFIX));
+                    || path.startsWith(PAIRING_PATH_PREFIX));
             if (!"https".equals(uri.getScheme()) || !TRUSTED_HOST.equals(uri.getHost())
                     || (uri.getPort() != -1 && uri.getPort() != 443)
                     || uri.getUserInfo() != null || uri.getFragment() != null || !pathAllowed) {
@@ -535,6 +642,7 @@ final class CheckinCenterClient {
 
     static int readTimeoutMillis(Operation operation) {
         return operation == Operation.CREDENTIAL_SYNC || operation == Operation.RUN_NOW
+                || operation == Operation.SMS_SEND || operation == Operation.SMS_SUBMIT
                 ? SIGNING_READ_TIMEOUT_MS : STANDARD_READ_TIMEOUT_MS;
     }
 
@@ -577,25 +685,40 @@ final class CheckinCenterClient {
         String message;
         switch (status) {
             case 401:
-                message = "签到服务连接已失效，请重新连接";
+                message = operation == Operation.PAIR_APPROVE
+                        ? "签到服务账号或密码错误"
+                        : "签到服务连接已失效，请重新连接";
                 break;
             case 404:
                 message = operation == Operation.PAIR_POLL
+                        || operation == Operation.PAIR_APPROVE
                         ? "配对请求不存在，请重新连接" : "签到任务尚未配置";
                 break;
             case 409:
-                message = operation == Operation.CREDENTIAL_SYNC
-                        ? "签到服务已绑定其他小黑盒账号，请先在网页解除旧绑定"
-                        : "当前操作与服务器状态冲突，请稍后重试";
+                if ((operation == Operation.SMS_SEND || operation == Operation.SMS_SUBMIT)
+                        && "captcha_required".equals(diagnosticCode)) {
+                    message = "小黑盒要求额外安全验证，当前原生登录无法继续，请稍后重试";
+                } else if (operation == Operation.CREDENTIAL_SYNC) {
+                    message = "签到服务已绑定其他小黑盒账号，请先在网页解除旧绑定";
+                } else {
+                    message = "当前操作与服务器状态冲突，请稍后重试";
+                }
                 break;
             case 410:
-                message = "配对已过期，请重新连接";
+                message = operation == Operation.SMS_SUBMIT
+                        ? "短信验证码已过期，请重新发送" : "配对已过期，请重新连接";
                 break;
             case 413:
                 message = "签到资料异常，请更新客户端后重试";
                 break;
             case 422:
-                if (operation != Operation.CREDENTIAL_SYNC) {
+                if (operation == Operation.PAIR_APPROVE) {
+                    message = "签到服务账号信息无效";
+                } else if (operation == Operation.SMS_SEND) {
+                    message = "手机号无效或发送过于频繁，请稍后重试";
+                } else if (operation == Operation.SMS_SUBMIT) {
+                    message = "验证码无效、已过期或登录失败";
+                } else if (operation != Operation.CREDENTIAL_SYNC) {
                     message = "签到服务请求无效";
                 } else if ("payload_invalid".equals(diagnosticCode)) {
                     message = "当前 Cookie 内的账号资料不一致，请重新登录小黑盒";
@@ -622,6 +745,7 @@ final class CheckinCenterClient {
     static String serverErrorCode(String response) {
         try {
             String error = new JSONObject(response).optString("error", "");
+            if ("captcha_required".equals(error)) return "captcha_required";
             if ("credential payload is invalid".equals(error)) return "payload_invalid";
             if ("Xiaoheihe rejected the credentials".equals(error)) {
                 return "credentials_rejected";

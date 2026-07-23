@@ -8,20 +8,20 @@ import org.junit.Test;
 
 public class CheckinCenterClientTest {
     @Test
-    public void pairingWebViewAcceptsOnlyPinnedHttpsHostAndPath() {
-        assertTrue(CheckinCenterClient.isTrustedWebUri(
+    public void pairingResponseAcceptsOnlyPinnedHttpsHostAndPath() {
+        assertTrue(CheckinCenterClient.isTrustedPairingUri(
                 "https://8.138.134.236/checkin/lite/pair?code=ABCD-EFGH"));
-        assertTrue(CheckinCenterClient.isTrustedWebUri(
+        assertTrue(CheckinCenterClient.isTrustedPairingUri(
                 "https://8.138.134.236/checkin/login?next=%2Flite%2Fpair"));
-        assertFalse(CheckinCenterClient.isTrustedWebUri(
+        assertFalse(CheckinCenterClient.isTrustedPairingUri(
                 "http://8.138.134.236/checkin/lite/pair?code=ABCD-EFGH"));
-        assertFalse(CheckinCenterClient.isTrustedWebUri(
+        assertFalse(CheckinCenterClient.isTrustedPairingUri(
                 "https://8.138.134.237/checkin/lite/pair?code=ABCD-EFGH"));
-        assertFalse(CheckinCenterClient.isTrustedWebUri(
+        assertFalse(CheckinCenterClient.isTrustedPairingUri(
                 "https://8.138.134.236:444/checkin/lite/pair?code=ABCD-EFGH"));
-        assertFalse(CheckinCenterClient.isTrustedWebUri(
+        assertFalse(CheckinCenterClient.isTrustedPairingUri(
                 "https://8.138.134.236/admin"));
-        assertFalse(CheckinCenterClient.isTrustedWebUri(
+        assertFalse(CheckinCenterClient.isTrustedPairingUri(
                 "https://user@8.138.134.236/checkin/lite/pair"));
     }
 
@@ -50,6 +50,10 @@ public class CheckinCenterClientTest {
                 CheckinCenterClient.Operation.CREDENTIAL_SYNC) >= 120_000);
         assertTrue(CheckinCenterClient.readTimeoutMillis(
                 CheckinCenterClient.Operation.RUN_NOW) >= 120_000);
+        assertTrue(CheckinCenterClient.readTimeoutMillis(
+                CheckinCenterClient.Operation.SMS_SEND) >= 120_000);
+        assertTrue(CheckinCenterClient.readTimeoutMillis(
+                CheckinCenterClient.Operation.SMS_SUBMIT) >= 120_000);
     }
 
     @Test
@@ -58,6 +62,8 @@ public class CheckinCenterClientTest {
                 "{\"error\":\"credential payload is invalid\"}"));
         assertEquals("credentials_rejected", CheckinCenterClient.serverErrorCode(
                 "{\"error\":\"Xiaoheihe rejected the credentials\"}"));
+        assertEquals("captcha_required", CheckinCenterClient.serverErrorCode(
+                "{\"error\":\"captcha_required\"}"));
         assertEquals("", CheckinCenterClient.serverErrorCode(
                 "{\"error\":\"Cookie: pkey=private-value\"}"));
     }

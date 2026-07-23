@@ -70,6 +70,11 @@ final class CheckinCenterCoordinator {
         client.pollPairing(deviceCode, callback);
     }
 
+    void approvePairing(String userCode, String username, String password,
+                        CheckinCenterClient.Callback<Boolean> callback) {
+        client.approvePairing(userCode, username, password, callback);
+    }
+
     boolean authorize(String deviceToken) {
         try {
             store.saveDeviceToken(deviceToken);
@@ -86,12 +91,21 @@ final class CheckinCenterCoordinator {
         syncCredentials(false, null);
     }
 
+    void preferServerManagedCredentials() {
+        store.preferServerManagedCredentials();
+        handler.removeCallbacks(changedCookieSync);
+    }
+
     void syncCredentials(boolean force,
                          CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount> callback) {
         if (closed) return;
         if (!paired()) {
             fail(callback, CheckinCenterClient.Operation.CREDENTIAL_SYNC,
                     "尚未连接签到服务");
+            return;
+        }
+        if (store.serverManagedCredentials()) {
+            completeWithoutSync(callback);
             return;
         }
         if (!session.isLoggedIn()) {
@@ -131,6 +145,39 @@ final class CheckinCenterCoordinator {
             return;
         }
         statusAttempt(token, callback, 0);
+    }
+
+    void sendSmsCode(String phone,
+                     CheckinCenterClient.Callback<CheckinCenterClient.SmsSession> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.SMS_SEND, "尚未连接签到服务");
+            return;
+        }
+        client.sendSmsCode(token, phone, authorizationAware(callback));
+    }
+
+    void submitSmsCode(String sessionId, String code,
+                       CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.SMS_SUBMIT, "尚未连接签到服务");
+            return;
+        }
+        client.submitSmsCode(token, sessionId, code,
+                new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
+                    @Override
+                    public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
+                        preferServerManagedCredentials();
+                        if (callback != null) callback.onSuccess(value);
+                    }
+
+                    @Override
+                    public void onError(CheckinCenterClient.ApiError error) {
+                        handleAuthorizationError(error);
+                        if (callback != null) callback.onError(error);
+                    }
+                });
     }
 
     void runNow(CheckinCenterClient.Callback<CheckinCenterClient.RunResult> callback) {
@@ -303,6 +350,22 @@ final class CheckinCenterCoordinator {
         if (error == null || !error.authorizationInvalid()) return false;
         clearAuthorization();
         return true;
+    }
+
+    private <T> CheckinCenterClient.Callback<T> authorizationAware(
+            CheckinCenterClient.Callback<T> callback) {
+        return new CheckinCenterClient.Callback<T>() {
+            @Override
+            public void onSuccess(T value) {
+                if (callback != null) callback.onSuccess(value);
+            }
+
+            @Override
+            public void onError(CheckinCenterClient.ApiError error) {
+                handleAuthorizationError(error);
+                if (callback != null) callback.onError(error);
+            }
+        };
     }
 
     private void clearAuthorization() {

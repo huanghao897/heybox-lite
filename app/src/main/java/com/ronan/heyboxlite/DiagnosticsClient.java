@@ -54,12 +54,13 @@ final class DiagnosticsClient {
         EXECUTOR.execute(() -> {
             HttpURLConnection connection = null;
             try {
+                String safeReport = DiagnosticSanitizer.forUpload(report);
                 JSONObject body = new JSONObject();
                 body.put("userId", session == null ? "" : session.userId());
                 body.put("version", BuildConfig.VERSION_NAME);
                 body.put("versionCode", BuildConfig.VERSION_CODE);
                 body.put("model", Build.MODEL == null ? "" : Build.MODEL);
-                body.put("report", report == null ? "" : report);
+                body.put("report", safeReport);
                 byte[] payload = body.toString().getBytes(UTF_8);
                 connection = (HttpURLConnection) new URL(UpdateChecker.requireTrustedUrl(
                         BuildConfig.DIAGNOSTICS_API_URL)).openConnection();
@@ -83,6 +84,20 @@ final class DiagnosticsClient {
                 if (connection != null) connection.disconnect();
             }
         });
+    }
+
+    static String crashReport(Context context, SessionStore session, String crashLog) {
+        StringBuilder report = new StringBuilder("heybox Lite crash report\n");
+        report.append("version: ").append(BuildConfig.VERSION_NAME).append(" (")
+                .append(BuildConfig.VERSION_CODE).append(")\n");
+        report.append("device: ").append(Build.MANUFACTURER).append(' ')
+                .append(Build.MODEL).append(" / Android ")
+                .append(Build.VERSION.RELEASE).append(" api ")
+                .append(Build.VERSION.SDK_INT).append('\n');
+        report.append("loggedIn: ").append(session != null && session.isLoggedIn()).append('\n');
+        report.append("package: ").append(context.getPackageName()).append("\n\n");
+        report.append(DiagnosticSanitizer.redact(crashLog));
+        return report.toString();
     }
 
     private static boolean networkAvailable(Context context) {

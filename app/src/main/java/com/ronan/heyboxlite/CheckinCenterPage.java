@@ -1,30 +1,22 @@
 package com.ronan.heyboxlite;
 
-import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.net.http.SslError;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.webkit.CookieManager;
-import android.webkit.SslErrorHandler;
-import android.webkit.WebSettings;
-import android.webkit.WebResourceResponse;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.io.ByteArrayInputStream;
 import java.util.Locale;
 
 final class CheckinCenterPage {
@@ -37,6 +29,7 @@ final class CheckinCenterPage {
     private enum State {
         UNPAIRED,
         PAIRING,
+        MOBILE_LOGIN,
         SYNCING,
         CONNECTED,
         RUNNING,
@@ -55,12 +48,26 @@ final class CheckinCenterPage {
     private final FrameLayout root;
     private final Runnable pollTask = this::pollPairing;
     private final Runnable countdownTask = this::updatePairingCountdown;
+    private final Runnable smsCountdownTask = this::updateSmsCountdown;
     private State state;
     private PairingSession pairing;
     private CheckinCenterClient.Status status;
     private String errorMessage = "";
-    private WebView webView;
     private TextView pairingCountdown;
+    private EditText serviceUsernameInput;
+    private EditText servicePasswordInput;
+    private Button pairingApproveButton;
+    private TextView pairingStatus;
+    private boolean pairingApprovalInFlight;
+    private EditText smsPhoneInput;
+    private EditText smsCodeInput;
+    private Button smsSendButton;
+    private Button smsSubmitButton;
+    private TextView smsStatus;
+    private String smsSessionId = "";
+    private long smsRetryAtElapsed;
+    private long smsExpiresAtElapsed;
+    private boolean smsRequestInFlight;
     private boolean closed;
 
     CheckinCenterPage(Activity activity, SessionStore session,
@@ -112,26 +119,33 @@ final class CheckinCenterPage {
     }
 
     boolean handleBack() {
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
+        if (state == State.MOBILE_LOGIN) {
+            finishMobileLogin();
+            return true;
+        }
+        if (state == State.PAIRING) {
+            cancelPairing();
             return true;
         }
         return false;
     }
 
     void onResume() {
-        if (webView != null) webView.onResume();
         if (pairing != null) {
             schedulePoll(0L);
             handler.removeCallbacks(countdownTask);
             handler.post(countdownTask);
+        }
+        if (state == State.MOBILE_LOGIN && !smsSessionId.isEmpty()) {
+            handler.removeCallbacks(smsCountdownTask);
+            handler.post(smsCountdownTask);
         }
     }
 
     void onPause() {
         handler.removeCallbacks(pollTask);
         handler.removeCallbacks(countdownTask);
-        if (webView != null) webView.onPause();
+        handler.removeCallbacks(smsCountdownTask);
     }
 
     private void beginPairing() {
@@ -189,7 +203,7 @@ final class CheckinCenterPage {
                         }
                         pairing = null;
                         state = State.SYNCING;
-                        destroyWebView();
+                        clearPairingViews();
                         render();
                         coordinator.syncCredentials(true,
                                 new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
@@ -277,7 +291,7 @@ final class CheckinCenterPage {
                     pairing = null;
                     state = State.UNPAIRED;
                     errorMessage = "";
-                    destroyWebView();
+                    clearPairingViews();
                     render();
                     host.showMessage("已撤销此设备");
                 }
@@ -290,7 +304,104 @@ final class CheckinCenterPage {
         });
     }
 
+    private void openMobileLogin() {
+        if (!coordinator.paired()) {
+            showError("请先连接签到服务");
+            return;
+        }
+        smsSessionId = "";
+        smsRetryAtElapsed = 0L;
+        smsExpiresAtElapsed = 0L;
+        smsRequestInFlight = false;
+        errorMessage = "";
+        state = State.MOBILE_LOGIN;
+        render();
+    }
+
+    private void sendSmsCode() {
+        if (smsRequestInFlight || smsPhoneInput == null) return;
+        String phone = smsPhoneInput.getText().toString().trim();
+        smsRequestInFlight = true;
+        setMobileLoginControls(false);
+        setMobileLoginStatus("正在发送验证码", tokens.muted);
+        coordinator.sendSmsCode(phone,
+                new CheckinCenterClient.Callback<CheckinCenterClient.SmsSession>() {
+                    @Override
+                    public void onSuccess(CheckinCenterClient.SmsSession value) {
+                        if (closed || state != State.MOBILE_LOGIN) return;
+                        smsRequestInFlight = false;
+                        smsSessionId = value.sessionId;
+                        long now = SystemClock.elapsedRealtime();
+                        smsRetryAtElapsed = now + value.retryAfterSeconds * SECOND_MS;
+                        smsExpiresAtElapsed = now + value.expiresInSeconds * SECOND_MS;
+                        smsPhoneInput.setEnabled(false);
+                        smsCodeInput.setEnabled(true);
+                        smsSubmitButton.setEnabled(true);
+                        setMobileLoginStatus("验证码已发送，10 分钟内有效", tokens.accent);
+                        handler.removeCallbacks(smsCountdownTask);
+                        handler.post(smsCountdownTask);
+                        smsCodeInput.requestFocus();
+                    }
+
+                    @Override
+                    public void onError(CheckinCenterClient.ApiError error) {
+                        if (closed || state != State.MOBILE_LOGIN) return;
+                        smsRequestInFlight = false;
+                        setMobileLoginControls(true);
+                        setMobileLoginStatus(error.getMessage(), tokens.text);
+                    }
+                });
+    }
+
+    private void submitSmsCode() {
+        if (smsRequestInFlight || smsCodeInput == null || smsSessionId.isEmpty()) return;
+        if (SystemClock.elapsedRealtime() >= smsExpiresAtElapsed) {
+            resetSmsSession("验证码已过期，请重新发送");
+            return;
+        }
+        smsRequestInFlight = true;
+        setMobileLoginControls(false);
+        setMobileLoginStatus("正在验证并连接账号", tokens.muted);
+        coordinator.submitSmsCode(smsSessionId, smsCodeInput.getText().toString(),
+                new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
+                    @Override
+                    public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
+                        if (closed || state != State.MOBILE_LOGIN) return;
+                        smsRequestInFlight = false;
+                        smsSessionId = "";
+                        host.showMessage("手机号登录成功");
+                        finishMobileLogin();
+                    }
+
+                    @Override
+                    public void onError(CheckinCenterClient.ApiError error) {
+                        if (closed || state != State.MOBILE_LOGIN) return;
+                        smsRequestInFlight = false;
+                        smsCodeInput.setEnabled(true);
+                        smsSubmitButton.setEnabled(true);
+                        updateSmsCountdown();
+                        setMobileLoginStatus(error.getMessage(), tokens.text);
+                    }
+                });
+    }
+
+    private void finishMobileLogin() {
+        handler.removeCallbacks(smsCountdownTask);
+        smsRequestInFlight = false;
+        smsSessionId = "";
+        smsRetryAtElapsed = 0L;
+        smsExpiresAtElapsed = 0L;
+        clearSmsViews();
+        state = State.SYNCING;
+        errorMessage = "";
+        render();
+        loadStatus();
+    }
+
     private void showError(String message) {
+        pairing = null;
+        pairingApprovalInFlight = false;
+        clearPairingViews();
         state = coordinator.paired() ? State.ERROR : State.UNPAIRED;
         errorMessage = message == null ? "签到服务请求失败" : message;
         render();
@@ -304,7 +415,10 @@ final class CheckinCenterPage {
             renderPairing();
             return;
         }
-        destroyWebView();
+        if (state == State.MOBILE_LOGIN) {
+            renderMobileLogin();
+            return;
+        }
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
         LinearLayout page = column(tokens.background);
@@ -385,6 +499,8 @@ final class CheckinCenterPage {
         }
         addTop(page, latest, 9);
 
+        addMobileLoginCard(page, "connected".equalsIgnoreCase(status.account.state));
+
         Button run = primaryButton(state == State.RUNNING ? "正在签到" : "立即签到");
         run.setEnabled(state != State.RUNNING && status.task.active());
         run.setOnClickListener(view -> {
@@ -402,6 +518,7 @@ final class CheckinCenterPage {
     }
 
     private void addRecoveryActions(LinearLayout page) {
+        addMobileLoginCard(page, false);
         Button retry = primaryButton("重新加载");
         retry.setOnClickListener(view -> refresh());
         addTop(page, retry, 10);
@@ -412,66 +529,184 @@ final class CheckinCenterPage {
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    private void renderPairing() {
+    private void addMobileLoginCard(LinearLayout page, boolean connected) {
+        LinearLayout login = card();
+        login.addView(sectionTitle("手机号登录小黑盒"));
+        TextView description = body(
+                "用于生成服务器自动签到所需的移动端凭据。手机号和短信验证码仅由签到服务处理，Lite 不会保存。",
+                tokens.muted);
+        description.setLineSpacing(0f, 1.15f);
+        addTop(login, description, 7);
+        Button open = ghostButton(connected ? "重新登录" : "手机号登录");
+        open.setOnClickListener(view -> {
+            UiComponents.press(view);
+            openMobileLogin();
+        });
+        addTop(login, open, 11);
+        addTop(page, login, 9);
+    }
+
+    private void renderMobileLogin() {
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(true);
         LinearLayout page = column(tokens.background);
-        page.setPadding(dp(8), dp(7), dp(8), dp(7));
+        page.setPadding(dp(10), dp(8), dp(10), dp(18));
+        scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
+
         LinearLayout card = card();
-        card.addView(sectionTitle("确认此设备"));
-        addTop(card, body("配对码 " + pairing.start.userCode, tokens.text), 5);
+        card.addView(heading("手机号登录小黑盒"));
+        TextView description = body(
+                "登录成功后，服务器会加密保存移动端凭据并用于自动签到。Lite 不保存手机号、验证码或登录凭据。",
+                tokens.muted);
+        description.setLineSpacing(0f, 1.16f);
+        addTop(card, description, 7);
+
+        addTop(card, body("手机号", tokens.text), 14);
+        smsPhoneInput = input("+86 13800000000", InputType.TYPE_CLASS_PHONE);
+        addTop(card, smsPhoneInput, 6);
+        smsSendButton = ghostButton("发送验证码");
+        smsSendButton.setOnClickListener(view -> {
+            UiComponents.press(view);
+            sendSmsCode();
+        });
+        addTop(card, smsSendButton, 8);
+
+        addTop(card, body("短信验证码", tokens.text), 13);
+        smsCodeInput = input("4-8 位验证码",
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        smsCodeInput.setEnabled(false);
+        addTop(card, smsCodeInput, 6);
+        smsSubmitButton = primaryButton("登录并连接");
+        smsSubmitButton.setEnabled(false);
+        smsSubmitButton.setOnClickListener(view -> {
+            UiComponents.press(view);
+            submitSmsCode();
+        });
+        addTop(card, smsSubmitButton, 8);
+
+        smsStatus = body("验证码由小黑盒发送，发送操作不会自动重试", tokens.muted);
+        smsStatus.setLineSpacing(0f, 1.14f);
+        addTop(card, smsStatus, 10);
+        page.addView(card);
+
+        Button back = ghostButton("返回签到状态");
+        back.setOnClickListener(view -> finishMobileLogin());
+        addTop(page, back, 9);
+        root.addView(scroll, match());
+    }
+
+    private void renderPairing() {
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(true);
+        LinearLayout page = column(tokens.background);
+        page.setPadding(dp(10), dp(8), dp(10), dp(18));
+        scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
+
+        LinearLayout card = card();
+        card.addView(heading("连接签到服务"));
+        TextView description = body(
+                "输入签到服务账号完成设备连接。这里不是小黑盒手机号登录，账号和密码不会保存在 Lite 中。",
+                tokens.muted);
+        description.setLineSpacing(0f, 1.16f);
+        addTop(card, description, 7);
+        addTop(card, body("配对码  " + pairing.start.userCode, tokens.text), 12);
         pairingCountdown = body("", tokens.muted);
         addTop(card, pairingCountdown, 3);
-        page.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
-        webView = new WebView(activity);
-        webView.setBackgroundColor(tokens.background);
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(false);
-        settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
-        settings.setSaveFormData(false);
-        settings.setBuiltInZoomControls(false);
-        settings.setDisplayZoomControls(false);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
-        }
-        CookieManager.getInstance().setAcceptCookie(true);
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                if (CheckinCenterClient.isTrustedWebUri(url)) return false;
-                host.showMessage("已阻止不受信任的页面");
-                return true;
-            }
+        addTop(card, body("签到服务账号", tokens.text), 14);
+        serviceUsernameInput = input("账号", InputType.TYPE_CLASS_TEXT);
+        addTop(card, serviceUsernameInput, 6);
+        addTop(card, body("密码", tokens.text), 13);
+        servicePasswordInput = input("密码",
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        addTop(card, servicePasswordInput, 6);
 
-            @Override
-            public void onPageStarted(WebView view, String url,
-                                      android.graphics.Bitmap favicon) {
-                if (!CheckinCenterClient.isTrustedWebUri(url)) view.stopLoading();
-            }
-
-            @Override
-            public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
-                if (CheckinCenterClient.isTrustedWebUri(url)) return null;
-                return new WebResourceResponse("text/plain", "UTF-8",
-                        new ByteArrayInputStream(new byte[0]));
-            }
-
-            @Override
-            public void onReceivedSslError(WebView view, SslErrorHandler handler,
-                                           SslError error) {
-                handler.cancel();
-                CheckinCenterPage.this.handler.post(() ->
-                        showError("签到服务证书校验失败"));
-            }
+        pairingApproveButton = primaryButton("确认连接");
+        pairingApproveButton.setOnClickListener(view -> {
+            UiComponents.press(view);
+            approvePairing();
         });
-        webView.loadUrl(pairing.start.verificationUri);
-        LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(-1, 0, 1f);
-        webParams.topMargin = dp(7);
-        page.addView(webView, webParams);
-        root.addView(page, match());
+        addTop(card, pairingApproveButton, 10);
+        pairingStatus = body("连接过程使用固定证书加密，不会打开网页", tokens.muted);
+        pairingStatus.setLineSpacing(0f, 1.14f);
+        addTop(card, pairingStatus, 9);
+        page.addView(card);
+
+        Button cancel = ghostButton("取消");
+        cancel.setOnClickListener(view -> cancelPairing());
+        addTop(page, cancel, 9);
+        root.addView(scroll, match());
         updatePairingCountdown();
+    }
+
+    private void approvePairing() {
+        PairingSession current = pairing;
+        if (pairingApprovalInFlight || current == null
+                || serviceUsernameInput == null || servicePasswordInput == null) return;
+        if (current.expired()) {
+            showError("配对已过期，请重新连接");
+            return;
+        }
+        String username = serviceUsernameInput.getText().toString();
+        String password = servicePasswordInput.getText().toString();
+        pairingApprovalInFlight = true;
+        setPairingControlsEnabled(false);
+        setPairingStatus("正在验证签到服务账号", tokens.muted);
+        coordinator.approvePairing(current.start.userCode, username, password,
+                new CheckinCenterClient.Callback<Boolean>() {
+                    @Override
+                    public void onSuccess(Boolean value) {
+                        if (closed || pairing != current || state != State.PAIRING) return;
+                        pairingApprovalInFlight = false;
+                        if (servicePasswordInput != null) servicePasswordInput.setText("");
+                        setPairingStatus("验证成功，正在完成设备连接", tokens.accent);
+                        schedulePoll(0L);
+                    }
+
+                    @Override
+                    public void onError(CheckinCenterClient.ApiError error) {
+                        if (closed || pairing != current || state != State.PAIRING) return;
+                        pairingApprovalInFlight = false;
+                        if (servicePasswordInput != null) {
+                            servicePasswordInput.setText("");
+                            servicePasswordInput.requestFocus();
+                        }
+                        setPairingControlsEnabled(true);
+                        setPairingStatus(error.getMessage(), tokens.text);
+                    }
+                });
+    }
+
+    private void cancelPairing() {
+        handler.removeCallbacks(pollTask);
+        handler.removeCallbacks(countdownTask);
+        pairing = null;
+        pairingApprovalInFlight = false;
+        clearPairingViews();
+        state = State.UNPAIRED;
+        errorMessage = "";
+        render();
+    }
+
+    private void setPairingControlsEnabled(boolean enabled) {
+        if (serviceUsernameInput != null) serviceUsernameInput.setEnabled(enabled);
+        if (servicePasswordInput != null) servicePasswordInput.setEnabled(enabled);
+        if (pairingApproveButton != null) pairingApproveButton.setEnabled(enabled);
+    }
+
+    private void setPairingStatus(String message, int color) {
+        if (pairingStatus == null) return;
+        pairingStatus.setText(message == null ? "连接失败，请稍后重试" : message);
+        pairingStatus.setTextColor(color);
+    }
+
+    private void clearPairingViews() {
+        if (serviceUsernameInput != null) serviceUsernameInput.setText("");
+        if (servicePasswordInput != null) servicePasswordInput.setText("");
+        serviceUsernameInput = null;
+        servicePasswordInput = null;
+        pairingApproveButton = null;
+        pairingStatus = null;
     }
 
     private View errorBanner(String message) {
@@ -485,6 +720,85 @@ final class CheckinCenterPage {
         params.bottomMargin = dp(9);
         view.setLayoutParams(params);
         return view;
+    }
+
+    private EditText input(String hint, int inputType) {
+        EditText view = new EditText(activity);
+        view.setSingleLine(true);
+        view.setTextSize(13f * session.textScale() / 100.0f);
+        view.setTextColor(tokens.text);
+        view.setHintTextColor(tokens.muted);
+        view.setHint(hint);
+        view.setInputType(inputType);
+        view.setSaveEnabled(false);
+        view.setMinHeight(0);
+        view.setMinimumHeight(0);
+        view.setPadding(dp(11), 0, dp(11), 0);
+        Compat.setBackground(view, UiComponents.outlinedTextField(activity, tokens, scale));
+        view.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(42)));
+        return view;
+    }
+
+    private void setMobileLoginControls(boolean enabled) {
+        if (smsPhoneInput == null || smsCodeInput == null
+                || smsSendButton == null || smsSubmitButton == null) return;
+        if (!enabled) {
+            smsPhoneInput.setEnabled(false);
+            smsCodeInput.setEnabled(false);
+            smsSendButton.setEnabled(false);
+            smsSubmitButton.setEnabled(false);
+            return;
+        }
+        boolean hasSession = !smsSessionId.isEmpty();
+        smsPhoneInput.setEnabled(!hasSession);
+        smsCodeInput.setEnabled(hasSession);
+        smsSubmitButton.setEnabled(hasSession);
+        smsSendButton.setEnabled(!hasSession
+                || SystemClock.elapsedRealtime() >= smsRetryAtElapsed);
+    }
+
+    private void setMobileLoginStatus(String message, int color) {
+        if (smsStatus == null) return;
+        smsStatus.setText(message == null ? "请求失败，请稍后重试" : message);
+        smsStatus.setTextColor(color);
+    }
+
+    private void updateSmsCountdown() {
+        handler.removeCallbacks(smsCountdownTask);
+        if (closed || state != State.MOBILE_LOGIN || smsSessionId.isEmpty()
+                || smsSendButton == null) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now >= smsExpiresAtElapsed) {
+            resetSmsSession("验证码已过期，请重新发送");
+            return;
+        }
+        long retrySeconds = Math.max(0L, (smsRetryAtElapsed - now + 999L) / SECOND_MS);
+        smsSendButton.setText(retrySeconds > 0L
+                ? retrySeconds + " 秒后可重发" : "重新发送验证码");
+        smsSendButton.setEnabled(!smsRequestInFlight && retrySeconds == 0L);
+        handler.postDelayed(smsCountdownTask, SECOND_MS);
+    }
+
+    private void resetSmsSession(String message) {
+        handler.removeCallbacks(smsCountdownTask);
+        smsSessionId = "";
+        smsRetryAtElapsed = 0L;
+        smsExpiresAtElapsed = 0L;
+        smsRequestInFlight = false;
+        if (smsCodeInput != null) smsCodeInput.setText("");
+        setMobileLoginControls(true);
+        if (smsSendButton != null) smsSendButton.setText("发送验证码");
+        setMobileLoginStatus(message, tokens.text);
+    }
+
+    private void clearSmsViews() {
+        if (smsPhoneInput != null) smsPhoneInput.setText("");
+        if (smsCodeInput != null) smsCodeInput.setText("");
+        smsPhoneInput = null;
+        smsCodeInput = null;
+        smsSendButton = null;
+        smsSubmitButton = null;
+        smsStatus = null;
     }
 
     private LinearLayout infoRow(String label, String value) {
@@ -587,17 +901,6 @@ final class CheckinCenterPage {
         if (remaining > 0L) handler.postDelayed(countdownTask, SECOND_MS);
     }
 
-    private void destroyWebView() {
-        if (webView == null) return;
-        webView.stopLoading();
-        webView.setWebViewClient(null);
-        if (webView.getParent() instanceof ViewGroup) {
-            ((ViewGroup) webView.getParent()).removeView(webView);
-        }
-        webView.destroy();
-        webView = null;
-    }
-
     private String accountLabel(CheckinCenterClient.Account account) {
         String name = account.displayName.isEmpty() ? "小黑盒账号" : account.displayName;
         return account.externalIdMasked.isEmpty() ? name : name + "  " + account.externalIdMasked;
@@ -662,7 +965,8 @@ final class CheckinCenterPage {
         closed = true;
         pairing = null;
         handler.removeCallbacksAndMessages(null);
-        destroyWebView();
+        clearPairingViews();
+        clearSmsViews();
         root.removeAllViews();
     }
 
