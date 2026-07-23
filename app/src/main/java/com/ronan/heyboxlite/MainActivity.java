@@ -2636,11 +2636,12 @@ public final class MainActivity extends Activity {
     }
 
     private void cacheDetailAndRender(FeedItem item, JSONObject body) {
-        this.localCache.saveDetail(item.id, body);
+        JSONObject normalized = DetailResponseNormalizer.normalize(body);
+        this.localCache.saveDetail(item.id, normalized);
         if (this.localCache.isWatchLater(item.id)) {
-            refreshWatchLaterOffline(item, body, null);
+            refreshWatchLaterOffline(item, normalized, null);
         }
-        renderDetail(body, item);
+        renderDetail(normalized, item);
     }
 
     private Map<String, String> detailParams(FeedItem item) {
@@ -2746,6 +2747,7 @@ public final class MainActivity extends Activity {
     }
 
     private void renderDetail(JSONObject body, FeedItem fallback) {
+        body = DetailResponseNormalizer.normalize(body);
         this.currentDetailBody = body;
         JSONObject result = body.optJSONObject("result");
         JSONObject link = result == null ? null : result.optJSONObject("link");

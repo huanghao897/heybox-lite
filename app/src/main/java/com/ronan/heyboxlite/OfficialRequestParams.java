@@ -60,7 +60,7 @@ final class OfficialRequestParams {
         params.put(SecureStrings.userid(), userId);
         params.put("offset", String.valueOf(Math.max(0, offset)));
         params.put("limit", String.valueOf(Math.max(1, limit)));
-        params.put("no_banner", "1");
+        params.put("no_banner", offset > 0 ? "1" : "0");
         return params;
     }
 

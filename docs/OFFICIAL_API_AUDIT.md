@@ -12,10 +12,10 @@
 | 功能 | Lite 请求 | 官方依据 | 结果 |
 | --- | --- | --- | --- |
 | 社区信息流 | `GET /bbs/app/feeds` | `datasource/a.java`、`FeedsRetrofitNetworkDataSource.java` | 使用 `pull/last_pull/lastval/unexposed/is_first/refresh_type/list_ver=2`；空可选字段不发送，不再使用 `offset` |
-| 帖子详情 | `GET /bbs/app/link/tree/v2` | `com/max/common/common/datasource/f.java` | 使用 `h_src/link_id/page/limit/is_first/owner_only`；不再回退 v1 或发送 `index` |
+| 帖子详情 | `GET /bbs/app/link/tree/v2` | `com/max/common/common/datasource/f.java`、`LinkTreeDto` | 使用 `h_src/link_id/page/limit/is_first/owner_only`；将 v2 的 `link.body/stats/access/...` 与 `comment.comments` 适配到现有渲染模型，不再回退 v1 或发送 `index` |
 | 楼中楼 | `GET /bbs/app/comment/sub/comments` | `network/e.java:L7` | 只发送 `root_comment_id/lastval/h_src/hide_cy`；按响应 `lastval/has_more` 翻页并阻止并发重复点击 |
 | 搜索 | `GET /bbs/app/api/general/search/v1` | `network/e.java:i1` | 使用 `q/search_type/offset/limit`；不发送重复的 `keyword` 或无效 `page` |
-| 用户动态 | `GET /bbs/app/profile/user/link/list` | `network/e.java:S7` | 使用 `userid/offset/limit/no_banner`；无自动轮询 |
+| 用户动态 | `GET /bbs/app/profile/user/link/list` | `network/e.java:S7`、`UserBBSInfoFragment` | 使用 `userid/offset/limit/no_banner`；首屏发送 `no_banner=0` 以获取用户资料，后续页为 `1`；无自动轮询 |
 | 云端历史 | `GET /bbs/app/profile/history/visit` | `network/e.java:T0` | 使用 `type=link/offset/limit`；不发送用户 id、桌面系统或浏览器伪装字段 |
 | 收藏标签 | `GET /bbs/app/profile/fav/tab_list` | `network/e.java:ta` | 打开收藏时请求一次 |
 | 默认收藏内容 | `GET /bbs/app/profile/fav/folder/v2/links` | `network/e.java:u6` | 标签成功后请求一次，默认标签不发送 `folder_id`；使用 `offset/limit=30/enable_new_style_collect=1` |

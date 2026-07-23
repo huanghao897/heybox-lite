@@ -129,10 +129,12 @@ public class OfficialRequestParamsTest {
     }
 
     @Test
-    public void profileLinksDisableBannerLikeOfficialProfileList() {
-        Map<String, String> params = OfficialRequestParams.profileLinks("7", 0, 20);
+    public void profileLinksIncludeUserHeaderOnFirstPage() {
+        Map<String, String> firstPage = OfficialRequestParams.profileLinks("7", 0, 20);
+        Map<String, String> nextPage = OfficialRequestParams.profileLinks("7", 20, 20);
 
-        assertEquals("7", params.get(SecureStrings.userid()));
-        assertEquals("1", params.get("no_banner"));
+        assertEquals("7", firstPage.get(SecureStrings.userid()));
+        assertEquals("0", firstPage.get("no_banner"));
+        assertEquals("1", nextPage.get("no_banner"));
     }
 }
