@@ -29,10 +29,10 @@ final class CheckinCenterCoordinator {
     private String activeSyncFingerprint = "";
     private boolean closed;
 
-    CheckinCenterCoordinator(Context context, SessionStore session) {
+    CheckinCenterCoordinator(Context context, SessionStore session, LocalCache diagnostics) {
         this.session = session;
         this.store = new CheckinCenterStore(context);
-        this.client = new CheckinCenterClient();
+        this.client = new CheckinCenterClient(diagnostics::log);
         this.sessionPreferences = context.getApplicationContext().getSharedPreferences(
                 SecureStrings.preferencesName(), Context.MODE_PRIVATE);
         this.cookieListener = (preferences, key) -> {

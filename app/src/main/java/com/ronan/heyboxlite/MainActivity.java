@@ -226,7 +226,9 @@ public final class MainActivity extends Activity {
             return;
         }
         this.session = new SessionStore(this);
-        this.checkinCenterCoordinator = new CheckinCenterCoordinator(this, this.session);
+        this.localCache = new LocalCache(this);
+        this.checkinCenterCoordinator = new CheckinCenterCoordinator(
+                this, this.session, this.localCache);
         this.checkinCenterCoordinator.setAuthorizationListener(paired -> {
             this.cachedProfileContainer = null;
             if (!paired && this.checkinCenterPage != null
@@ -234,7 +236,6 @@ public final class MainActivity extends Activity {
                 this.checkinCenterPage.refresh();
             }
         });
-        this.localCache = new LocalCache(this);
         this.readingTimeTracker = new ReadingTimeTracker(this);
         ImageLoader.init(this);
         if (this.session.autoOfflineCleanup()) {

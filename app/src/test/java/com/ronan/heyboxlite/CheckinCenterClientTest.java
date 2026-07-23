@@ -1,5 +1,6 @@
 package com.ronan.heyboxlite;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -37,5 +38,17 @@ public class CheckinCenterClientTest {
         assertFalse(CheckinRetryPolicy.shouldRetry(unauthorized, 0));
         assertTrue(CheckinRetryPolicy.delayMillis(rateLimited, 1, 0L)
                 > CheckinRetryPolicy.delayMillis(rateLimited, 0, 0L));
+    }
+
+    @Test
+    public void signingOperationsWaitForServerSideSigner() {
+        assertEquals(25_000, CheckinCenterClient.readTimeoutMillis(
+                CheckinCenterClient.Operation.PAIR_START));
+        assertEquals(25_000, CheckinCenterClient.readTimeoutMillis(
+                CheckinCenterClient.Operation.STATUS));
+        assertTrue(CheckinCenterClient.readTimeoutMillis(
+                CheckinCenterClient.Operation.CREDENTIAL_SYNC) >= 120_000);
+        assertTrue(CheckinCenterClient.readTimeoutMillis(
+                CheckinCenterClient.Operation.RUN_NOW) >= 120_000);
     }
 }

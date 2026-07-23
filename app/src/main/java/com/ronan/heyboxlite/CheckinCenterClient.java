@@ -10,13 +10,17 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.UnknownHostException;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLException;
 
 final class CheckinCenterClient {
     static final String TRUSTED_ORIGIN = "https://8.138.134.236";
@@ -24,7 +28,8 @@ final class CheckinCenterClient {
     private static final String TRUSTED_HOST = "8.138.134.236";
     private static final String WEB_PATH_PREFIX = "/checkin/";
     private static final int CONNECT_TIMEOUT_MS = 10_000;
-    private static final int READ_TIMEOUT_MS = 25_000;
+    private static final int STANDARD_READ_TIMEOUT_MS = 25_000;
+    private static final int SIGNING_READ_TIMEOUT_MS = 125_000;
     private static final int MAX_RESPONSE_BYTES = 64 * 1024;
 
     enum Operation {
@@ -41,14 +46,34 @@ final class CheckinCenterClient {
         void onError(ApiError error);
     }
 
+    interface EventLogger {
+        void log(String event);
+    }
+
+    enum ErrorKind {
+        HTTP,
+        TIMEOUT,
+        TLS,
+        NETWORK,
+        PROTOCOL,
+        CLIENT
+    }
+
     static final class ApiError extends Exception {
         final Operation operation;
         final int statusCode;
+        final ErrorKind kind;
 
         ApiError(Operation operation, int statusCode, String message) {
+            this(operation, statusCode, message,
+                    statusCode > 0 ? ErrorKind.HTTP : ErrorKind.CLIENT);
+        }
+
+        ApiError(Operation operation, int statusCode, String message, ErrorKind kind) {
             super(message);
             this.operation = operation;
             this.statusCode = statusCode;
+            this.kind = kind;
         }
 
         boolean authorizationInvalid() {
@@ -197,7 +222,16 @@ final class CheckinCenterClient {
         return thread;
     });
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final EventLogger eventLogger;
     private volatile boolean closed;
+
+    CheckinCenterClient() {
+        this(event -> {});
+    }
+
+    CheckinCenterClient(EventLogger eventLogger) {
+        this.eventLogger = eventLogger;
+    }
 
     void startPairing(String deviceName, String appVersion, int appVersionCode,
                       Callback<PairingStart> callback) {
@@ -308,7 +342,7 @@ final class CheckinCenterClient {
             connection.setInstanceFollowRedirects(false);
             connection.setUseCaches(false);
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            connection.setReadTimeout(READ_TIMEOUT_MS);
+            connection.setReadTimeout(readTimeoutMillis(operation));
             connection.setRequestMethod(method);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("User-Agent", "heybox-Lite/" + BuildConfig.VERSION_NAME);
@@ -335,11 +369,16 @@ final class CheckinCenterClient {
             JSONObject json = response.isEmpty() ? new JSONObject() : new JSONObject(response);
             return parser.parse(json);
         } catch (ApiError error) {
+            logFailure(error);
             throw error;
         } catch (IOException error) {
-            throw new ApiError(operation, 0, "无法安全连接签到服务");
+            ApiError classified = networkError(operation, error);
+            logFailure(classified);
+            throw classified;
         } catch (JSONException error) {
-            throw protocolError(operation);
+            ApiError protocol = protocolError(operation);
+            logFailure(protocol);
+            throw protocol;
         } finally {
             if (connection != null) connection.disconnect();
         }
@@ -482,7 +521,42 @@ final class CheckinCenterClient {
     }
 
     private static ApiError protocolError(Operation operation) {
-        return new ApiError(operation, 0, "签到服务响应异常");
+        return new ApiError(operation, 0, "签到服务响应异常", ErrorKind.PROTOCOL);
+    }
+
+    static int readTimeoutMillis(Operation operation) {
+        return operation == Operation.CREDENTIAL_SYNC || operation == Operation.RUN_NOW
+                ? SIGNING_READ_TIMEOUT_MS : STANDARD_READ_TIMEOUT_MS;
+    }
+
+    private static ApiError networkError(Operation operation, IOException error) {
+        if (error instanceof SocketTimeoutException) {
+            String message;
+            if (operation == Operation.CREDENTIAL_SYNC) {
+                message = "签到资料校验超时，请稍后重试";
+            } else if (operation == Operation.RUN_NOW) {
+                message = "签到执行超时，请稍后刷新状态";
+            } else {
+                message = "连接签到服务超时，请检查网络";
+            }
+            return new ApiError(operation, 0, message, ErrorKind.TIMEOUT);
+        }
+        if (error instanceof SSLException) {
+            return new ApiError(operation, 0, "签到服务证书校验失败，请更新客户端",
+                    ErrorKind.TLS);
+        }
+        if (error instanceof UnknownHostException || error instanceof ConnectException) {
+            return new ApiError(operation, 0, "无法连接签到服务，请检查网络",
+                    ErrorKind.NETWORK);
+        }
+        return new ApiError(operation, 0, "签到服务连接异常，请稍后重试",
+                ErrorKind.NETWORK);
+    }
+
+    private void logFailure(ApiError error) {
+        eventLogger.log("checkin request failed operation=" + error.operation.name()
+                + " status=" + error.statusCode
+                + " category=" + error.kind.name().toLowerCase());
     }
 
     private static ApiError statusError(Operation operation, int status) {
