@@ -33,6 +33,18 @@ public class OfficialRequestParamsTest {
     }
 
     @Test
+    public void feedAllowsOfficialLoadMoreWithoutCursor() {
+        Map<String, String> params = OfficialRequestParams.feed(0, 1, "", false);
+
+        assertEquals("0", params.get("pull"));
+        assertEquals("1", params.get("last_pull"));
+        assertEquals("0", params.get("is_first"));
+        assertEquals("2", params.get("list_ver"));
+        assertFalse(params.containsKey("lastval"));
+        assertFalse(params.containsKey("offset"));
+    }
+
+    @Test
     public void detailOmitsLegacyIndexParameter() {
         Map<String, String> params = OfficialRequestParams.detail("42", "feed");
 

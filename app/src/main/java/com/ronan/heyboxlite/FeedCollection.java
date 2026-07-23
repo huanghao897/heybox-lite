@@ -30,15 +30,24 @@ final class FeedCollection {
         return filtered;
     }
 
-    static void appendUnique(List<FeedItem> target, List<FeedItem> incoming) {
+    static int appendUnique(List<FeedItem> target, List<FeedItem> incoming) {
         Set<String> ids = new HashSet<>();
         for (FeedItem item : target) {
             if (item != null) ids.add(item.id);
         }
-        if (incoming == null) return;
+        if (incoming == null) return 0;
+        int added = 0;
         for (FeedItem item : incoming) {
-            if (item != null && ids.add(item.id)) target.add(item);
+            if (item != null && ids.add(item.id)) {
+                target.add(item);
+                added++;
+            }
         }
+        return added;
+    }
+
+    static boolean loadMoreExhausted(int returned, int added) {
+        return returned <= 0 || added <= 0;
     }
 
     static boolean isBlocked(FeedItem item, List<String> keywords) {

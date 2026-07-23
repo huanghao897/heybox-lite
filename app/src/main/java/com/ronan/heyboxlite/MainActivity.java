@@ -2088,11 +2088,10 @@ public final class MainActivity extends Activity {
                     JSONObject result = body.optJSONObject("result");
                     JSONArray links = result == null ? null : result.optJSONArray("links");
                     String responseLastval = result == null ? "" : result.optString("lastval", "");
-                    boolean cursorAdvanced = !responseLastval.isEmpty()
-                            && !responseLastval.equals(requestedLastval);
                     boolean keepPrevious = Json.truthy(result, "keep_previous");
                     List<FeedItem> fresh = new ArrayList<>();
                     int returned = 0;
+                    int added = 0;
                     if (links != null) {
                         for (int i = 0; i < links.length(); i++) {
                             JSONObject item = links.optJSONObject(i);
@@ -2113,7 +2112,7 @@ public final class MainActivity extends Activity {
                         if (reset) {
                             MainActivity.this.feed.clear();
                         }
-                        FeedCollection.appendUnique(MainActivity.this.feed, fresh);
+                        added = FeedCollection.appendUnique(MainActivity.this.feed, fresh);
                         if (reset && keepPrevious && previous != null) {
                             FeedCollection.appendUnique(MainActivity.this.feed, previous);
                         }
@@ -2125,9 +2124,14 @@ public final class MainActivity extends Activity {
                     MainActivity.this.feedFirstRequest = false;
                     MainActivity.this.feedLastPull = pull;
                     MainActivity.this.feedLastval = responseLastval;
-                    if (responseLastval.isEmpty() || (!reset && !cursorAdvanced)) {
-                        MainActivity.this.feedNoMore = true;
+                    if (!reset) {
+                        MainActivity.this.feedNoMore = FeedCollection.loadMoreExhausted(
+                                returned, added);
                     }
+                    MainActivity.this.localCache.log("feed " + (reset ? "refresh" : "load more")
+                            + ": returned=" + returned + ", added=" + added
+                            + ", cursor=" + (!responseLastval.isEmpty())
+                            + ", noMore=" + MainActivity.this.feedNoMore);
                     MainActivity.this.updateFeedFooter();
                     if (MainActivity.this.feedAdapter != null) {
                         MainActivity.this.feedAdapter.notifyDataSetChanged();
