@@ -7,6 +7,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.security.MessageDigest;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
@@ -58,6 +59,7 @@ final class CheckinCredentialPayload {
         String cleanId = required(heyboxId, "小黑盒账号信息不完整");
         String cleanPkey = required(pkey, "当前登录缺少 pkey，请重新登录小黑盒");
         String cleanDeviceId = required(deviceId, "当前设备标识不可用");
+        String cleanToken = optional(token);
         if (!cleanId.matches("[0-9]+")) {
             throw new InvalidCredentials("小黑盒账号信息无效");
         }
@@ -65,8 +67,9 @@ final class CheckinCredentialPayload {
             JSONObject credentials = new JSONObject();
             credentials.put("heybox_id", cleanId);
             credentials.put("pkey", cleanPkey);
-            credentials.put("x_xhh_tokenid", optional(token));
-            credentials.put("cookie", optional(cookie));
+            credentials.put("x_xhh_tokenid", cleanToken);
+            credentials.put("cookie", normalizedCookie(
+                    optional(cookie), cleanId, cleanPkey, cleanToken));
 
             JSONObject device = new JSONObject();
             device.put("device_id", cleanDeviceId);
@@ -113,6 +116,48 @@ final class CheckinCredentialPayload {
 
     private static String optional(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    static String normalizedCookie(String cookie, String heyboxId, String pkey, String token)
+            throws InvalidCredentials {
+        String source = optional(cookie);
+        if (source.isEmpty()) return "";
+
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String part : source.split(";")) {
+            int separator = part.indexOf('=');
+            if (separator <= 0) continue;
+            String name = part.substring(0, separator).trim();
+            String value = part.substring(separator + 1).trim();
+            if (!name.isEmpty() && !value.isEmpty()) values.put(name, value);
+        }
+
+        values.put("pkey", pkey);
+        replaceIfPresent(values, "user_pkey", pkey);
+        replaceIfPresent(values, "x_pkey", pkey);
+        replaceIfPresent(values, "x_xhh_tokenid", token);
+        for (String name : new String[]{"x_heybox_id", "user_heybox_id", "heybox_id",
+                "userid", "user_id", "heyboxid"}) {
+            String cookieId = values.get(name);
+            if (cookieId != null && !cookieId.equals(heyboxId)) {
+                throw new InvalidCredentials("Cookie 中的账号与当前登录账号不一致，请重新登录小黑盒");
+            }
+        }
+
+        StringBuilder result = new StringBuilder();
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            if (entry.getValue().isEmpty()) continue;
+            if (result.length() > 0) result.append("; ");
+            result.append(entry.getKey()).append('=').append(entry.getValue());
+        }
+        return result.toString();
+    }
+
+    private static void replaceIfPresent(Map<String, String> values, String key, String value) {
+        if (values.containsKey(key)) {
+            if (value.isEmpty()) values.remove(key);
+            else values.put(key, value);
+        }
     }
 
     private static String first(String... values) {

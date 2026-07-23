@@ -36,9 +36,9 @@ public class CheckinCredentialPayloadTest {
 
     @Test
     public void fingerprintIsLocalDeterministicAndChangesWithCookie() throws Exception {
-        CheckinCredentialPayload first = sample("cookie-a");
-        CheckinCredentialPayload same = sample("cookie-a");
-        CheckinCredentialPayload changed = sample("cookie-b");
+        CheckinCredentialPayload first = sample("device_session=cookie-a");
+        CheckinCredentialPayload same = sample("device_session=cookie-a");
+        CheckinCredentialPayload changed = sample("device_session=cookie-b");
 
         assertEquals(first.fingerprint, same.fingerprint);
         assertNotEquals(first.fingerprint, changed.fingerprint);
@@ -51,6 +51,29 @@ public class CheckinCredentialPayloadTest {
         CheckinCredentialPayload.create("123456", "", "", "cookie",
                 "device-123", "Pixel 8", "14", "heybox", "360",
                 "Asia/Shanghai", "2.0.6", 209);
+    }
+
+    @Test
+    public void staleCookieAliasesAreCanonicalizedBeforeUpload() throws Exception {
+        CheckinCredentialPayload payload = sample(
+                "pkey=stale; user_pkey=older; x_pkey=oldest; "
+                        + "x_xhh_tokenid=stale-token; x_heybox_id=123456; "
+                        + "user_id=123456; device_session=keep-me");
+        String cookie = payload.json.getJSONObject("credentials").getString("cookie");
+
+        assertTrue(cookie.contains("pkey=pkey-value"));
+        assertTrue(cookie.contains("user_pkey=pkey-value"));
+        assertTrue(cookie.contains("x_pkey=pkey-value"));
+        assertTrue(cookie.contains("x_xhh_tokenid=token-value"));
+        assertTrue(cookie.contains("x_heybox_id=123456"));
+        assertTrue(cookie.contains("user_id=123456"));
+        assertTrue(cookie.contains("device_session=keep-me"));
+        assertFalse(cookie.contains("stale"));
+    }
+
+    @Test(expected = CheckinCredentialPayload.InvalidCredentials.class)
+    public void mismatchedCookieAccountIsRejectedBeforeUpload() throws Exception {
+        sample("pkey=pkey-value; x_heybox_id=999999");
     }
 
     private static CheckinCredentialPayload sample(String cookie) throws Exception {

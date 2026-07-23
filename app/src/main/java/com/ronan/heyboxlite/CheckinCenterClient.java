@@ -2,6 +2,7 @@ package com.ronan.heyboxlite;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -63,6 +64,7 @@ final class CheckinCenterClient {
         final Operation operation;
         final int statusCode;
         final ErrorKind kind;
+        final String diagnosticCode;
 
         ApiError(Operation operation, int statusCode, String message) {
             this(operation, statusCode, message,
@@ -70,10 +72,16 @@ final class CheckinCenterClient {
         }
 
         ApiError(Operation operation, int statusCode, String message, ErrorKind kind) {
+            this(operation, statusCode, message, kind, "");
+        }
+
+        ApiError(Operation operation, int statusCode, String message, ErrorKind kind,
+                 String diagnosticCode) {
             super(message);
             this.operation = operation;
             this.statusCode = statusCode;
             this.kind = kind;
+            this.diagnosticCode = diagnosticCode;
         }
 
         boolean authorizationInvalid() {
@@ -335,6 +343,7 @@ final class CheckinCenterClient {
     private <T> T request(Operation operation, String method, String path, String token,
                           JSONObject body, Parser<T> parser) throws ApiError {
         HttpsURLConnection connection = null;
+        long startedAt = SystemClock.elapsedRealtime();
         try {
             URI uri = requireTrustedUri(API_BASE + path, true, operation);
             URL url = uri.toURL();
@@ -364,20 +373,20 @@ final class CheckinCenterClient {
             }
             String response = readResponse(connection, status, operation);
             if (status < 200 || status >= 300) {
-                throw statusError(operation, status);
+                throw statusError(operation, status, response);
             }
             JSONObject json = response.isEmpty() ? new JSONObject() : new JSONObject(response);
             return parser.parse(json);
         } catch (ApiError error) {
-            logFailure(error);
+            logFailure(error, startedAt);
             throw error;
         } catch (IOException error) {
             ApiError classified = networkError(operation, error);
-            logFailure(classified);
+            logFailure(classified, startedAt);
             throw classified;
         } catch (JSONException error) {
             ApiError protocol = protocolError(operation);
-            logFailure(protocol);
+            logFailure(protocol, startedAt);
             throw protocol;
         } finally {
             if (connection != null) connection.disconnect();
@@ -553,39 +562,76 @@ final class CheckinCenterClient {
                 ErrorKind.NETWORK);
     }
 
-    private void logFailure(ApiError error) {
+    private void logFailure(ApiError error, long startedAt) {
+        String detail = error.diagnosticCode.isEmpty()
+                ? "" : " reason=" + error.diagnosticCode;
         eventLogger.log("checkin request failed operation=" + error.operation.name()
                 + " status=" + error.statusCode
-                + " category=" + error.kind.name().toLowerCase());
+                + " category=" + error.kind.name().toLowerCase()
+                + detail
+                + " elapsedMs=" + Math.max(0L, SystemClock.elapsedRealtime() - startedAt));
     }
 
-    private static ApiError statusError(Operation operation, int status) {
+    private static ApiError statusError(Operation operation, int status, String response) {
+        String diagnosticCode = serverErrorCode(response);
+        String message;
         switch (status) {
             case 401:
-                return new ApiError(operation, status, "签到服务连接已失效，请重新连接");
+                message = "签到服务连接已失效，请重新连接";
+                break;
             case 404:
-                return new ApiError(operation, status, operation == Operation.PAIR_POLL
-                        ? "配对请求不存在，请重新连接" : "签到任务尚未配置");
+                message = operation == Operation.PAIR_POLL
+                        ? "配对请求不存在，请重新连接" : "签到任务尚未配置";
+                break;
             case 409:
-                return new ApiError(operation, status, operation == Operation.CREDENTIAL_SYNC
+                message = operation == Operation.CREDENTIAL_SYNC
                         ? "签到服务已绑定其他小黑盒账号，请先在网页解除旧绑定"
-                        : "当前操作与服务器状态冲突，请稍后重试");
+                        : "当前操作与服务器状态冲突，请稍后重试";
+                break;
             case 410:
-                return new ApiError(operation, status, "配对已过期，请重新连接");
+                message = "配对已过期，请重新连接";
+                break;
             case 413:
-                return new ApiError(operation, status, "签到资料异常，请更新客户端后重试");
+                message = "签到资料异常，请更新客户端后重试";
+                break;
             case 422:
-                return new ApiError(operation, status, operation == Operation.CREDENTIAL_SYNC
-                        ? "Cookie、账号或设备资料不一致，请重新登录小黑盒"
-                        : "签到服务请求无效");
+                if (operation != Operation.CREDENTIAL_SYNC) {
+                    message = "签到服务请求无效";
+                } else if ("payload_invalid".equals(diagnosticCode)) {
+                    message = "当前 Cookie 内的账号资料不一致，请重新登录小黑盒";
+                } else if ("credentials_rejected".equals(diagnosticCode)) {
+                    message = "小黑盒已拒绝当前登录凭据，请重新登录后重试";
+                } else {
+                    message = "Cookie、账号或设备资料不一致，请重新登录小黑盒";
+                }
+                break;
             case 429:
-                return new ApiError(operation, status, "操作过于频繁，请稍后重试");
+                message = "操作过于频繁，请稍后重试";
+                break;
             case 502:
             case 503:
-                return new ApiError(operation, status, "签到服务暂时不可用，请稍后重试");
+                message = "签到服务暂时不可用，请稍后重试";
+                break;
             default:
-                return new ApiError(operation, status, "签到服务请求失败");
+                message = "签到服务请求失败";
+                break;
         }
+        return new ApiError(operation, status, message, ErrorKind.HTTP, diagnosticCode);
+    }
+
+    static String serverErrorCode(String response) {
+        try {
+            String error = new JSONObject(response).optString("error", "");
+            if ("credential payload is invalid".equals(error)) return "payload_invalid";
+            if ("Xiaoheihe rejected the credentials".equals(error)) {
+                return "credentials_rejected";
+            }
+            if ("Xiaoheihe validation is temporarily unavailable".equals(error)) {
+                return "validation_unavailable";
+            }
+        } catch (JSONException ignored) {
+        }
+        return "";
     }
 
     private <T> void submit(Callback<T> callback, Call<T> call) {

@@ -51,4 +51,14 @@ public class CheckinCenterClientTest {
         assertTrue(CheckinCenterClient.readTimeoutMillis(
                 CheckinCenterClient.Operation.RUN_NOW) >= 120_000);
     }
+
+    @Test
+    public void serverErrorDetailsUseOnlyKnownDiagnosticCodes() {
+        assertEquals("payload_invalid", CheckinCenterClient.serverErrorCode(
+                "{\"error\":\"credential payload is invalid\"}"));
+        assertEquals("credentials_rejected", CheckinCenterClient.serverErrorCode(
+                "{\"error\":\"Xiaoheihe rejected the credentials\"}"));
+        assertEquals("", CheckinCenterClient.serverErrorCode(
+                "{\"error\":\"Cookie: pkey=private-value\"}"));
+    }
 }
