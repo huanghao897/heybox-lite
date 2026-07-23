@@ -67,4 +67,15 @@ public class CheckinCenterClientTest {
         assertEquals("", CheckinCenterClient.serverErrorCode(
                 "{\"error\":\"Cookie: pkey=private-value\"}"));
     }
+
+    @Test
+    public void missingSmsRouteIsNotReportedAsMissingTask() {
+        CheckinCenterClient.ApiError sms = CheckinCenterClient.statusError(
+                CheckinCenterClient.Operation.SMS_SEND, 404, "{\"detail\":\"Not Found\"}");
+        CheckinCenterClient.ApiError status = CheckinCenterClient.statusError(
+                CheckinCenterClient.Operation.STATUS, 404, "{\"detail\":\"Not Found\"}");
+
+        assertEquals("服务器暂未支持手机号登录，请稍后重试", sms.getMessage());
+        assertEquals("签到任务尚未配置", status.getMessage());
+    }
 }

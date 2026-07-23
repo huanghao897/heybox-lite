@@ -680,7 +680,7 @@ final class CheckinCenterClient {
                 + " elapsedMs=" + Math.max(0L, SystemClock.elapsedRealtime() - startedAt));
     }
 
-    private static ApiError statusError(Operation operation, int status, String response) {
+    static ApiError statusError(Operation operation, int status, String response) {
         String diagnosticCode = serverErrorCode(response);
         String message;
         switch (status) {
@@ -690,9 +690,14 @@ final class CheckinCenterClient {
                         : "签到服务连接已失效，请重新连接";
                 break;
             case 404:
-                message = operation == Operation.PAIR_POLL
-                        || operation == Operation.PAIR_APPROVE
-                        ? "配对请求不存在，请重新连接" : "签到任务尚未配置";
+                if (operation == Operation.PAIR_POLL || operation == Operation.PAIR_APPROVE) {
+                    message = "配对请求不存在，请重新连接";
+                } else if (operation == Operation.SMS_SEND
+                        || operation == Operation.SMS_SUBMIT) {
+                    message = "服务器暂未支持手机号登录，请稍后重试";
+                } else {
+                    message = "签到任务尚未配置";
+                }
                 break;
             case 409:
                 if ((operation == Operation.SMS_SEND || operation == Operation.SMS_SUBMIT)
