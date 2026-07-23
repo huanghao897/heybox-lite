@@ -109,6 +109,25 @@ public class CheckinCenterClientTest {
     }
 
     @Test
+    public void captchaPromptIncludesSanitizedLoaderDiagnostics() throws Exception {
+        String page = "https://8.138.134.236/checkin/lite/captcha?appid=2076842290";
+        String payload = "{\"ret\":1,\"error_code\":1001,"
+                + "\"loader_stage\":\"entry:all\","
+                + "\"error_reason\":\"network_or_policy\","
+                + "\"sdk_source\":\"qcloud\"}";
+        String prompt = CheckinCaptchaContract.PROMPT_PREFIX
+                + URLEncoder.encode(payload, "UTF-8");
+
+        CheckinCaptchaContract.Result result =
+                CheckinCaptchaContract.parsePrompt(page, prompt);
+
+        assertNotNull(result);
+        assertFalse(result.successful);
+        assertEquals("captcha_network_or_policy_entry_all_qcloud_1001",
+                result.diagnosticCode);
+    }
+
+    @Test
     public void signingOperationsWaitForServerSideSigner() {
         assertEquals(25_000, CheckinCenterClient.readTimeoutMillis(
                 CheckinCenterClient.Operation.PAIR_START));

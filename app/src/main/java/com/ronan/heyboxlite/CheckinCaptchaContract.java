@@ -61,9 +61,7 @@ final class CheckinCaptchaContract {
             int ret = value.optInt("ret", 1);
             if (ret != 0) {
                 int errorCode = value.optInt("error_code", -1);
-                return Result.failure(errorCode < 0
-                        ? "provider_" + ret
-                        : "provider_" + ret + "_" + errorCode);
+                return Result.failure(providerFailureCode(value, ret, errorCode));
             }
             String ticket = value.optString("ticket", "").trim();
             String randstr = value.optString("randstr", "").trim();
@@ -74,5 +72,33 @@ final class CheckinCaptchaContract {
         } catch (Exception ignored) {
             return Result.failure("invalid_result");
         }
+    }
+
+    private static String providerFailureCode(JSONObject value, int ret, int errorCode) {
+        String stage = diagnosticMarker(value.optString("loader_stage", ""));
+        String reason = diagnosticMarker(value.optString("error_reason", ""));
+        String source = diagnosticMarker(value.optString("sdk_source", ""));
+        if (stage.isEmpty() && reason.isEmpty() && source.isEmpty()) {
+            return errorCode < 0
+                    ? "provider_" + ret
+                    : "provider_" + ret + "_" + errorCode;
+        }
+
+        StringBuilder code = new StringBuilder("captcha");
+        appendMarker(code, reason);
+        appendMarker(code, stage);
+        appendMarker(code, source);
+        if (errorCode >= 0) appendMarker(code, String.valueOf(errorCode));
+        return code.length() <= 48 ? code.toString() : code.substring(0, 48);
+    }
+
+    private static void appendMarker(StringBuilder target, String marker) {
+        if (!marker.isEmpty()) target.append('_').append(marker);
+    }
+
+    private static String diagnosticMarker(String value) {
+        if (value == null || !value.matches("[a-zA-Z0-9:._-]{1,64}")) return "";
+        return value.toLowerCase().replaceAll("[^a-z0-9]+", "_")
+                .replaceAll("^_+|_+$", "");
     }
 }
