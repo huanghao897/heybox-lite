@@ -44,7 +44,7 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:process=":captcha"
-            android:theme="@style/AppTheme" />
+            android:theme="@style/CheckinCaptchaTheme" />
         <activity
             android:name=".CrashRecoveryActivity"
             android:excludeFromRecents="true"

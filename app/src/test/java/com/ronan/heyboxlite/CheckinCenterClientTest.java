@@ -141,6 +141,10 @@ public class CheckinCenterClientTest {
                 CheckinCenterClient.Operation.SMS_SEND) >= 120_000);
         assertTrue(CheckinCenterClient.readTimeoutMillis(
                 CheckinCenterClient.Operation.SMS_SUBMIT) >= 120_000);
+        assertTrue(CheckinCenterClient.readTimeoutMillis(
+                CheckinCenterClient.Operation.PASSWORD_LOGIN) >= 120_000);
+        assertEquals(25_000, CheckinCenterClient.readTimeoutMillis(
+                CheckinCenterClient.Operation.TASK_SETTINGS));
     }
 
     @Test
@@ -164,5 +168,16 @@ public class CheckinCenterClientTest {
 
         assertEquals("服务器暂未支持手机号登录，请稍后重试", sms.getMessage());
         assertEquals("签到任务尚未配置", status.getMessage());
+    }
+
+    @Test
+    public void passwordAndTaskErrorsUseSpecificMessages() {
+        CheckinCenterClient.ApiError password = CheckinCenterClient.statusError(
+                CheckinCenterClient.Operation.PASSWORD_LOGIN, 422, "{}");
+        CheckinCenterClient.ApiError settings = CheckinCenterClient.statusError(
+                CheckinCenterClient.Operation.TASK_SETTINGS, 422, "{}");
+
+        assertEquals("手机号或密码错误，登录失败", password.getMessage());
+        assertEquals("签到时间或随机偏移无效", settings.getMessage());
     }
 }

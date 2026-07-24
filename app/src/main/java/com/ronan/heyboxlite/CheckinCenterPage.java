@@ -1,6 +1,7 @@
 package com.ronan.heyboxlite;
 
 import android.app.Activity;
+import android.app.TimePickerDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Handler;
@@ -15,6 +16,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import java.util.Locale;
@@ -30,7 +32,13 @@ final class CheckinCenterPage {
     private enum CaptchaAction {
         NONE,
         SEND_SMS,
-        SUBMIT_SMS
+        SUBMIT_SMS,
+        PASSWORD_LOGIN
+    }
+
+    private enum LoginMode {
+        SMS,
+        PASSWORD
     }
 
     private enum State {
@@ -68,9 +76,17 @@ final class CheckinCenterPage {
     private boolean pairingApprovalInFlight;
     private EditText smsPhoneInput;
     private EditText smsCodeInput;
+    private EditText passwordInput;
     private Button smsSendButton;
     private Button smsSubmitButton;
+    private Button passwordSubmitButton;
     private TextView smsStatus;
+    private Switch taskEnabledSwitch;
+    private View taskTimeButton;
+    private Button taskOffsetMinusButton;
+    private Button taskOffsetPlusButton;
+    private LoginMode loginMode = LoginMode.SMS;
+    private String mobilePhone = "";
     private String smsSessionId = "";
     private long smsRetryAtElapsed;
     private long smsExpiresAtElapsed;
@@ -78,6 +94,8 @@ final class CheckinCenterPage {
     private CaptchaAction captchaAction = CaptchaAction.NONE;
     private String captchaPhone = "";
     private String captchaCode = "";
+    private String captchaPassword = "";
+    private boolean taskSettingsInFlight;
     private boolean closed;
 
     CheckinCenterPage(Activity activity, SessionStore session,
@@ -327,6 +345,8 @@ final class CheckinCenterPage {
         smsRetryAtElapsed = 0L;
         smsExpiresAtElapsed = 0L;
         smsRequestInFlight = false;
+        loginMode = LoginMode.SMS;
+        mobilePhone = "";
         clearCaptchaRequest();
         errorMessage = "";
         state = State.MOBILE_LOGIN;
@@ -336,6 +356,7 @@ final class CheckinCenterPage {
     private void sendSmsCode() {
         if (smsRequestInFlight || smsPhoneInput == null) return;
         String phone = smsPhoneInput.getText().toString().trim();
+        mobilePhone = phone;
         requestSmsCode(phone, "", "", false);
     }
 
@@ -428,12 +449,74 @@ final class CheckinCenterPage {
                 });
     }
 
+    private void switchLoginMode(LoginMode mode) {
+        if (smsRequestInFlight || mode == loginMode) return;
+        if (smsPhoneInput != null) {
+            mobilePhone = smsPhoneInput.getText().toString().trim();
+        }
+        if (passwordInput != null) passwordInput.setText("");
+        loginMode = mode;
+        clearCaptchaRequest();
+        clearSmsViews();
+        render();
+    }
+
+    private void loginWithPassword() {
+        if (smsRequestInFlight || smsPhoneInput == null || passwordInput == null) return;
+        String phone = smsPhoneInput.getText().toString().trim();
+        String password = passwordInput.getText().toString();
+        mobilePhone = phone;
+        requestPasswordLogin(phone, password, "", "", false);
+    }
+
+    private void requestPasswordLogin(String phone, String password, String captchaTicket,
+                                      String captchaRandstr, boolean captchaRetry) {
+        smsRequestInFlight = true;
+        setMobileLoginControls(false);
+        setMobileLoginStatus(captchaRetry ? "安全验证通过，正在继续登录" : "正在登录小黑盒",
+                tokens.muted);
+        coordinator.loginWithPassword(phone, password, captchaTicket, captchaRandstr,
+                new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
+                    @Override
+                    public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
+                        if (closed || state != State.MOBILE_LOGIN) return;
+                        clearCaptchaRequest();
+                        smsRequestInFlight = false;
+                        if (passwordInput != null) passwordInput.setText("");
+                        host.showMessage("手机号密码登录成功");
+                        finishMobileLogin();
+                    }
+
+                    @Override
+                    public void onError(CheckinCenterClient.ApiError error) {
+                        if (closed || state != State.MOBILE_LOGIN) return;
+                        if (!captchaRetry && beginCaptcha(CaptchaAction.PASSWORD_LOGIN,
+                                phone, "", password, error)) {
+                            return;
+                        }
+                        clearCaptchaRequest();
+                        smsRequestInFlight = false;
+                        if (passwordInput != null) passwordInput.setText("");
+                        setMobileLoginControls(true);
+                        setMobileLoginStatus(captchaRetry && error.captchaRequired()
+                                ? "安全验证未通过，请重新登录"
+                                : error.getMessage(), tokens.text);
+                    }
+                });
+    }
+
     private boolean beginCaptcha(CaptchaAction action, String phone, String code,
                                  CheckinCenterClient.ApiError error) {
+        return beginCaptcha(action, phone, code, "", error);
+    }
+
+    private boolean beginCaptcha(CaptchaAction action, String phone, String code,
+                                 String password, CheckinCenterClient.ApiError error) {
         if (!error.captchaRequired()) return false;
         captchaAction = action;
         captchaPhone = phone == null ? "" : phone;
         captchaCode = code == null ? "" : code;
+        captchaPassword = password == null ? "" : password;
         setMobileLoginStatus("请完成小黑盒安全验证", tokens.accent);
         host.openCaptcha(error.captchaUri);
         return true;
@@ -444,11 +527,14 @@ final class CheckinCenterPage {
         CaptchaAction action = captchaAction;
         String phone = captchaPhone;
         String code = captchaCode;
+        String password = captchaPassword;
         clearCaptchaRequest();
         if (action == CaptchaAction.SEND_SMS) {
             requestSmsCode(phone, ticket, randstr, true);
-        } else {
+        } else if (action == CaptchaAction.SUBMIT_SMS) {
             requestSubmitSmsCode(code, ticket, randstr, true);
+        } else {
+            requestPasswordLogin(phone, password, ticket, randstr, true);
         }
     }
 
@@ -466,6 +552,7 @@ final class CheckinCenterPage {
         captchaAction = CaptchaAction.NONE;
         captchaPhone = "";
         captchaCode = "";
+        captchaPassword = "";
     }
 
     private void finishMobileLogin() {
@@ -568,15 +655,22 @@ final class CheckinCenterPage {
         }
         page.addView(card);
 
+        addTaskSettingsCard(page);
+
         LinearLayout latest = card();
         latest.addView(sectionTitle("最近一次签到"));
         if (status.lastRun == null) {
             addTop(latest, body("暂无执行记录", tokens.muted), 8);
         } else {
-            addTop(latest, infoRow("结果", runStatusLabel(status.lastRun.status)), 8);
+            addTop(latest, infoRow("结果", runStatusLabel(status.lastRun)), 8);
             addTop(latest, infoRow("时间", runTime(status.lastRun)), 2);
-            if (!status.lastRun.summary.isEmpty()) {
-                TextView summary = body(status.lastRun.summary, tokens.text);
+            String reward = rewardLabel(status.lastRun.checkIn);
+            if (!reward.isEmpty()) {
+                addTop(latest, infoRow("本次获得", reward), 2);
+            }
+            String summaryText = runSummary(status.lastRun);
+            if (!summaryText.isEmpty()) {
+                TextView summary = body(summaryText, tokens.text);
                 summary.setLineSpacing(0f, 1.15f);
                 addTop(latest, summary, 9);
             }
@@ -599,6 +693,115 @@ final class CheckinCenterPage {
             requestRevoke();
         });
         addTop(page, revoke, 7);
+    }
+
+    private void addTaskSettingsCard(LinearLayout page) {
+        CheckinCenterClient.Task task = status.task;
+        LinearLayout settings = card();
+        settings.addView(sectionTitle("自动签到设置"));
+
+        LinearLayout enabledRow = new LinearLayout(activity);
+        enabledRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView enabledLabel = body("自动签到", tokens.text);
+        enabledRow.addView(enabledLabel, new LinearLayout.LayoutParams(0, -2, 1f));
+        taskEnabledSwitch = new Switch(activity);
+        taskEnabledSwitch.setChecked(task.enabled);
+        taskEnabledSwitch.setEnabled(!taskSettingsInFlight);
+        enabledRow.addView(taskEnabledSwitch, new LinearLayout.LayoutParams(-2, dp(36)));
+        taskEnabledSwitch.setOnCheckedChangeListener((button, checked) -> {
+            if (!taskSettingsInFlight) {
+                saveTaskSettings(checked, normalizedScheduleTime(task), task.offsetMinutes);
+            }
+        });
+        addTop(settings, enabledRow, 10);
+
+        taskTimeButton = settingRow("执行时间", scheduleLabel(task));
+        taskTimeButton.setEnabled(!taskSettingsInFlight);
+        taskTimeButton.setOnClickListener(view -> showTaskTimePicker(task));
+        addTop(settings, taskTimeButton, 4);
+
+        LinearLayout offsetRow = new LinearLayout(activity);
+        offsetRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView offsetTitle = body("随机偏移", tokens.text);
+        offsetRow.addView(offsetTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+        taskOffsetMinusButton = compactButton("-");
+        taskOffsetMinusButton.setContentDescription("减少随机偏移");
+        taskOffsetMinusButton.setEnabled(!taskSettingsInFlight && task.offsetMinutes > 0);
+        taskOffsetMinusButton.setOnClickListener(view -> saveTaskSettings(task.enabled,
+                normalizedScheduleTime(task), Math.max(0, task.offsetMinutes - 30)));
+        offsetRow.addView(taskOffsetMinusButton, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        TextView offsetValue = body(offsetLabel(task.offsetMinutes), tokens.text);
+        offsetValue.setGravity(Gravity.CENTER);
+        offsetValue.setSingleLine(true);
+        offsetRow.addView(offsetValue, new LinearLayout.LayoutParams(dp(76), dp(36)));
+        taskOffsetPlusButton = compactButton("+");
+        taskOffsetPlusButton.setContentDescription("增加随机偏移");
+        taskOffsetPlusButton.setEnabled(!taskSettingsInFlight && task.offsetMinutes < 720);
+        taskOffsetPlusButton.setOnClickListener(view -> saveTaskSettings(task.enabled,
+                normalizedScheduleTime(task), Math.min(720, task.offsetMinutes + 30)));
+        offsetRow.addView(taskOffsetPlusButton, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        addTop(settings, offsetRow, 4);
+
+        if (task.platformBlocked || task.signBlocked) {
+            addTop(settings, body("签到服务当前已暂停此任务，设置会保留。", tokens.muted), 7);
+        }
+        addTop(page, settings, 9);
+    }
+
+    private void showTaskTimePicker(CheckinCenterClient.Task task) {
+        if (taskSettingsInFlight) return;
+        String[] parts = normalizedScheduleTime(task).split(":");
+        int hour = Integer.parseInt(parts[0]);
+        int minute = Integer.parseInt(parts[1]);
+        TimePickerDialog dialog = new TimePickerDialog(activity,
+                (view, selectedHour, selectedMinute) -> saveTaskSettings(task.enabled,
+                        String.format(Locale.US, "%02d:%02d", selectedHour, selectedMinute),
+                        task.offsetMinutes), hour, minute, true);
+        dialog.setTitle("执行时间");
+        dialog.show();
+    }
+
+    private void saveTaskSettings(boolean enabled, String scheduleTime, int offsetMinutes) {
+        if (taskSettingsInFlight || status == null) return;
+        taskSettingsInFlight = true;
+        setTaskSettingsControls(false);
+        coordinator.updateTaskSettings(enabled, scheduleTime, offsetMinutes,
+                new CheckinCenterClient.Callback<CheckinCenterClient.Task>() {
+                    @Override
+                    public void onSuccess(CheckinCenterClient.Task value) {
+                        if (closed) return;
+                        taskSettingsInFlight = false;
+                        CheckinCenterClient.Status current = status;
+                        if (current == null || !coordinator.paired()) {
+                            loadStatus();
+                            return;
+                        }
+                        status = new CheckinCenterClient.Status(current.account, value,
+                                current.lastRun);
+                        state = State.CONNECTED;
+                        errorMessage = "";
+                        render();
+                    }
+
+                    @Override
+                    public void onError(CheckinCenterClient.ApiError error) {
+                        if (closed) return;
+                        taskSettingsInFlight = false;
+                        if (error.authorizationInvalid()) {
+                            showError(error.getMessage());
+                            return;
+                        }
+                        host.showMessage(error.getMessage());
+                        render();
+                    }
+                });
+    }
+
+    private void setTaskSettingsControls(boolean enabled) {
+        if (taskEnabledSwitch != null) taskEnabledSwitch.setEnabled(enabled);
+        if (taskTimeButton != null) taskTimeButton.setEnabled(enabled);
+        if (taskOffsetMinusButton != null) taskOffsetMinusButton.setEnabled(enabled);
+        if (taskOffsetPlusButton != null) taskOffsetPlusButton.setEnabled(enabled);
     }
 
     private void addRecoveryActions(LinearLayout page) {
@@ -645,30 +848,58 @@ final class CheckinCenterPage {
         description.setLineSpacing(0f, 1.16f);
         addTop(card, description, 7);
 
+        LinearLayout modes = new LinearLayout(activity);
+        Button smsMode = loginMode == LoginMode.SMS
+                ? primaryButton("短信验证码") : ghostButton("短信验证码");
+        Button passwordMode = loginMode == LoginMode.PASSWORD
+                ? primaryButton("密码登录") : ghostButton("密码登录");
+        smsMode.setOnClickListener(view -> switchLoginMode(LoginMode.SMS));
+        passwordMode.setOnClickListener(view -> switchLoginMode(LoginMode.PASSWORD));
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
+        modeParams.rightMargin = dp(4);
+        modes.addView(smsMode, modeParams);
+        LinearLayout.LayoutParams passwordModeParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
+        passwordModeParams.leftMargin = dp(4);
+        modes.addView(passwordMode, passwordModeParams);
+        addTop(card, modes, 13);
+
         addTop(card, body("手机号", tokens.text), 14);
         smsPhoneInput = input("+86 13800000000", InputType.TYPE_CLASS_PHONE);
+        smsPhoneInput.setText(mobilePhone);
         addTop(card, smsPhoneInput, 6);
-        smsSendButton = ghostButton("发送验证码");
-        smsSendButton.setOnClickListener(view -> {
-            UiComponents.press(view);
-            sendSmsCode();
-        });
-        addTop(card, smsSendButton, 8);
 
-        addTop(card, body("短信验证码", tokens.text), 13);
-        smsCodeInput = input("4-8 位验证码",
-                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-        smsCodeInput.setEnabled(false);
-        addTop(card, smsCodeInput, 6);
-        smsSubmitButton = primaryButton("登录并连接");
-        smsSubmitButton.setEnabled(false);
-        smsSubmitButton.setOnClickListener(view -> {
-            UiComponents.press(view);
-            submitSmsCode();
-        });
-        addTop(card, smsSubmitButton, 8);
+        if (loginMode == LoginMode.SMS) {
+            smsSendButton = ghostButton("发送验证码");
+            smsSendButton.setOnClickListener(view -> {
+                UiComponents.press(view);
+                sendSmsCode();
+            });
+            addTop(card, smsSendButton, 8);
 
-        smsStatus = body("验证码由小黑盒发送，发送操作不会自动重试", tokens.muted);
+            addTop(card, body("短信验证码", tokens.text), 13);
+            smsCodeInput = input("4-8 位验证码",
+                    InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+            addTop(card, smsCodeInput, 6);
+            smsSubmitButton = primaryButton("登录并连接");
+            smsSubmitButton.setOnClickListener(view -> {
+                UiComponents.press(view);
+                submitSmsCode();
+            });
+            addTop(card, smsSubmitButton, 8);
+            smsStatus = body("验证码由小黑盒发送，发送操作不会自动重试", tokens.muted);
+        } else {
+            addTop(card, body("密码", tokens.text), 13);
+            passwordInput = input("小黑盒登录密码",
+                    InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            addTop(card, passwordInput, 6);
+            passwordSubmitButton = primaryButton("登录并连接");
+            passwordSubmitButton.setOnClickListener(view -> {
+                UiComponents.press(view);
+                loginWithPassword();
+            });
+            addTop(card, passwordSubmitButton, 8);
+            smsStatus = body("密码只用于本次登录，不会保存在 Lite 或签到服务中", tokens.muted);
+        }
         smsStatus.setLineSpacing(0f, 1.14f);
         addTop(card, smsStatus, 10);
         page.addView(card);
@@ -677,6 +908,8 @@ final class CheckinCenterPage {
         back.setOnClickListener(view -> finishMobileLogin());
         addTop(page, back, 9);
         root.addView(scroll, match());
+        setMobileLoginControls(!smsRequestInFlight);
+        if (loginMode == LoginMode.SMS && !smsSessionId.isEmpty()) updateSmsCountdown();
     }
 
     private void renderPairing() {
@@ -824,8 +1057,14 @@ final class CheckinCenterPage {
     }
 
     private void setMobileLoginControls(boolean enabled) {
-        if (smsPhoneInput == null || smsCodeInput == null
-                || smsSendButton == null || smsSubmitButton == null) return;
+        if (smsPhoneInput == null) return;
+        if (loginMode == LoginMode.PASSWORD) {
+            smsPhoneInput.setEnabled(enabled);
+            if (passwordInput != null) passwordInput.setEnabled(enabled);
+            if (passwordSubmitButton != null) passwordSubmitButton.setEnabled(enabled);
+            return;
+        }
+        if (smsCodeInput == null || smsSendButton == null || smsSubmitButton == null) return;
         if (!enabled) {
             smsPhoneInput.setEnabled(false);
             smsCodeInput.setEnabled(false);
@@ -879,10 +1118,13 @@ final class CheckinCenterPage {
     private void clearSmsViews() {
         if (smsPhoneInput != null) smsPhoneInput.setText("");
         if (smsCodeInput != null) smsCodeInput.setText("");
+        if (passwordInput != null) passwordInput.setText("");
         smsPhoneInput = null;
         smsCodeInput = null;
+        passwordInput = null;
         smsSendButton = null;
         smsSubmitButton = null;
+        passwordSubmitButton = null;
         smsStatus = null;
     }
 
@@ -948,6 +1190,28 @@ final class CheckinCenterPage {
         Button button = baseButton(value);
         button.setTextColor(tokens.text);
         Compat.setBackground(button, UiComponents.ghostButton(activity, tokens, scale));
+        return button;
+    }
+
+    private LinearLayout settingRow(String label, String value) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(11), 0, dp(11), 0);
+        row.setMinimumHeight(dp(42));
+        Compat.setBackground(row, UiComponents.ghostButton(activity, tokens, scale));
+        row.addView(body(label, tokens.text), new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView current = body(value, tokens.muted);
+        current.setGravity(Gravity.END);
+        current.setSingleLine(true);
+        row.addView(current, new LinearLayout.LayoutParams(-2, -2));
+        row.setContentDescription(label + "，当前" + value);
+        return row;
+    }
+
+    private Button compactButton(String value) {
+        Button button = ghostButton(value);
+        button.setTextSize(16f * session.textScale() / 100.0f);
+        button.setPadding(0, 0, 0, 0);
         return button;
     }
 
@@ -1024,18 +1288,47 @@ final class CheckinCenterPage {
         return value.isEmpty() ? "未知" : value;
     }
 
-    private String runStatusLabel(String value) {
+    private String normalizedScheduleTime(CheckinCenterClient.Task task) {
+        return task.scheduleTime.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]")
+                ? task.scheduleTime : "08:30";
+    }
+
+    private String runStatusLabel(CheckinCenterClient.LastRun run) {
+        if (run.checkIn.checkedIn) return "已签到";
+        String value = run.status;
         if ("ok".equalsIgnoreCase(value) || "completed".equalsIgnoreCase(value)) return "成功";
         if ("running".equalsIgnoreCase(value)) return "执行中";
-        if ("skipped".equalsIgnoreCase(value)) return "已跳过";
+        if ("skipped".equalsIgnoreCase(value)) return "未执行";
         if ("failed".equalsIgnoreCase(value) || "error".equalsIgnoreCase(value)) return "失败";
         return value.isEmpty() ? "未知" : value;
     }
 
     private String runMessage(CheckinCenterClient.RunResult result) {
+        if (result.checkIn.checkedIn) {
+            String reward = rewardLabel(result.checkIn);
+            return reward.isEmpty() ? "已签到" : "已签到，获得 " + reward;
+        }
         if ("ok".equalsIgnoreCase(result.status)) return "小黑盒签到任务已完成";
-        if ("skipped".equalsIgnoreCase(result.status)) return "今日签到任务已处理";
+        if ("skipped".equalsIgnoreCase(result.status)) return "今日没有需要执行的签到任务";
         return "签到任务已返回结果";
+    }
+
+    private String runSummary(CheckinCenterClient.LastRun run) {
+        if (run.checkIn.checkedIn) {
+            return run.checkIn.newlySigned ? "今日签到已完成" : "今日已签到";
+        }
+        return run.summary;
+    }
+
+    private String rewardLabel(CheckinCenterClient.CheckinResult result) {
+        if (result == null) return "";
+        StringBuilder value = new StringBuilder();
+        if (result.coinDelta >= 0) value.append(result.coinDelta).append(" 盒币");
+        if (result.experienceDelta >= 0) {
+            if (value.length() > 0) value.append("、");
+            value.append(result.experienceDelta).append(" 经验");
+        }
+        return value.toString();
     }
 
     private int dp(int value) {
@@ -1053,6 +1346,10 @@ final class CheckinCenterPage {
         handler.removeCallbacksAndMessages(null);
         clearPairingViews();
         clearSmsViews();
+        taskEnabledSwitch = null;
+        taskTimeButton = null;
+        taskOffsetMinusButton = null;
+        taskOffsetPlusButton = null;
         root.removeAllViews();
     }
 

@@ -6,6 +6,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
@@ -62,6 +64,7 @@ public final class CheckinCaptchaActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_SECURE);
+        setFinishOnTouchOutside(false);
         verificationUri = getIntent().getStringExtra(EXTRA_URI);
         if (!CheckinCaptchaContract.isTrustedPageUri(verificationUri)) {
             finishError("安全验证地址无效", "untrusted_uri");
@@ -74,26 +77,30 @@ public final class CheckinCaptchaActivity extends Activity {
             return;
         }
         buildContent();
+        configureDialogWindow();
         startWebView();
     }
 
     private void buildContent() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(18, 18, 18));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.rgb(18, 18, 18));
+        background.setCornerRadius(dp(14));
+        Compat.setBackground(root, background);
 
         FrameLayout toolbar = new FrameLayout(this);
         toolbar.setPadding(dp(14), 0, dp(6), 0);
         root.addView(toolbar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
 
         statusView = new TextView(this);
         statusView.setText("正在加载安全验证");
         statusView.setTextColor(Color.WHITE);
-        statusView.setTextSize(16.0f);
+        statusView.setTextSize(13.0f);
         statusView.setGravity(Gravity.CENTER_VERTICAL);
         statusView.setSingleLine(true);
-        statusView.setPadding(0, 0, dp(92), 0);
+        statusView.setPadding(0, 0, dp(82), 0);
         toolbar.addView(statusView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
@@ -105,9 +112,9 @@ public final class CheckinCaptchaActivity extends Activity {
         retryButton.setContentDescription("重新加载安全验证");
         retryButton.setVisibility(View.GONE);
         retryButton.setOnClickListener(view -> retryCaptcha());
-        FrameLayout.LayoutParams retryParams = new FrameLayout.LayoutParams(dp(44), dp(44));
+        FrameLayout.LayoutParams retryParams = new FrameLayout.LayoutParams(dp(40), dp(40));
         retryParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
-        retryParams.rightMargin = dp(44);
+        retryParams.rightMargin = dp(40);
         toolbar.addView(retryButton, retryParams);
 
         ImageButton close = new ImageButton(this);
@@ -116,7 +123,7 @@ public final class CheckinCaptchaActivity extends Activity {
         close.setContentDescription("关闭安全验证");
         close.setOnClickListener(view -> finishError("已取消安全验证",
                 lastDiagnosticCode.isEmpty() ? "user_cancelled" : lastDiagnosticCode));
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(44), dp(44));
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(40), dp(40));
         closeParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
         toolbar.addView(close, closeParams);
 
@@ -133,6 +140,24 @@ public final class CheckinCaptchaActivity extends Activity {
         } catch (Throwable error) {
             finishError("当前系统缺少可用的 WebView 组件", "webview_unavailable");
         }
+    }
+
+    private void configureDialogWindow() {
+        WindowManager.LayoutParams attributes = getWindow().getAttributes();
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int availableWidth = Math.max(dp(120), screenWidth - dp(12));
+        int availableHeight = Math.max(dp(160), screenHeight - dp(20));
+        int width = Math.min(availableWidth, dp(420));
+        int preferredHeight = Math.min(Math.round(screenHeight * 0.72f), dp(520));
+        int height = Math.min(availableHeight, Math.max(dp(210), preferredHeight));
+        attributes.width = width;
+        attributes.height = height;
+        attributes.gravity = Gravity.CENTER;
+        attributes.dimAmount = 0.58f;
+        getWindow().setAttributes(attributes);
+        getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
     }
 
     @SuppressLint("SetJavaScriptEnabled")

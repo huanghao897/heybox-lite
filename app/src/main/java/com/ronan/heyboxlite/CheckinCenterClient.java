@@ -40,7 +40,9 @@ final class CheckinCenterClient {
         CREDENTIAL_SYNC,
         SMS_SEND,
         SMS_SUBMIT,
+        PASSWORD_LOGIN,
         STATUS,
+        TASK_SETTINGS,
         RUN_NOW,
         REVOKE
     }
@@ -218,13 +220,33 @@ final class CheckinCenterClient {
         final String summary;
         final String startedAt;
         final String finishedAt;
+        final CheckinResult checkIn;
 
-        LastRun(long id, String status, String summary, String startedAt, String finishedAt) {
+        LastRun(long id, String status, String summary, String startedAt, String finishedAt,
+                CheckinResult checkIn) {
             this.id = id;
             this.status = status;
             this.summary = summary;
             this.startedAt = startedAt;
             this.finishedAt = finishedAt;
+            this.checkIn = checkIn;
+        }
+    }
+
+    static final class CheckinResult {
+        final boolean checkedIn;
+        final boolean newlySigned;
+        final int coinDelta;
+        final int experienceDelta;
+        final int streakDays;
+
+        CheckinResult(boolean checkedIn, boolean newlySigned, int coinDelta,
+                      int experienceDelta, int streakDays) {
+            this.checkedIn = checkedIn;
+            this.newlySigned = newlySigned;
+            this.coinDelta = coinDelta;
+            this.experienceDelta = experienceDelta;
+            this.streakDays = streakDays;
         }
     }
 
@@ -232,11 +254,13 @@ final class CheckinCenterClient {
         final String status;
         final String summary;
         final long runId;
+        final CheckinResult checkIn;
 
-        RunResult(String status, String summary, long runId) {
+        RunResult(String status, String summary, long runId, CheckinResult checkIn) {
             this.status = status;
             this.summary = summary;
             this.runId = runId;
+            this.checkIn = checkIn;
         }
     }
 
@@ -423,6 +447,45 @@ final class CheckinCenterClient {
                 CheckinCenterClient::parseConnectedAccount));
     }
 
+    void loginWithPassword(String deviceToken, String phone, String password,
+                           String captchaTicket, String captchaRandstr,
+                           Callback<ConnectedAccount> callback) {
+        final String token;
+        try {
+            token = requirePrefix(deviceToken, "ccdevice1_", Operation.PASSWORD_LOGIN);
+        } catch (ApiError error) {
+            deliverError(callback, error);
+            return;
+        }
+        String normalizedPhone = phone == null ? "" : phone.trim();
+        String rawPassword = password == null ? "" : password;
+        if (!normalizedPhone.matches("[+0-9 -]{6,20}")
+                || rawPassword.length() < 6 || rawPassword.length() > 128) {
+            deliverError(callback, new ApiError(Operation.PASSWORD_LOGIN, 422,
+                    "请输入正确的手机号和密码"));
+            return;
+        }
+        String ticket = captchaTicket == null ? "" : captchaTicket.trim();
+        String randstr = captchaRandstr == null ? "" : captchaRandstr.trim();
+        if (!captchaProofValid(ticket, randstr)) {
+            deliverError(callback, new ApiError(Operation.PASSWORD_LOGIN, 422,
+                    "安全验证结果无效，请重新验证"));
+            return;
+        }
+        JSONObject body = new JSONObject();
+        try {
+            body.put("phone", normalizedPhone);
+            body.put("password", rawPassword);
+            putCaptchaProof(body, ticket, randstr);
+        } catch (JSONException impossible) {
+            deliverError(callback, protocolError(Operation.PASSWORD_LOGIN));
+            return;
+        }
+        submit(callback, () -> request(Operation.PASSWORD_LOGIN, "POST",
+                "/heybox/login/password", token, body,
+                CheckinCenterClient::parseConnectedAccount));
+    }
+
     void getStatus(String deviceToken, Callback<Status> callback) {
         final String token;
         try {
@@ -433,6 +496,39 @@ final class CheckinCenterClient {
         }
         submit(callback, () -> request(Operation.STATUS, "GET", "/status/heybox", token,
                 null, CheckinCenterClient::parseStatus));
+    }
+
+    void updateTaskSettings(String deviceToken, boolean enabled, String scheduleTime,
+                            int offsetMinutes, Callback<Task> callback) {
+        final String token;
+        try {
+            token = requirePrefix(deviceToken, "ccdevice1_", Operation.TASK_SETTINGS);
+        } catch (ApiError error) {
+            deliverError(callback, error);
+            return;
+        }
+        String time = scheduleTime == null ? "" : scheduleTime.trim();
+        if (!time.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]")
+                || offsetMinutes < 0 || offsetMinutes > 720) {
+            deliverError(callback, new ApiError(Operation.TASK_SETTINGS, 422,
+                    "签到时间或随机偏移无效"));
+            return;
+        }
+        JSONObject body = new JSONObject();
+        try {
+            body.put("enabled", enabled);
+            body.put("schedule_time", time);
+            body.put("offset_minutes", offsetMinutes);
+        } catch (JSONException impossible) {
+            deliverError(callback, protocolError(Operation.TASK_SETTINGS));
+            return;
+        }
+        submit(callback, () -> request(Operation.TASK_SETTINGS, "PUT",
+                "/tasks/heybox/settings", token, body, value -> {
+                    JSONObject task = value.optJSONObject("task");
+                    if (task == null) throw protocolError(Operation.TASK_SETTINGS);
+                    return parseTask(task);
+                }));
     }
 
     void runNow(String deviceToken, Callback<RunResult> callback) {
@@ -595,24 +691,43 @@ final class CheckinCenterClient {
         Account account = new Account(accountJson.optString("state", ""),
                 nullableString(accountJson, "display_name"),
                 nullableString(accountJson, "external_id_masked"));
-        Task task = new Task(taskJson.optBoolean("enabled", false),
+        Task task = parseTask(taskJson);
+        JSONObject runJson = value.optJSONObject("last_run");
+        LastRun run = runJson == null ? null : new LastRun(runJson.optLong("id", 0L),
+                runJson.optString("status", ""), runJson.optString("summary", ""),
+                runJson.optString("started_at", ""), runJson.optString("finished_at", ""),
+                parseCheckinResult(runJson.optJSONObject("check_in")));
+        return new Status(account, task, run);
+    }
+
+    private static Task parseTask(JSONObject taskJson) {
+        return new Task(taskJson.optBoolean("enabled", false),
                 taskJson.optBoolean("sign", false), taskJson.optString("schedule_time", ""),
                 taskJson.optInt("offset_minutes", 0), taskJson.optString("window_start", ""),
                 taskJson.optString("window_end", ""),
                 taskJson.optBoolean("platform_blocked", false),
                 taskJson.optBoolean("sign_blocked", false));
-        JSONObject runJson = value.optJSONObject("last_run");
-        LastRun run = runJson == null ? null : new LastRun(runJson.optLong("id", 0L),
-                runJson.optString("status", ""), runJson.optString("summary", ""),
-                runJson.optString("started_at", ""), runJson.optString("finished_at", ""));
-        return new Status(account, task, run);
     }
 
     private static RunResult parseRunResult(JSONObject value) throws ApiError {
         String status = value.optString("status", "");
         if (status.isEmpty()) throw protocolError(Operation.RUN_NOW);
         return new RunResult(status, value.optString("summary", ""),
-                value.optLong("run_id", 0L));
+                value.optLong("run_id", 0L),
+                parseCheckinResult(value.optJSONObject("check_in")));
+    }
+
+    private static CheckinResult parseCheckinResult(JSONObject value) {
+        if (value == null) return new CheckinResult(false, false, -1, -1, -1);
+        return new CheckinResult(value.optBoolean("checked_in", false),
+                value.optBoolean("newly_signed", false), optionalInt(value, "coin_delta"),
+                optionalInt(value, "experience_delta"), optionalInt(value, "streak_days"));
+    }
+
+    private static int optionalInt(JSONObject value, String key) {
+        if (value.isNull(key) || !value.has(key)) return -1;
+        int result = value.optInt(key, -1);
+        return result >= 0 && result <= 1_000_000 ? result : -1;
     }
 
     private static URI requireTrustedUri(String value, boolean api, Operation operation)
@@ -681,6 +796,7 @@ final class CheckinCenterClient {
     static int readTimeoutMillis(Operation operation) {
         return operation == Operation.CREDENTIAL_SYNC || operation == Operation.RUN_NOW
                 || operation == Operation.SMS_SEND || operation == Operation.SMS_SUBMIT
+                || operation == Operation.PASSWORD_LOGIN
                 ? SIGNING_READ_TIMEOUT_MS : STANDARD_READ_TIMEOUT_MS;
     }
 
@@ -691,6 +807,8 @@ final class CheckinCenterClient {
                 message = "签到资料校验超时，请稍后重试";
             } else if (operation == Operation.RUN_NOW) {
                 message = "签到执行超时，请稍后刷新状态";
+            } else if (operation == Operation.PASSWORD_LOGIN) {
+                message = "小黑盒登录超时，请稍后重试";
             } else {
                 message = "连接签到服务超时，请检查网络";
             }
@@ -732,14 +850,16 @@ final class CheckinCenterClient {
                 if (operation == Operation.PAIR_POLL || operation == Operation.PAIR_APPROVE) {
                     message = "配对请求不存在，请重新连接";
                 } else if (operation == Operation.SMS_SEND
-                        || operation == Operation.SMS_SUBMIT) {
+                        || operation == Operation.SMS_SUBMIT
+                        || operation == Operation.PASSWORD_LOGIN) {
                     message = "服务器暂未支持手机号登录，请稍后重试";
                 } else {
                     message = "签到任务尚未配置";
                 }
                 break;
             case 409:
-                if ((operation == Operation.SMS_SEND || operation == Operation.SMS_SUBMIT)
+                if ((operation == Operation.SMS_SEND || operation == Operation.SMS_SUBMIT
+                        || operation == Operation.PASSWORD_LOGIN)
                         && "captcha_required".equals(diagnosticCode)) {
                     captchaUri = serverCaptchaUri(response);
                     message = captchaUri.isEmpty()
@@ -765,6 +885,10 @@ final class CheckinCenterClient {
                     message = "手机号无效或发送过于频繁，请稍后重试";
                 } else if (operation == Operation.SMS_SUBMIT) {
                     message = "验证码无效、已过期或登录失败";
+                } else if (operation == Operation.PASSWORD_LOGIN) {
+                    message = "手机号或密码错误，登录失败";
+                } else if (operation == Operation.TASK_SETTINGS) {
+                    message = "签到时间或随机偏移无效";
                 } else if (operation != Operation.CREDENTIAL_SYNC) {
                     message = "签到服务请求无效";
                 } else if ("payload_invalid".equals(diagnosticCode)) {

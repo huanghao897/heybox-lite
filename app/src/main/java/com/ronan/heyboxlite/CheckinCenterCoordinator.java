@@ -192,6 +192,44 @@ final class CheckinCenterCoordinator {
                 });
     }
 
+    void loginWithPassword(String phone, String password, String captchaTicket,
+                           String captchaRandstr,
+                           CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>
+                                   callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.PASSWORD_LOGIN,
+                    "尚未连接签到服务");
+            return;
+        }
+        client.loginWithPassword(token, phone, password, captchaTicket, captchaRandstr,
+                new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
+                    @Override
+                    public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
+                        preferServerManagedCredentials();
+                        if (callback != null) callback.onSuccess(value);
+                    }
+
+                    @Override
+                    public void onError(CheckinCenterClient.ApiError error) {
+                        handleAuthorizationError(error);
+                        if (callback != null) callback.onError(error);
+                    }
+                });
+    }
+
+    void updateTaskSettings(boolean enabled, String scheduleTime, int offsetMinutes,
+                            CheckinCenterClient.Callback<CheckinCenterClient.Task> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.TASK_SETTINGS,
+                    "尚未连接签到服务");
+            return;
+        }
+        client.updateTaskSettings(token, enabled, scheduleTime, offsetMinutes,
+                authorizationAware(callback));
+    }
+
     void runNow(CheckinCenterClient.Callback<CheckinCenterClient.RunResult> callback) {
         String token = store.deviceToken();
         if (token.isEmpty()) {
