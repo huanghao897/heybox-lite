@@ -18,20 +18,20 @@ android {
         minSdk 14
         targetSdk 35
         testInstrumentationRunner "com.ronan.heyboxlite.CheckinCenterDeviceTestRunner"
-        versionCode 210
-        versionName "2.0.7"
+        versionCode 211
+        versionName "2.0.8"
         buildConfigField "String", "RELEASE_CERT_SHA256",
                 "\"7b163883d570408505d820174fb9565471efde8d863508fd390e4f4eb1645eb8\""
         buildConfigField "String", "UPDATE_API_URL",
-                "\"https://8.138.134.236/api/heybox-lite/update\""
+                "\"https://heyboxlite.xyz/api/heybox-lite/update\""
         buildConfigField "String", "UPDATE_FALLBACK_URL",
-                "\"https://8.138.134.236/\""
+                "\"https://heyboxlite.xyz/\""
         buildConfigField "String", "ANNOUNCEMENT_API_URL",
-                "\"https://8.138.134.236/api/heybox-lite/announcement\""
+                "\"https://heyboxlite.xyz/api/heybox-lite/announcement\""
         buildConfigField "String", "CONFIG_API_URL",
-                "\"https://8.138.134.236/api/heybox-lite/config\""
+                "\"https://heyboxlite.xyz/api/heybox-lite/config\""
         buildConfigField "String", "DIAGNOSTICS_API_URL",
-                "\"https://8.138.134.236/api/diagnostics\""
+                "\"https://heyboxlite.xyz/api/diagnostics\""
     }
 
     buildFeatures {

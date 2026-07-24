@@ -6,9 +6,9 @@
         </trust-anchors>
     </base-config>
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="false">8.138.134.236</domain>
+        <domain includeSubdomains="false">heyboxlite.xyz</domain>
         <trust-anchors>
-            <certificates src="@raw/checkin_server_ca" />
+            <certificates src="system" />
         </trust-anchors>
     </domain-config>
 </network-security-config>

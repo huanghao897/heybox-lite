@@ -13,19 +13,19 @@ public class CheckinCenterClientTest {
     @Test
     public void pairingResponseAcceptsOnlyPinnedHttpsHostAndPath() {
         assertTrue(CheckinCenterClient.isTrustedPairingUri(
-                "https://8.138.134.236/checkin/lite/pair?code=ABCD-EFGH"));
+                "https://heyboxlite.xyz/checkin/lite/pair?code=ABCD-EFGH"));
         assertTrue(CheckinCenterClient.isTrustedPairingUri(
-                "https://8.138.134.236/checkin/login?next=%2Flite%2Fpair"));
+                "https://heyboxlite.xyz/checkin/login?next=%2Flite%2Fpair"));
         assertFalse(CheckinCenterClient.isTrustedPairingUri(
-                "http://8.138.134.236/checkin/lite/pair?code=ABCD-EFGH"));
+                "http://heyboxlite.xyz/checkin/lite/pair?code=ABCD-EFGH"));
         assertFalse(CheckinCenterClient.isTrustedPairingUri(
-                "https://8.138.134.237/checkin/lite/pair?code=ABCD-EFGH"));
+                "https://api.heyboxlite.xyz/checkin/lite/pair?code=ABCD-EFGH"));
         assertFalse(CheckinCenterClient.isTrustedPairingUri(
-                "https://8.138.134.236:444/checkin/lite/pair?code=ABCD-EFGH"));
+                "https://heyboxlite.xyz:444/checkin/lite/pair?code=ABCD-EFGH"));
         assertFalse(CheckinCenterClient.isTrustedPairingUri(
-                "https://8.138.134.236/admin"));
+                "https://heyboxlite.xyz/admin"));
         assertFalse(CheckinCenterClient.isTrustedPairingUri(
-                "https://user@8.138.134.236/checkin/lite/pair"));
+                "https://user@heyboxlite.xyz/checkin/lite/pair"));
     }
 
     @Test
@@ -46,30 +46,30 @@ public class CheckinCenterClientTest {
     @Test
     public void captchaPageAcceptsOnlyPinnedHttpsEndpoint() {
         assertTrue(CheckinCaptchaContract.isTrustedPageUri(
-                "https://8.138.134.236/checkin/lite/captcha?appid=2076842290"));
+                "https://heyboxlite.xyz/checkin/lite/captcha?appid=2076842290"));
         assertFalse(CheckinCaptchaContract.isTrustedPageUri(
-                "http://8.138.134.236/checkin/lite/captcha?appid=2076842290"));
+                "http://heyboxlite.xyz/checkin/lite/captcha?appid=2076842290"));
         assertFalse(CheckinCaptchaContract.isTrustedPageUri(
-                "https://8.138.134.237/checkin/lite/captcha?appid=2076842290"));
+                "https://api.heyboxlite.xyz/checkin/lite/captcha?appid=2076842290"));
         assertFalse(CheckinCaptchaContract.isTrustedPageUri(
-                "https://8.138.134.236/checkin/lite/captcha?appid=2076842290&next=x"));
+                "https://heyboxlite.xyz/checkin/lite/captcha?appid=2076842290&next=x"));
         assertFalse(CheckinCaptchaContract.isTrustedPageUri(
-                "https://user@8.138.134.236/checkin/lite/captcha?appid=2076842290"));
+                "https://user@heyboxlite.xyz/checkin/lite/captcha?appid=2076842290"));
     }
 
     @Test
     public void captchaChallengeCarriesOnlyTrustedVerificationPage() {
         String response = "{\"error\":\"captcha_required\","
                 + "\"verification_uri\":"
-                + "\"https://8.138.134.236/checkin/lite/captcha?appid=2076842290\"}";
+                + "\"https://heyboxlite.xyz/checkin/lite/captcha?appid=2076842290\"}";
         CheckinCenterClient.ApiError valid = CheckinCenterClient.statusError(
                 CheckinCenterClient.Operation.SMS_SEND, 409, response);
         CheckinCenterClient.ApiError invalid = CheckinCenterClient.statusError(
                 CheckinCenterClient.Operation.SMS_SEND, 409,
-                response.replace("8.138.134.236", "example.com"));
+                response.replace("heyboxlite.xyz", "example.com"));
 
         assertTrue(valid.captchaRequired());
-        assertEquals("https://8.138.134.236/checkin/lite/captcha?appid=2076842290",
+        assertEquals("https://heyboxlite.xyz/checkin/lite/captcha?appid=2076842290",
                 valid.captchaUri);
         assertFalse(invalid.captchaRequired());
         assertEquals("", invalid.captchaUri);
@@ -77,7 +77,7 @@ public class CheckinCenterClientTest {
 
     @Test
     public void captchaPromptParsesShortLivedProof() throws Exception {
-        String page = "https://8.138.134.236/checkin/lite/captcha?appid=2076842290";
+        String page = "https://heyboxlite.xyz/checkin/lite/captcha?appid=2076842290";
         String payload = "{\"ret\":0,\"ticket\":\"captcha-ticket\","
                 + "\"randstr\":\"captcha-randstr\"}";
         String prompt = CheckinCaptchaContract.PROMPT_PREFIX
@@ -95,7 +95,7 @@ public class CheckinCenterClientTest {
 
     @Test
     public void captchaPromptPreservesSafeProviderFailureCode() throws Exception {
-        String page = "https://8.138.134.236/checkin/lite/captcha?appid=2076842290";
+        String page = "https://heyboxlite.xyz/checkin/lite/captcha?appid=2076842290";
         String payload = "{\"ret\":2,\"error_code\":1001}";
         String prompt = CheckinCaptchaContract.PROMPT_PREFIX
                 + URLEncoder.encode(payload, "UTF-8");
@@ -110,7 +110,7 @@ public class CheckinCenterClientTest {
 
     @Test
     public void captchaPromptIncludesSanitizedLoaderDiagnostics() throws Exception {
-        String page = "https://8.138.134.236/checkin/lite/captcha?appid=2076842290";
+        String page = "https://heyboxlite.xyz/checkin/lite/captcha?appid=2076842290";
         String payload = "{\"ret\":1,\"error_code\":1001,"
                 + "\"loader_stage\":\"entry:all\","
                 + "\"error_reason\":\"network_or_policy\","

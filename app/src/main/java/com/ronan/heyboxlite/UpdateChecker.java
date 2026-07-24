@@ -272,11 +272,10 @@ final class UpdateChecker {
                 || "raw.githubusercontent.com".equals(host)
                 || "objects.githubusercontent.com".equals(host)
                 || "github-releases.githubusercontent.com".equals(host)
-                || "8.138.134.236".equals(host)
-                || "103.236.54.97".equals(host);
+                || "heyboxlite.xyz".equals(host);
     }
 
     private static boolean isLegacyServerHost(String host) {
-        return "8.138.134.236".equals(host);
+        return "heyboxlite.xyz".equals(host);
     }
 }

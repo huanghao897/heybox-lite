@@ -965,10 +965,7 @@ public final class MainActivity extends Activity {
             Canvas canvas = new Canvas(bitmap);
             canvas.drawColor(this.BG);
             view.draw(canvas);
-            Bitmap old = target.put(key, bitmap);
-            if (old != null && old != bitmap && !old.isRecycled()) {
-                old.recycle();
-            }
+            target.put(key, bitmap);
             trimSnapshots(target, maxCount);
         } catch (Throwable th) {
         }
@@ -995,18 +992,11 @@ public final class MainActivity extends Activity {
         Iterator<String> iterator = target.keySet().iterator();
         if (iterator.hasNext()) {
             String key = iterator.next();
-            Bitmap bitmap = target.get(key);
-            if (bitmap != null && !bitmap.isRecycled()) {
-                bitmap.recycle();
-            }
             iterator.remove();
         }
     }
 
-    private void recycleSnapshots(Map<String, Bitmap> snapshots) {
-        for (Bitmap bitmap : snapshots.values()) {
-            if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
-        }
+    private void clearSnapshots(Map<String, Bitmap> snapshots) {
         snapshots.clear();
     }
 
@@ -6631,16 +6621,31 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void openUnknownSourcesSettings() {
+        Intent appSettings = new Intent("android.settings.MANAGE_UNKNOWN_APP_SOURCES",
+                Uri.parse("package:" + getPackageName()));
+        if (tryOpenSettings(appSettings)
+                || tryOpenSettings(new Intent("android.settings.SECURITY_SETTINGS"))) {
+            return;
+        }
+        toast("无法打开系统设置，请手动允许安装未知应用");
+    }
+
+    private boolean tryOpenSettings(Intent intent) {
+        try {
+            startActivity(intent);
+            return true;
+        } catch (RuntimeException error) {
+            this.localCache.log("system settings unavailable action=" + intent.getAction()
+                    + " error=" + error.getClass().getSimpleName());
+            return false;
+        }
+    }
+
     private void startInAppUpdateDownload(String url) {
         if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
-            showLiteDialog("需要安装权限", "为了在 App 内完成更新，需要先允许 heybox Lite 安装未知来源应用。授权后请回到 App 再点一次下载。", "去授权", () -> {
-                try {
-                    Intent intent = new Intent("android.settings.MANAGE_UNKNOWN_APP_SOURCES", Uri.parse("package:" + getPackageName()));
-                    startActivity(intent);
-                } catch (Exception e) {
-                    startActivity(new Intent("android.settings.SECURITY_SETTINGS"));
-                }
-            }, "取消", null, null, null);
+            showLiteDialog("需要安装权限", "为了在 App 内完成更新，需要先允许 heybox Lite 安装未知来源应用。授权后请回到 App 再点一次下载。", "去授权",
+                    this::openUnknownSourcesSettings, "取消", null, null, null);
             return;
         }
         LinearLayout box = new LinearLayout(this);
@@ -7367,8 +7372,8 @@ public final class MainActivity extends Activity {
             ((BackSwipeFrameLayout) this.content).cancelMotion();
         }
         ImageLoader.cancelTree(this.content);
-        recycleSnapshots(this.screenSnapshots);
-        recycleSnapshots(this.fullScreenSnapshots);
+        clearSnapshots(this.screenSnapshots);
+        clearSnapshots(this.fullScreenSnapshots);
         this.retainedPages.clear();
         if (this.writeActions != null) this.writeActions.close();
         this.handler.removeCallbacksAndMessages(null);

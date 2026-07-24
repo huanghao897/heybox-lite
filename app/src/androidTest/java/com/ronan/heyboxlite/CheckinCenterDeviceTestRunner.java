@@ -82,10 +82,10 @@ public final class CheckinCenterDeviceTestRunner extends Instrumentation {
 
     private void testLegacyDownloadUrlUpgradesToHttps() {
         String upgraded = UpdateChecker.requireTrustedUrl(
-                "http://8.138.134.236/download/latest.apk");
-        require("https://8.138.134.236/download/latest.apk".equals(upgraded));
+                "http://heyboxlite.xyz/download/latest.apk");
+        require("https://heyboxlite.xyz/download/latest.apk".equals(upgraded));
         require(UpdateChecker.trustedUrlOrEmpty(
-                "http://103.236.54.97/download/latest.apk").isEmpty());
+                "http://8.138.134.236/download/latest.apk").isEmpty());
     }
 
     private static void require(boolean condition) {

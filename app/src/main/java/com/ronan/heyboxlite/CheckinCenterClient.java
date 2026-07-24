@@ -24,9 +24,9 @@ import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLException;
 
 final class CheckinCenterClient {
-    static final String TRUSTED_ORIGIN = "https://8.138.134.236";
+    static final String TRUSTED_ORIGIN = "https://heyboxlite.xyz";
     static final String API_BASE = TRUSTED_ORIGIN + "/checkin/api/lite";
-    private static final String TRUSTED_HOST = "8.138.134.236";
+    private static final String TRUSTED_HOST = "heyboxlite.xyz";
     private static final String PAIRING_PATH_PREFIX = "/checkin/";
     private static final int CONNECT_TIMEOUT_MS = 10_000;
     private static final int STANDARD_READ_TIMEOUT_MS = 25_000;

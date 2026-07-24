@@ -37,7 +37,7 @@ final class CheckinCaptchaContract {
         try {
             URI uri = new URI(value == null ? "" : value.trim());
             return "https".equals(uri.getScheme())
-                    && "8.138.134.236".equals(uri.getHost())
+                    && "heyboxlite.xyz".equals(uri.getHost())
                     && (uri.getPort() == -1 || uri.getPort() == 443)
                     && uri.getUserInfo() == null
                     && uri.getFragment() == null
