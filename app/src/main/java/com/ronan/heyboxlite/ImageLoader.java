@@ -53,11 +53,13 @@ final class ImageLoader {
         void onComplete(long bytes);
     }
 
-    private static final int CACHE_KB = 8 * 1024;
+    private static final long MAX_HEAP_BYTES = Runtime.getRuntime().maxMemory();
+    private static final int CACHE_KB = memoryCacheKb(MAX_HEAP_BYTES);
     private static final int MAX_DECODE_BYTES = 10 * 1024 * 1024;
     private static final int MAX_BITMAP_PIXELS = 5_000_000;
     private static final int MAX_BITMAP_SIDE = 2400;
     private static final long MAX_OFFLINE_BYTES = 96L * 1024L * 1024L;
+    private static final Object DECODE_LOCK = new Object();
     private static Context appContext;
     private static File offlineDir;
     private static final LruCache<String, Bitmap> CACHE =
@@ -67,7 +69,8 @@ final class ImageLoader {
                     return value.getByteCount() / 1024;
                 }
             };
-    private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(2);
+    private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
+            decodeThreadCount(MAX_HEAP_BYTES));
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final WeakHashMap<ImageView, ValueAnimator> REVEAL_ANIMATORS = new WeakHashMap<>();
 
@@ -544,15 +547,51 @@ final class ImageLoader {
 
     private static Bitmap decode(byte[] bytes, int targetPx) {
         if (bytes == null || bytes.length == 0) return null;
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
+        synchronized (DECODE_LOCK) {
+            try {
+                BitmapFactory.Options bounds = new BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
+                BitmapFactory.Options options = decodeOptions(bounds, targetPx);
+                try {
+                    return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+                } catch (OutOfMemoryError firstFailure) {
+                    CACHE.evictAll();
+                    options.inSampleSize = Math.min(128,
+                            Math.max(2, options.inSampleSize * 2));
+                    try {
+                        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+                    } catch (OutOfMemoryError ignored) {
+                        return null;
+                    }
+                }
+            } catch (OutOfMemoryError ignored) {
+                CACHE.evictAll();
+                return null;
+            }
+        }
+    }
+
+    private static BitmapFactory.Options decodeOptions(BitmapFactory.Options bounds,
+                                                        int targetPx) {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inPreferredConfig = Bitmap.Config.ARGB_8888;
         options.inSampleSize = sampleSize(bounds, targetPx);
         options.inPurgeable = true;
         options.inInputShareable = true;
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+        return options;
+    }
+
+    private static int memoryCacheKb(long maxHeapBytes) {
+        long maxHeapKb = Math.max(1L, maxHeapBytes / 1024L);
+        if (maxHeapBytes <= 128L * 1024L * 1024L) {
+            return (int) Math.max(1536L, Math.min(3L * 1024L, maxHeapKb / 16L));
+        }
+        return (int) Math.max(3L * 1024L, Math.min(8L * 1024L, maxHeapKb / 12L));
+    }
+
+    private static int decodeThreadCount(long maxHeapBytes) {
+        return maxHeapBytes <= 128L * 1024L * 1024L ? 1 : 2;
     }
 
     private static List<String> uniqueUrls(List<String> values) {
@@ -599,6 +638,9 @@ final class ImageLoader {
             while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
             file.setLastModified(System.currentTimeMillis());
             return output.toByteArray();
+        } catch (OutOfMemoryError error) {
+            CACHE.evictAll();
+            return null;
         } catch (Exception ignored) {
             file.delete();
             return null;
