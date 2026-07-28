@@ -21,6 +21,8 @@ final class RemoteConfig {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final Map<String, Feature> FEATURES = new HashMap<>();
     private static volatile AccessStatus accessStatus = new AccessStatus(false, "");
+    private static volatile boolean testAdmin;
+    private static volatile String configuredUserId = "";
 
     private RemoteConfig() {}
 
@@ -44,6 +46,17 @@ final class RemoteConfig {
         return accessStatus;
     }
 
+    static boolean readGatewayEnabled(String userId) {
+        String cleanUserId = userId == null ? "" : userId.trim();
+        if (!cleanUserId.equals(configuredUserId)) return false;
+        synchronized (FEATURES) {
+            Feature publicGateway = FEATURES.get("gateway_read");
+            if (publicGateway != null && publicGateway.enabled) return true;
+            Feature testGateway = FEATURES.get("gateway_read_test");
+            return testAdmin && testGateway != null && testGateway.enabled;
+        }
+    }
+
     private static boolean request(String userId) {
         HttpURLConnection connection = null;
         try {
@@ -61,6 +74,8 @@ final class RemoteConfig {
             if (connection.getResponseCode() / 100 != 2) return false;
             JSONObject payload = new JSONObject(read(connection.getInputStream()));
             accessStatus = AccessStatus.from(payload);
+            testAdmin = payload.optBoolean("testAdmin", false);
+            configuredUserId = cleanUserId;
             JSONObject values = payload.optJSONObject("features");
             if (values == null) return true;
             Map<String, Feature> next = new HashMap<>();

@@ -183,6 +183,11 @@ final class HeyboxSigner {
         return buildAndroidSignature(path, Long.parseLong(timestamp), nonce);
     }
 
+    static String legacySignatureFor(String path, String timestamp, String nonce)
+            throws Exception {
+        return buildSignature(path, Long.parseLong(timestamp) + 1L, nonce);
+    }
+
     private static String buildPlainSignature(String path, long timestamp) throws Exception {
         String normalized = normalize(path);
         byte[] digest = sha1Hmac(base64(normalized), timestamp + 1);

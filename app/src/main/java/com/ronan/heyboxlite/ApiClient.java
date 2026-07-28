@@ -155,6 +155,11 @@ final class ApiClient {
         boolean debugRequest = taskRequest || isWritePath(path);
         try {
             if (closed || Thread.currentThread().isInterrupted()) return;
+            if (shouldUseReadGateway(method, path, algorithm, profile,
+                    useSignInCredentials)) {
+                requestThroughGateway(path, extra, callback);
+                return;
+            }
             Map<String, String> params = new LinkedHashMap<>(
                     baseParams(profile, useSignInCredentials));
             if (extra != null) params.putAll(extra);
@@ -238,38 +243,18 @@ final class ApiClient {
                         + " msg=" + trim(first(json.optString("msg"),
                                 json.optString("message"), "")));
             }
-            Object apiStatus = json.opt("status");
-            boolean failed = apiStatus instanceof Number && ((Number) apiStatus).intValue() < 0;
-            if (apiStatus instanceof String) {
-                String statusText = ((String) apiStatus).trim();
-                failed |= "failed".equalsIgnoreCase(statusText)
-                        || "fail".equalsIgnoreCase(statusText)
-                        || "error".equalsIgnoreCase(statusText)
-                        || "login".equalsIgnoreCase(statusText)
-                        || "relogin".equalsIgnoreCase(statusText)
-                        || "lack_token".equalsIgnoreCase(statusText)
-                        || "show_captcha".equalsIgnoreCase(statusText)
-                        || "name_verify".equalsIgnoreCase(statusText)
-                        || "need_alipay_verify".equalsIgnoreCase(statusText)
-                        || "need_bind_phone".equalsIgnoreCase(statusText)
-                        || "need_phone_code".equalsIgnoreCase(statusText);
-                if ("POST".equals(method) && !statusText.isEmpty()
-                        && !"ok".equalsIgnoreCase(statusText)
-                        && !"success".equalsIgnoreCase(statusText)) {
-                    failed = true;
-                }
-            }
-            if (failed && json.optString("msg").isEmpty()
-                    && json.optString("message").isEmpty()) {
-                throw new IllegalStateException(statusMessage(apiStatus));
-            }
-            if (failed) throw new IllegalStateException(
-                    first(json.optString("msg"), json.optString("message"), "接口返回失败"));
+            validateApiResponse(method, json);
             postSuccess(callback, json);
         } catch (Exception error) {
             if (closed) return;
             String message = error.getMessage() == null
                     ? error.getClass().getSimpleName() : error.getMessage();
+            String gatewayOperation = HeyboxGatewayClient.operationFor(path);
+            if (!gatewayOperation.isEmpty()
+                    && RemoteConfig.readGatewayEnabled(session.userId())) {
+                logTask("api gateway error operation=" + gatewayOperation
+                        + " message=" + trim(message));
+            }
             if (debugRequest) {
                 logTask("api " + debugKind(path) + " error path=" + path
                         + " profile=" + profile
@@ -279,6 +264,61 @@ final class ApiClient {
             postError(callback, message);
         } finally {
             if (connection != null) connection.disconnect();
+        }
+    }
+
+    private boolean shouldUseReadGateway(String method, String path,
+                                         HeyboxSigner.Algorithm algorithm,
+                                         RequestProfile profile,
+                                         boolean useSignInCredentials) {
+        return "GET".equals(method)
+                && algorithm == HeyboxSigner.Algorithm.LEGACY
+                && profile == RequestProfile.WEB
+                && !useSignInCredentials
+                && !HeyboxGatewayClient.operationFor(path).isEmpty()
+                && RemoteConfig.readGatewayEnabled(session.userId());
+    }
+
+    private void requestThroughGateway(String path, Map<String, String> extra,
+                                       Callback callback) throws Exception {
+        Map<String, String> params = new LinkedHashMap<>(session.commonParams());
+        if (extra != null) params.putAll(extra);
+        HeyboxGatewayClient.Result result = HeyboxGatewayClient.get(session, path, params);
+        session.mergeCookies(result.setCookies);
+        validateApiResponse("GET", result.body);
+        logTask("api gateway success operation=" + HeyboxGatewayClient.operationFor(path));
+        postSuccess(callback, result.body);
+    }
+
+    private static void validateApiResponse(String method, JSONObject json) {
+        Object apiStatus = json.opt("status");
+        boolean failed = apiStatus instanceof Number && ((Number) apiStatus).intValue() < 0;
+        if (apiStatus instanceof String) {
+            String statusText = ((String) apiStatus).trim();
+            failed |= "failed".equalsIgnoreCase(statusText)
+                    || "fail".equalsIgnoreCase(statusText)
+                    || "error".equalsIgnoreCase(statusText)
+                    || "login".equalsIgnoreCase(statusText)
+                    || "relogin".equalsIgnoreCase(statusText)
+                    || "lack_token".equalsIgnoreCase(statusText)
+                    || "show_captcha".equalsIgnoreCase(statusText)
+                    || "name_verify".equalsIgnoreCase(statusText)
+                    || "need_alipay_verify".equalsIgnoreCase(statusText)
+                    || "need_bind_phone".equalsIgnoreCase(statusText)
+                    || "need_phone_code".equalsIgnoreCase(statusText);
+            if ("POST".equals(method) && !statusText.isEmpty()
+                    && !"ok".equalsIgnoreCase(statusText)
+                    && !"success".equalsIgnoreCase(statusText)) {
+                failed = true;
+            }
+        }
+        if (failed && json.optString("msg").isEmpty()
+                && json.optString("message").isEmpty()) {
+            throw new IllegalStateException(statusMessage(apiStatus));
+        }
+        if (failed) {
+            throw new IllegalStateException(first(
+                    json.optString("msg"), json.optString("message"), "接口返回失败"));
         }
     }
 
