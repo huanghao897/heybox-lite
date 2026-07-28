@@ -112,18 +112,26 @@ final class LocalCache {
     }
 
     List<FeedItem> savedList(String key) {
-        return decodeItems(read(file(savedDir, key + ".json")));
+        try {
+            return decodeItems(read(file(savedDir, key + ".json")));
+        } catch (OutOfMemoryError ignored) {
+            return new ArrayList<>();
+        }
     }
 
     synchronized void rememberRecent(FeedItem item) {
         if (item == null || item.id.isEmpty()) return;
-        List<FeedItem> current = savedList(RECENT_ITEMS);
-        List<FeedItem> next = new ArrayList<>();
-        next.add(item);
-        for (FeedItem value : current) {
-            if (!item.id.equals(value.id) && next.size() < 50) next.add(value);
+        try {
+            List<FeedItem> current = savedList(RECENT_ITEMS);
+            List<FeedItem> next = new ArrayList<>();
+            next.add(item);
+            for (FeedItem value : current) {
+                if (!item.id.equals(value.id) && next.size() < 50) next.add(value);
+            }
+            saveSavedList(RECENT_ITEMS, next);
+        } catch (OutOfMemoryError ignored) {
+            // 阅读历史是辅助功能，低内存时应跳过记录而不是中断打开帖子。
         }
-        saveSavedList(RECENT_ITEMS, next);
     }
 
     List<FeedItem> recentItems() {
@@ -554,6 +562,8 @@ final class LocalCache {
             int count;
             while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
             return output.toString("UTF-8");
+        } catch (OutOfMemoryError ignored) {
+            return "";
         } catch (Exception ignored) {
             return "";
         }

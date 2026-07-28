@@ -8,6 +8,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.ColorStateList;
@@ -171,6 +172,7 @@ public final class MainActivity extends Activity {
     private String lastDetailDiagnostics = "";
     private JSONObject currentDetailBody;
     private boolean activityResumed;
+    private boolean diagnosticsUploadInFlight;
     private boolean accountBlockedScreen;
     private TextView accountBlockedMessage;
     private interface IntListener {
@@ -5984,8 +5986,8 @@ public final class MainActivity extends Activity {
                 }));
         addSettingEntry(maintain, "导出日志", "生成诊断文件用于反馈问题", R.drawable.il_scroll,
                 this::exportDiagnostics);
-        addSettingEntry(maintain, "运行自检", "检查网络、缓存、登录与更新服务", R.drawable.il_info,
-                this::runSelfTest);
+        addSettingEntry(maintain, "上传日志", "直接提交脱敏日志", R.drawable.il_info,
+                this::uploadDiagnostics);
         final TextView[] cacheDesc = new TextView[1];
         cacheDesc[0] = addSettingEntry(maintain, "清除缓存", "临时文件与图片缓存 " + Format.cacheMb(cacheBytes()),
                 R.drawable.il_cleanup, () -> {
@@ -6768,16 +6770,18 @@ public final class MainActivity extends Activity {
         if ("app_settings".equals(this.screen)) showAppSettings();
     }
 
-    private void runSelfTest() {
-        toast("正在自检");
-        DiagnosticsClient.selfTest(this, this.session, (success, report) -> {
-            if (isFinishing()) return;
-            showLiteDialog(success ? "自检完成" : "自检发现问题", report,
-                    "提交诊断", () -> DiagnosticsClient.upload(this.session, report,
-                            (uploaded, message) -> toast(message)),
-                    "知道了", null,
-                    "导出日志", this::exportDiagnostics);
-        });
+    private void uploadDiagnostics() {
+        if (this.diagnosticsUploadInFlight) {
+            toast("日志正在上传");
+            return;
+        }
+        this.diagnosticsUploadInFlight = true;
+        toast("正在上传日志");
+        DiagnosticsClient.upload(this.session, buildDiagnostics(),
+                (uploaded, message) -> {
+                    this.diagnosticsUploadInFlight = false;
+                    toast(message);
+                });
     }
 
     private void showPendingCrashDialog() {
@@ -7341,6 +7345,23 @@ public final class MainActivity extends Activity {
         this.handler.removeCallbacks(this.presenceTick);
         saveCurrentDetailProgress();
         super.onPause();
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level < ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return;
+        ImageLoader.clear();
+        clearSnapshots(this.screenSnapshots);
+        clearSnapshots(this.fullScreenSnapshots);
+    }
+
+    @Override
+    public void onLowMemory() {
+        ImageLoader.clear();
+        clearSnapshots(this.screenSnapshots);
+        clearSnapshots(this.fullScreenSnapshots);
+        super.onLowMemory();
     }
 
     /** 前台在线心跳每 10 分钟一次，退后台即停止。 */
