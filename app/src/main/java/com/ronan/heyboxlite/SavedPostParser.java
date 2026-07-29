@@ -37,6 +37,17 @@ final class SavedPostParser {
         return folders == null ? findFolderArray(body, 0) : folders;
     }
 
+    static List<JSONObject> favoriteFolders(JSONObject body) {
+        List<JSONObject> values = new ArrayList<>();
+        JSONArray folders = findFavoriteFolders(body);
+        if (folders == null) return values;
+        for (int i = 0; i < folders.length(); i++) {
+            JSONObject folder = unwrapFolder(folders.optJSONObject(i));
+            if (folder != null) values.add(folder);
+        }
+        return values;
+    }
+
     static JSONObject firstFavoriteFolder(JSONArray folders) {
         if (folders == null) return null;
         JSONObject fallback = null;
@@ -54,6 +65,18 @@ final class SavedPostParser {
                 folder.optString("folderid"), folder.optString("fav_folder_id"),
                 folder.optString("collect_folder_id"), folder.optString("collection_id"),
                 folder.optString("id"), folder.optString("fid"));
+    }
+
+    static String favoriteFolderName(JSONObject folder) {
+        return folder == null ? "" : Json.first(folder.optString("folder_name"),
+                folder.optString("name"), folder.optString("title"),
+                folder.optString("tab_name"), folder.optString("label"));
+    }
+
+    static int favoriteFolderCount(JSONObject folder) {
+        String[] keys = {"favour_post_num", "favor_post_num", "favorite_post_num",
+                "post_num", "link_num", "count", "total"};
+        return folder == null ? 0 : Math.max(0, Json.findInt(folder, keys, 0));
     }
 
     static JSONArray findLinks(JSONObject result) {
@@ -118,7 +141,8 @@ final class SavedPostParser {
         }
         if (!(node instanceof JSONObject)) return null;
         JSONObject object = (JSONObject) node;
-        String[] keys = {"folders", "folder_list", "fav_folders", "favorite_folders",
+        String[] keys = {"tab_list", "tabs", "folders", "folder_list",
+                "fav_folders", "favorite_folders",
                 "collect_folders", "collections", "list", "items", "data"};
         for (String key : keys) {
             JSONArray array = object.optJSONArray(key);

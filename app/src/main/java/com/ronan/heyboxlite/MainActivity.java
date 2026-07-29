@@ -1092,13 +1092,13 @@ public final class MainActivity extends Activity {
         this.leading.setVisibility(0);
         this.action.setVisibility(4);
         if ("settings_home".equals(key)) {
-            this.title.setText("设置中心");
+            this.title.setText("设置");
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showProfile();
             });
         } else if ("display_settings".equals(key)) {
-            this.title.setText("显示与主题");
+            this.title.setText("显示");
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showSettingsHome();
@@ -1116,7 +1116,7 @@ public final class MainActivity extends Activity {
                 showSettingsHome();
             });
         } else if ("app_settings".equals(key)) {
-            this.title.setText("内容与网络");
+            this.title.setText("内容与缓存");
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showSettingsHome();
@@ -2787,7 +2787,7 @@ public final class MainActivity extends Activity {
         articleScroll.setBackgroundColor(this.BG);
         LinearLayout page = vertical(this.BG);
         int pagePadding = Math.max(dp(10), dp(this.session.pagePadding()));
-        page.setPadding(pagePadding, dp(8), pagePadding, dp(18));
+        page.setPadding(pagePadding, dp(50), pagePadding, dp(18));
         articleScroll.addView(page);
         LinearLayout article = detailArticleSurface();
         JSONObject user = link == null ? null : link.optJSONObject("user");
@@ -2830,12 +2830,21 @@ public final class MainActivity extends Activity {
         ScrollView commentScroll = new ScrollView(this);
         commentScroll.setBackgroundColor(this.BG);
         LinearLayout commentPage = vertical(this.BG);
-        commentPage.setPadding(pagePadding, dp(8), pagePadding, dp(18));
+        commentPage.setPadding(pagePadding, dp(50), pagePadding, dp(18));
         commentScroll.addView(commentPage);
         addDetailCommentSection(commentPage, comments);
         pager.setPages(detailReturnPreview(), articleScroll, commentScroll);
         pager.setReturnView(this.detailReturnView);
-        transitionTo(pager);
+        FrameLayout detailRoot = new FrameLayout(this);
+        detailRoot.setBackgroundColor(this.BG);
+        detailRoot.addView(pager, match());
+        ImageView back = detailBackButton();
+        FrameLayout.LayoutParams backParams =
+                new FrameLayout.LayoutParams(dp(36), dp(36), 51);
+        backParams.leftMargin = pagePadding;
+        backParams.topMargin = dp(8);
+        detailRoot.addView(back, backParams);
+        transitionTo(detailRoot);
         if (this.activityResumed && this.readingTimeTracker != null && fallback != null) {
             this.readingTimeTracker.start(fallback.article, fallback.id);
         }
@@ -2847,6 +2856,21 @@ public final class MainActivity extends Activity {
                 articleScroll.scrollTo(0, savedScroll);
             }, 80L);
         }
+    }
+
+    private ImageView detailBackButton() {
+        ImageView back = new ImageView(this);
+        back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        back.setPadding(dp(9), dp(9), dp(9), dp(9));
+        Drawable icon = Compat.tintedDrawable(this, R.drawable.ic_arrow_back, this.TEXT);
+        if (icon != null) back.setImageDrawable(icon);
+        Compat.setBackground(back, UiComponents.round(this, this.themeTokens.dockSurface(),
+                18, this.session.uiScale() / 100.0f));
+        if (Build.VERSION.SDK_INT >= 21) back.setElevation(dp(6));
+        back.setContentDescription("返回");
+        back.setOnClickListener(view ->
+                runWithPressFeedback(back, this::returnFromDetailSmooth));
+        return back;
     }
 
     private void addDetailCommentSection(LinearLayout page, JSONArray commentArray) {
@@ -4962,13 +4986,7 @@ public final class MainActivity extends Activity {
         activate("profile");
         updateReadingTimeEntry();
         this.title.setText("我的");
-        this.action.setText("");
-        setIcon(this.action, R.drawable.il_refresh, this.TEXT, 19);
-        this.action.setVisibility(0);
-        this.action.setOnClickListener(view -> {
-            this.cachedProfileContainer = null;
-            showProfile();
-        });
+        this.action.setVisibility(4);
         if (this.cachedProfileContainer != null && this.cachedProfileLoggedIn && this.session.userId().equals(this.cachedProfileUserId) && this.cachedProfileContainer.getParent() == null) {
             transitionTo(this.cachedProfileContainer);
         } else {
@@ -4997,12 +5015,7 @@ public final class MainActivity extends Activity {
         activate("profile");
         updateReadingTimeEntry();
         this.title.setText("我的");
-        this.action.setVisibility(0);
-        setIcon(this.action, R.drawable.il_refresh, this.TEXT, 19);
-        this.action.setOnClickListener(view -> {
-            this.cachedProfileContainer = null;
-            showProfile();
-        });
+        this.action.setVisibility(4);
         if (this.cachedProfileContainer != null && !this.cachedProfileLoggedIn && this.cachedProfileContainer.getParent() == null) {
             transitionTo(this.cachedProfileContainer);
             return;
@@ -5011,6 +5024,7 @@ public final class MainActivity extends Activity {
         LinearLayout page = vertical(this.BG);
         page.setPadding(dp(8), dp(8), dp(8), dp(12));
         scroll.addView(page);
+        page.addView(topLevelTitle("我的"));
         LinearLayout profile = card();
         LinearLayout headRow = new LinearLayout(this);
         headRow.setGravity(16);
@@ -5053,6 +5067,7 @@ public final class MainActivity extends Activity {
         LinearLayout linearLayoutVertical = vertical(this.BG);
         linearLayoutVertical.setPadding(dp(8), dp(8), dp(8), dp(12));
         scrollView.addView(linearLayoutVertical);
+        linearLayoutVertical.addView(topLevelTitle("我的"));
         LinearLayout profile = card();
         LinearLayout headRow = new LinearLayout(this);
         headRow.setGravity(16);
@@ -5089,11 +5104,19 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams headCopyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
         headCopyParams.leftMargin = dp(12);
         headRow.addView(headCopy, headCopyParams);
+        ImageView arrow = new ImageView(this);
+        arrow.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        Drawable chevron = Compat.tintedDrawable(this, R.drawable.il_chevron, this.MUTED);
+        if (chevron != null) arrow.setImageDrawable(chevron);
+        arrow.setAlpha(0.55f);
+        headRow.addView(arrow, new LinearLayout.LayoutParams(dp(18), dp(18)));
         profile.addView(headRow);
         String signature = account == null ? "" : account.optString("signature");
         if (!signature.isEmpty()) {
             addTop(profile, text(signature, 13.0f, this.TEXT), 11);
         }
+        profile.setOnClickListener(view -> runWithPressFeedback(profile,
+                () -> showUserSpace(this.session.userId(), nameValue, avatarUrl)));
         linearLayoutVertical.addView(profile);
         addProfileMenu(linearLayoutVertical, true);
         addBottomNavSafeSpace(linearLayoutVertical);
@@ -5112,7 +5135,7 @@ public final class MainActivity extends Activity {
             this.pendingBackTransition = true;
             showProfile();
         });
-        this.title.setText("设置中心");
+        this.title.setText("设置");
         this.action.setVisibility(4);
         View settingsHome = buildSettingsHomeContent();
         this.retainedPages.put("settings_home", settingsHome);
@@ -5124,17 +5147,27 @@ public final class MainActivity extends Activity {
         LinearLayout page = vertical(this.BG);
         page.setPadding(dp(8), dp(8), dp(8), dp(14));
         scroll.addView(page);
-        page.addView(settingsTopCard("设置中心"));
+        page.addView(settingsTopCard("设置"));
         LinearLayout panel = settingsList();
-        addSettingEntry(panel, "显示与主题", "主题、字号、间距与界面预览", R.drawable.il_palette, this::showDisplaySettings);
-        addSettingEntry(panel, "启动与更新", "开屏动画、自动检查更新", R.drawable.il_refresh, this::showStartupSettings);
-        addSettingEntry(panel, "内容与缓存", "图片、离线内容与登录状态", R.drawable.il_globe, this::showAppSettings);
-        addSettingEntry(panel, "关于", appVersion(), R.drawable.il_info, this::showAbout);
+        addSettingEntry(panel, "显示", null,
+                this.session.darkMode() ? "深色" : "浅色",
+                R.drawable.il_palette, this::showDisplaySettings);
+        addSettingEntry(panel, "启动与更新", null, null,
+                R.drawable.il_refresh, this::showStartupSettings);
+        addSettingEntry(panel, "内容与缓存", null, null,
+                R.drawable.il_globe, this::showAppSettings);
+        addSettingEntry(panel, "关于", null, appVersion(),
+                R.drawable.il_info, this::showAbout);
         page.addView(panel);
         return scroll;
     }
 
     private TextView addSettingEntry(LinearLayout parent, String name, String description, int icon, Runnable action) {
+        return addSettingEntry(parent, name, description, null, icon, action);
+    }
+
+    private TextView addSettingEntry(LinearLayout parent, String name, String description,
+                                     String value, int icon, Runnable action) {
         if (parent.getChildCount() > 0) {
             View divider = new View(this);
             divider.setBackgroundColor(this.session.darkMode()
@@ -5175,6 +5208,17 @@ public final class MainActivity extends Activity {
             this.readingTodayView = descView;
         }
         row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        if (!TextUtils.isEmpty(value)) {
+            TextView valueView = text(value, 12.0f, this.MUTED);
+            valueView.setSingleLine(true);
+            valueView.setEllipsize(TextUtils.TruncateAt.END);
+            valueView.setGravity(21);
+            LinearLayout.LayoutParams valueParams =
+                    new LinearLayout.LayoutParams(-2, -2);
+            valueParams.leftMargin = dp(8);
+            valueParams.rightMargin = dp(3);
+            row.addView(valueView, valueParams);
+        }
         ImageView arrow = new ImageView(this);
         arrow.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         Drawable chevron = Compat.tintedDrawable(this, R.drawable.il_chevron, this.MUTED);
@@ -5191,27 +5235,28 @@ public final class MainActivity extends Activity {
     }
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
+        addSectionLabel(page, "阅读");
         LinearLayout panel = settingsList();
-        if (loggedIn) {
-            addSettingEntry(panel, "我的动态", "动态与投稿", R.drawable.il_person,
-                    () -> showUserSpace(this.session.userId(), this.session.userName(),
-                            this.session.avatar()));
-        }
-        addSettingEntry(panel, "阅读中心", readingEntrySummary() + " · "
-                        + this.localCache.watchLaterItems().size() + " 篇离线",
+        addSettingEntry(panel, "阅读中心", null,
+                String.valueOf(this.localCache.recentItems().size()),
                 R.drawable.il_reading, this::showReadingCenter);
-        addSettingEntry(panel, "收藏", "我收藏的帖子", R.drawable.il_bookmark, () -> {
+        addSettingEntry(panel, "收藏", null, null, R.drawable.il_bookmark, () -> {
             if (!this.session.isLoggedIn()) {
                 showLogin();
                 return;
             }
             showFavorites();
         });
-        addSettingEntry(panel, "小黑盒签到", checkinCenterSummary(),
+        addSettingEntry(panel, "小黑盒签到", null,
+                this.checkinCenterCoordinator != null && this.checkinCenterCoordinator.paired()
+                        ? "已连接" : null,
                 R.drawable.il_calendar, this::showCheckinCenter);
-        addSettingEntry(panel, "设置", "主题、缓存与关于", R.drawable.il_settings,
-                this::showSettingsHome);
-        addTop(page, panel, 8);
+        page.addView(panel);
+        addSectionLabel(page, "其他");
+        LinearLayout other = settingsList();
+        addSettingEntry(other, "设置", null, null,
+                R.drawable.il_settings, this::showSettingsHome);
+        page.addView(other);
         updateReadingTimeEntry();
     }
 
@@ -5399,23 +5444,171 @@ public final class MainActivity extends Activity {
             @Override
             public void onSuccess(JSONObject body) {
                 if (!MainActivity.this.isCurrentSavedRequest(requestSerial)) return;
+                MainActivity.this.hideLoading();
                 MainActivity.this.localCache.log("favorite tabs loaded: " + SavedPostParser.favoriteTabSummary(body));
-                MainActivity.this.showFavoriteContents();
+                MainActivity.this.renderFavoriteHub(
+                        SavedPostParser.favoriteFolders(body), requestSerial);
             }
 
             @Override
             public void onError(String message) {
                 if (!MainActivity.this.isCurrentSavedRequest(requestSerial)) return;
+                MainActivity.this.hideLoading();
                 MainActivity.this.localCache.log("favorite tabs failed: " + message);
-                MainActivity.this.showSavedListError(TITLE_FAVORITES,
-                        EndpointProvider.favoriteLinks(), message);
+                MainActivity.this.renderFavoriteHub(Collections.emptyList(), requestSerial);
             }
         });
     }
 
-    private void showFavoriteContents() {
-        showSavedList(TITLE_FAVORITES, EndpointProvider.favoriteLinks(),
-                OfficialRequestParams.favorites(null, 0, 30), "profile");
+    private void renderFavoriteHub(List<JSONObject> folders, int requestSerial) {
+        this.content.removeAllViews();
+        LinearLayout root = vertical(this.BG);
+        root.setPadding(dp(8), dp(8), dp(8), 0);
+        root.addView(settingsTopCard(TITLE_FAVORITES));
+
+        LinearLayout segment = new LinearLayout(this);
+        segment.setGravity(17);
+        segment.setPadding(dp(3), dp(3), dp(3), dp(3));
+        Compat.setBackground(segment, UiComponents.round(this, this.themeTokens.panel,
+                10, this.session.uiScale() / 100.0f));
+        TextView posts = favoriteSegment("帖子");
+        TextView folderTab = favoriteSegment("收藏夹");
+        segment.addView(posts, new LinearLayout.LayoutParams(0, dp(34), 1f));
+        segment.addView(folderTab, new LinearLayout.LayoutParams(0, dp(34), 1f));
+        LinearLayout.LayoutParams segmentParams =
+                new LinearLayout.LayoutParams(-1, dp(40));
+        segmentParams.topMargin = dp(6);
+        root.addView(segment, segmentParams);
+
+        FrameLayout pane = new FrameLayout(this);
+        LinearLayout.LayoutParams paneParams =
+                new LinearLayout.LayoutParams(-1, 0, 1f);
+        paneParams.topMargin = dp(6);
+        root.addView(pane, paneParams);
+        this.content.addView(root, match());
+
+        int[] paneToken = {0};
+        Runnable showPosts = () -> {
+            updateFavoriteSegment(posts, folderTab, true);
+            loadFavoritePosts(pane, requestSerial, ++paneToken[0]);
+        };
+        Runnable showFolders = () -> {
+            paneToken[0]++;
+            pane.setTag(paneToken[0]);
+            updateFavoriteSegment(posts, folderTab, false);
+            renderFavoriteFolders(pane, folders);
+        };
+        posts.setOnClickListener(view -> runWithPressFeedback(posts, showPosts));
+        folderTab.setOnClickListener(view ->
+                runWithPressFeedback(folderTab, showFolders));
+        showPosts.run();
+    }
+
+    private TextView favoriteSegment(String label) {
+        TextView view = text(label, 12.5f, this.MUTED);
+        view.setGravity(17);
+        view.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        return view;
+    }
+
+    private void updateFavoriteSegment(TextView posts, TextView folders,
+                                       boolean postsSelected) {
+        posts.setTextColor(postsSelected ? this.TEXT : this.MUTED);
+        folders.setTextColor(postsSelected ? this.MUTED : this.TEXT);
+        Compat.setBackground(posts, postsSelected
+                ? UiComponents.navSelection(this, this.themeTokens,
+                this.session.uiScale() / 100.0f) : null);
+        Compat.setBackground(folders, postsSelected ? null
+                : UiComponents.navSelection(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
+    }
+
+    private void loadFavoritePosts(FrameLayout pane, int requestSerial, int paneToken) {
+        pane.removeAllViews();
+        LoadingSpinnerView loading = new LoadingSpinnerView(this);
+        loading.setColor(this.PRIMARY);
+        pane.addView(loading, new FrameLayout.LayoutParams(dp(34), dp(34), 17));
+        this.api.get(EndpointProvider.favoriteLinks(),
+                OfficialRequestParams.favorites(null, 0, 30), new ApiClient.Callback() {
+                    @Override
+                    public void onSuccess(JSONObject body) {
+                        if (!isCurrentSavedRequest(requestSerial)
+                                || favoritePaneToken(pane) != paneToken) return;
+                        List<FeedItem> items = FeedCollection.filter(
+                                SavedPostParser.feedItems(body),
+                                session.blockKeywordList());
+                        localCache.saveSavedList(savedCacheKey(
+                                TITLE_FAVORITES, EndpointProvider.favoriteLinks()), items);
+                        renderFavoritePosts(pane, items);
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        if (!isCurrentSavedRequest(requestSerial)
+                                || favoritePaneToken(pane) != paneToken) return;
+                        List<FeedItem> cached = FeedCollection.filter(
+                                localCache.savedList(savedCacheKey(
+                                        TITLE_FAVORITES, EndpointProvider.favoriteLinks())),
+                                session.blockKeywordList());
+                        if (!cached.isEmpty()) {
+                            toast(MSG_OFFLINE_CACHE);
+                            renderFavoritePosts(pane, cached);
+                            return;
+                        }
+                        renderPaneMessage(pane, TITLE_FAVORITES + "加载失败\n" + message);
+                    }
+                });
+        pane.setTag(paneToken);
+    }
+
+    private int favoritePaneToken(FrameLayout pane) {
+        Object value = pane == null ? null : pane.getTag();
+        return value instanceof Integer ? (Integer) value : -1;
+    }
+
+    private void renderFavoritePosts(FrameLayout pane, List<FeedItem> items) {
+        pane.removeAllViews();
+        if (items.isEmpty()) {
+            renderPaneMessage(pane, MSG_EMPTY_CONTENT);
+            return;
+        }
+        pane.addView(feedList(items), match());
+    }
+
+    private void renderFavoriteFolders(FrameLayout pane, List<JSONObject> folders) {
+        pane.removeAllViews();
+        if (folders == null || folders.isEmpty()) {
+            renderPaneMessage(pane, "暂无收藏夹");
+            return;
+        }
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout page = vertical(this.BG);
+        page.setPadding(0, 0, 0, dp(16));
+        scroll.addView(page);
+        LinearLayout list = settingsList();
+        for (JSONObject folder : folders) {
+            String folderId = SavedPostParser.favoriteFolderId(folder);
+            String folderName = SavedPostParser.favoriteFolderName(folder);
+            if (folderName.isEmpty()) folderName = "默认收藏夹";
+            int count = SavedPostParser.favoriteFolderCount(folder);
+            String finalFolderName = folderName;
+            addSettingEntry(list, folderName, null,
+                    count > 0 ? String.valueOf(count) : null,
+                    R.drawable.il_bookmark, () -> showSavedList(
+                            finalFolderName, EndpointProvider.favoriteLinks(),
+                            OfficialRequestParams.favorites(folderId, 0, 30),
+                            "favorites"));
+        }
+        page.addView(list);
+        pane.addView(scroll, match());
+    }
+
+    private void renderPaneMessage(FrameLayout pane, String message) {
+        pane.removeAllViews();
+        TextView empty = text(message, 13.0f, this.MUTED);
+        empty.setGravity(17);
+        empty.setPadding(dp(18), dp(16), dp(18), dp(16));
+        pane.addView(empty, match());
     }
 
     private void prepareSavedPage(String pageTitle) {
@@ -5490,11 +5683,22 @@ public final class MainActivity extends Activity {
 
     private void renderSavedItems(String pageTitle, List<FeedItem> items) {
         if (!isHistoryPage(pageTitle)) {
-            this.content.addView(feedList(items), match());
+            LinearLayout page = vertical(this.BG);
+            page.setPadding(dp(8), dp(8), dp(8), 0);
+            page.addView(settingsTopCard(pageTitle));
             if (items.isEmpty()) {
-                showMessage(MSG_EMPTY_CONTENT);
+                TextView empty = text(MSG_EMPTY_CONTENT, 13.0f, this.MUTED);
+                empty.setGravity(17);
+                page.addView(empty, new LinearLayout.LayoutParams(-1, 0, 1f));
+                this.content.addView(page, match());
                 return;
             }
+            ListView list = feedList(items);
+            LinearLayout.LayoutParams listParams =
+                    new LinearLayout.LayoutParams(-1, 0, 1f);
+            listParams.topMargin = dp(4);
+            page.addView(list, listParams);
+            this.content.addView(page, match());
             return;
         }
         showHistoryList(items);
@@ -5629,31 +5833,50 @@ public final class MainActivity extends Activity {
         return page;
     }
 
-    /** 卡外组名：小号加字距标签，站在分组卡上方，页面形成"标题—内容块"节奏。 */
     private void addSectionLabel(LinearLayout page, String label) {
         TextView view = text(label, 9.5f, this.themeTokens.subtle);
         view.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        Compat.setLetterSpacing(view, 0.18f);
+        Compat.setLetterSpacing(view, 0.0f);
         view.setPadding(dp(6), 0, 0, dp(4));
         addTop(page, view, 12);
+    }
+
+    private View topLevelTitle(String pageTitle) {
+        TextView name = text(pageTitle, 23.0f, this.TEXT);
+        name.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        name.setGravity(16);
+        name.setPadding(dp(2), 0, dp(2), 0);
+        name.setBackgroundColor(this.BG);
+        name.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(42)));
+        return name;
     }
 
     private View settingsTopCard(String pageTitle) {
         LinearLayout box = new LinearLayout(this);
         box.setGravity(16);
-        box.setPadding(dp(4), 0, dp(4), 0);
+        box.setPadding(dp(1), 0, dp(2), 0);
         box.setBackgroundColor(this.BG);
-        TextView name = text(pageTitle, 20.5f, this.TEXT);
+        ImageView back = new ImageView(this);
+        back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        Drawable backIcon = Compat.tintedDrawable(this, R.drawable.ic_arrow_back, this.TEXT);
+        if (backIcon != null) back.setImageDrawable(backIcon);
+        back.setPadding(dp(8), dp(8), dp(8), dp(8));
+        Compat.setBackground(back, UiComponents.round(this, this.themeTokens.panel, 18,
+                this.session.uiScale() / 100.0f));
+        back.setContentDescription("返回");
+        back.setOnClickListener(view -> runWithPressFeedback(back, this::onBackPressed));
+        box.addView(back, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        TextView name = text(pageTitle, 18.5f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
-        box.addView(name, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
-        TextView time = text(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 12.0f, this.MUTED);
-        time.setGravity(21);
-        box.addView(time, new LinearLayout.LayoutParams(dp(58), dp(42)));
+        LinearLayout.LayoutParams nameParams =
+                new LinearLayout.LayoutParams(0, dp(44), 1.0f);
+        nameParams.leftMargin = dp(10);
+        box.addView(name, nameParams);
         return box;
     }
 
     private void showDisplaySettings() {
-        LinearLayout linearLayout = settingsPage("display_settings", "显示与主题");
+        LinearLayout linearLayout = settingsPage("display_settings", "显示");
         addSectionLabel(linearLayout, "显示");
         LinearLayout panel = settingsList();
         boolean[] dark = {this.session.darkMode()};
@@ -7167,6 +7390,7 @@ public final class MainActivity extends Activity {
         }
         if ("saved".equals(this.detailReturn)) {
             if ("reading_center".equals(this.savedReturnScreen)) showReadingCenter();
+            else if ("favorites".equals(this.savedReturnScreen)) showFavorites();
             else showProfile();
             return;
         }
@@ -7206,6 +7430,8 @@ public final class MainActivity extends Activity {
         this.pendingBackTransition = true;
         if ("reading_center".equals(this.savedReturnScreen)) {
             showReadingCenter();
+        } else if ("favorites".equals(this.savedReturnScreen)) {
+            showFavorites();
         } else {
             showProfile();
         }
@@ -7486,7 +7712,11 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout settingsList() {
-        return card();
+        LinearLayout list = vertical(this.PANEL);
+        list.setPadding(dp(6), dp(3), dp(6), dp(3));
+        Compat.setBackground(list, UiComponents.groupCard(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
+        return list;
     }
 
     private TextView icon(String value) {
