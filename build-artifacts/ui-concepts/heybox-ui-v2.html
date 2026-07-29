@@ -1,0 +1,2244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>heybox Lite UI v2</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      color-scheme: dark;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+        "Microsoft YaHei", sans-serif;
+      color: #f5f5f7;
+      background: #070708;
+      letter-spacing: 0;
+      --page: #0b0b0c;
+      --surface: #19191b;
+      --surface-raised: #202023;
+      --text: #f5f5f7;
+      --secondary: #a5a5aa;
+      --tertiary: #747479;
+      --line: rgba(255, 255, 255, 0.075);
+      --accent: #f3f3f5;
+      --accent-text: #111113;
+      --card-radius: 11px;
+      --page-padding: 14px;
+      --nav-width: clamp(110px, 29vw, 138px);
+      --nav-height: clamp(44px, 10vw, 52px);
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: #070708;
+    }
+
+    button {
+      padding: 0;
+      border: 0;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    img {
+      display: block;
+    }
+
+    .watch {
+      position: relative;
+      width: min(100vw, 480px);
+      height: min(100vh, 640px);
+      min-width: 320px;
+      overflow: hidden;
+      background: var(--page);
+      isolation: isolate;
+    }
+
+    .page {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: none;
+      padding: 18px var(--page-padding) 92px;
+      background: var(--page);
+      transform: translateX(105%);
+      visibility: hidden;
+      transition:
+        transform 190ms cubic-bezier(.22, .8, .2, 1),
+        visibility 190ms;
+    }
+
+    .page::-webkit-scrollbar {
+      display: none;
+    }
+
+    .page.active {
+      z-index: 2;
+      transform: translateX(0);
+      visibility: visible;
+    }
+
+    .page.exit-left {
+      z-index: 1;
+      transform: translateX(-18%);
+      visibility: visible;
+    }
+
+    .page.tab-left,
+    .page.tab-right {
+      visibility: visible;
+    }
+
+    .page.tab-left {
+      transform: translateX(-100%);
+    }
+
+    .page.tab-right {
+      transform: translateX(100%);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 36px;
+      margin: 0 2px 11px;
+    }
+
+    .title {
+      margin: 0;
+      color: var(--text);
+      font-size: 26px;
+      font-weight: 730;
+      line-height: 1.15;
+    }
+
+    .icon-button {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--surface);
+      transition: transform 110ms ease, background 110ms ease;
+    }
+
+    .icon-button:active {
+      transform: scale(.92);
+      background: #2a2a2e;
+    }
+
+    .icon-button img {
+      width: 19px;
+      height: 19px;
+      object-fit: contain;
+      filter: invert(85%);
+    }
+
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      height: 40px;
+      margin-bottom: 11px;
+      padding: 0 12px;
+      overflow: hidden;
+      border-radius: 12px;
+      background: var(--surface);
+      color: var(--secondary);
+    }
+
+    .search img {
+      width: 19px;
+      height: 19px;
+      flex: 0 0 auto;
+      object-fit: contain;
+      filter: invert(70%);
+    }
+
+    .search span {
+      overflow: hidden;
+      font-size: 14px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .feed {
+      display: grid;
+      gap: 9px;
+    }
+
+    .post {
+      width: 100%;
+      padding: 12px;
+      text-align: left;
+      border-radius: var(--card-radius);
+      background: var(--surface);
+      box-shadow: 0 7px 22px rgba(0, 0, 0, .18);
+      transition: transform 120ms ease, background 120ms ease;
+    }
+
+    .post:active {
+      transform: scale(.985);
+      background: var(--surface-raised);
+    }
+
+    .author {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 28px;
+    }
+
+    .avatar {
+      width: 28px;
+      height: 28px;
+      overflow: hidden;
+      border-radius: 50%;
+      background: #303034;
+    }
+
+    .avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .author-copy {
+      min-width: 0;
+    }
+
+    .name {
+      overflow: hidden;
+      color: #e9e9ec;
+      font-size: 12px;
+      font-weight: 680;
+      line-height: 1.15;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .meta {
+      margin-top: 3px;
+      overflow: hidden;
+      color: var(--tertiary);
+      font-size: 10px;
+      line-height: 1.15;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .follow {
+      display: grid;
+      width: 28px;
+      height: 24px;
+      padding: 0 0 1px;
+      place-items: center;
+      border-radius: 12px;
+      background: #29292c;
+      color: #d8d8dc;
+      font-size: 16px;
+      line-height: 16px;
+    }
+
+    .post-title {
+      display: -webkit-box;
+      margin: 9px 0 4px;
+      overflow: hidden;
+      color: var(--text);
+      font-size: 17px;
+      font-weight: 710;
+      line-height: 1.32;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .summary {
+      display: -webkit-box;
+      margin: 0;
+      overflow: hidden;
+      color: var(--secondary);
+      font-size: 13px;
+      line-height: 1.42;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .post-content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 104px;
+      align-items: center;
+      gap: 10px;
+      margin-top: 9px;
+    }
+
+    .post-copy {
+      min-width: 0;
+    }
+
+    .post-content .post-title {
+      margin: 0 0 5px;
+    }
+
+    .thumbnail {
+      width: 104px;
+      height: 74px;
+      overflow: hidden;
+      border-radius: 8px;
+      background: #303034;
+    }
+
+    .thumbnail img,
+    .article-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 17px;
+      height: 28px;
+      margin-top: 6px;
+      color: #97979d;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    .metric img {
+      width: 17px;
+      height: 17px;
+      object-fit: contain;
+      filter: invert(66%);
+    }
+
+    .more {
+      margin-left: auto;
+      color: #77777c;
+      font-size: 15px;
+      line-height: 1;
+    }
+
+    .profile-hero {
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr);
+      align-items: center;
+      gap: 13px;
+      width: 100%;
+      min-height: 96px;
+      padding: 15px;
+      text-align: left;
+      border-radius: var(--card-radius);
+      background: var(--surface);
+      transition: transform 120ms ease, background 120ms ease;
+    }
+
+    .profile-hero:active {
+      transform: scale(.985);
+      background: var(--surface-raised);
+    }
+
+    .profile-avatar {
+      width: 64px;
+      height: 64px;
+      overflow: hidden;
+      border-radius: 50%;
+      background: #343438;
+    }
+
+    .profile-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .profile-name {
+      margin: 0;
+      font-size: 21px;
+      font-weight: 720;
+    }
+
+    .profile-id {
+      margin-top: 5px;
+      color: var(--secondary);
+      font-size: 12px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      margin-top: 9px;
+    }
+
+    .stat {
+      min-width: 0;
+      text-align: left;
+    }
+
+    .stat strong,
+    .stat span {
+      display: block;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .stat strong {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .stat span {
+      margin-top: 2px;
+      color: var(--tertiary);
+      font-size: 10px;
+    }
+
+    .section-label {
+      margin: 16px 4px 7px;
+      color: #85858a;
+      font-size: 12px;
+      font-weight: 580;
+    }
+
+    .list-card {
+      overflow: hidden;
+      border-radius: var(--card-radius);
+      background: var(--surface);
+    }
+
+    .row {
+      position: relative;
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: 60px;
+      padding: 9px 12px;
+      text-align: left;
+      background: transparent;
+    }
+
+    .row + .row::before {
+      position: absolute;
+      top: 0;
+      right: 12px;
+      left: 60px;
+      height: 1px;
+      background: var(--line);
+      content: "";
+    }
+
+    .row:active {
+      background: #212124;
+    }
+
+    .row-icon {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 9px;
+      background: #303034;
+    }
+
+    .row-icon img {
+      width: 21px;
+      height: 21px;
+      object-fit: contain;
+      filter: invert(86%);
+    }
+
+    .row-title {
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 650;
+      line-height: 1.25;
+    }
+
+    .row-subtitle {
+      margin-top: 3px;
+      overflow: hidden;
+      color: var(--secondary);
+      font-size: 11px;
+      line-height: 1.25;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .row-value {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #8c8c91;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .chevron {
+      color: #626268;
+      font-size: 22px;
+      font-weight: 300;
+    }
+
+    .detail-page,
+    .settings-page {
+      padding-top: 12px;
+    }
+
+    .detail-header,
+    .subpage-header {
+      position: sticky;
+      z-index: 3;
+      top: -12px;
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) 34px;
+      align-items: center;
+      min-height: 48px;
+      margin: 0 -2px 7px;
+      padding: 8px 2px 6px;
+      background: rgba(11, 11, 12, .92);
+      backdrop-filter: blur(16px);
+    }
+
+    .detail-header {
+      grid-template-columns: 34px;
+      width: 34px;
+      margin-right: 0;
+      background: transparent;
+      backdrop-filter: none;
+      pointer-events: none;
+    }
+
+    .detail-header .icon-button {
+      background: rgba(29, 29, 32, .82);
+      box-shadow: 0 5px 18px rgba(0, 0, 0, .28);
+      backdrop-filter: blur(14px);
+      pointer-events: auto;
+    }
+
+    .detail-header .subpage-title,
+    .detail-header > span:last-child {
+      display: none;
+    }
+
+    .subpage-title {
+      overflow: hidden;
+      text-align: center;
+      font-size: 16px;
+      font-weight: 680;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .article {
+      padding: 15px;
+      border-radius: var(--card-radius);
+      background: var(--surface);
+    }
+
+    .article h1 {
+      margin: 12px 0 8px;
+      font-size: 22px;
+      font-weight: 740;
+      line-height: 1.34;
+    }
+
+    .article p {
+      margin: 12px 0 0;
+      color: #d2d2d5;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .article-media {
+      width: 100%;
+      overflow: hidden;
+      border-radius: 8px;
+      background: #303034;
+      margin-top: 14px;
+      aspect-ratio: 1.55 / 1;
+    }
+
+    .comment-heading {
+      margin: 17px 2px 8px;
+      font-size: 15px;
+      font-weight: 690;
+    }
+
+    .comment {
+      padding: 12px 2px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .comment .author {
+      grid-template-columns: 28px minmax(0, 1fr) auto;
+    }
+
+    .comment-body {
+      margin: 8px 0 0 36px;
+      color: #dedee1;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .reply-block {
+      margin: 8px 0 0 36px;
+      padding: 8px 9px;
+      border-radius: 7px;
+      background: #202023;
+    }
+
+    .reply-line {
+      color: #c8c8cc;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .reply-line + .reply-line {
+      margin-top: 5px;
+    }
+
+    .reply-name {
+      color: #eeeeef;
+      font-weight: 650;
+    }
+
+    .toggle {
+      position: relative;
+      width: 42px;
+      height: 24px;
+      border-radius: 12px;
+      background: #3a3a3e;
+      transition: background 140ms ease;
+    }
+
+    .toggle::after {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #f5f5f7;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, .32);
+      content: "";
+      transition: transform 140ms ease;
+    }
+
+    .toggle.on {
+      background: #77777d;
+    }
+
+    .toggle.on::after {
+      transform: translateX(18px);
+    }
+
+    .wide-segment {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      height: 34px;
+      padding: 3px;
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    .wide-segment button {
+      border-radius: 8px;
+      background: transparent;
+      color: var(--tertiary);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .wide-segment button.active {
+      color: var(--accent-text);
+      background: var(--accent);
+    }
+
+    .segment-pane.hidden {
+      display: none;
+    }
+
+    .input-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 48px;
+      gap: 7px;
+      margin-bottom: 10px;
+    }
+
+    .input-box {
+      width: 100%;
+      height: 40px;
+      padding: 0 12px;
+      border: 0;
+      outline: 0;
+      border-radius: 11px;
+      color: var(--text);
+      background: var(--surface);
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .input-box::placeholder {
+      color: var(--tertiary);
+    }
+
+    .command {
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 11px;
+      background: var(--accent);
+      color: var(--accent-text);
+      font-size: 13px;
+      font-weight: 700;
+      transition: transform 110ms ease, opacity 110ms ease;
+    }
+
+    .command:active {
+      transform: scale(.96);
+      opacity: .82;
+    }
+
+    .command.secondary {
+      background: var(--surface-raised);
+      color: var(--text);
+    }
+
+    .command.danger {
+      background: #372326;
+      color: #ff9ca4;
+    }
+
+    .button-stack {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .status-card {
+      padding: 15px;
+      border-radius: var(--card-radius);
+      background: var(--surface);
+    }
+
+    .status-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 720;
+    }
+
+    .status-copy {
+      margin: 6px 0 0;
+      color: var(--secondary);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 6px;
+      border-radius: 50%;
+      background: #9dd7a8;
+      box-shadow: 0 0 0 3px rgba(157, 215, 168, .1);
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .stat-card {
+      min-width: 0;
+      padding: 13px;
+      border-radius: var(--card-radius);
+      background: var(--surface);
+    }
+
+    .stat-card strong {
+      display: block;
+      overflow: hidden;
+      font-size: 24px;
+      font-weight: 730;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .stat-card span {
+      display: block;
+      margin-top: 4px;
+      color: var(--secondary);
+      font-size: 11px;
+    }
+
+    .chart-card {
+      padding: 14px;
+      border-radius: var(--card-radius);
+      background: var(--surface);
+    }
+
+    .chart-row {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) 38px;
+      align-items: center;
+      gap: 8px;
+      min-height: 30px;
+      color: var(--secondary);
+      font-size: 11px;
+    }
+
+    .track {
+      height: 6px;
+      overflow: hidden;
+      border-radius: 3px;
+      background: #303034;
+    }
+
+    .track span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: #d5d5d8;
+    }
+
+    .compact-post {
+      width: 100%;
+      padding: 12px;
+      text-align: left;
+      border-radius: var(--card-radius);
+      background: var(--surface);
+    }
+
+    .compact-post + .compact-post {
+      margin-top: 8px;
+    }
+
+    .compact-post strong {
+      display: -webkit-box;
+      overflow: hidden;
+      font-size: 14px;
+      line-height: 1.35;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .compact-post span {
+      display: block;
+      margin-top: 6px;
+      color: var(--tertiary);
+      font-size: 10px;
+    }
+
+    .viewer-page {
+      padding: 0;
+      background: #000;
+    }
+
+    .viewer-page .subpage-header {
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      left: 12px;
+      background: transparent;
+    }
+
+    .viewer-image {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+
+    .viewer-actions {
+      position: absolute;
+      right: 14px;
+      bottom: 18px;
+      left: 14px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .viewer-actions .command {
+      min-width: 112px;
+      background: rgba(40, 40, 43, .82);
+      color: var(--text);
+      backdrop-filter: blur(16px);
+    }
+
+    .composer-card {
+      padding: 14px;
+      border-radius: var(--card-radius);
+      background: var(--surface);
+    }
+
+    .composer-area {
+      width: 100%;
+      min-height: 150px;
+      resize: none;
+      padding: 12px;
+      border: 0;
+      outline: 0;
+      border-radius: 9px;
+      color: var(--text);
+      background: #101011;
+      font: inherit;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .about-mark {
+      display: grid;
+      width: 72px;
+      height: 72px;
+      margin: 14px auto 10px;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 18px;
+      background: #242427;
+    }
+
+    .about-mark img {
+      width: 58px;
+      height: 58px;
+      object-fit: contain;
+    }
+
+    .about-name,
+    .about-version,
+    .about-developer {
+      text-align: center;
+    }
+
+    .about-name {
+      font-size: 18px;
+      font-weight: 720;
+    }
+
+    .about-version {
+      margin-top: 4px;
+      color: var(--tertiary);
+      font-size: 11px;
+    }
+
+    .about-developer {
+      margin-top: 7px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 620;
+    }
+
+    .bottom-nav {
+      position: absolute;
+      z-index: 8;
+      left: 50%;
+      bottom: clamp(10px, 3vh, 17px);
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      width: var(--nav-width);
+      height: var(--nav-height);
+      padding: 4px;
+      transform: translateX(-50%);
+      border: 0;
+      border-radius: 28px;
+      background: rgba(30, 30, 33, .84);
+      box-shadow: 0 10px 32px rgba(0, 0, 0, .45);
+      backdrop-filter: blur(18px) saturate(125%);
+      transition: transform 180ms cubic-bezier(.22, .8, .2, 1), opacity 150ms ease;
+    }
+
+    .bottom-nav.hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 120%);
+    }
+
+    .nav-button {
+      display: grid;
+      place-items: center;
+      border-radius: 24px;
+      background: transparent;
+      transition: transform 110ms ease, background 140ms ease;
+    }
+
+    .nav-button:active {
+      transform: scale(.9);
+    }
+
+    .nav-button.active {
+      background: rgba(255, 255, 255, .14);
+    }
+
+    .nav-button img {
+      width: clamp(19px, 4.8vw, 22px);
+      height: clamp(19px, 4.8vw, 22px);
+      object-fit: contain;
+      filter: invert(68%);
+    }
+
+    .nav-button.active img {
+      filter: none;
+    }
+
+    @media (max-width: 390px), (max-height: 520px) {
+      :root {
+        --page-padding: 10px;
+        --card-radius: 9px;
+        --nav-width: clamp(104px, 31vw, 118px);
+        --nav-height: 43px;
+      }
+
+      .page {
+        padding-top: 11px;
+        padding-bottom: 74px;
+      }
+
+      .topbar {
+        min-height: 31px;
+        margin-bottom: 8px;
+      }
+
+      .title {
+        font-size: 22px;
+      }
+
+      .search {
+        height: 36px;
+        margin-bottom: 8px;
+      }
+
+      .feed {
+        gap: 7px;
+      }
+
+      .post {
+        padding: 10px;
+      }
+
+      .post-title {
+        margin-top: 8px;
+        font-size: 16px;
+      }
+
+      .summary {
+        font-size: 12px;
+      }
+
+      .post-content {
+        grid-template-columns: minmax(0, 1fr) 88px;
+        gap: 8px;
+      }
+
+      .thumbnail {
+        width: 88px;
+        height: 64px;
+      }
+
+      .profile-hero {
+        min-height: 86px;
+        padding: 12px;
+      }
+
+      .profile-avatar {
+        width: 56px;
+        height: 56px;
+      }
+
+      .row {
+        min-height: 54px;
+      }
+
+      .bottom-nav {
+        bottom: 9px;
+      }
+    }
+
+    .round-mode {
+      --page-padding: clamp(30px, 8.5vw, 42px);
+      --card-radius: 9px;
+      --nav-width: clamp(100px, 27vw, 122px);
+      --nav-height: clamp(40px, 10.5vw, 48px);
+    }
+
+    .round-mode .watch {
+      border-radius: 50%;
+    }
+
+    .round-mode .page {
+      padding-top: clamp(42px, 11vh, 54px);
+      padding-bottom: clamp(84px, 21vh, 102px);
+    }
+
+    .round-mode .topbar {
+      min-height: 30px;
+      margin-right: 12%;
+      margin-bottom: 8px;
+      margin-left: 12%;
+    }
+
+    .round-mode .title {
+      font-size: 21px;
+    }
+
+    .round-mode .search {
+      width: 90%;
+      height: 35px;
+      margin-right: auto;
+      margin-left: auto;
+    }
+
+    .round-mode .feed {
+      gap: 7px;
+    }
+
+    .round-mode .post {
+      padding: 10px;
+    }
+
+    .round-mode .post-content {
+      grid-template-columns: minmax(0, 1fr) 76px;
+      gap: 7px;
+    }
+
+    .round-mode .thumbnail {
+      width: 76px;
+      height: 58px;
+      border-radius: 7px;
+    }
+
+    .round-mode .post-title {
+      font-size: 15px;
+    }
+
+    .round-mode .summary {
+      font-size: 11px;
+      -webkit-line-clamp: 1;
+    }
+
+    .round-mode .actions {
+      height: 25px;
+      margin-top: 4px;
+    }
+
+    .round-mode .profile-hero {
+      grid-template-columns: 54px minmax(0, 1fr);
+      min-height: 82px;
+      padding: 11px;
+    }
+
+    .round-mode .profile-avatar {
+      width: 54px;
+      height: 54px;
+    }
+
+    .round-mode .profile-name {
+      font-size: 17px;
+    }
+
+    .round-mode .section-label {
+      margin-top: 12px;
+    }
+
+    .round-mode .row {
+      min-height: 52px;
+      padding-right: 10px;
+      padding-left: 10px;
+    }
+
+    .round-mode .detail-page,
+    .round-mode .settings-page {
+      padding-top: clamp(34px, 9vh, 46px);
+    }
+
+    .round-mode .detail-header,
+    .round-mode .subpage-header {
+      margin-right: 12%;
+      margin-left: 12%;
+    }
+
+    .round-mode .article {
+      padding: 12px;
+    }
+
+    .round-mode .article h1 {
+      font-size: 19px;
+    }
+
+    .round-mode .article p {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .round-mode .article-media {
+      max-height: 150px;
+    }
+
+    .round-mode .bottom-nav {
+      bottom: clamp(28px, 7.5vh, 38px);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="watch">
+    <section id="home" class="page active">
+      <header class="topbar">
+        <h1 class="title">社区</h1>
+      </header>
+
+      <button class="search" type="button" data-open="search">
+        <img src="../../app/src/main/res/drawable/ic_search.png" alt="">
+        <span>搜索帖子、作者或关键词</span>
+      </button>
+
+      <div class="feed">
+        <button class="post" type="button" data-open="detail">
+          <div class="author">
+            <span class="avatar">
+              <img src="https://imgheybox.max-c.com/avatar/2026/07/15/2dc9fc676d90b1e0ede2e47c2bb9041d.jpeg?imageMogr2/thumbnail/100x100%3E" alt="">
+            </span>
+            <span class="author-copy">
+              <span class="name">明天去月球</span>
+              <span class="meta">数码硬件 · 18 分钟前</span>
+            </span>
+            <span class="follow">+</span>
+          </div>
+          <span class="post-content">
+            <span class="post-copy">
+              <span class="post-title">2026 的新卡 4G 显存起？RX 9050 正式发布</span>
+              <span class="summary">提供 4GB 与 8GB 两种显存版本，定位与价格也终于明确。</span>
+            </span>
+            <span class="thumbnail">
+              <img src="https://imgheybox1.max-c.com/web/bbs/2026/07/28/7d9383e950c43de805ddc0ebb65c6e8c/thumb.png?imageMogr2/auto-orient/ignore-error/1/format/jpg/thumbnail/850x1450%3E" alt="">
+            </span>
+          </span>
+          <span class="actions">
+            <span class="metric">
+              <img src="../../app/src/main/res/drawable-xxhdpi/official_comment_like_line.png" alt="">
+              <span>90</span>
+            </span>
+            <span class="metric">
+              <img src="../../app/src/main/res/drawable-xxhdpi/official_detail_comment.png" alt="">
+              <span>181</span>
+            </span>
+            <span class="more">•••</span>
+          </span>
+        </button>
+
+        <button class="post" type="button" data-open="detail">
+          <div class="author">
+            <span class="avatar">
+              <img src="https://imgheybox.max-c.com/avatar/2025/01/07/0651c765183409c80db5280d2c966cf6.jpeg?imageMogr2/thumbnail/100x100%3E" alt="">
+            </span>
+            <span class="author-copy">
+              <span class="name">裤兜里的小牛仔</span>
+              <span class="meta">盒友杂谈 · 1 小时前</span>
+            </span>
+            <span class="follow">+</span>
+          </div>
+          <span class="post-title">有人 get 到这个笑点么</span>
+          <span class="summary">哈哈哈哈哈哈哈，今天看到最离谱的一张图。</span>
+          <span class="actions">
+            <span class="metric">
+              <img src="../../app/src/main/res/drawable-xxhdpi/official_comment_like_line.png" alt="">
+              <span>2.1K</span>
+            </span>
+            <span class="metric">
+              <img src="../../app/src/main/res/drawable-xxhdpi/official_detail_comment.png" alt="">
+              <span>372</span>
+            </span>
+            <span class="more">•••</span>
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <section id="profile" class="page tab-right profile-page">
+      <header class="topbar">
+        <h1 class="title">我的</h1>
+      </header>
+
+      <button class="profile-hero" type="button" data-open="user-space">
+        <span class="profile-avatar">
+          <img src="../../app/src/main/res/mipmap-xxhdpi/ic_launcher.png" alt="">
+        </span>
+        <div>
+          <h2 class="profile-name">盒友 65779689</h2>
+          <div class="profile-id">小黑盒 ID 65779689</div>
+          <div class="stats">
+            <span class="stat"><strong>128</strong><span>动态</span></span>
+            <span class="stat"><strong>3.6K</strong><span>获赞</span></span>
+            <span class="stat"><strong>84</strong><span>收藏</span></span>
+          </div>
+        </div>
+      </button>
+
+      <div class="section-label">阅读</div>
+      <section class="list-card">
+        <button class="row" type="button" data-open="reading-center">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_history.png" alt=""></span>
+          <span><span class="row-title">阅读中心</span></span>
+          <span class="row-value">12 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button" data-open="favorites">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_bookmark.png" alt=""></span>
+          <span><span class="row-title">收藏</span></span>
+          <span class="row-value">84 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button" data-open="checkin">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_history.png" alt=""></span>
+          <span><span class="row-title">小黑盒签到</span></span>
+          <span class="chevron">›</span>
+        </button>
+      </section>
+
+      <div class="section-label">其他</div>
+      <section class="list-card">
+        <button class="row" type="button" data-open="settings">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_settings.png" alt=""></span>
+          <span><span class="row-title">设置</span></span>
+          <span class="chevron">›</span>
+        </button>
+      </section>
+    </section>
+
+    <section id="detail" class="page detail-page">
+      <header class="detail-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">帖子</span>
+        <span></span>
+      </header>
+
+      <article class="article">
+        <div class="author">
+          <span class="avatar">
+            <img src="https://imgheybox.max-c.com/avatar/2026/07/15/2dc9fc676d90b1e0ede2e47c2bb9041d.jpeg?imageMogr2/thumbnail/100x100%3E" alt="">
+          </span>
+          <span class="author-copy">
+            <span class="name">明天去月球</span>
+            <span class="meta">数码硬件 · 18 分钟前</span>
+          </span>
+          <span></span>
+        </div>
+        <h1>2026 的新卡 4G 显存起？RX 9050 正式发布</h1>
+        <p>这次一共提供两种显存版本。规格差异不算复杂，更值得关注的是它在小尺寸设备上的功耗表现。</p>
+        <button class="article-media" type="button" data-open="image-viewer">
+          <img src="https://imgheybox1.max-c.com/web/bbs/2026/07/28/7d9383e950c43de805ddc0ebb65c6e8c/thumb.png?imageMogr2/auto-orient/ignore-error/1/format/jpg/thumbnail/850x1450%3E" alt="">
+        </button>
+        <p>从首批测试来看，定位已经比较清楚。对旧设备用户来说，是否升级仍然取决于实际价格。</p>
+      </article>
+
+      <h2 class="comment-heading">评论 181</h2>
+      <section class="comment">
+        <div class="author">
+          <span class="avatar"></span>
+          <span class="author-copy">
+            <span class="name">白昼之间</span>
+            <span class="meta">2 小时前 · 上海</span>
+          </span>
+          <span class="metric">
+            <img src="../../app/src/main/res/drawable-xxhdpi/official_comment_like_line.png" alt="">
+            <span>42</span>
+          </span>
+        </div>
+        <p class="comment-body">如果价格合适，小尺寸主机用起来应该不错。</p>
+        <div class="reply-block">
+          <div class="reply-line"><span class="reply-name">旧城南巷：</span>小机箱确实更适合。</div>
+          <div class="reply-line"><span class="reply-name">白昼之间 回复 旧城南巷：</span>主要还是看最终功耗。</div>
+        </div>
+      </section>
+      <section class="comment">
+        <div class="author">
+          <span class="avatar"></span>
+          <span class="author-copy">
+            <span class="name">远山和叶</span>
+            <span class="meta">5 小时前 · 广东</span>
+          </span>
+          <span class="metric">
+            <img src="../../app/src/main/res/drawable-xxhdpi/official_comment_like_line.png" alt="">
+            <span>16</span>
+          </span>
+        </div>
+        <p class="comment-body">等实际售价出来再看，现在的定位还算合理。</p>
+      </section>
+      <div class="button-stack">
+        <button class="command secondary" type="button" data-open="comment-editor">发表评论</button>
+      </div>
+    </section>
+
+    <section id="settings" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">设置</span>
+        <span></span>
+      </header>
+
+      <section class="list-card">
+        <button class="row" type="button" data-open="display-settings">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">显示</span></span>
+          <span class="row-value">深色 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button" data-open="startup-settings">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_refresh.png" alt=""></span>
+          <span><span class="row-title">启动与更新</span></span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="row" type="button" data-open="content-settings">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_bookmark.png" alt=""></span>
+          <span><span class="row-title">内容与缓存</span></span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="row" type="button" data-open="about">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">关于</span></span>
+          <span class="row-value">2.0.9 <span class="chevron">›</span></span>
+        </button>
+      </section>
+    </section>
+
+    <section id="display-settings" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">显示</span>
+        <span></span>
+      </header>
+
+      <div class="section-label">外观</div>
+      <section class="list-card">
+        <button class="row toggle-row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">夜间模式</span></span>
+          <span class="toggle on" aria-hidden="true"></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">颜色主题</span></span>
+          <span class="row-value">黑灰 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_expand.png" alt=""></span>
+          <span><span class="row-title">界面大小</span></span>
+          <span class="row-value">100% <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">文字大小</span></span>
+          <span class="row-value">100% <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_expand.png" alt=""></span>
+          <span><span class="row-title">左右边距</span></span>
+          <span class="row-value">8 dp <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button" data-open="display-preview">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_search.png" alt=""></span>
+          <span><span class="row-title">界面预览</span></span>
+          <span class="chevron">›</span>
+        </button>
+      </section>
+
+      <div class="section-label">屏幕适配</div>
+      <section class="list-card">
+        <button class="row round-toggle-row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_expand.png" alt=""></span>
+          <span><span class="row-title">圆屏适配</span></span>
+          <span class="toggle round-toggle" aria-hidden="true"></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_expand.png" alt=""></span>
+          <span><span class="row-title">横向安全区</span></span>
+          <span class="row-value">5% <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_expand.png" alt=""></span>
+          <span><span class="row-title">纵向安全区</span></span>
+          <span class="row-value">3% <span class="chevron">›</span></span>
+        </button>
+      </section>
+
+      <div class="section-label">正文排版</div>
+      <section class="list-card">
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">正文字号</span></span>
+          <span class="row-value">100% <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">字间</span></span>
+          <span class="row-value">0 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_expand.png" alt=""></span>
+          <span><span class="row-title">段落间距</span></span>
+          <span class="row-value">8 dp <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_expand.png" alt=""></span>
+          <span><span class="row-title">行距</span></span>
+          <span class="row-value">135% <span class="chevron">›</span></span>
+        </button>
+        <button class="row toggle-row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">正文与一级评论加粗</span></span>
+          <span class="toggle on" aria-hidden="true"></span>
+        </button>
+      </section>
+
+      <div class="section-label">动画</div>
+      <section class="list-card">
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_expand.png" alt=""></span>
+          <span><span class="row-title">动画效果</span></span>
+          <span class="row-value">精简 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_refresh.png" alt=""></span>
+          <span><span class="row-title">恢复默认设置</span></span>
+          <span class="chevron">›</span>
+        </button>
+      </section>
+    </section>
+
+    <section id="display-preview" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">界面预览</span>
+        <span></span>
+      </header>
+      <button class="post" type="button">
+        <div class="author">
+          <span class="avatar"></span>
+          <span class="author-copy">
+            <span class="name">帖子作者</span>
+            <span class="meta">社区 · 刚刚</span>
+          </span>
+          <span></span>
+        </div>
+        <span class="post-title">这是一条帖子标题，用于观察字号和卡片间距</span>
+        <span class="summary">正文摘要最多显示两行，长内容会自然截断。</span>
+        <span class="actions">
+          <span class="metric"><img src="../../app/src/main/res/drawable-xxhdpi/official_comment_like_line.png" alt=""><span>128</span></span>
+          <span class="metric"><img src="../../app/src/main/res/drawable-xxhdpi/official_detail_comment.png" alt=""><span>32</span></span>
+        </span>
+      </button>
+      <h2 class="comment-heading">评论预览</h2>
+      <section class="comment">
+        <div class="author">
+          <span class="avatar"></span>
+          <span class="author-copy"><span class="name">盒友</span><span class="meta">5 分钟前</span></span>
+          <span class="metric"><img src="../../app/src/main/res/drawable-xxhdpi/official_comment_like_line.png" alt=""><span>8</span></span>
+        </div>
+        <p class="comment-body">一级评论使用留白与细分割线区分。</p>
+      </section>
+    </section>
+
+    <section id="startup-settings" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">启动与更新</span>
+        <span></span>
+      </header>
+      <section class="list-card">
+        <button class="row toggle-row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_refresh.png" alt=""></span>
+          <span><span class="row-title">进入软件时检查更新</span></span>
+          <span class="toggle on" aria-hidden="true"></span>
+        </button>
+        <button class="row toggle-row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_refresh.png" alt=""></span>
+          <span><span class="row-title">显示开屏动画</span></span>
+          <span class="toggle on" aria-hidden="true"></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">开屏文字</span></span>
+          <span class="row-value">方寸之间 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_history.png" alt=""></span>
+          <span><span class="row-title">开屏时长</span></span>
+          <span class="row-value">1200 ms <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_search.png" alt=""></span>
+          <span><span class="row-title">预览开屏动画</span></span>
+          <span class="chevron">›</span>
+        </button>
+      </section>
+      <div class="button-stack">
+        <button class="command" type="button">保存启动设置</button>
+      </div>
+    </section>
+
+    <section id="content-settings" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">内容与缓存</span>
+        <span></span>
+      </header>
+      <div class="section-label">浏览与交互</div>
+      <section class="list-card">
+        <button class="row toggle-row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_search.png" alt=""></span>
+          <span><span class="row-title">无图模式</span></span>
+          <span class="toggle" aria-hidden="true"></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">网络模式</span></span>
+          <span class="row-value">标准 <span class="chevron">›</span></span>
+        </button>
+        <button class="row toggle-row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt=""></span>
+          <span><span class="row-title">右滑返回上一级</span></span>
+          <span class="toggle on" aria-hidden="true"></span>
+        </button>
+        <button class="row toggle-row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_history.png" alt=""></span>
+          <span><span class="row-title">记住帖子阅读位置</span></span>
+          <span class="toggle on" aria-hidden="true"></span>
+        </button>
+        <button class="row toggle-row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt=""></span>
+          <span><span class="row-title">退出确认</span></span>
+          <span class="toggle on" aria-hidden="true"></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_trash.png" alt=""></span>
+          <span><span class="row-title">自动清理</span></span>
+          <span class="row-value">30 天 <span class="chevron">›</span></span>
+        </button>
+        <button class="row toggle-row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_comment.png" alt=""></span>
+          <span><span class="row-title">双击评论回复</span></span>
+          <span class="toggle on" aria-hidden="true"></span>
+        </button>
+      </section>
+
+      <div class="section-label">内容过滤</div>
+      <section class="composer-card">
+        <textarea class="composer-area" style="min-height:78px" placeholder="屏蔽关键词，用逗号分隔"></textarea>
+        <div class="button-stack"><button class="command secondary" type="button">保存内容过滤</button></div>
+      </section>
+
+      <div class="section-label">维护</div>
+      <section class="list-card">
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_trash.png" alt=""></span>
+          <span><span class="row-title">清理过期离线内容</span></span>
+          <span class="row-value">12 篇 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_trash.png" alt=""></span>
+          <span><span class="row-title">清除缓存</span></span>
+          <span class="row-value">38 MB <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">导出日志</span></span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">上传日志</span></span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_logout.png" alt=""></span>
+          <span><span class="row-title" style="color:#ff8f96">退出登录</span></span>
+          <span class="chevron">›</span>
+        </button>
+      </section>
+    </section>
+
+    <section id="about" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">关于</span>
+        <span></span>
+      </header>
+      <div class="about-mark"><img src="../../app/src/main/res/mipmap-xxhdpi/ic_launcher.png" alt=""></div>
+      <div class="about-name">heybox Lite</div>
+      <div class="about-version">2.0.9 · 212</div>
+      <div class="about-developer">开发者：Ronan</div>
+      <div class="section-label">信息</div>
+      <section class="list-card">
+        <button class="row" type="button" data-open="announcements">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">公告列表</span></span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="row" type="button" data-open="feedback">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_comment.png" alt=""></span>
+          <span><span class="row-title">交流群</span></span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_refresh.png" alt=""></span>
+          <span><span class="row-title">检查更新</span></span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="row" type="button">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">GitHub 项目</span></span>
+          <span class="chevron">›</span>
+        </button>
+      </section>
+      <div class="section-label">说明</div>
+      <section class="status-card">
+        <p class="status-copy" style="margin:0;color:var(--text)">支持 Android 7.0 及以上系统</p>
+        <p class="status-copy">基于 HeyWear 进行二次开发与方屏适配，非官方应用。</p>
+      </section>
+    </section>
+
+    <section id="announcements" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">公告列表</span>
+        <span></span>
+      </header>
+      <button class="compact-post" type="button">
+        <strong>heybox Lite 2.0.9</strong>
+        <span>优化稳定性与加载体验 · 7 月 28 日</span>
+      </button>
+      <button class="compact-post" type="button">
+        <strong>2.0 版本正式发布</strong>
+        <span>全新界面、离线阅读与阅读统计 · 7 月 9 日</span>
+      </button>
+    </section>
+
+    <section id="feedback" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">交流群</span>
+        <span></span>
+      </header>
+      <section class="status-card">
+        <img src="../../app/src/main/res/drawable-nodpi/qq_feedback_group_qr.jpg" alt="交流群二维码" style="width:min(76vw,280px);aspect-ratio:1;object-fit:cover;margin:auto;border-radius:8px">
+      </section>
+    </section>
+
+    <section id="reading-center" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">阅读中心</span>
+        <span></span>
+      </header>
+      <div class="section-label">继续阅读</div>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>2026 的新卡 4G 显存起？RX 9050 正式发布</strong>
+        <span>上次读到 42%</span>
+      </button>
+      <div class="section-label">阅读</div>
+      <section class="list-card">
+        <button class="row" type="button" data-open="reading-stats">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_history.png" alt=""></span>
+          <span><span class="row-title">阅读时长</span></span>
+          <span class="row-value">38 分钟 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button" data-open="watch-later">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_bookmark.png" alt=""></span>
+          <span><span class="row-title">稍后看</span></span>
+          <span class="row-value">12 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button" data-open="cloud-history">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_history.png" alt=""></span>
+          <span><span class="row-title">历史记录</span></span>
+          <span class="chevron">›</span>
+        </button>
+      </section>
+    </section>
+
+    <section id="reading-stats" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">阅读时长</span>
+        <span></span>
+      </header>
+      <div class="stat-grid">
+        <section class="stat-card"><strong>38 分钟</strong><span>今天</span></section>
+        <section class="stat-card"><strong>26 小时</strong><span>累计</span></section>
+      </div>
+      <div class="section-label">近 7 天</div>
+      <section class="chart-card">
+        <div class="chart-row"><span>今天</span><span class="track"><span style="width:68%"></span></span><span>38m</span></div>
+        <div class="chart-row"><span>昨天</span><span class="track"><span style="width:42%"></span></span><span>23m</span></div>
+        <div class="chart-row"><span>周日</span><span class="track"><span style="width:84%"></span></span><span>47m</span></div>
+        <div class="chart-row"><span>周六</span><span class="track"><span style="width:56%"></span></span><span>31m</span></div>
+      </section>
+      <div class="section-label">内容占比</div>
+      <section class="list-card">
+        <div class="row">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_history.png" alt=""></span>
+          <span><span class="row-title">普通帖子</span></span>
+          <span class="row-value">64%</span>
+        </div>
+        <div class="row">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">文章</span></span>
+          <span class="row-value">36%</span>
+        </div>
+      </section>
+    </section>
+
+    <section id="watch-later" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">稍后看</span>
+        <span></span>
+      </header>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>如何给旧手表做一套更轻的阅读界面</strong>
+        <span>4.8 MB · 今天更新</span>
+      </button>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>本周值得关注的硬件新品</strong>
+        <span>2.1 MB · 昨天更新</span>
+      </button>
+    </section>
+
+    <section id="cloud-history" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">历史记录</span>
+        <span></span>
+      </header>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>2026 的新卡 4G 显存起？RX 9050 正式发布</strong>
+        <span>刚刚浏览</span>
+      </button>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>有人 get 到这个笑点么</strong>
+        <span>1 小时前</span>
+      </button>
+    </section>
+
+    <section id="favorites" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">收藏</span>
+        <span></span>
+      </header>
+      <div class="wide-segment" data-segment="favorites">
+        <button class="active" type="button" data-pane="favorite-posts">帖子</button>
+        <button type="button" data-pane="favorite-folders">收藏夹</button>
+      </div>
+      <div style="height:8px"></div>
+      <div id="favorite-posts" class="segment-pane">
+        <button class="compact-post" type="button" data-open="detail">
+          <strong>适合小屏设备的 UI 设计原则</strong>
+          <span>设计交流 · 收藏于昨天</span>
+        </button>
+        <button class="compact-post" type="button" data-open="detail">
+          <strong>手表应用中的图片性能优化</strong>
+          <span>开发讨论 · 收藏于 7 月 20 日</span>
+        </button>
+      </div>
+      <section id="favorite-folders" class="segment-pane list-card hidden">
+        <button class="row" type="button" data-open="favorite-folder">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_bookmark.png" alt=""></span>
+          <span><span class="row-title">默认收藏夹</span></span>
+          <span class="row-value">64 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button" data-open="favorite-folder">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_bookmark.png" alt=""></span>
+          <span><span class="row-title">手表开发</span></span>
+          <span class="row-value">12 <span class="chevron">›</span></span>
+        </button>
+        <button class="row" type="button" data-open="favorite-folder">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_bookmark.png" alt=""></span>
+          <span><span class="row-title">硬件资讯</span></span>
+          <span class="row-value">8 <span class="chevron">›</span></span>
+        </button>
+      </section>
+    </section>
+
+    <section id="favorite-folder" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">手表开发</span>
+        <span></span>
+      </header>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>适合圆屏手表的内容安全区应该怎么做</strong>
+        <span>设计交流 · 收藏于昨天</span>
+      </button>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>从方屏到圆屏：原生 View 适配实践</strong>
+        <span>开发讨论 · 收藏于 7 月 20 日</span>
+      </button>
+    </section>
+
+    <section id="user-space" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">个人主页</span>
+        <span></span>
+      </header>
+      <section class="profile-hero" style="display:grid">
+        <span class="profile-avatar"><img src="../../app/src/main/res/mipmap-xxhdpi/ic_launcher.png" alt=""></span>
+        <div>
+          <h2 class="profile-name">盒友 65779689</h2>
+          <div class="profile-id">ID 65779689</div>
+          <div class="stats">
+            <span class="stat"><strong>46</strong><span>关注</span></span>
+            <span class="stat"><strong>128</strong><span>粉丝</span></span>
+            <span class="stat"><strong>3.6K</strong><span>获赞</span></span>
+          </div>
+        </div>
+      </section>
+      <div style="height:8px"></div>
+      <div class="wide-segment user-tabs">
+        <button class="active" type="button">动态</button>
+        <button type="button">投稿</button>
+      </div>
+      <div style="height:8px"></div>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>最近在手表上用 heybox Lite 的一些感受</strong>
+        <span>置顶 · 2 小时前 · 128 赞</span>
+      </button>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>分享一套低功耗的图片加载方案</strong>
+        <span>投稿 · 昨天 · 46 赞</span>
+      </button>
+    </section>
+
+    <section id="checkin" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">小黑盒签到</span>
+        <span></span>
+      </header>
+      <section class="status-card">
+        <h2 class="status-title"><span class="status-dot"></span>已连接</h2>
+        <p class="status-copy">账号 6577**** · 自动签到已启用</p>
+      </section>
+      <div class="section-label">计划</div>
+      <section class="list-card">
+        <div class="row">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_history.png" alt=""></span>
+          <span><span class="row-title">签到时间</span></span>
+          <span class="row-value">08:30</span>
+        </div>
+        <div class="row">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_expand.png" alt=""></span>
+          <span><span class="row-title">随机偏移</span></span>
+          <span class="row-value">±15 分钟</span>
+        </div>
+        <div class="row">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_info.png" alt=""></span>
+          <span><span class="row-title">最近结果</span></span>
+          <span class="row-value">已签到</span>
+        </div>
+      </section>
+      <div class="button-stack">
+        <button class="command" type="button">立即签到</button>
+        <button class="command secondary" type="button" data-open="login">更新小黑盒登录</button>
+        <button class="command danger" type="button">撤销此设备</button>
+      </div>
+    </section>
+
+    <section id="login" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">登录小黑盒</span>
+        <span></span>
+      </header>
+      <section class="status-card">
+        <img src="../../app/src/main/res/drawable-nodpi/qq_feedback_group_qr.jpg" alt="登录二维码" style="width:min(72vw,250px);aspect-ratio:1;object-fit:cover;margin:auto;border-radius:8px;filter:grayscale(1)">
+        <p class="status-copy" style="text-align:center">使用小黑盒 App 扫码登录</p>
+      </section>
+    </section>
+
+    <section id="search" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">搜索</span>
+        <span></span>
+      </header>
+      <div class="input-row">
+        <input class="input-box" type="search" placeholder="帖子、作者或关键词" value="手表 UI">
+        <button class="command" type="button" data-open="search-results">搜索</button>
+      </div>
+      <div class="section-label">最近搜索</div>
+      <section class="list-card">
+        <button class="row" type="button" data-open="search-results">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_history.png" alt=""></span>
+          <span><span class="row-title">手表 UI</span></span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="row" type="button" data-open="search-results">
+          <span class="row-icon"><img src="../../app/src/main/res/drawable/ic_history.png" alt=""></span>
+          <span><span class="row-title">RX 9050</span></span>
+          <span class="chevron">›</span>
+        </button>
+      </section>
+    </section>
+
+    <section id="search-results" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">“手表 UI”</span>
+        <span></span>
+      </header>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>适合圆屏手表的内容安全区应该怎么做</strong>
+        <span>设计交流 · 328 赞 · 72 评论</span>
+      </button>
+      <button class="compact-post" type="button" data-open="detail">
+        <strong>从方屏到圆屏：同一套原生 View 的适配实践</strong>
+        <span>开发讨论 · 192 赞 · 41 评论</span>
+      </button>
+    </section>
+
+    <section id="comment-editor" class="page settings-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">发表评论</span>
+        <span></span>
+      </header>
+      <section class="composer-card">
+        <textarea class="composer-area" placeholder="友善交流，理性讨论"></textarea>
+        <div class="button-stack">
+          <button class="command" type="button">发送</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="image-viewer" class="page viewer-page">
+      <header class="subpage-header">
+        <button class="icon-button" type="button" data-back aria-label="返回">
+          <img src="../../app/src/main/res/drawable/ic_arrow_back.png" alt="">
+        </button>
+        <span class="subpage-title">1 / 1</span>
+        <span></span>
+      </header>
+      <img class="viewer-image" src="https://imgheybox1.max-c.com/web/bbs/2026/07/28/7d9383e950c43de805ddc0ebb65c6e8c/thumb.png?imageMogr2/auto-orient/ignore-error/1/format/jpg/thumbnail/850x1450%3E" alt="">
+      <div class="viewer-actions"><button class="command" type="button">保存到相册</button></div>
+    </section>
+
+    <nav class="bottom-nav" aria-label="主要页面">
+      <button class="nav-button active" type="button" data-tab="home" aria-label="社区">
+        <img src="./icons/home.svg" alt="">
+      </button>
+      <button class="nav-button" type="button" data-tab="profile" aria-label="我的">
+        <img src="./icons/user.svg" alt="">
+      </button>
+    </nav>
+  </main>
+
+  <script>
+    const pages = new Map(
+      [...document.querySelectorAll(".page")].map((page) => [page.id, page])
+    );
+    const nav = document.querySelector(".bottom-nav");
+    const history = ["home"];
+    const roundQuery = window.matchMedia(
+      "(min-aspect-ratio: 19/20) and (max-aspect-ratio: 21/20)"
+    );
+    let manualRound = false;
+    let activePage = "home";
+
+    try {
+      manualRound = localStorage.getItem("heybox-preview-round") === "1";
+    } catch {
+      manualRound = false;
+    }
+
+    function applyRoundMode() {
+      const enabled = manualRound || roundQuery.matches;
+      document.documentElement.classList.toggle("round-mode", enabled);
+      document.querySelectorAll(".round-toggle").forEach((toggle) => {
+        toggle.classList.toggle("on", enabled);
+      });
+    }
+
+    function syncNavigation() {
+      nav.classList.toggle("hidden", !["home", "profile"].includes(activePage));
+      document.querySelectorAll(".nav-button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.tab === activePage);
+      });
+    }
+
+    function resetPage(page) {
+      page.classList.remove("active", "exit-left", "tab-left", "tab-right");
+    }
+
+    function showPage(targetId, mode = "push") {
+      if (targetId === activePage) return;
+
+      const current = pages.get(activePage);
+      const target = pages.get(targetId);
+      if (!current || !target) return;
+
+      resetPage(current);
+      resetPage(target);
+
+      if (mode === "tab") {
+        const targetIndex = targetId === "home" ? 0 : 1;
+        const currentIndex = activePage === "home" ? 0 : 1;
+        current.classList.add(targetIndex > currentIndex ? "tab-left" : "tab-right");
+      } else {
+        current.classList.add("exit-left");
+      }
+
+      target.classList.add("active");
+      activePage = targetId;
+      syncNavigation();
+    }
+
+    function pushPage(targetId) {
+      history.push(targetId);
+      showPage(targetId);
+    }
+
+    function goBack() {
+      if (history.length <= 1) return;
+
+      const current = pages.get(activePage);
+      history.pop();
+      const targetId = history[history.length - 1];
+      const target = pages.get(targetId);
+      if (!current || !target) return;
+
+      resetPage(current);
+      resetPage(target);
+      current.classList.add("tab-right");
+      target.classList.add("active");
+      activePage = targetId;
+      syncNavigation();
+    }
+
+    document.querySelectorAll("[data-open]").forEach((button) => {
+      button.addEventListener("click", () => pushPage(button.dataset.open));
+    });
+
+    document.querySelectorAll("[data-back]").forEach((button) => {
+      button.addEventListener("click", goBack);
+    });
+
+    document.querySelectorAll("[data-tab]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const targetId = button.dataset.tab;
+        history.splice(0, history.length, targetId);
+        showPage(targetId, "tab");
+      });
+    });
+
+    document.querySelectorAll(".wide-segment").forEach((segment) => {
+      segment.querySelectorAll("button").forEach((button) => {
+        button.addEventListener("click", () => {
+          segment.querySelectorAll("button").forEach((item) => {
+            item.classList.toggle("active", item === button);
+          });
+          if (button.dataset.pane) {
+            const page = segment.closest(".page");
+            page.querySelectorAll(".segment-pane").forEach((pane) => {
+              pane.classList.toggle("hidden", pane.id !== button.dataset.pane);
+            });
+          }
+        });
+      });
+    });
+
+    document.querySelectorAll(".toggle-row").forEach((row) => {
+      row.addEventListener("click", () => {
+        row.querySelector(".toggle").classList.toggle("on");
+      });
+    });
+
+    document.querySelectorAll(".round-toggle-row").forEach((row) => {
+      row.addEventListener("click", () => {
+        manualRound = !manualRound;
+        try {
+          localStorage.setItem("heybox-preview-round", manualRound ? "1" : "0");
+        } catch {}
+        applyRoundMode();
+      });
+    });
+
+    if (typeof roundQuery.addEventListener === "function") {
+      roundQuery.addEventListener("change", applyRoundMode);
+    } else {
+      roundQuery.addListener(applyRoundMode);
+    }
+
+    applyRoundMode();
+  </script>
+</body>
+</html>
