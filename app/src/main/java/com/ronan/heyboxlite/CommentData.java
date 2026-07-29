@@ -3,6 +3,7 @@ package com.ronan.heyboxlite;
 import android.graphics.Color;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -101,7 +102,7 @@ final class CommentData {
                 try {
                     addCommentImages(result, seen, new JSONArray(text));
                     return;
-                } catch (Exception ignored) {
+                } catch (JSONException ignored) {
                 }
             }
             addCommentImage(result, seen, text);

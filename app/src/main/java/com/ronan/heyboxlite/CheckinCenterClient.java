@@ -17,6 +17,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.UnknownHostException;
 import java.net.URL;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -831,7 +832,7 @@ final class CheckinCenterClient {
                 ? "" : " reason=" + error.diagnosticCode;
         eventLogger.log("checkin request failed operation=" + error.operation.name()
                 + " status=" + error.statusCode
-                + " category=" + error.kind.name().toLowerCase()
+                + " category=" + error.kind.name().toLowerCase(Locale.ROOT)
                 + detail
                 + " elapsedMs=" + Math.max(0L, SystemClock.elapsedRealtime() - startedAt));
     }

@@ -30,14 +30,26 @@ final class FeedAdapter extends BaseAdapter {
         void onLike(FeedItem item);
     }
 
+    interface FollowCallback {
+        void onComplete(boolean success);
+    }
+
+    interface FollowListener {
+        void onFollow(FeedItem item, boolean following, FollowCallback callback);
+    }
+
     private final Context context;
     private final List<FeedItem> items;
     private final Listener listener;
     private final LikeListener likeListener;
+    private final FollowListener followListener;
+    private final String currentUserId;
     private final boolean noImage;
     private final float uiScale;
     private final float textScale;
     private final boolean darkMode;
+    private final boolean roundLayout;
+    private final int roundHorizontalPaddingPx;
     private final int textColor;
     private final int mutedColor;
     private final int cardColor;
@@ -54,32 +66,48 @@ final class FeedAdapter extends BaseAdapter {
                 float uiScale, float textScale, boolean darkMode,
                 int primaryColor, int secondaryColor, Listener listener) {
         this(context, items, noImage, uiScale, textScale, darkMode,
-                primaryColor, secondaryColor, listener, null);
+                primaryColor, secondaryColor, listener, null, null, "",
+                false, 0);
     }
 
     FeedAdapter(Context context, List<FeedItem> items, boolean noImage,
                 float uiScale, float textScale, boolean darkMode,
                 int primaryColor, int secondaryColor, Listener listener,
                 LikeListener likeListener) {
+        this(context, items, noImage, uiScale, textScale, darkMode,
+                primaryColor, secondaryColor, listener, likeListener, null, "",
+                false, 0);
+    }
+
+    FeedAdapter(Context context, List<FeedItem> items, boolean noImage,
+                float uiScale, float textScale, boolean darkMode,
+                int primaryColor, int secondaryColor, Listener listener,
+                LikeListener likeListener, FollowListener followListener,
+                String currentUserId, boolean roundLayout,
+                int roundHorizontalPaddingPx) {
         this.context = context;
         this.items = items;
         this.noImage = noImage;
         this.uiScale = uiScale;
         this.textScale = textScale;
         this.darkMode = darkMode;
+        this.roundLayout = roundLayout;
+        this.roundHorizontalPaddingPx = Math.max(0, roundHorizontalPaddingPx);
         this.primaryColor = primaryColor;
         this.secondaryColor = secondaryColor;
         this.listener = listener;
         this.likeListener = likeListener;
+        this.followListener = followListener;
+        this.currentUserId = currentUserId == null ? "" : currentUserId;
         tokens = ThemeTokens.of(darkMode, primaryColor, secondaryColor);
         textColor = tokens.text;
         mutedColor = tokens.muted;
         cardColor = tokens.panel;
         float widthDp = context.getResources().getDisplayMetrics().widthPixels
                 / context.getResources().getDisplayMetrics().density;
-        compactScreen = widthDp <= 390f;
+        compactScreen = roundLayout || widthDp <= 390f;
         avatarTargetPx = dp(28);
-        coverTargetPx = dp(compactScreen ? 88 : 104);
+        coverTargetPx = dp(roundLayout ? 76 : compactScreen ? 88 : 104);
         if (!EmojiStore.isLoaded()) EmojiStore.whenReady(this::notifyDataSetChanged);
     }
 
@@ -93,19 +121,25 @@ final class FeedAdapter extends BaseAdapter {
         if (reusable == null) {
             LinearLayout outer = new LinearLayout(context);
             outer.setBackgroundColor(tokens.background);
-            outer.setPadding(dp(compactScreen ? 8 : 10), dp(4),
-                    dp(compactScreen ? 8 : 10), dp(4));
+            int horizontalPadding = roundLayout
+                    ? Math.max(dp(8), roundHorizontalPaddingPx)
+                    : dp(compactScreen ? 8 : 10);
+            outer.setPadding(horizontalPadding, dp(roundLayout ? 3 : 4),
+                    horizontalPadding, dp(roundLayout ? 3 : 4));
 
             LinearLayout card = new LinearLayout(context);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setPadding(dp(compactScreen ? 10 : 12), dp(10),
-                    dp(compactScreen ? 10 : 12), dp(9));
+            card.setPadding(dp(roundLayout ? 10 : compactScreen ? 10 : 12),
+                    dp(roundLayout ? 9 : 10),
+                    dp(roundLayout ? 10 : compactScreen ? 10 : 12),
+                    dp(roundLayout ? 8 : 9));
             Compat.setBackground(card, cardBackground());
             outer.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
             LinearLayout authorRow = new LinearLayout(context);
             authorRow.setGravity(Gravity.CENTER_VERTICAL);
-            card.addView(authorRow, new LinearLayout.LayoutParams(-1, dp(30)));
+            card.addView(authorRow, new LinearLayout.LayoutParams(
+                    -1, dp(roundLayout ? 28 : 30)));
 
             ImageView avatar = new ImageView(context);
             avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -135,9 +169,18 @@ final class FeedAdapter extends BaseAdapter {
             TextView badge = label(9, mutedColor);
             badge.setGravity(Gravity.CENTER);
             badge.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            badge.setText("文章");
-            Compat.setBackground(badge, round(tokens.panelElevated, 6));
-            authorRow.addView(badge, new LinearLayout.LayoutParams(dp(34), dp(20)));
+            badge.setPadding(dp(7), 0, dp(7), 0);
+            Compat.setBackground(badge, UiComponents.softPill(context, tokens, uiScale));
+            authorRow.addView(badge, new LinearLayout.LayoutParams(-2, dp(20)));
+
+            TextView follow = label(18, textColor);
+            follow.setGravity(Gravity.CENTER);
+            follow.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+            follow.setContentDescription("关注");
+            LinearLayout.LayoutParams followParams =
+                    new LinearLayout.LayoutParams(dp(30), dp(26));
+            followParams.leftMargin = dp(7);
+            authorRow.addView(follow, followParams);
 
             LinearLayout body = new LinearLayout(context);
             body.setGravity(Gravity.CENTER_VERTICAL);
@@ -150,47 +193,60 @@ final class FeedAdapter extends BaseAdapter {
             LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1);
             body.addView(copy, copyParams);
 
-            TextView title = label(compactScreen ? 15 : 16, textColor);
+            TextView title = label(roundLayout ? 15 : compactScreen ? 15 : 16,
+                    textColor);
             title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             title.setMaxLines(2);
             title.setEllipsize(TextUtils.TruncateAt.END);
             title.setLineSpacing(0, 1.06f);
             copy.addView(title);
 
-            TextView description = label(compactScreen ? 11.5f : 12f, mutedColor);
-            description.setMaxLines(2);
+            TextView description = label(roundLayout ? 11f
+                    : compactScreen ? 11.5f : 12f, mutedColor);
+            description.setMaxLines(roundLayout ? 1 : 2);
             description.setEllipsize(TextUtils.TruncateAt.END);
             description.setLineSpacing(dp(1), 1.08f);
             LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(-1, -2);
             descriptionParams.topMargin = dp(4);
             copy.addView(description, descriptionParams);
 
-            int coverWidth = compactScreen ? 88 : 104;
-            int coverHeight = compactScreen ? 64 : 74;
+            int coverWidth = roundLayout ? 76 : compactScreen ? 88 : 104;
+            int coverHeight = roundLayout ? 58 : compactScreen ? 64 : 74;
             ImageView cover = new ImageView(context);
             cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
             Compat.setBackground(cover, round(coverPlaceholderColor(), 8));
             Compat.clipToOutline(cover);
             LinearLayout.LayoutParams coverParams =
                     new LinearLayout.LayoutParams(dp(coverWidth), dp(coverHeight));
-            coverParams.leftMargin = dp(compactScreen ? 8 : 10);
+            coverParams.leftMargin = dp(roundLayout ? 7 : compactScreen ? 8 : 10);
             body.addView(cover, coverParams);
 
             LinearLayout actions = new LinearLayout(context);
             actions.setGravity(Gravity.CENTER_VERTICAL);
-            LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(-1, dp(26));
-            actionsParams.topMargin = dp(5);
+            LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(
+                    -1, dp(roundLayout ? 25 : 26));
+            actionsParams.topMargin = dp(roundLayout ? 4 : 5);
             card.addView(actions, actionsParams);
 
+            TextView topic = label(9.5f, mutedColor);
+            topic.setGravity(Gravity.CENTER);
+            topic.setSingleLine(true);
+            topic.setEllipsize(TextUtils.TruncateAt.END);
+            topic.setMaxWidth(dp(roundLayout ? 76 : 110));
+            topic.setPadding(dp(7), 0, dp(7), 0);
+            Compat.setBackground(topic, UiComponents.softPill(context, tokens, uiScale));
+            actions.addView(topic, new LinearLayout.LayoutParams(-2, dp(20)));
+            actions.addView(new View(context),
+                    new LinearLayout.LayoutParams(0, 1, 1.0f));
             TextView likes = stat(R.drawable.official_comment_like_line);
             LinearLayout.LayoutParams likesParams =
                     new LinearLayout.LayoutParams(-2, dp(24));
-            likesParams.rightMargin = dp(15);
+            likesParams.rightMargin = dp(12);
             actions.addView(likes, likesParams);
             TextView comments = stat(R.drawable.official_detail_comment);
             actions.addView(comments, new LinearLayout.LayoutParams(-2, dp(24)));
 
-            holder = new Holder(card, copy, avatar, badge, title, description,
+            holder = new Holder(card, copy, avatar, badge, follow, topic, title, description,
                     author, meta, likes, comments, cover);
             outer.setTag(holder);
             reusable = outer;
@@ -207,12 +263,17 @@ final class FeedAdapter extends BaseAdapter {
         String title = RichContent.plainText(item.title);
         String description = RichContent.plainText(item.description);
         EmojiRenderer.set(holder.title, title.isEmpty() ? "无标题内容" : title, darkMode);
-        holder.badge.setVisibility(item.article ? View.VISIBLE : View.GONE);
         EmojiRenderer.set(holder.description, description, darkMode);
         holder.description.setVisibility(description.isEmpty() ? View.GONE : View.VISIBLE);
         holder.author.setText(item.author.isEmpty() ? "小黑盒社区" : item.author);
         holder.meta.setText(feedMeta(item));
-        holder.badge.setVisibility(item.article ? View.VISIBLE : View.GONE);
+        holder.badge.setText(item.pinned ? "置顶" : "文章");
+        holder.badge.setTextColor(item.pinned ? tokens.accent : mutedColor);
+        holder.badge.setVisibility(item.pinned || item.article
+                ? View.VISIBLE : View.GONE);
+        holder.topic.setText(item.topicName);
+        holder.topic.setVisibility(item.topicName.isEmpty() ? View.GONE : View.VISIBLE);
+        updateFollowView(holder.follow, item);
         boolean showAvatar = !noImage && !item.authorAvatar.isEmpty();
         if (showAvatar) {
             Compat.setBackground(holder.avatar, round(coverPlaceholderColor(), 14));
@@ -248,7 +309,37 @@ final class FeedAdapter extends BaseAdapter {
                 notifyDataSetChanged();
             }
         });
+        holder.follow.setOnClickListener(view -> {
+            if (followListener == null || item.followPending) return;
+            boolean before = item.following;
+            boolean next = !before;
+            item.following = next;
+            item.followPending = true;
+            updateFollowView(holder.follow, item);
+            UiComponents.press(holder.follow);
+            followListener.onFollow(item, next, success -> {
+                if (!success) item.following = before;
+                item.followPending = false;
+                notifyDataSetChanged();
+            });
+        });
         return reusable;
+    }
+
+    private void updateFollowView(TextView view, FeedItem item) {
+        boolean visible = followListener != null
+                && !item.authorId.isEmpty()
+                && !item.authorId.equals(currentUserId);
+        view.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (!visible) return;
+        view.setText(item.following ? "✓" : "+");
+        view.setTextColor(item.following ? tokens.muted : textColor);
+        view.setAlpha(item.followPending ? 0.55f : 1f);
+        view.setEnabled(!item.followPending);
+        view.setContentDescription(item.following ? "取消关注" : "关注");
+        GradientDrawable background = round(tokens.panelElevated, 13);
+        background.setStroke(Math.max(1, dp(1)), tokens.hairline);
+        Compat.setBackground(view, background);
     }
 
     private TextView stat(int icon) {
@@ -267,13 +358,7 @@ final class FeedAdapter extends BaseAdapter {
     }
 
     private String feedMeta(FeedItem item) {
-        String category = item.topicName;
-        if (item.article) {
-            category = category.isEmpty() ? "文章" : "文章 · " + category;
-        }
-        String time = relativeTime(item.createdAt);
-        if (category.isEmpty()) return time;
-        return time.isEmpty() ? category : category + " · " + time;
+        return relativeTime(item.createdAt);
     }
 
     private String relativeTime(long seconds) {
@@ -336,7 +421,8 @@ final class FeedAdapter extends BaseAdapter {
     }
 
     private GradientDrawable cardBackground() {
-        return UiComponents.card(context, tokens, uiScale);
+        return UiComponents.round(context, tokens.panel,
+                roundLayout ? 9 : 10, uiScale);
     }
 
     private int dp(int value) {
@@ -348,6 +434,8 @@ final class FeedAdapter extends BaseAdapter {
         final LinearLayout copy;
         final ImageView avatar;
         final TextView badge;
+        final TextView follow;
+        final TextView topic;
         final TextView title;
         final TextView description;
         final TextView author;
@@ -357,6 +445,7 @@ final class FeedAdapter extends BaseAdapter {
         final ImageView cover;
 
         Holder(LinearLayout card, LinearLayout copy, ImageView avatar, TextView badge,
+               TextView follow, TextView topic,
                TextView title, TextView description,
                TextView author, TextView meta, TextView likes, TextView comments,
                ImageView cover) {
@@ -364,6 +453,8 @@ final class FeedAdapter extends BaseAdapter {
             this.copy = copy;
             this.avatar = avatar;
             this.badge = badge;
+            this.follow = follow;
+            this.topic = topic;
             this.title = title;
             this.description = description;
             this.author = author;

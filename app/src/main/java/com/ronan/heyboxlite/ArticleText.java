@@ -32,7 +32,10 @@ final class ArticleText {
 
     static List<String> articleParagraphs(String source) {
         List<String> paragraphs = new ArrayList<>();
-        String value = source == null ? "" : source.replace("\r\n", "\n").replace('\r', '\n').trim();
+        String value = stripMarkdownEmphasis(source == null ? "" : source)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .trim();
         if (value.isEmpty()) {
             return paragraphs;
         }
@@ -75,19 +78,32 @@ final class ArticleText {
         return paragraphs;
     }
 
+    static String stripMarkdownEmphasis(String source) {
+        if (source == null || source.isEmpty()) {
+            return "";
+        }
+        return source
+                .replaceAll("\\*\\*([^*\\n]+)\\*\\*", "$1")
+                .replaceAll("__([^_\\n]+)__", "$1");
+    }
+
     static String normalizeArticleBreaks(String value) {
         String output = value.replaceAll("([\\u3002\\uff01\\uff1f!?])\\s*(?=([\\uff08(][0-9\\u4e00-\\u9fff]{1,3}[\\uff09)]))", "$1\n");
         return output.replaceAll("\\s+(?=([\\uff08(][0-9\\u4e00-\\u9fff]{1,3}[\\uff09)]))", "\n").replaceAll("([^\\n])\\s+(?=([\\u4e00-\\u9fff]{1,4}\\u3001))", "$1\n").replaceAll("([^\\n])\\s+(?=([0-9]{1,2}[.\\uff0e][^0-9]))", "$1\n").replaceAll("([\\u4e00-\\u9fffA-Za-z])(?=([0-9]{1,2}[.\\uff0e][\\u4e00-\\u9fff]))", "$1\n").replaceAll("([\\u3002\\uff01\\uff1f!?])(?=([0-9]{1,2}[.\\uff0e][\\u4e00-\\u9fff]))", "$1\n");
     }
 
     static String consumeLeadingArticleLabel(List<String> paragraphs, String value) {
-        String[] labels = {"提示词：", "提示", "提示", "Prompt:", "Prompt"};
+        String[] labels = {"提示词：", "提示", "Prompt:", "Prompt"};
         for (String label : labels) {
             if (value.equals(label)) {
                 paragraphs.add(displayLabel(label));
                 return "";
             }
-            if (value.startsWith(label + " ") || value.startsWith(label + "\n") || ((label.endsWith(":") || label.endsWith("")) && value.startsWith(label))) {
+            boolean inlineValue = (label.endsWith(":") || label.endsWith("："))
+                    && value.startsWith(label);
+            if (value.startsWith(label + " ")
+                    || value.startsWith(label + "\n")
+                    || inlineValue) {
                 paragraphs.add(displayLabel(label));
                 return value.substring(label.length()).trim();
             }

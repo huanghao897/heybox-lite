@@ -4,6 +4,7 @@ import android.content.Context;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -18,7 +19,7 @@ final class UpdateDownloadClient {
     private UpdateDownloadClient() {}
 
     static File download(Context context, String url, String version,
-                         ProgressListener listener) throws Exception {
+                         ProgressListener listener) throws IOException {
         HttpURLConnection connection = null;
         File output = null;
         try {
@@ -45,7 +46,7 @@ final class UpdateDownloadClient {
                 throw new IllegalStateException("下载内容异常，未得到有效 APK");
             }
             return output;
-        } catch (Exception error) {
+        } catch (IOException | RuntimeException error) {
             if (output != null && output.exists()) output.delete();
             throw error;
         } finally {
@@ -54,7 +55,7 @@ final class UpdateDownloadClient {
     }
 
     private static long copy(HttpURLConnection connection, File output, int length,
-                             ProgressListener listener) throws Exception {
+                             ProgressListener listener) throws IOException {
         long written = 0;
         byte[] buffer = new byte[16 * 1024];
         try (InputStream input = connection.getInputStream();

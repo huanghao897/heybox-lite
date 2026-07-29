@@ -123,6 +123,12 @@ final class ImagePagerCore extends ViewGroup {
         return true;
     }
 
+    @Override
+    public boolean performClick() {
+        super.performClick();
+        return true;
+    }
+
     private void dragTo(float dx) {
         int width = Math.max(1, getWidth());
         int max = Math.max(0, (getChildCount() - 1) * width);

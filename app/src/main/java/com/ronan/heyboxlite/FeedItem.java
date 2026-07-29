@@ -1,8 +1,10 @@
 package com.ronan.heyboxlite;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -27,11 +29,13 @@ final class FeedItem {
     final boolean article;
     final boolean pinned;
     boolean liked;
+    boolean following;
+    boolean followPending;
 
     private FeedItem(String id, String title, String description, String author,
                      String authorId, String authorAvatar,
                      String topicName, String image, long createdAt, int comments, int clicks, int likes, boolean article, boolean liked,
-                     boolean pinned, String hsrc, String[] images) {
+                     boolean pinned, boolean following, String hsrc, String[] images) {
         this.id = id;
         this.hsrc = hsrc;
         this.title = title;
@@ -49,6 +53,7 @@ final class FeedItem {
         this.article = article;
         this.pinned = pinned;
         this.liked = liked;
+        this.following = following;
     }
 
     static FeedItem from(JSONObject json) {
@@ -98,6 +103,7 @@ final class FeedItem {
                 json.optBoolean("is_award", json.optBoolean("liked",
                         json.optBoolean("is_liked", json.optInt("has_award") == 1))),
                 pinned(json),
+                following(json, user),
                 hsrc(json),
                 detailImages
         );
@@ -131,6 +137,8 @@ final class FeedItem {
             user.put("username", author);
             user.put("userid", authorId);
             user.put("avatar", authorAvatar);
+            user.put("is_follow", following ? 1 : 0);
+            user.put("is_following", following);
             json.put("user", user);
             if (!topicName.isEmpty()) {
                 JSONArray topics = new JSONArray();
@@ -139,7 +147,7 @@ final class FeedItem {
                 topics.put(topic);
                 json.put("topics", topics);
             }
-        } catch (Exception ignored) {
+        } catch (JSONException ignored) {
         }
         return json;
     }
@@ -163,7 +171,7 @@ final class FeedItem {
         value = shareUrl.substring(start, end < 0 ? shareUrl.length() : end);
         try {
             return URLDecoder.decode(value, "UTF-8");
-        } catch (Exception ignored) {
+        } catch (IllegalArgumentException | UnsupportedEncodingException ignored) {
             return value;
         }
     }
@@ -184,6 +192,41 @@ final class FeedItem {
                 || json.optInt("is_sticky", 0) == 1;
     }
 
+    private static boolean following(JSONObject json, JSONObject user) {
+        int status = followStatus(json);
+        if (status < 0) status = followStatus(user);
+        return status == 1 || status == 3;
+    }
+
+    private static int followStatus(JSONObject source) {
+        if (source == null) return -1;
+        String[] keys = {"follow_status", "follow_state", "follow_state_v2",
+                "is_follow", "is_following", "followed"};
+        for (String key : keys) {
+            if (!source.has(key)) continue;
+            Object value = source.opt(key);
+            if (value instanceof Boolean) return (Boolean) value ? 1 : 0;
+            if (value instanceof Number) return ((Number) value).intValue();
+            String text = String.valueOf(value).trim();
+            if ("true".equalsIgnoreCase(text)
+                    || "followed".equalsIgnoreCase(text)
+                    || "following".equalsIgnoreCase(text)) {
+                return 1;
+            }
+            if ("mutual".equalsIgnoreCase(text)) return 3;
+            if ("false".equalsIgnoreCase(text)
+                    || "none".equalsIgnoreCase(text)
+                    || "unfollowed".equalsIgnoreCase(text)) {
+                return 0;
+            }
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return -1;
+    }
+
     private static String userId(JSONObject json) {
         if (json == null) return "";
         return first(json.optString("userid"), json.optString("user_id"),
@@ -191,16 +234,43 @@ final class FeedItem {
                 json.optString("uid"), json.optString("account_id"), json.optString("id"));
     }
 
-    private static String topicName(JSONObject json) {
-        JSONArray topics = json.optJSONArray("topics");
-        if (topics != null && topics.length() > 0) {
-            JSONObject topic = topics.optJSONObject(0);
-            if (topic != null) return topic.optString("name");
+    static String topicName(JSONObject json) {
+        List<String> names = topicNames(json);
+        return names.isEmpty() ? "" : names.get(0);
+    }
+
+    static List<String> topicNames(JSONObject json) {
+        List<String> names = new ArrayList<>();
+        if (json == null) return names;
+        addTopicValues(names, json.optJSONArray("topics"));
+        addTopicValues(names, json.optJSONArray("topic_list"));
+        addTopicValues(names, json.optJSONArray("tags"));
+        addTopicValue(names, json.opt("topic"));
+        addTopicValue(names, json.opt("tag"));
+        addTopicValue(names, json.opt("topic_name"));
+        addTopicValue(names, json.opt("tag_name"));
+        addTopicValue(names, json.opt("category"));
+        return names;
+    }
+
+    private static void addTopicValues(List<String> names, JSONArray values) {
+        if (values == null) return;
+        for (int i = 0; i < values.length(); i++) {
+            addTopicValue(names, values.opt(i));
         }
-        JSONObject topic = json.optJSONObject("topic");
-        if (topic != null) return topic.optString("name");
-        return first(json.optString("topic_name"), json.optString("tag_name"),
-                json.optString("category"));
+    }
+
+    private static void addTopicValue(List<String> names, Object value) {
+        String label = "";
+        if (value instanceof JSONObject) {
+            JSONObject object = (JSONObject) value;
+            label = first(object.optString("name"), object.optString("title"),
+                    object.optString("topic_name"), object.optString("tag_name"),
+                    object.optString("label"));
+        } else if (value instanceof String) {
+            label = ((String) value).trim();
+        }
+        if (!label.isEmpty() && !names.contains(label)) names.add(label);
     }
 
     private static String[] images(JSONArray primary, JSONArray secondary, String... extra) {

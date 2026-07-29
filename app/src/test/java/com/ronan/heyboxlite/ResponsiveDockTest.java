@@ -32,4 +32,16 @@ public class ResponsiveDockTest {
         assertTrue(dimensions.height > 0);
         assertTrue(dimensions.iconSize < dimensions.height);
     }
+
+    @Test
+    public void roundLayoutRaisesAndCompactsDock() {
+        ResponsiveDock.Dimensions rectangular =
+                ResponsiveDock.fromScreen(360, 480, false);
+        ResponsiveDock.Dimensions round =
+                ResponsiveDock.fromScreen(360, 360, true);
+
+        assertTrue(round.width < rectangular.width);
+        assertTrue(round.height > rectangular.height);
+        assertTrue(round.marginBottom > rectangular.marginBottom);
+    }
 }

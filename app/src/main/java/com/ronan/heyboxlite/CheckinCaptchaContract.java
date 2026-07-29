@@ -4,6 +4,7 @@ import org.json.JSONObject;
 
 import java.net.URI;
 import java.net.URLDecoder;
+import java.util.Locale;
 
 final class CheckinCaptchaContract {
     static final String PROMPT_PREFIX = "heyboxlite-captcha:";
@@ -98,7 +99,7 @@ final class CheckinCaptchaContract {
 
     private static String diagnosticMarker(String value) {
         if (value == null || !value.matches("[a-zA-Z0-9:._-]{1,64}")) return "";
-        return value.toLowerCase().replaceAll("[^a-z0-9]+", "_")
+        return value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_")
                 .replaceAll("^_+|_+$", "");
     }
 }

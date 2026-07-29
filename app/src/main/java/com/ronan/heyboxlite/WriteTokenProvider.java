@@ -16,6 +16,7 @@ import android.webkit.WebViewClient;
 
 import org.json.JSONObject;
 
+import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -258,13 +259,13 @@ final class WriteTokenProvider {
         try {
             ViewGroup parent = (ViewGroup) webView.getParent();
             if (parent != null) parent.removeView(webView);
-        } catch (Exception ignored) {
+        } catch (RuntimeException ignored) {
         }
         try {
             webView.stopLoading();
             webView.loadUrl("about:blank");
             webView.destroy();
-        } catch (Exception ignored) {
+        } catch (RuntimeException ignored) {
         }
         webView = null;
         promptNonce = "";
@@ -273,7 +274,7 @@ final class WriteTokenProvider {
     private static String decode(String value) {
         try {
             return URLDecoder.decode(value, "UTF-8");
-        } catch (Exception ignored) {
+        } catch (IllegalArgumentException | UnsupportedEncodingException ignored) {
             return "";
         }
     }

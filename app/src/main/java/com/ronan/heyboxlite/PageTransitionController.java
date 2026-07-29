@@ -35,7 +35,7 @@ final class PageTransitionController {
         if (container == null || next == null) return;
         finishNow();
         Motions.reset(next);
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+        if (Motions.off() || Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
             container.removeAllViews();
             container.addView(next, params());
             return;
@@ -51,6 +51,7 @@ final class PageTransitionController {
         }
 
         final View oldView = old;
+        Motions.reset(oldView);
         for (int i = container.getChildCount() - 1; i >= 0; i--) {
             if (container.getChildAt(i) != oldView) container.removeViewAt(i);
         }
@@ -71,6 +72,10 @@ final class PageTransitionController {
         };
 
         int width = container.getWidth();
+        if (!Motions.full()) {
+            runReduced(transition, end, width, forward, push);
+            return;
+        }
         if (push) {
             next.setTranslationX(forward ? width : -width);
             next.setAlpha(1.0f);
@@ -102,6 +107,31 @@ final class PageTransitionController {
                     .translationX(forward ? -width * 0.30f : width)
                     .alpha(forward ? 0.72f : 1.0f)
                     .setDuration(MotionSpec.TRANSITION_FULL_MS)
+                    .setInterpolator(MotionSpec.EASE_OUT)
+                    .start();
+        });
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.JELLY_BEAN)
+    private void runReduced(Transition transition, Runnable end, int width,
+                            boolean forward, boolean push) {
+        View oldView = transition.oldView;
+        View next = transition.nextView;
+        float nextOffset = (forward ? 1.0f : -1.0f)
+                * width * (push ? 0.14f : 0.10f);
+        float oldOffset = (forward ? -1.0f : 1.0f)
+                * width * (push ? 0.08f : 0.12f);
+        next.setTranslationX(nextOffset);
+        next.setAlpha(0.86f);
+        next.post(() -> {
+            if (current != transition) return;
+            next.animate().translationX(0.0f).alpha(1.0f)
+                    .setDuration(MotionSpec.TRANSITION_LITE_MS)
+                    .setInterpolator(MotionSpec.EASE_OUT)
+                    .withEndAction(end)
+                    .start();
+            oldView.animate().translationX(oldOffset).alpha(push ? 1.0f : 0.82f)
+                    .setDuration(MotionSpec.TRANSITION_LITE_MS)
                     .setInterpolator(MotionSpec.EASE_OUT)
                     .start();
         });

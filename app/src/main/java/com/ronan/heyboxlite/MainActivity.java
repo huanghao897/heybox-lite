@@ -6,6 +6,7 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ComponentCallbacks2;
@@ -19,8 +20,8 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.ConnectivityManager;
@@ -36,6 +37,7 @@ import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.DisplayMetrics;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
@@ -55,7 +57,9 @@ import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import java.io.File;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -68,11 +72,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.TimeZone;
+
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
+
 @SuppressLint("WrongConstant")
 public final class MainActivity extends Activity {
     private static final int REPLY_PREVIEW_COUNT = 2;
@@ -149,19 +155,19 @@ public final class MainActivity extends Activity {
     private long lastExitBackAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final PageTransitionController pageTransitions = new PageTransitionController();
-    private final List<FeedItem> feed = new ArrayList();
+    private final List<FeedItem> feed = new ArrayList<>();
     private String cachedProfileUserId = "";
-    private final Map<View, Integer> searchBarHeights = new HashMap();
-    private final Map<View, Boolean> searchBarStates = new HashMap();
+    private final Map<View, Integer> searchBarHeights = new HashMap<>();
+    private final Map<View, Boolean> searchBarStates = new HashMap<>();
     private boolean pendingBackTransition;
     private boolean pendingLateralPush;
     private final SearchState searchState = new SearchState();
     private final Map<String, SubCommentState> subCommentStates = new HashMap<>();
     private ListView searchListView;
-    private final Map<String, LikeState> linkLikeOverrides = new HashMap();
-    private final Map<String, Bitmap> screenSnapshots = new HashMap();
-    private final Map<String, Bitmap> fullScreenSnapshots = new HashMap();
-    private final Map<String, View> retainedPages = new HashMap();
+    private final Map<String, LikeState> linkLikeOverrides = new HashMap<>();
+    private final Map<String, Bitmap> screenSnapshots = new HashMap<>();
+    private final Map<String, Bitmap> fullScreenSnapshots = new HashMap<>();
+    private final Map<String, View> retainedPages = new HashMap<>();
     private String screen = "feed";
     private String savedReturnScreen = "profile";
     private String detailReturn = "feed";
@@ -233,6 +239,7 @@ public final class MainActivity extends Activity {
             return;
         }
         this.session = new SessionStore(this);
+        Motions.setLevel(this.session.motionLevel());
         this.localCache = new LocalCache(this);
         boolean pendingCrashReport = !CrashReporter.pendingCrashReport(this).isEmpty();
         this.checkinCenterCoordinator = new CheckinCenterCoordinator(
@@ -318,7 +325,8 @@ public final class MainActivity extends Activity {
 
         LinearLayout page = vertical(this.BG);
         page.setGravity(17);
-        page.setPadding(dp(24), dp(24), dp(24), dp(24));
+        int horizontal = usesRoundLayout() ? pageHorizontalPadding() : dp(24);
+        page.setPadding(horizontal, dp(24), horizontal, dp(24));
         TextView title = text("无法使用", 20.0f, this.TEXT);
         title.setTypeface(appRegularTypeface(), 1);
         title.setGravity(17);
@@ -545,24 +553,22 @@ public final class MainActivity extends Activity {
         LinearLayout linearLayout = new LinearLayout(this);
         linearLayout.setOrientation(1);
         linearLayout.setPadding(dp(16), dp(14), dp(16), dp(14));
-        int dialogBg = this.session.darkMode() ? Color.rgb(34, 34, 34) : Color.rgb(248, 248, 248);
-        int border = this.session.darkMode() ? Color.rgb(72, 72, 72) : Color.rgb(215, 215, 215);
-        Compat.setBackground(linearLayout, roundStroke(dialogBg, 14, border, 1));
-        TextView titleView = text(titleValue, 16.0f, this.TEXT);
+        int dialogBg = this.themeTokens == null ? this.PANEL : this.themeTokens.panel;
+        int border = this.themeTokens == null
+                ? blend(dialogBg, this.TEXT, 0.16f)
+                : this.themeTokens.hairline;
+        Compat.setBackground(linearLayout, roundStroke(dialogBg, 12, border, 1));
+        TextView titleView = text(titleValue, 17.0f, this.TEXT);
         titleView.setTypeface(appRegularTypeface(), 1);
         titleView.setLineSpacing(0.0f, 1.08f);
         linearLayout.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
-        View accent = new View(this);
-        Compat.setBackground(accent, round(this.PRIMARY, 1));
-        LinearLayout.LayoutParams accentParams = new LinearLayout.LayoutParams(dp(34), dp(2));
-        accentParams.topMargin = dp(7);
-        linearLayout.addView(accent, accentParams);
         MaxHeightScrollView scroll = new MaxHeightScrollView(this);
         scroll.setFillViewport(false);
         scroll.setOverScrollMode(1);
         TextView body = text(message, 13.0f, this.TEXT);
-        body.setLineSpacing(dp(2), 1.08f);
-        body.setPadding(0, dp(12), 0, dp(2));
+        body.setLineSpacing(dp(2), 1.18f);
+        body.setTextIsSelectable(true);
+        body.setPadding(0, dp(10), 0, dp(2));
         int maxBodyHeight = Math.max(dp(96), Math.min(getResources().getDisplayMetrics().heightPixels - dp(230), dp(330)));
         scroll.setMaxHeight(maxBodyHeight);
         scroll.addView(body, new FrameLayout.LayoutParams(-1, -2));
@@ -637,13 +643,14 @@ public final class MainActivity extends Activity {
             this.checkinCenterPage.close();
             this.checkinCenterPage = null;
         }
+        discardRetainedLayoutViews();
         LinearLayout linearLayoutVertical = vertical(this.BG);
         this.shellRoot = linearLayoutVertical;
         applyScreenInsets(linearLayoutVertical);
         LinearLayout bar = new LinearLayout(this);
         this.shellBar = bar;
         bar.setGravity(16);
-        int sidePadding = this.session.roundScreen() ? dp(9) : dp(4);
+        int sidePadding = usesRoundLayout() ? dp(9) : dp(4);
         bar.setPadding(sidePadding, 0, Math.max(sidePadding, dp(6)), 0);
         bar.setBackgroundColor(this.BG);
         bar.setVisibility(8);
@@ -670,7 +677,8 @@ public final class MainActivity extends Activity {
         body.addView(this.content, match());
         DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
         this.bottomDockDimensions = ResponsiveDock.fromScreen(
-                displayMetrics.widthPixels, displayMetrics.heightPixels);
+                displayMetrics.widthPixels, displayMetrics.heightPixels,
+                usesRoundLayout());
         this.bottom = new LinearLayout(this);
         this.bottom.setGravity(17);
         this.bottom.setPadding(this.bottomDockDimensions.paddingHorizontal,
@@ -702,6 +710,17 @@ public final class MainActivity extends Activity {
     }
 
     private int[] screenInsets() {
+        DisplayMetrics metrics = screenMetrics();
+        int horizontalPercent = Math.max(0, Math.min(30,
+                this.session.screenPaddingHPercent()));
+        int verticalPercent = Math.max(0, Math.min(30,
+                this.session.screenPaddingVPercent()));
+        int horizontal = (metrics.widthPixels * horizontalPercent) / 100;
+        int vertical = (metrics.heightPixels * verticalPercent) / 100;
+        return new int[]{horizontal, vertical, horizontal, vertical};
+    }
+
+    private DisplayMetrics screenMetrics() {
         DisplayMetrics metrics = new DisplayMetrics();
         try {
             if (Build.VERSION.SDK_INT >= 17) {
@@ -709,24 +728,63 @@ public final class MainActivity extends Activity {
             } else {
                 getWindowManager().getDefaultDisplay().getMetrics(metrics);
             }
-        } catch (Exception e) {
-            metrics = getResources().getDisplayMetrics();
+        } catch (RuntimeException error) {
+            return getResources().getDisplayMetrics();
         }
-        int horizontal = this.session.screenPaddingHPercent();
-        int vertical = this.session.screenPaddingVPercent();
-        if (this.session.roundScreen()) {
-            horizontal = Math.max(horizontal, 5);
-            vertical = Math.max(vertical, 3);
-        }
-        int horizontal2 = Math.max(0, Math.min(30, horizontal));
-        int vertical2 = Math.max(0, Math.min(30, vertical));
-        int leftRight = (metrics.widthPixels * horizontal2) / 100;
-        int top = (metrics.heightPixels * vertical2) / 100;
-        int bottom = top;
-        if (this.session.roundScreen()) {
-            bottom += Math.round(metrics.heightPixels * 0.03f);
-        }
-        return new int[]{leftRight, top, leftRight, bottom};
+        return metrics;
+    }
+
+    private boolean usesRoundLayout() {
+        return this.session != null
+                && (this.session.roundScreen() || isSystemRoundScreen());
+    }
+
+    private boolean isSystemRoundScreen() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && getResources().getConfiguration().isScreenRound();
+    }
+
+    private int pageHorizontalPadding() {
+        if (!usesRoundLayout()) return dp(8);
+        DisplayMetrics metrics = screenMetrics();
+        return RoundLayoutMetrics.componentInset(metrics.widthPixels,
+                RoundLayoutMetrics.PAGE_HORIZONTAL_RATIO, dp(8));
+    }
+
+    private int pageTopPadding() {
+        if (!usesRoundLayout()) return dp(8);
+        DisplayMetrics metrics = screenMetrics();
+        return RoundLayoutMetrics.componentInset(metrics.heightPixels,
+                RoundLayoutMetrics.PAGE_TOP_RATIO, dp(8));
+    }
+
+    private int subpageTopPadding() {
+        if (!usesRoundLayout()) return dp(8);
+        DisplayMetrics metrics = screenMetrics();
+        return RoundLayoutMetrics.componentInset(metrics.heightPixels,
+                RoundLayoutMetrics.SUBPAGE_TOP_RATIO, dp(8));
+    }
+
+    private int roundHorizontalInset(float targetRatio, int minimumDp) {
+        DisplayMetrics metrics = screenMetrics();
+        return RoundLayoutMetrics.componentInset(metrics.widthPixels,
+                targetRatio, dp(minimumDp));
+    }
+
+    private int roundHeaderInnerInset() {
+        return usesRoundLayout()
+                ? RoundLayoutMetrics.headerInnerInset(screenMetrics().widthPixels)
+                : 0;
+    }
+
+    private void discardRetainedLayoutViews() {
+        this.cachedFeedContainer = null;
+        this.cachedFeedListView = null;
+        this.feedListView = null;
+        this.feedAdapter = null;
+        this.cachedProfileContainer = null;
+        this.cachedProfileUserId = "";
+        this.retainedPages.clear();
     }
 
     private void updateClock(TextView clock) {
@@ -751,7 +809,7 @@ public final class MainActivity extends Activity {
     private int parseThemeColor(String value, int fallback) {
         try {
             return value.isEmpty() ? fallback : Color.parseColor(value);
-        } catch (Exception e) {
+        } catch (IllegalArgumentException error) {
             return fallback;
         }
     }
@@ -971,7 +1029,11 @@ public final class MainActivity extends Activity {
             view.draw(canvas);
             target.put(key, bitmap);
             trimSnapshots(target, maxCount);
-        } catch (Throwable th) {
+        } catch (RuntimeException | OutOfMemoryError error) {
+            if (this.localCache != null) {
+                this.localCache.log("transition snapshot skipped error="
+                        + error.getClass().getSimpleName());
+            }
         }
     }
 
@@ -1560,7 +1622,9 @@ public final class MainActivity extends Activity {
         this.content.removeAllViews();
         LinearLayout page = vertical(this.BG);
         page.setGravity(1);
-        page.setPadding(dp(12), dp(12), dp(12), dp(12));
+        int horizontal = usesRoundLayout() ? pageHorizontalPadding() : dp(12);
+        int top = usesRoundLayout() ? pageTopPadding() : dp(12);
+        page.setPadding(horizontal, top, horizontal, dp(12));
         TextView heading = text("heybox Lite", 20.0f, this.TEXT);
         heading.setTypeface(appRegularTypeface(), 1);
         heading.setGravity(17);
@@ -1615,7 +1679,7 @@ public final class MainActivity extends Activity {
                         image.setImageBitmap(QrCode.create(url, size));
                     }
                     MainActivity.this.setQrStatus("等待扫码", MainActivity.this.SECONDARY);
-                } catch (Exception e) {
+                } catch (com.google.zxing.WriterException | RuntimeException error) {
                     MainActivity.this.setQrStatus("二维码生成失败", MainActivity.this.PRIMARY);
                     MainActivity.this.stopQrPolling();
                 }
@@ -1720,7 +1784,7 @@ public final class MainActivity extends Activity {
         list.addHeaderView(feedTopBar(), null, false);
         this.feedFooter = feedFooterView();
         list.addFooterView(this.feedFooter, null, false);
-        this.feedAdapter = new FeedAdapter(this, this.feed, this.session.noImage(), this.session.uiScale() / 100.0f, this.session.textScale() / 100.0f, this.session.darkMode(), this.PRIMARY, this.SECONDARY, this::showDetail, this::toggleFeedLike);
+        this.feedAdapter = createFeedAdapter(this.feed);
         list.setAdapter((ListAdapter) this.feedAdapter);
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override
@@ -1756,14 +1820,23 @@ public final class MainActivity extends Activity {
 
     private View feedTopBar() {
         LinearLayout wrap = vertical(this.BG);
-        int horizontal = this.session.roundScreen() ? dp(12) : dp(10);
-        wrap.setPadding(horizontal, dp(6), horizontal, dp(4));
+        boolean roundLayout = usesRoundLayout();
+        int outerHorizontal = roundLayout ? 0 : dp(10);
+        int topPadding = roundLayout
+                ? RoundLayoutMetrics.componentInset(screenMetrics().heightPixels,
+                RoundLayoutMetrics.PAGE_TOP_RATIO, dp(9))
+                : dp(6);
+        wrap.setPadding(outerHorizontal, topPadding, outerHorizontal, dp(4));
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(16);
-        heading.setPadding(dp(2), 0, dp(2), 0);
-        TextView name = text("社区", 23.0f, this.TEXT);
+        int headingHorizontal = roundLayout
+                ? roundHorizontalInset(RoundLayoutMetrics.HEADER_HORIZONTAL_RATIO, 10)
+                : dp(2);
+        heading.setPadding(headingHorizontal, 0, headingHorizontal, 0);
+        TextView name = text("社区", roundLayout ? 21.0f : 23.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        heading.addView(name, new LinearLayout.LayoutParams(-1, dp(38)));
+        heading.addView(name, new LinearLayout.LayoutParams(
+                -1, dp(roundLayout ? 34 : 38)));
         wrap.addView(heading);
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
@@ -1771,7 +1844,15 @@ public final class MainActivity extends Activity {
         ThemeTokens tokens = this.themeTokens == null ? ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY) : this.themeTokens;
         Compat.setBackground(row, UiComponents.round(this, tokens.panel, 12,
                 this.session.uiScale() / 100.0f));
-        wrap.addView(row, new LinearLayout.LayoutParams(-1, dp(40)));
+        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(
+                -1, dp(roundLayout ? 35 : 40));
+        if (roundLayout) {
+            int searchHorizontal = roundHorizontalInset(
+                    RoundLayoutMetrics.SEARCH_HORIZONTAL_RATIO, 6);
+            searchParams.leftMargin = searchHorizontal;
+            searchParams.rightMargin = searchHorizontal;
+        }
+        wrap.addView(row, searchParams);
         TextView search = text("搜索帖子、作者或关键词", 12.5f, this.MUTED);
         search.setGravity(16);
         search.setSingleLine(true);
@@ -1808,7 +1889,8 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(this.BG);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(8), dp(8), dp(8), dp(18));
+        page.setPadding(pageHorizontalPadding(), subpageTopPadding(),
+                pageHorizontalPadding(), dp(18));
         scroll.addView(page);
         page.addView(settingsTopCard("阅读时长"));
         addSectionLabel(page, "今日");
@@ -2224,38 +2306,76 @@ public final class MainActivity extends Activity {
         this.action.setVisibility(4);
         FrameLayout frameLayout = new FrameLayout(this);
         frameLayout.setBackgroundColor(this.BG);
+        boolean roundLayout = usesRoundLayout();
+        int headerHeight = dp(roundLayout ? 40 : 44);
+        int searchHeight = dp(roundLayout ? 35 : 42);
+        int headerTop = roundLayout ? subpageTopPadding() : dp(5);
+        int searchTop = headerTop + headerHeight + dp(4);
+        int contentTop = searchTop + searchHeight + dp(8);
+        int horizontalPadding = pageHorizontalPadding();
+        int searchHorizontal = roundLayout
+                ? roundHorizontalInset(RoundLayoutMetrics.SEARCH_HORIZONTAL_RATIO, 6)
+                : horizontalPadding;
         LinearLayout searchBar = new LinearLayout(this);
-        searchBar.setGravity(16);
+        searchBar.setGravity(Gravity.CENTER_VERTICAL);
+        searchBar.setPadding(dp(10), 0, dp(5), 0);
+        Compat.setBackground(searchBar, UiComponents.groupCard(
+                this, this.themeTokens, this.session.uiScale() / 100.0f));
+        ImageView searchGlyph = new ImageView(this);
+        searchGlyph.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        Drawable searchIcon = Compat.tintedDrawable(
+                this, R.drawable.ic_search, this.MUTED);
+        if (searchIcon != null) searchGlyph.setImageDrawable(searchIcon);
+        searchBar.addView(searchGlyph, new LinearLayout.LayoutParams(dp(20), dp(20)));
         EditText input = new EditText(this);
-        input.setHint("搜索帖子");
+        input.setHint("搜索帖子、作者或关键词");
         input.setHintTextColor(this.MUTED);
         input.setTextColor(this.TEXT);
         input.setSingleLine(true);
         input.setTextSize(sp(13.0f));
-        Compat.tint(input, this.PRIMARY);
-        searchBar.addView(input, new LinearLayout.LayoutParams(0, dp(42), 1.0f));
-        Button submit = button("搜索", R.drawable.ic_search);
-        LinearLayout.LayoutParams submitParams = new LinearLayout.LayoutParams(dp(82), dp(38));
-        submitParams.leftMargin = dp(5);
+        input.setPadding(dp(8), 0, dp(4), 0);
+        Compat.setBackground(input, null);
+        searchBar.addView(input, new LinearLayout.LayoutParams(
+                0, searchHeight, 1.0f));
+        ImageView submit = new ImageView(this);
+        submit.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        Drawable submitIcon = Compat.tintedDrawable(
+                this, R.drawable.ic_search, this.TEXT);
+        if (submitIcon != null) submit.setImageDrawable(submitIcon);
+        submit.setPadding(dp(roundLayout ? 7 : 8), dp(roundLayout ? 7 : 8),
+                dp(roundLayout ? 7 : 8), dp(roundLayout ? 7 : 8));
+        submit.setContentDescription("搜索");
+        Compat.setBackground(submit, null);
+        LinearLayout.LayoutParams submitParams =
+                new LinearLayout.LayoutParams(dp(roundLayout ? 29 : 32),
+                        dp(roundLayout ? 29 : 32));
         searchBar.addView(submit, submitParams);
-        LinearLayout recent = vertical(this.BG);
+        LinearLayout recent = settingsList();
         FrameLayout results = new FrameLayout(this);
         results.setTag(searchBar);
         frameLayout.addView(results, match());
-        TextView hint = text("输入关键词搜索社区帖子", 13.0f, this.MUTED);
+        TextView hint = text("输入关键词开始搜索", 13.0f, this.MUTED);
         hint.setGravity(17);
         results.addView(hint, match());
         FrameLayout.LayoutParams recentParams = new FrameLayout.LayoutParams(-1, -2);
-        recentParams.leftMargin = dp(7);
-        recentParams.rightMargin = dp(7);
-        recentParams.topMargin = dp(54);
+        recentParams.leftMargin = horizontalPadding;
+        recentParams.rightMargin = horizontalPadding;
+        recentParams.topMargin = contentTop;
         frameLayout.addView(recent, recentParams);
-        FrameLayout.LayoutParams searchParams = new FrameLayout.LayoutParams(-1, dp(42), 48);
-        searchParams.leftMargin = dp(7);
-        searchParams.rightMargin = dp(7);
-        searchParams.topMargin = dp(6);
+        FrameLayout.LayoutParams searchParams = new FrameLayout.LayoutParams(
+                -1, searchHeight, Gravity.TOP);
+        searchParams.leftMargin = searchHorizontal;
+        searchParams.rightMargin = searchHorizontal;
+        searchParams.topMargin = searchTop;
         frameLayout.addView(searchBar, searchParams);
-        prepareSearchBar(searchBar, dp(42));
+        View header = settingsTopCard("搜索");
+        FrameLayout.LayoutParams headerParams = new FrameLayout.LayoutParams(
+                -1, headerHeight, Gravity.TOP);
+        headerParams.leftMargin = horizontalPadding;
+        headerParams.rightMargin = horizontalPadding;
+        headerParams.topMargin = headerTop;
+        frameLayout.addView(header, headerParams);
+        prepareSearchBar(searchBar, contentTop);
         Runnable search = () -> {
             String keyword = input.getText().toString().trim();
             if (keyword.isEmpty()) {
@@ -2266,16 +2386,14 @@ public final class MainActivity extends Activity {
             recent.setVisibility(8);
             performSearch(keyword, results, searchBar);
         };
-        submit.setOnClickListener(view2 -> {
-            search.run();
-        });
+        submit.setOnClickListener(view2 ->
+                runWithPressFeedback(submit, search));
         input.setOnEditorActionListener((view3, actionId, event) -> {
             search.run();
             return true;
         });
         renderSearchHistory(recent, input, results);
         transitionTo(frameLayout);
-        // 从详情返回时恢复上一次的搜索词和已加载结果，避免整页重来
         if (restoreResults && this.searchState.hasResults()) {
             input.setText(this.searchState.keyword());
             input.setSelection(input.length());
@@ -2293,29 +2411,34 @@ public final class MainActivity extends Activity {
         parent.removeAllViews();
         List<String> history = this.session.searchHistory();
         if (history.isEmpty()) {
+            parent.setVisibility(View.GONE);
             return;
         }
+        parent.setVisibility(View.VISIBLE);
         LinearLayout header = new LinearLayout(this);
-        header.setGravity(16);
-        TextView label = text("最近搜索", 11.0f, this.MUTED);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(8), dp(7), dp(3), dp(4));
+        TextView label = text("最近搜索", 12.5f, this.TEXT);
         label.setTypeface(appRegularTypeface(), 1);
         header.addView(label, new LinearLayout.LayoutParams(0, dp(30), 1.0f));
-        TextView clear = text("清空", 10.0f, this.SECONDARY);
+        TextView clear = text("清空", 11.0f, this.MUTED);
         clear.setGravity(17);
         clear.setOnClickListener(view -> {
             this.session.clearSearchHistory();
             parent.removeAllViews();
+            parent.setVisibility(View.GONE);
         });
         header.addView(clear, new LinearLayout.LayoutParams(dp(48), dp(30)));
         parent.addView(header);
-        LinearLayout rows = vertical(this.BG);
         int visibleCount = Math.min(4, history.size());
         for (int i = 0; i < visibleCount; i++) {
             String value = history.get(i);
-            TextView item = text(value, 12.0f, this.TEXT);
-            item.setGravity(16);
-            item.setPadding(dp(9), 0, dp(9), 0);
-            Compat.setBackground(item, round(blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.16f : 0.09f), 7));
+            addSettingsDivider(parent);
+            TextView item = text(value, 13.0f, this.TEXT);
+            item.setGravity(Gravity.CENTER_VERTICAL);
+            item.setSingleLine(true);
+            item.setEllipsize(TextUtils.TruncateAt.END);
+            item.setPadding(dp(8), 0, dp(8), 0);
             item.setOnClickListener(view2 -> {
                 input.setText(value);
                 input.setSelection(input.length());
@@ -2323,10 +2446,8 @@ public final class MainActivity extends Activity {
                 parent.setVisibility(8);
                 performSearch(value, results, (View) results.getTag());
             });
-            addTop(rows, item, 4);
-            item.getLayoutParams().height = dp(34);
+            parent.addView(item, new LinearLayout.LayoutParams(-1, dp(40)));
         }
-        parent.addView(rows);
     }
 
     /** 官方接口按 offset/limit 分页（page 参数会被忽略导致每页都返回第一页）。 */
@@ -2382,16 +2503,15 @@ public final class MainActivity extends Activity {
         list.setBackgroundColor(this.BG);
         list.setDivider(new ColorDrawable(0));
         list.setDividerHeight(dp(2));
-        // 搜索栏常驻在顶部，列表内容从其下方开始，滚动不再隐藏搜索栏（避免“闪一下像刷新”）
-        list.setPadding(0, dp(54), 0, dp(4));
+        Integer searchContentTop = this.searchBarHeights.get(searchBar);
+        list.setPadding(0, searchContentTop == null ? dp(56)
+                : searchContentTop.intValue(), 0, dp(4));
         list.setClipToPadding(false);
         final TextView footer = text(this.searchState.endReached() ? "没有更多了" : "上滑加载更多", 11.5f, this.MUTED);
         footer.setGravity(17);
         footer.setPadding(0, dp(10), 0, dp(12));
         list.addFooterView(footer, null, false);
-        final FeedAdapter adapter = new FeedAdapter(this, this.searchState.items(), this.session.noImage(),
-                this.session.uiScale() / 100.0f, this.session.textScale() / 100.0f, this.session.darkMode(),
-                this.PRIMARY, this.SECONDARY, this::showDetail, this::toggleFeedLike);
+        final FeedAdapter adapter = createFeedAdapter(this.searchState.items());
         list.setAdapter((ListAdapter) adapter);
         footer.setOnClickListener(view -> {
             loadMoreSearchResults(adapter, footer);
@@ -2708,7 +2828,7 @@ public final class MainActivity extends Activity {
             body.put("result", result);
             body.put("_progressive_preview", true);
             return body;
-        } catch (Exception error) {
+        } catch (JSONException error) {
             return null;
         }
     }
@@ -2723,7 +2843,7 @@ public final class MainActivity extends Activity {
                     getSystemService(Context.CONNECTIVITY_SERVICE);
             NetworkInfo info = manager == null ? null : manager.getActiveNetworkInfo();
             return info != null && info.isConnected();
-        } catch (Exception ignored) {
+        } catch (SecurityException ignored) {
             return true;
         }
     }
@@ -2773,7 +2893,7 @@ public final class MainActivity extends Activity {
             body.put("_fallback_notice", notice);
             renderDetail(body, item);
             return true;
-        } catch (Exception e) {
+        } catch (JSONException error) {
             return false;
         }
     }
@@ -2876,8 +2996,13 @@ public final class MainActivity extends Activity {
         ScrollView articleScroll = new ScrollView(this);
         articleScroll.setBackgroundColor(this.BG);
         LinearLayout page = vertical(this.BG);
-        int pagePadding = Math.max(dp(10), dp(this.session.pagePadding()));
-        page.setPadding(pagePadding, dp(50), pagePadding, dp(18));
+        boolean roundLayout = usesRoundLayout();
+        int pagePadding = roundLayout ? pageHorizontalPadding()
+                : Math.max(dp(10), dp(this.session.pagePadding()));
+        int roundHeaderTop = roundLayout ? subpageTopPadding() : 0;
+        int detailTopPadding = roundLayout
+                ? roundHeaderTop + dp(40) : dp(50);
+        page.setPadding(pagePadding, detailTopPadding, pagePadding, dp(18));
         articleScroll.addView(page);
         LinearLayout article = detailArticleSurface();
         JSONObject user = link == null ? null : link.optJSONObject("user");
@@ -2890,10 +3015,10 @@ public final class MainActivity extends Activity {
         article.addView(headline);
         addAuthorHeader(article, link, user, author);
         if (this.readingTimeTracker != null) {
-            this.readingTimeTracker.tagTopic(firstTopicName(link));
+            this.readingTimeTracker.tagTopic(firstTopicName(link, fallback.topicName));
         }
         if (fallback.article) {
-            addTopicChips(article, link);
+            addTopicChips(article, link, fallback.topicName);
         }
         String notice = body.optString("_fallback_notice");
         if (!notice.isEmpty()) {
@@ -2907,12 +3032,15 @@ public final class MainActivity extends Activity {
         }
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
         JSONArray comments = result == null ? null : result.optJSONArray("comments");
-        this.lastDetailDiagnostics = buildDetailDiagnostics(
+        this.lastDetailDiagnostics = DetailDiagnostics.build(
+                this.screen, this.currentLinkId, this.session.playGif(),
                 body, fallback, link, fallbackImages, comments);
-        this.localCache.log("detail diagnostics captured link=" + (fallback == null ? "" : fallback.id) + " title=" + compactLogText(heading, 48));
+        this.localCache.log("detail diagnostics captured link="
+                + (fallback == null ? "" : fallback.id)
+                + " title=" + DetailDiagnostics.compactText(heading, 48));
         addRichContent(article, link, fallback.description, fallbackImages);
         if (!fallback.article) {
-            addTopicChips(article, link);
+            addTopicChips(article, link, fallback.topicName);
         }
         addDetailActions(article, fallback, link);
         page.addView(article);
@@ -2920,7 +3048,7 @@ public final class MainActivity extends Activity {
         ScrollView commentScroll = new ScrollView(this);
         commentScroll.setBackgroundColor(this.BG);
         LinearLayout commentPage = vertical(this.BG);
-        commentPage.setPadding(pagePadding, dp(50), pagePadding, dp(18));
+        commentPage.setPadding(pagePadding, detailTopPadding, pagePadding, dp(18));
         commentScroll.addView(commentPage);
         LinearLayout commentPageHost = deferredCommentHost(commentPage, comments);
         pager.setPages(detailReturnPreview(), articleScroll, commentScroll);
@@ -2930,8 +3058,9 @@ public final class MainActivity extends Activity {
         ImageView back = detailBackButton();
         FrameLayout.LayoutParams backParams =
                 new FrameLayout.LayoutParams(dp(36), dp(36), 51);
-        backParams.leftMargin = pagePadding;
-        backParams.topMargin = dp(8);
+        backParams.leftMargin = pagePadding
+                + (roundLayout ? roundHeaderInnerInset() : 0);
+        backParams.topMargin = roundLayout ? roundHeaderTop : dp(8);
         detailRoot.addView(back, backParams);
         installDetailRoot(detailRoot, pager, replacing, previousArticleScroll,
                 previousCommentScroll, previousComments, articleScroll, commentScroll);
@@ -3135,7 +3264,8 @@ public final class MainActivity extends Activity {
     }
 
     private void addDetailAction(LinearLayout dock, View item) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0, dp(usesRoundLayout() ? 36 : 40), 1.0f);
         params.leftMargin = dp(2);
         params.rightMargin = dp(2);
         dock.addView(item, params);
@@ -3227,7 +3357,8 @@ public final class MainActivity extends Activity {
 
     private LinearLayout detailArticleSurface() {
         LinearLayout article = vertical(this.BG);
-        article.setPadding(dp(4), dp(8), dp(4), dp(12));
+        int horizontal = dp(usesRoundLayout() ? 8 : 4);
+        article.setPadding(horizontal, dp(8), horizontal, dp(12));
         return article;
     }
 
@@ -3340,7 +3471,7 @@ public final class MainActivity extends Activity {
         try {
             String value2 = Uri.parse(shareUrl).getQueryParameter("h_src");
             return value2 == null ? "" : value2;
-        } catch (Exception e) {
+        } catch (IllegalArgumentException error) {
             return "";
         }
     }
@@ -3433,6 +3564,61 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void toggleFeedFollow(final FeedItem item, boolean following,
+                                  FeedAdapter.FollowCallback callback) {
+        if (!requireLogin("关注") || !allowWriteAction("关注")) {
+            callback.onComplete(false);
+            return;
+        }
+        if (item == null || item.authorId.isEmpty()) {
+            toast("没有获取到用户 ID");
+            callback.onComplete(false);
+            return;
+        }
+        if (item.authorId.equals(this.session.userId())) {
+            toast("不能关注自己");
+            callback.onComplete(false);
+            return;
+        }
+        this.writeActions.follow(item.authorId, hsrcFor(item), following,
+                new ApiClient.Callback() {
+                    @Override
+                    public void onSuccess(JSONObject body) {
+                        MainActivity.this.updateAuthorFollowing(
+                                item.authorId, following);
+                        MainActivity.this.toast(following
+                                ? "已关注" : "已取消关注");
+                        callback.onComplete(true);
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        MainActivity.this.toast("关注操作失败"
+                                + MainActivity.this.writeErrorMessage("关注", message));
+                        callback.onComplete(false);
+                    }
+                });
+    }
+
+    private void updateAuthorFollowing(String authorId, boolean following) {
+        updateAuthorFollowing(this.feed, authorId, following);
+        updateAuthorFollowing(this.searchState.items(), authorId, following);
+        this.localCache.saveFeed(this.feed);
+        if (this.feedAdapter != null) {
+            this.feedAdapter.notifyDataSetChanged();
+        }
+    }
+
+    private void updateAuthorFollowing(List<FeedItem> items, String authorId,
+                                       boolean following) {
+        if (items == null || authorId == null || authorId.isEmpty()) return;
+        for (FeedItem candidate : items) {
+            if (authorId.equals(candidate.authorId)) {
+                candidate.following = following;
+            }
+        }
+    }
+
     private void toggleFavorite(FeedItem item, final ImageView view) {
         if (!requireLogin("收藏") || !allowWriteAction("收藏") || item == null || item.id.isEmpty()) {
             return;
@@ -3500,13 +3686,16 @@ public final class MainActivity extends Activity {
     }
 
     private void addAuthorHeader(LinearLayout article, JSONObject link, JSONObject user, String fallbackAuthor) {
+        boolean roundLayout = usesRoundLayout();
         LinearLayout linearLayout = new LinearLayout(this);
         linearLayout.setGravity(16);
         ImageView avatar = new ImageView(this);
         avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
         Compat.setBackground(avatar, round(this.session.darkMode() ? Color.rgb(50, 53, 56) : Color.rgb(226, 229, 232), 18));
         Compat.clipToOutline(avatar);
-        linearLayout.addView(avatar, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        int avatarSize = dp(roundLayout ? 32 : 36);
+        linearLayout.addView(avatar, new LinearLayout.LayoutParams(
+                avatarSize, avatarSize));
         String avatarUrl = user == null ? "" : user.optString("avatar", user.optString("avartar"));
         if (!this.session.noImage() && !avatarUrl.isEmpty()) {
             ImageLoader.intoPlain(avatar, avatarUrl, 96);
@@ -3519,8 +3708,12 @@ public final class MainActivity extends Activity {
         name.setTypeface(appRegularTypeface(), 1);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
-        name.setMaxWidth(dp(168));
-        nameRow.addView(name, new LinearLayout.LayoutParams(-2, -2));
+        if (roundLayout) {
+            nameRow.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        } else {
+            name.setMaxWidth(dp(168));
+            nameRow.addView(name, new LinearLayout.LayoutParams(-2, -2));
+        }
         int level = CommentData.userLevel(user);
         if (level > 0) {
             int levelColor = CommentData.levelBadgeColor(level);
@@ -3547,10 +3740,11 @@ public final class MainActivity extends Activity {
             addTop(linearLayoutVertical, desc, 1);
         }
         LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        copyParams.leftMargin = dp(9);
+        copyParams.leftMargin = dp(roundLayout ? 8 : 9);
         linearLayout.addView(linearLayoutVertical, copyParams);
         int followBg = this.session.darkMode() ? blend(this.PANEL, this.TEXT, 0.12f) : blend(this.PANEL, this.TEXT, 0.06f);
-        TextView follow = text("+ 关注", 11.0f, this.TEXT);
+        TextView follow = text(roundLayout ? "+" : "+ 关注",
+                roundLayout ? 17.0f : 11.0f, this.TEXT);
         follow.setGravity(17);
         follow.setTypeface(appRegularTypeface(), 1);
         Compat.setBackground(follow, round(followBg, 5));
@@ -3559,7 +3753,8 @@ public final class MainActivity extends Activity {
         avatar.setOnClickListener(openUser);
         linearLayoutVertical.setOnClickListener(openUser);
         updateFollowView(follow, isFollowing(link, user));
-        linearLayout.addView(follow, new LinearLayout.LayoutParams(dp(62), dp(30)));
+        linearLayout.addView(follow, new LinearLayout.LayoutParams(
+                dp(roundLayout ? 38 : 62), dp(30)));
         follow.setOnClickListener(view -> {
             toggleFollow(follow, link, user, targetUserId);
         });
@@ -3567,65 +3762,110 @@ public final class MainActivity extends Activity {
     }
 
     /** 官方同款话题标签：文章放作者行下方，普通帖放正文下方；同时供阅读统计按社区累计。 */
-    private void addTopicChips(LinearLayout article, JSONObject link) {
+    private void addTopicChips(LinearLayout article, JSONObject link, String fallbackName) {
         JSONArray topics = link == null ? null : link.optJSONArray("topics");
-        if (topics == null || topics.length() == 0) return;
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
+        List<String> shown = new ArrayList<>();
         int added = 0;
-        for (int i = 0; i < topics.length() && added < 3; i++) {
-            JSONObject topic = topics.optJSONObject(i);
-            if (topic == null) continue;
-            String name = Json.first(topic.optString("name"), topic.optString("title"));
-            if (name.isEmpty()) continue;
-            LinearLayout chip = new LinearLayout(this);
-            chip.setGravity(16);
-            chip.setPadding(dp(5), 0, dp(9), 0);
-            Compat.setBackground(chip, round(blend(this.BG, this.TEXT,
-                    this.session.darkMode() ? 0.07f : 0.05f), 9));
-            String icon = Json.first(topic.optString("pic_url"), topic.optString("icon"),
-                    topic.optString("img_url"), topic.optString("appicon"));
-            if (!this.session.noImage() && !icon.isEmpty()) {
-                ImageView pic = new ImageView(this);
-                pic.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                Compat.setBackground(pic, round(blend(this.BG, this.TEXT, 0.12f), 4));
-                Compat.clipToOutline(pic);
-                LinearLayout.LayoutParams picParams = new LinearLayout.LayoutParams(dp(16), dp(16));
-                picParams.rightMargin = dp(5);
-                chip.addView(pic, picParams);
-                ImageLoader.intoPlain(pic, icon, 64);
-            } else {
-                chip.setPadding(dp(9), 0, dp(9), 0);
+        if (topics != null) {
+            for (int i = 0; i < topics.length() && added < 3; i++) {
+                JSONObject topic = topics.optJSONObject(i);
+                Object rawTopic = topics.opt(i);
+                String name;
+                if (topic != null) {
+                    name = Json.first(topic.optString("name"),
+                            topic.optString("title"),
+                            topic.optString("topic_name"),
+                            topic.optString("tag_name"));
+                } else if (rawTopic instanceof String) {
+                    name = ((String) rawTopic).trim();
+                } else {
+                    continue;
+                }
+                String icon = topic == null ? "" : Json.first(
+                        topic.optString("pic_url"), topic.optString("icon"),
+                        topic.optString("img_url"), topic.optString("appicon"));
+                if (addTopicChip(row, name, icon, added)) {
+                    shown.add(name);
+                    added++;
+                }
             }
-            TextView label = text(name, 10.5f, this.TEXT);
-            label.setSingleLine(true);
-            label.setEllipsize(TextUtils.TruncateAt.END);
-            label.setMaxWidth(dp(120));
-            chip.addView(label, new LinearLayout.LayoutParams(-2, -2));
-            LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(-2, dp(26));
-            if (added > 0) chipParams.leftMargin = dp(6);
-            row.addView(chip, chipParams);
-            added++;
+        }
+        JSONObject singularTopic = link == null ? null : link.optJSONObject("topic");
+        if (singularTopic != null && added < 3) {
+            String name = Json.first(singularTopic.optString("name"),
+                    singularTopic.optString("title"),
+                    singularTopic.optString("topic_name"),
+                    singularTopic.optString("tag_name"));
+            String icon = Json.first(singularTopic.optString("pic_url"),
+                    singularTopic.optString("icon"),
+                    singularTopic.optString("img_url"),
+                    singularTopic.optString("appicon"));
+            if (!shown.contains(name) && addTopicChip(row, name, icon, added)) {
+                shown.add(name);
+                added++;
+            }
+        }
+        List<String> names = FeedItem.topicNames(link);
+        if (!TextUtils.isEmpty(fallbackName) && !names.contains(fallbackName)) {
+            names.add(fallbackName);
+        }
+        for (String name : names) {
+            if (added >= 3) break;
+            if (!shown.contains(name) && addTopicChip(row, name, "", added)) {
+                shown.add(name);
+                added++;
+            }
         }
         if (added == 0) return;
         addTop(article, row, 9);
     }
 
-    private String firstTopicName(JSONObject link) {
-        JSONArray topics = link == null ? null : link.optJSONArray("topics");
-        if (topics == null) return "";
-        for (int i = 0; i < topics.length(); i++) {
-            JSONObject topic = topics.optJSONObject(i);
-            if (topic == null) continue;
-            String name = Json.first(topic.optString("name"), topic.optString("title"));
-            if (!name.isEmpty()) return name;
+    private boolean addTopicChip(LinearLayout row, String name, String icon, int index) {
+        if (TextUtils.isEmpty(name)) {
+            return false;
         }
-        return "";
+        LinearLayout chip = new LinearLayout(this);
+        chip.setGravity(16);
+        chip.setPadding(dp(5), 0, dp(9), 0);
+        Compat.setBackground(chip, round(blend(this.BG, this.TEXT,
+                this.session.darkMode() ? 0.07f : 0.05f), 9));
+        if (!this.session.noImage() && !TextUtils.isEmpty(icon)) {
+            ImageView pic = new ImageView(this);
+            pic.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            Compat.setBackground(pic, round(blend(this.BG, this.TEXT, 0.12f), 4));
+            Compat.clipToOutline(pic);
+            LinearLayout.LayoutParams picParams =
+                    new LinearLayout.LayoutParams(dp(16), dp(16));
+            picParams.rightMargin = dp(5);
+            chip.addView(pic, picParams);
+            ImageLoader.intoPlain(pic, icon, 64);
+        } else {
+            chip.setPadding(dp(9), 0, dp(9), 0);
+        }
+        TextView label = text(name, 10.5f, this.TEXT);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.END);
+        label.setMaxWidth(dp(120));
+        chip.addView(label, new LinearLayout.LayoutParams(-2, -2));
+        LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(-2, dp(26));
+        if (index > 0) chipParams.leftMargin = dp(6);
+        row.addView(chip, chipParams);
+        return true;
+    }
+
+    private String firstTopicName(JSONObject link, String fallbackName) {
+        return Json.first(FeedItem.topicName(link), fallbackName);
     }
 
     private void updateFollowView(TextView follow, boolean following) {
         follow.setTag(Boolean.valueOf(following));
-        follow.setText(following ? "已关注" : "+ 关注");
+        if (usesRoundLayout()) {
+            follow.setText(following ? "✓" : "+");
+        } else {
+            follow.setText(following ? "已关注" : "+ 关注");
+        }
         follow.setTextColor(this.themeTokens.accent);
         GradientDrawable drawable = round(following
                 ? this.themeTokens.softAccent() : Color.TRANSPARENT, 15);
@@ -3656,7 +3896,8 @@ public final class MainActivity extends Activity {
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(this.BG);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(8), dp(8), dp(8), dp(12));
+        page.setPadding(pageHorizontalPadding(), subpageTopPadding(),
+                pageHorizontalPadding(), dp(12));
         scroll.addView(page);
         LinearLayout profile = userSpaceHeader(fallbackName, userId, fallbackAvatar, null);
         LinearLayout.LayoutParams profileParams = new LinearLayout.LayoutParams(-1, -2);
@@ -4057,7 +4298,7 @@ public final class MainActivity extends Activity {
                     }
                     try {
                         return Integer.parseInt(text);
-                    } catch (NumberFormatException e) {
+                    } catch (NumberFormatException ignored) {
                     }
                 }
             }
@@ -4091,7 +4332,7 @@ public final class MainActivity extends Activity {
             target.put("is_follow", following ? 1 : 0);
             target.put("is_following", following);
             target.put("followed", following);
-        } catch (Exception e) {
+        } catch (JSONException ignored) {
         }
     }
 
@@ -4203,7 +4444,10 @@ public final class MainActivity extends Activity {
     }
 
     private void addArticleHeading(LinearLayout parent, String value, boolean bodyStarted) {
-        TextView heading = text(value, (16.0f * this.session.bodyTextScale()) / 100.0f, this.TEXT);
+        value = ArticleText.stripMarkdownEmphasis(value);
+        float baseSize = usesRoundLayout() ? 15.0f : 16.0f;
+        TextView heading = text(value,
+                (baseSize * this.session.bodyTextScale()) / 100.0f, this.TEXT);
         heading.setTypeface(appRegularTypeface(), 1);
         heading.setLineSpacing(dp(1), 1.16f);
         Compat.setLetterSpacing(heading, this.session.bodyLetterSpacing() / 200.0f);
@@ -4213,6 +4457,7 @@ public final class MainActivity extends Activity {
     }
 
     private void addImageCaption(LinearLayout parent, String value) {
+        value = ArticleText.stripMarkdownEmphasis(value);
         // 对照官方 h4 图注：约为正文 75% 大小的灰色居中小字
         TextView caption = text(value, (11.0f * this.session.bodyTextScale()) / 100.0f, this.MUTED);
         caption.setGravity(17);
@@ -4225,7 +4470,9 @@ public final class MainActivity extends Activity {
     /** 官方样式的多图横滑图集：一屏一张，右上角页码，底部圆点指示。 */
     private void addImagePager(LinearLayout parent, List<String> urls) {
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        int pagerHeight = Math.min(dp(270), Math.round(screenWidth * 0.85f));
+        int pagerHeight = usesRoundLayout()
+                ? Math.min(dp(150), Math.round(screenWidth * 0.58f))
+                : Math.min(dp(270), Math.round(screenWidth * 0.85f));
         FrameLayout wrap = new FrameLayout(this);
         int placeholder = this.session.darkMode() ? Color.rgb(28, 30, 32) : Color.rgb(235, 237, 240);
         Compat.setBackground(wrap, round(placeholder, 7));
@@ -4300,7 +4547,10 @@ public final class MainActivity extends Activity {
                 addArticleHeading(parent, paragraph, bodyStarted);
                 bodyStarted = true;
             } else {
-                TextView bodyText = text(paragraph, (14.5f * this.session.bodyTextScale()) / 100.0f, this.TEXT);
+                float baseSize = usesRoundLayout() ? 13.0f : 14.5f;
+                TextView bodyText = text(paragraph,
+                        (baseSize * this.session.bodyTextScale()) / 100.0f,
+                        this.TEXT);
                 float lineScale = Math.max(1.18f, this.session.bodyLineSpacing() / 100.0f);
                 bodyText.setLineSpacing(dp(1), lineScale);
                 Compat.setLetterSpacing(bodyText, this.session.bodyLetterSpacing() / 200.0f);
@@ -4316,7 +4566,7 @@ public final class MainActivity extends Activity {
 
     private void addArticleQuote(LinearLayout parent, String paragraph, boolean bodyStarted) {
         String value;
-        String strTrim = paragraph == null ? "" : paragraph.trim();
+        String strTrim = ArticleText.stripMarkdownEmphasis(paragraph).trim();
         while (true) {
             value = strTrim;
             if (!value.startsWith(">")) {
@@ -4333,7 +4583,10 @@ public final class MainActivity extends Activity {
         Compat.setBackground(bar, round(barColor, 2));
         bar.setMinimumHeight(dp(38));
         quote.addView(bar, new LinearLayout.LayoutParams(dp(4), -1));
-        TextView copy = text("", (13.5f * this.session.bodyTextScale()) / 100.0f, this.MUTED);
+        float quoteSize = usesRoundLayout() ? 12.5f : 13.5f;
+        TextView copy = text("",
+                (quoteSize * this.session.bodyTextScale()) / 100.0f,
+                this.MUTED);
         copy.setLineSpacing(dp(1), Math.max(1.14f, this.session.bodyLineSpacing() / 100.0f));
         Compat.setLetterSpacing(copy, this.session.bodyLetterSpacing() / 220.0f);
         EmojiRenderer.set(copy, value, this.session.darkMode());
@@ -4372,7 +4625,7 @@ public final class MainActivity extends Activity {
 
     private int detailImageTargetPx() {
         int width = Math.max(320, getResources().getDisplayMetrics().widthPixels);
-        int max = this.session != null && this.session.roundScreen() ? 720 : 900;
+        int max = usesRoundLayout() ? 720 : 900;
         return Math.max(360, Math.min(max, width));
     }
 
@@ -4403,7 +4656,7 @@ public final class MainActivity extends Activity {
                 if (CommentData.isCyComment(group2) && !root.has("is_cy")) {
                     try {
                         root.put("_group_is_cy", 1);
-                    } catch (Exception ignored) {
+                    } catch (JSONException ignored) {
                     }
                 }
                 LinearLayout linearLayoutCard = vertical(this.BG);
@@ -4664,7 +4917,7 @@ public final class MainActivity extends Activity {
         try {
             comment.put("is_support", liked ? 1 : 0);
             comment.put("comment_award_num", Math.max(0, likes));
-        } catch (Exception e) {
+        } catch (JSONException ignored) {
         }
     }
 
@@ -4750,7 +5003,9 @@ public final class MainActivity extends Activity {
                 dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0));
                 dialog.getWindow().setDimAmount(this.session.darkMode() ? 0.56f : 0.36f);
                 int width = getResources().getDisplayMetrics().widthPixels;
-                dialog.getWindow().setLayout(Math.max(dp(240), Math.min(width - dp(28), dp(380))), -2);
+                int horizontalMargin = dp(usesRoundLayout() ? 24 : 14);
+                int dialogWidth = Math.min(width - (horizontalMargin * 2), dp(380));
+                dialog.getWindow().setLayout(Math.max(1, dialogWidth), -2);
             }
         }
     }
@@ -4814,9 +5069,11 @@ public final class MainActivity extends Activity {
     }
 
     private void addComment(LinearLayout linearLayout, JSONObject comment, boolean reply) {
+        boolean roundLayout = usesRoundLayout();
         LinearLayout row = new LinearLayout(this);
         row.setGravity(48);
-        row.setPadding(0, dp(reply ? 2 : 8), 0, dp(reply ? 2 : 8));
+        int verticalPadding = reply ? 2 : (roundLayout ? 6 : 8);
+        row.setPadding(0, dp(verticalPadding), 0, dp(verticalPadding));
         JSONObject user = comment.optJSONObject("user");
         String author = user == null ? "匿名用户" : user.optString("username", "匿名用户");
         if (!reply) {
@@ -4824,7 +5081,9 @@ public final class MainActivity extends Activity {
             avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
             Compat.setBackground(avatar, round(this.session.darkMode() ? Color.rgb(50, 53, 56) : Color.rgb(226, 229, 232), 20));
             Compat.clipToOutline(avatar);
-            row.addView(avatar, new LinearLayout.LayoutParams(dp(34), dp(34)));
+            int avatarSize = dp(roundLayout ? 30 : 34);
+            row.addView(avatar, new LinearLayout.LayoutParams(
+                    avatarSize, avatarSize));
             String avatarUrl = user == null ? "" : user.optString("avatar");
             if (!this.session.noImage() && !avatarUrl.isEmpty()) {
                 ImageLoader.intoPlain(avatar, avatarUrl, 96);
@@ -4833,7 +5092,7 @@ public final class MainActivity extends Activity {
         LinearLayout block = new LinearLayout(this);
         block.setOrientation(1);
         LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        blockParams.leftMargin = reply ? 0 : dp(10);
+        blockParams.leftMargin = reply ? 0 : dp(roundLayout ? 8 : 10);
         row.addView(block, blockParams);
         String target = CommentData.replyTarget(comment);
         long created = CommentData.commentTime(comment);
@@ -4851,7 +5110,8 @@ public final class MainActivity extends Activity {
                 addTop(block, metaView, 1);
             }
             String displayComment = CommentData.isCyComment(comment) ? "Cy " + visibleComment : visibleComment;
-            TextView value = text(displayComment, 13.0f, this.TEXT);
+            TextView value = text(displayComment,
+                    roundLayout ? 12.5f : 13.0f, this.TEXT);
             value.setLineSpacing(dp(1), this.session.bodyLineSpacing() / 100.0f);
             Compat.setLetterSpacing(value, this.session.bodyLetterSpacing() / 200.0f);
             value.setTypeface(Typeface.create("sans-serif-medium", 0));
@@ -4894,11 +5154,18 @@ public final class MainActivity extends Activity {
     private void addCommentImages(LinearLayout parent, List<CommentData.CommentImage> images,
                                   boolean reply) {
         LinearLayout gallery = vertical(0);
-        int size = reply ? 68 : 82;
-        for (int start = 0; start < images.size(); start += 3) {
+        boolean roundLayout = usesRoundLayout();
+        int columns = roundLayout ? 2 : 3;
+        int size;
+        if (roundLayout) {
+            size = reply ? 48 : 54;
+        } else {
+            size = reply ? 68 : 82;
+        }
+        for (int start = 0; start < images.size(); start += columns) {
             LinearLayout row = new LinearLayout(this);
             row.setGravity(3);
-            int end = Math.min(start + 3, images.size());
+            int end = Math.min(start + columns, images.size());
             for (int i = start; i < end; i++) {
                 ImageView image = commentImage(images.get(i), size);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(size), dp(size));
@@ -5190,7 +5457,8 @@ public final class MainActivity extends Activity {
         }
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(8), dp(8), dp(8), dp(12));
+        page.setPadding(pageHorizontalPadding(), pageTopPadding(),
+                pageHorizontalPadding(), dp(12));
         scroll.addView(page);
         page.addView(topLevelTitle("我的"));
         LinearLayout profile = card();
@@ -5205,7 +5473,9 @@ public final class MainActivity extends Activity {
             avatar.setImageDrawable(personIcon);
         }
         avatar.setPadding(dp(11), dp(11), dp(11), dp(11));
-        headRow.addView(avatar, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        int guestAvatarSize = dp(usesRoundLayout() ? 54 : 48);
+        headRow.addView(avatar, new LinearLayout.LayoutParams(
+                guestAvatarSize, guestAvatarSize));
         LinearLayout headCopy = vertical(0);
         TextView name = text("未登录", 18.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
@@ -5233,7 +5503,8 @@ public final class MainActivity extends Activity {
         JSONObject account = ProfileData.user(body);
         ScrollView scrollView = new ScrollView(this);
         LinearLayout linearLayoutVertical = vertical(this.BG);
-        linearLayoutVertical.setPadding(dp(8), dp(8), dp(8), dp(12));
+        linearLayoutVertical.setPadding(pageHorizontalPadding(), pageTopPadding(),
+                pageHorizontalPadding(), dp(12));
         scrollView.addView(linearLayoutVertical);
         linearLayoutVertical.addView(topLevelTitle("我的"));
         LinearLayout profile = card();
@@ -5254,10 +5525,13 @@ public final class MainActivity extends Activity {
                 avatar.setPadding(dp(13), dp(13), dp(13), dp(13));
             }
         }
-        headRow.addView(avatar, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        int avatarSize = dp(usesRoundLayout() ? 54 : 56);
+        headRow.addView(avatar, new LinearLayout.LayoutParams(
+                avatarSize, avatarSize));
         LinearLayout headCopy = vertical(0);
         String nameValue = account == null ? this.session.userName() : account.optString("username", this.session.userName());
-        TextView name = text(nameValue.isEmpty() ? "小黑盒用户" : nameValue, 18.0f, this.TEXT);
+        TextView name = text(nameValue.isEmpty() ? "小黑盒用户" : nameValue,
+                usesRoundLayout() ? 17.0f : 18.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
         headCopy.addView(name);
         headCopy.addView(text("ID " + this.session.userId(), 11.0f, this.MUTED));
@@ -5313,7 +5587,8 @@ public final class MainActivity extends Activity {
     private View buildSettingsHomeContent() {
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(8), dp(8), dp(8), dp(14));
+        int horizontal = pageHorizontalPadding();
+        page.setPadding(horizontal, subpageTopPadding(), horizontal, dp(14));
         scroll.addView(page);
         page.addView(settingsTopCard("设置"));
         LinearLayout panel = settingsList();
@@ -5336,18 +5611,14 @@ public final class MainActivity extends Activity {
 
     private TextView addSettingEntry(LinearLayout parent, String name, String description,
                                      String value, int icon, Runnable action) {
-        if (parent.getChildCount() > 0) {
-            View divider = new View(this);
-            divider.setBackgroundColor(this.session.darkMode()
-                    ? Color.argb(16, 255, 255, 255) : Color.argb(14, 0, 0, 0));
-            LinearLayout.LayoutParams dividerParams =
-                    new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-            dividerParams.leftMargin = dp(45);
-            parent.addView(divider, dividerParams);
-        }
+        addSettingsDivider(parent);
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
-        row.setPadding(dp(6), dp(14), dp(6), dp(14));
+        int rowHorizontal = dp(usesRoundLayout() ? 10 : 6);
+        int rowVertical = dp(usesRoundLayout() ? 8 : 11);
+        row.setPadding(rowHorizontal, rowVertical,
+                rowHorizontal, rowVertical);
+        row.setMinimumHeight(dp(usesRoundLayout() ? 48 : 50));
         ImageView marker = new ImageView(this);
         marker.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         Drawable iconDrawable = Compat.tintedDrawable(this, icon, this.themeTokens.text);
@@ -5361,7 +5632,7 @@ public final class MainActivity extends Activity {
         markerParams.rightMargin = dp(12);
         row.addView(marker, markerParams);
         LinearLayout copy = vertical(0);
-        TextView titleView = text(name, 14.5f,
+        TextView titleView = text(name, 14.0f,
                 name.startsWith("退出登录") ? Color.rgb(228, 88, 88) : this.TEXT);
         titleView.setTypeface(appRegularTypeface(), 1);
         copy.addView(titleView);
@@ -5428,15 +5699,6 @@ public final class MainActivity extends Activity {
         updateReadingTimeEntry();
     }
 
-    private String checkinCenterSummary() {
-        if (this.checkinCenterCoordinator == null
-                || !this.checkinCenterCoordinator.supported()) {
-            return "需要 Android 7.0 或更高版本";
-        }
-        return this.checkinCenterCoordinator.paired()
-                ? "已连接自动签到服务" : "连接后由服务器每日签到";
-    }
-
     private void showCheckinCenter() {
         stopQrPolling();
         this.screen = "checkin_center";
@@ -5468,7 +5730,7 @@ public final class MainActivity extends Activity {
                                         CheckinCaptchaActivity.intent(
                                                 MainActivity.this, verificationUri),
                                         REQUEST_CHECKIN_CAPTCHA);
-                            } catch (Throwable error) {
+                            } catch (RuntimeException error) {
                                 if (MainActivity.this.checkinCenterPage != null) {
                                     MainActivity.this.checkinCenterPage.onCaptchaCancelled(
                                             "当前系统无法打开安全验证");
@@ -5501,7 +5763,8 @@ public final class MainActivity extends Activity {
         prepareReadingCenter();
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(8), dp(8), dp(8), dp(18));
+        page.setPadding(pageHorizontalPadding(), subpageTopPadding(),
+                pageHorizontalPadding(), dp(18));
         scroll.addView(page);
         List<FeedItem> recent = this.localCache.recentItems();
         if (!recent.isEmpty()) {
@@ -5565,7 +5828,8 @@ public final class MainActivity extends Activity {
         }
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(7), dp(7), dp(7), dp(18));
+        page.setPadding(pageHorizontalPadding(), subpageTopPadding(),
+                pageHorizontalPadding(), dp(18));
         scroll.addView(page);
         for (LocalCache.OfflineItem entry : items) {
             page.addView(watchLaterCard(entry));
@@ -5631,7 +5895,8 @@ public final class MainActivity extends Activity {
     private void renderFavoriteHub(List<JSONObject> folders, int requestSerial) {
         this.content.removeAllViews();
         LinearLayout root = vertical(this.BG);
-        root.setPadding(dp(8), dp(8), dp(8), 0);
+        root.setPadding(pageHorizontalPadding(), subpageTopPadding(),
+                pageHorizontalPadding(), 0);
         root.addView(settingsTopCard(TITLE_FAVORITES));
 
         LinearLayout segment = new LinearLayout(this);
@@ -5852,7 +6117,8 @@ public final class MainActivity extends Activity {
     private void renderSavedItems(String pageTitle, List<FeedItem> items) {
         if (!isHistoryPage(pageTitle)) {
             LinearLayout page = vertical(this.BG);
-            page.setPadding(dp(8), dp(8), dp(8), 0);
+            page.setPadding(pageHorizontalPadding(), subpageTopPadding(),
+                    pageHorizontalPadding(), 0);
             page.addView(settingsTopCard(pageTitle));
             if (items.isEmpty()) {
                 TextView empty = text(MSG_EMPTY_CONTENT, 13.0f, this.MUTED);
@@ -5881,8 +6147,19 @@ public final class MainActivity extends Activity {
         list.setBackgroundColor(this.BG);
         list.setDivider(new ColorDrawable(0));
         list.setDividerHeight(dp(2));
-        list.setAdapter((ListAdapter) new FeedAdapter(this, items, this.session.noImage(), this.session.uiScale() / 100.0f, this.session.textScale() / 100.0f, this.session.darkMode(), this.PRIMARY, this.SECONDARY, this::showDetail, this::toggleFeedLike));
+        list.setAdapter((ListAdapter) createFeedAdapter(items));
         return list;
+    }
+
+    private FeedAdapter createFeedAdapter(List<FeedItem> items) {
+        boolean roundLayout = usesRoundLayout();
+        return new FeedAdapter(this, items, this.session.noImage(),
+                this.session.uiScale() / 100.0f,
+                this.session.textScale() / 100.0f,
+                this.session.darkMode(), this.PRIMARY, this.SECONDARY,
+                this::showDetail, this::toggleFeedLike,
+                this::toggleFeedFollow, this.session.userId(),
+                roundLayout, roundLayout ? pageHorizontalPadding() : 0);
     }
 
     private void ensureEmojiCatalog(Runnable ready) {
@@ -5896,27 +6173,40 @@ public final class MainActivity extends Activity {
         this.content.removeAllViews();
         FrameLayout frameLayout = new FrameLayout(this);
         frameLayout.setBackgroundColor(this.BG);
+        boolean roundLayout = usesRoundLayout();
+        int searchHeight = dp(roundLayout ? 35 : 40);
+        int searchTop = roundLayout ? subpageTopPadding() : dp(5);
+        int contentTop = searchTop + searchHeight + dp(6);
         final EditText search = new EditText(this);
         search.setHint("搜索历史：标题、摘要或作者");
         search.setHintTextColor(this.MUTED);
         search.setTextColor(this.TEXT);
         search.setSingleLine(true);
         search.setTextSize(sp(12.0f));
-        Compat.tint(search, this.PRIMARY);
+        search.setPadding(dp(10), 0, dp(10), 0);
+        setLeftIcon(search, R.drawable.ic_search, this.MUTED, 16);
+        Compat.setBackground(search, UiComponents.groupCard(
+                this, this.themeTokens, this.session.uiScale() / 100.0f));
         FrameLayout results = new FrameLayout(this);
         frameLayout.addView(results, match());
-        FrameLayout.LayoutParams searchParams = new FrameLayout.LayoutParams(-1, dp(40), 48);
-        searchParams.leftMargin = dp(7);
-        searchParams.rightMargin = dp(7);
-        searchParams.topMargin = dp(5);
+        FrameLayout.LayoutParams searchParams =
+                new FrameLayout.LayoutParams(-1, searchHeight, Gravity.TOP);
+        int searchHorizontal = roundLayout
+                ? roundHorizontalInset(RoundLayoutMetrics.SEARCH_HORIZONTAL_RATIO, 6)
+                : dp(7);
+        searchParams.leftMargin = searchHorizontal;
+        searchParams.rightMargin = searchHorizontal;
+        searchParams.topMargin = searchTop;
         frameLayout.addView(search, searchParams);
-        prepareSearchBar(search, dp(40));
+        prepareSearchBar(search, contentTop);
         final List<FeedItem> filtered = new ArrayList<>(allItems);
-        final FeedAdapter adapter = new FeedAdapter(this, filtered, this.session.noImage(), this.session.uiScale() / 100.0f, this.session.textScale() / 100.0f, this.session.darkMode(), this.PRIMARY, this.SECONDARY, this::showDetail, this::toggleFeedLike);
+        final FeedAdapter adapter = createFeedAdapter(filtered);
         final ListView list = new ListView(this);
         list.setBackgroundColor(this.BG);
         list.setDivider(new ColorDrawable(0));
         list.setDividerHeight(dp(2));
+        list.setPadding(0, contentTop, 0, dp(4));
+        list.setClipToPadding(false);
         list.setAdapter((ListAdapter) adapter);
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override
@@ -5985,7 +6275,8 @@ public final class MainActivity extends Activity {
         this.action.setVisibility(4);
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(8), dp(8), dp(8), dp(14));
+        int horizontal = pageHorizontalPadding();
+        page.setPadding(horizontal, subpageTopPadding(), horizontal, dp(14));
         scroll.addView(page);
         page.addView(settingsTopCard(pageTitle));
         this.retainedPages.put(key, scroll);
@@ -6002,43 +6293,67 @@ public final class MainActivity extends Activity {
     }
 
     private void addSectionLabel(LinearLayout page, String label) {
-        TextView view = text(label, 9.5f, this.themeTokens.subtle);
+        TextView view = text(label, 10.0f, this.themeTokens.subtle);
         view.setTypeface(appRegularTypeface(), Typeface.BOLD);
         Compat.setLetterSpacing(view, 0.0f);
         view.setPadding(dp(6), 0, 0, dp(4));
-        addTop(page, view, 12);
+        addTop(page, view, usesRoundLayout() ? 10 : 12);
+    }
+
+    private void addSettingsDivider(LinearLayout parent) {
+        if (parent == null || parent.getChildCount() == 0) return;
+        View last = parent.getChildAt(parent.getChildCount() - 1);
+        if ("settings_divider".equals(last.getTag())
+                || "settings_row_with_divider".equals(last.getTag())) {
+            return;
+        }
+        View divider = new View(this);
+        divider.setTag("settings_divider");
+        divider.setBackgroundColor(this.session.darkMode()
+                ? Color.argb(16, 255, 255, 255)
+                : Color.argb(14, 0, 0, 0));
+        LinearLayout.LayoutParams params =
+                new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
+        params.leftMargin = dp(45);
+        parent.addView(divider, params);
     }
 
     private View topLevelTitle(String pageTitle) {
-        TextView name = text(pageTitle, 23.0f, this.TEXT);
+        boolean roundLayout = usesRoundLayout();
+        TextView name = text(pageTitle, roundLayout ? 21.0f : 23.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), Typeface.BOLD);
         name.setGravity(16);
-        name.setPadding(dp(2), 0, dp(2), 0);
+        int horizontal = roundLayout ? roundHeaderInnerInset() : dp(2);
+        name.setPadding(horizontal, 0, horizontal, 0);
         name.setBackgroundColor(this.BG);
-        name.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(42)));
+        name.setLayoutParams(new LinearLayout.LayoutParams(
+                -1, dp(roundLayout ? 36 : 42)));
         return name;
     }
 
     private View settingsTopCard(String pageTitle) {
+        boolean roundLayout = usesRoundLayout();
         LinearLayout box = new LinearLayout(this);
         box.setGravity(16);
-        box.setPadding(dp(1), 0, dp(2), 0);
+        int innerInset = roundLayout ? roundHeaderInnerInset() : 0;
+        box.setPadding(roundLayout ? innerInset : dp(1), 0,
+                roundLayout ? innerInset : dp(2), 0);
         box.setBackgroundColor(this.BG);
         ImageView back = new ImageView(this);
         back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         Drawable backIcon = Compat.tintedDrawable(this, R.drawable.ic_arrow_back, this.TEXT);
         if (backIcon != null) back.setImageDrawable(backIcon);
-        back.setPadding(dp(8), dp(8), dp(8), dp(8));
-        Compat.setBackground(back, UiComponents.round(this, this.themeTokens.panel, 18,
-                this.session.uiScale() / 100.0f));
+        back.setPadding(dp(6), dp(6), dp(6), dp(6));
+        Compat.setBackground(back, null);
         back.setContentDescription("返回");
         back.setOnClickListener(view -> runWithPressFeedback(back, this::onBackPressed));
-        box.addView(back, new LinearLayout.LayoutParams(dp(34), dp(34)));
-        TextView name = text(pageTitle, 18.5f, this.TEXT);
+        int backSize = dp(roundLayout ? 30 : 32);
+        box.addView(back, new LinearLayout.LayoutParams(backSize, backSize));
+        TextView name = text(pageTitle, roundLayout ? 17.0f : 19.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), 1);
         LinearLayout.LayoutParams nameParams =
-                new LinearLayout.LayoutParams(0, dp(44), 1.0f);
-        nameParams.leftMargin = dp(10);
+                new LinearLayout.LayoutParams(0, dp(roundLayout ? 38 : 42), 1.0f);
+        nameParams.leftMargin = dp(roundLayout ? 8 : 10);
         box.addView(name, nameParams);
         return box;
     }
@@ -6053,87 +6368,62 @@ public final class MainActivity extends Activity {
         addTop(panel, toggleRow("夜间模式", dark[0], value -> {
             dark[0] = value;
         }), 0);
-        addSettingEntry(panel, "查看界面预览", "在真实布局里检查当前参数", R.drawable.il_eye,
+        addSettingEntry(panel, "查看界面预览", null, R.drawable.il_eye,
                 this::showDisplayPreview);
-        LinearLayout livePreview = vertical(0);
-        livePreview.setPadding(dp(10), dp(8), dp(10), dp(8));
-        Compat.setBackground(livePreview, roundStroke(this.themeTokens.panelElevated, 12,
-                this.themeTokens.hairline, 1));
-        TextView previewTitle = text("显示效果预览", 14.0f, this.TEXT);
-        previewTitle.setTypeface(appRegularTypeface(), 1);
-        TextView previewBody = text("帖子正文会跟随下方设置实时变化。\n第二段用于预览段落间距", 13.0f, this.TEXT);
-        previewBody.setTypeface(Typeface.create("sans-serif-medium", 0));
-        TextView previewAction = text("主色按钮", 11.0f, contrast(this.PRIMARY));
-        previewAction.setGravity(17);
-        Compat.setBackground(previewAction, round(this.PRIMARY, 11));
-        addTop(livePreview, previewTitle, 0);
-        addTop(livePreview, previewBody, 3);
-        addTop(livePreview, previewAction, 6);
-        addTop(panel, livePreview, 8);
+        panel.addView(motionLevelRow());
+        linearLayout.addView(panel);
+        addSectionLabel(linearLayout, "界面尺寸");
+        panel = settingsList();
         ScaleControl uiScale = settingSlider(panel, "界面大小", "%", 70, 160, this.session.uiScale(), value2 -> {
-            updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, value2, -1, -1);
         });
         ScaleControl textScale = settingSlider(panel, "文字大小", "%", 70, 180, this.session.textScale(), value3 -> {
-            updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, -1, value3, -1);
         });
         ScaleControl padding = settingSlider(panel, "左右边距", "dp", 0, 30, this.session.pagePadding(), value4 -> {
-            updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, -1, -1, value4);
         });
         linearLayout.addView(panel);
         addSectionLabel(linearLayout, "屏幕适配");
-        panel = card();
-        TextView roundDesc = text("圆屏模式会给页面四周留出安全边距，避免内容贴到屏幕边缘。横纵向边距按屏幕百分比计算，适合圆屏和小屏手表微调", 11.0f, this.MUTED);
+        panel = settingsList();
+        TextView roundDesc = text(isSystemRoundScreen()
+                ? "已自动识别为圆屏，页面组件会使用圆屏布局"
+                : roundScreen[0]
+                ? "已手动启用圆屏布局"
+                : "未识别为圆屏，可在下方手动启用", 11.0f, this.MUTED);
         roundDesc.setLineSpacing(0.0f, 1.16f);
-        addTop(panel, roundDesc, 2);
-        ScaleControl[] screenPaddingH = {settingSlider(panel, "横向边距", "%", 0, 30, this.session.screenPaddingHPercent(), value6 -> {
-        })};
-        ScaleControl[] screenPaddingV = {settingSlider(panel, "纵向边距", "%", 0, 30, this.session.screenPaddingVPercent(), value7 -> {
-        })};
-        addTop(panel, toggleRow("圆屏适配", roundScreen[0], value5 -> {
+        roundDesc.setPadding(dp(6), dp(7), dp(6), dp(4));
+        panel.addView(roundDesc);
+        ScaleControl[] screenPaddingH = new ScaleControl[1];
+        ScaleControl[] screenPaddingV = new ScaleControl[1];
+        addTop(panel, toggleRow("手动启用圆屏布局", roundScreen[0], value5 -> {
             roundScreen[0] = value5;
-            int h = value5 ? 5 : 0;
-            int v = value5 ? 3 : 0;
-            setScaleControlValue(screenPaddingH[0], h, 0);
-            setScaleControlValue(screenPaddingV[0], v, 0);
-            updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, -1, -1, parseNumber(padding.input, 0, 30) == null ? this.session.pagePadding() : parseNumber(padding.input, 0, 30).intValue());
         }), 0);
+        screenPaddingH[0] = settingSlider(panel, "额外横向边距", "%", 0, 30,
+                this.session.screenPaddingHPercent(), value6 -> {
+                });
+        screenPaddingV[0] = settingSlider(panel, "额外纵向边距", "%", 0, 30,
+                this.session.screenPaddingVPercent(), value7 -> {
+                });
         linearLayout.addView(panel);
         addSectionLabel(linearLayout, "正文排版");
-        panel = card();
+        panel = settingsList();
         ScaleControl bodyText = settingSlider(panel, "正文字号", "%", 75, 170, this.session.bodyTextScale(), value8 -> {
-            previewBody.setTextSize((13 * value8) / 100.0f);
         });
         ScaleControl letterSpacing = settingSlider(panel, "字间", "", 0, 20, this.session.bodyLetterSpacing(), value9 -> {
-            Compat.setLetterSpacing(previewBody, value9 / 200.0f);
         });
         ScaleControl paragraphSpacing = settingSlider(panel, "段落间距", "dp", 0, 24, this.session.bodyParagraphSpacing(), value10 -> {
-            previewBody.setPadding(0, dp(value10), 0, 0);
         });
         ScaleControl lineSpacing = settingSlider(panel, "行距", "%", 100, 180, this.session.bodyLineSpacing(), value11 -> {
-            previewBody.setLineSpacing(0.0f, value11 / 100.0f);
         });
         addTop(panel, toggleRow("正文与一级评论稍加粗", bodyBold[0], value12 -> {
-            Typeface typefaceCreate;
             bodyBold[0] = value12;
-            if (value12) {
-                typefaceCreate = Typeface.create("sans-serif-medium", 0);
-            } else {
-                typefaceCreate = appRegularTypeface();
-            }
-            previewBody.setTypeface(typefaceCreate);
         }), 0);
-        updateDisplayPreview(livePreview, previewTitle, previewBody, previewAction, this.session.uiScale(), this.session.textScale(), this.session.pagePadding());
-        previewBody.setTextSize((13 * this.session.bodyTextScale()) / 100.0f);
-        Compat.setLetterSpacing(previewBody, this.session.bodyLetterSpacing() / 200.0f);
-        previewBody.setPadding(0, dp(this.session.bodyParagraphSpacing()), 0, 0);
-        previewBody.setLineSpacing(0.0f, this.session.bodyLineSpacing() / 100.0f);
         linearLayout.addView(panel);
         addSectionLabel(linearLayout, "颜色主题");
-        panel = card();
+        panel = settingsList();
         LinearLayout themeGrid = vertical(0);
-        for (int start = 0; start < THEME_NAMES.length; start += 6) {
+        int themeColumns = usesRoundLayout() ? 4 : 6;
+        for (int start = 0; start < THEME_NAMES.length; start += themeColumns) {
             LinearLayout row = new LinearLayout(this);
-            for (int i = start; i < start + 6; i++) {
+            for (int i = start; i < start + themeColumns; i++) {
                 LinearLayout cell = new LinearLayout(this);
                 cell.setGravity(17);
                 if (i < THEME_NAMES.length) {
@@ -6315,26 +6605,21 @@ public final class MainActivity extends Activity {
         }), 0);
         addSettingEntry(panel, "网络模式", networkModeLabel(), R.drawable.il_globe,
                 this::showNetworkModePicker);
-        boolean zShellBackSwipe = this.session.shellBackSwipe();
-        SessionStore sessionStore2 = this.session;
-        Objects.requireNonNull(sessionStore2);
-        addTop(panel, toggleRow("右滑返回上一级", zShellBackSwipe,
-                sessionStore2::setShellBackSwipe), 0);
+        addTop(panel, toggleRow("右滑返回上一级", this.session.shellBackSwipe(),
+                this.session::setShellBackSwipe), 0);
         addTop(panel, toggleRow("退出确认", this.session.confirmExitOnBack(),
                 this.session::setConfirmExitOnBack), 0);
-        boolean zRememberDetailScroll = this.session.rememberDetailScroll();
-        SessionStore sessionStore3 = this.session;
-        Objects.requireNonNull(sessionStore3);
-        addTop(panel, toggleRow("记住帖子阅读位置", zRememberDetailScroll, sessionStore3::setRememberDetailScroll), 0);
-        addTop(panel, toggleRow("自动清理", "开启后自动清理 30 天前的离线缓存",
+        addTop(panel, toggleRow("记住帖子阅读位置",
+                this.session.rememberDetailScroll(),
+                this.session::setRememberDetailScroll), 0);
+        addTop(panel, toggleRow("自动清理", "", "30 天",
                 this.session.autoOfflineCleanup(), value -> {
                     this.session.setAutoOfflineCleanup(value);
                     if (value) pruneOfflineCache(null);
                 }), 0);
-        boolean zDoubleTapCommentReply = this.session.doubleTapCommentReply();
-        SessionStore sessionStore4 = this.session;
-        Objects.requireNonNull(sessionStore4);
-        addTop(panel, toggleRow("双击评论回复", zDoubleTapCommentReply, sessionStore4::setDoubleTapCommentReply), 0);
+        addTop(panel, toggleRow("双击评论回复",
+                this.session.doubleTapCommentReply(),
+                this.session::setDoubleTapCommentReply), 0);
         page.addView(panel);
         addSectionLabel(page, "内容过滤");
         LinearLayout filter = settingsList();
@@ -6345,7 +6630,9 @@ public final class MainActivity extends Activity {
         blockKeywords.setTextColor(this.TEXT);
         blockKeywords.setTextSize(sp(11.0f));
         blockKeywords.setSingleLine(false);
-        blockKeywords.setMinLines(2);
+        blockKeywords.setMinLines(1);
+        blockKeywords.setMaxLines(3);
+        blockKeywords.setMinHeight(dp(40));
         blockKeywords.setGravity(48);
         Compat.tint(blockKeywords, this.themeTokens.accent);
         blockKeywords.setPadding(dp(8), dp(6), dp(8), dp(6));
@@ -6409,6 +6696,7 @@ public final class MainActivity extends Activity {
 
     private void showStartupSettings() {
         LinearLayout page = settingsPage("startup_settings", "启动与更新");
+        addSectionLabel(page, "启动与更新");
         LinearLayout panel = settingsList();
         boolean[] autoUpdate = {this.session.autoUpdateCheck()};
         boolean[] splashEnabled = {this.session.splashEnabled()};
@@ -6421,7 +6709,7 @@ public final class MainActivity extends Activity {
         EditText splashText = textField(panel, "开屏文字", this.session.splashText());
         ScaleControl duration = settingSlider(panel, "开屏时长", "ms", 500, 2600, this.session.splashDuration(), value3 -> {
         });
-        addSettingEntry(panel, "预览开屏动画", "试运行一次当前开屏效果", R.drawable.il_eye, () ->
+        addSettingEntry(panel, "预览开屏动画", null, R.drawable.il_eye, () ->
                 showSplashPreview(splashText.getText().toString().trim(),
                         parseNumber(duration.input, 500, 2600)));
         Button save = button("保存启动设置", R.drawable.ic_save);
@@ -6494,15 +6782,14 @@ public final class MainActivity extends Activity {
         stopQrPolling();
         this.screen = "announcement_board";
         setBottomNavVisible(false);
-        this.leading.setVisibility(0);
-        this.leading.setOnClickListener(view -> {
-            showAbout();
-        });
-        this.title.setText("公告列表");
-        this.action.setText("");
-        setIcon(this.action, R.drawable.ic_refresh, this.TEXT, 18);
-        this.action.setVisibility(0);
-        this.content.removeAllViews();
+        this.leading.setVisibility(4);
+        this.title.setText("公告");
+        this.action.setVisibility(4);
+
+        LinearLayout page = vertical(this.BG);
+        int horizontal = pageHorizontalPadding();
+        page.setPadding(horizontal, subpageTopPadding(), horizontal, dp(8));
+        page.addView(settingsTopCard("公告"));
         PullRefreshListView list = new PullRefreshListView(this, this.BG, this.MUTED,
                 this.SECONDARY, this.session.uiScale() / 100.0f,
                 this.session.textScale() / 100.0f);
@@ -6511,7 +6798,7 @@ public final class MainActivity extends Activity {
         list.setSelector(new ColorDrawable(0));
         list.setCacheColorHint(0);
         list.setClipToPadding(false);
-        list.setPadding(0, 0, 0, dp(12));
+        list.setPadding(0, dp(6), 0, dp(10));
         AnnouncementListAdapter adapter = new AnnouncementListAdapter(this, this.themeTokens,
                 this.session.uiScale() / 100.0f, this.session.textScale() / 100.0f,
                 this::showAnnouncementDialog);
@@ -6519,16 +6806,15 @@ public final class MainActivity extends Activity {
         list.setPullRefreshAction(() -> {
             loadAnnouncementsInto(list, adapter);
         });
-        this.action.setOnClickListener(view2 -> {
-            if (!list.isRefreshing()) {
+        page.addView(list, new LinearLayout.LayoutParams(-1, 0, 1.0f));
+        this.retainedPages.put("announcement_board", page);
+        transitionTo(page);
+        list.post(() -> {
+            if (!isFinishing() && "announcement_board".equals(this.screen)) {
                 list.setRefreshing(true);
                 loadAnnouncementsInto(list, adapter);
             }
         });
-        this.content.addView(list, match());
-        animateIn(list);
-        list.setRefreshing(true);
-        loadAnnouncementsInto(list, adapter);
     }
 
     private void loadAnnouncementsInto(final PullRefreshListView list, final AnnouncementListAdapter adapter) {
@@ -6559,91 +6845,11 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void showAnnouncements() {
-        stopQrPolling();
-        this.screen = "announcement_board";
-        setBottomNavVisible(false);
-        this.leading.setVisibility(0);
-        this.leading.setOnClickListener(view -> {
-            showAbout();
-        });
-        this.title.setText("公告列表");
-        this.action.setText("");
-        setIcon(this.action, R.drawable.ic_refresh, this.TEXT, 18);
-        this.action.setVisibility(0);
-        this.action.setOnClickListener(view2 -> {
-            showAnnouncements();
-        });
-        this.content.removeAllViews();
-        showLoading();
-        AnnouncementChecker.load(new AnnouncementChecker.Callback() {
-            @Override
-            public void onResult(List<AnnouncementChecker.Item> items) {
-                if (MainActivity.this.isFinishing() || !"announcement_board".equals(MainActivity.this.screen)) {
-                    return;
-                }
-                MainActivity.this.renderAnnouncementList(items);
-            }
-
-            @Override
-            public void onError(String message) {
-                if (MainActivity.this.isFinishing() || !"announcement_board".equals(MainActivity.this.screen)) {
-                    return;
-                }
-                MainActivity.this.toast("公告加载失败，已显示本地欢迎公告");
-                MainActivity.this.renderAnnouncementList(Collections.singletonList(MainActivity.this.welcomeAnnouncement()));
-            }
-        });
-    }
-
-    private void renderAnnouncementList(List<AnnouncementChecker.Item> items) {
-        hideLoading();
-        this.content.removeAllViews();
-        List<AnnouncementChecker.Item> items2 = withWelcomeAnnouncement(items);
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(this.BG);
-        LinearLayout page = vertical(this.BG);
-        page.setPadding(dp(8), dp(8), dp(8), dp(14));
-        scrollView.addView(page);
-        if (items2 == null || items2.isEmpty()) {
-            TextView empty = text("暂无公告", 13.0f, this.MUTED);
-            empty.setGravity(17);
-            page.addView(empty, new LinearLayout.LayoutParams(-1, dp(88)));
-        } else {
-            boolean added = false;
-            for (AnnouncementChecker.Item item : items2) {
-                if (item != null && item.enabled) {
-                    LinearLayout card = card();
-                    TextView itemTitle = text(TextUtils.isEmpty(item.title) ? "公告" : item.title, 14.0f, this.TEXT);
-                    itemTitle.setTypeface(appRegularTypeface(), 1);
-                    card.addView(itemTitle);
-                    String updatedAt = Format.announcementTime(item.updatedAt);
-                    if (!TextUtils.isEmpty(updatedAt)) {
-                        addTop(card, text(updatedAt, 10.0f, this.MUTED), 4);
-                    }
-                    TextView preview = text(Format.announcementPreview(item.content), 12.0f, this.MUTED);
-                    preview.setLineSpacing(0.0f, 1.18f);
-                    addTop(card, preview, 6);
-                    card.setOnClickListener(view -> {
-                        showAnnouncementDialog(item);
-                    });
-                    addTop(page, card, 8);
-                    added = true;
-                }
-            }
-            if (!added) {
-                TextView empty2 = text("暂无公告", 13.0f, this.MUTED);
-                empty2.setGravity(17);
-                page.addView(empty2, new LinearLayout.LayoutParams(-1, dp(88)));
-            }
-        }
-        this.content.addView(scrollView, match());
-        animateIn(scrollView);
-    }
     private void showAbout() {
         LinearLayout page = settingsPage("about", "关于");
         addSectionLabel(page, "应用");
         LinearLayout panel = settingsList();
+        panel.setPadding(dp(12), dp(11), dp(12), dp(11));
         TextView appName = text("heybox Lite", 20.0f, this.TEXT);
         appName.setTypeface(appRegularTypeface(), 1);
         panel.addView(appName);
@@ -6750,14 +6956,21 @@ public final class MainActivity extends Activity {
         return toggleRow(label, "", initial, listener);
     }
 
-    /** 统一行式开关：图标芯片 + 标题（可带副标题）+ 滑块，底部带缩进分隔线。 */
     private LinearLayout toggleRow(String label, String description,
                                    boolean initial, ToggleListener listener) {
+        return toggleRow(label, description, null, initial, listener);
+    }
+
+    private LinearLayout toggleRow(String label, String description,
+                                   String trailingValue, boolean initial,
+                                   ToggleListener listener) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(1);
         LinearLayout content = new LinearLayout(this);
         content.setGravity(16);
-        content.setPadding(dp(6), dp(9), dp(6), dp(9));
+        int horizontal = dp(usesRoundLayout() ? 10 : 6);
+        int vertical = dp(usesRoundLayout() ? 7 : 8);
+        content.setPadding(horizontal, vertical, horizontal, vertical);
 
         ImageView icon = new ImageView(this);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
@@ -6785,6 +6998,15 @@ public final class MainActivity extends Activity {
         copyParams.rightMargin = dp(8);
         content.addView(copy, copyParams);
 
+        if (!TextUtils.isEmpty(trailingValue)) {
+            TextView trailing = text(trailingValue, 11.5f, this.MUTED);
+            trailing.setSingleLine(true);
+            LinearLayout.LayoutParams trailingParams =
+                    new LinearLayout.LayoutParams(-2, -2);
+            trailingParams.rightMargin = dp(8);
+            content.addView(trailing, trailingParams);
+        }
+
         boolean[] value = {initial};
         FrameLayout toggle = new FrameLayout(this);
         View thumb = new View(this);
@@ -6799,10 +7021,11 @@ public final class MainActivity extends Activity {
         paintTrack.run();
         thumb.setTranslationX(value[0] ? travel : 0.0f);
         content.addView(toggle, new LinearLayout.LayoutParams(dp(42), dp(26)));
-        content.setMinimumHeight(dp(52));
+        content.setMinimumHeight(dp(48));
         row.addView(content, new LinearLayout.LayoutParams(-1, -2));
 
         View divider = new View(this);
+        divider.setTag("settings_divider");
         divider.setBackgroundColor(this.session.darkMode()
                 ? Color.argb(16, 255, 255, 255) : Color.argb(14, 0, 0, 0));
         LinearLayout.LayoutParams dividerParams =
@@ -6819,6 +7042,85 @@ public final class MainActivity extends Activity {
                     .start();
             listener.onChanged(value[0]);
         });
+        row.setTag("settings_row_with_divider");
+        return row;
+    }
+
+    private View motionLevelRow() {
+        LinearLayout row = vertical(0);
+        View divider = new View(this);
+        divider.setBackgroundColor(this.session.darkMode()
+                ? Color.argb(16, 255, 255, 255)
+                : Color.argb(14, 0, 0, 0));
+        LinearLayout.LayoutParams dividerParams =
+                new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
+        dividerParams.leftMargin = dp(45);
+        row.addView(divider, dividerParams);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setGravity(Gravity.CENTER_VERTICAL);
+        int horizontal = dp(usesRoundLayout() ? 10 : 6);
+        content.setPadding(horizontal, dp(8), horizontal, dp(8));
+
+        ImageView icon = new ImageView(this);
+        icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        icon.setPadding(dp(5), dp(5), dp(5), dp(5));
+        Drawable iconDrawable = Compat.tintedDrawable(
+                this, R.drawable.il_splash, this.themeTokens.text);
+        if (iconDrawable != null) icon.setImageDrawable(iconDrawable);
+        Compat.setBackground(icon, UiComponents.monoChip(
+                this, this.themeTokens, this.session.uiScale() / 100.0f));
+        LinearLayout.LayoutParams iconParams =
+                new LinearLayout.LayoutParams(dp(27), dp(27));
+        iconParams.rightMargin = dp(12);
+        content.addView(icon, iconParams);
+
+        TextView title = text("动画效果", 13.5f, this.TEXT);
+        title.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        content.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        LinearLayout options = new LinearLayout(this);
+        options.setGravity(Gravity.CENTER);
+        options.setPadding(dp(2), dp(2), dp(2), dp(2));
+        Compat.setBackground(options, UiComponents.round(
+                this, this.themeTokens.panelElevated, 14,
+                this.session.uiScale() / 100.0f));
+        String[] labels = {"关闭", "精简", "完整"};
+        TextView[] choices = new TextView[labels.length];
+        Runnable repaint = () -> {
+            int selected = this.session.motionLevel();
+            for (int i = 0; i < choices.length; i++) {
+                boolean active = i == selected;
+                choices[i].setTextColor(active
+                        ? this.themeTokens.background : this.themeTokens.muted);
+                choices[i].setTypeface(appRegularTypeface(),
+                        active ? Typeface.BOLD : Typeface.NORMAL);
+                Compat.setBackground(choices[i], active
+                        ? UiComponents.round(this, this.themeTokens.text, 12,
+                        this.session.uiScale() / 100.0f)
+                        : null);
+            }
+        };
+        int optionWidth = dp(usesRoundLayout() ? 36 : 40);
+        for (int i = 0; i < labels.length; i++) {
+            int level = i;
+            TextView choice = text(labels[i], 10.0f, this.MUTED);
+            choice.setGravity(Gravity.CENTER);
+            choice.setOnClickListener(view -> {
+                if (this.session.motionLevel() == level) return;
+                cancelAllMotion();
+                this.session.setMotionLevel(level);
+                Motions.setLevel(level);
+                repaint.run();
+                Motions.selected(choice);
+            });
+            choices[i] = choice;
+            options.addView(choice, new LinearLayout.LayoutParams(
+                    optionWidth, dp(26)));
+        }
+        repaint.run();
+        content.addView(options, new LinearLayout.LayoutParams(-2, dp(30)));
+        row.addView(content, new LinearLayout.LayoutParams(-1, -2));
         return row;
     }
 
@@ -6841,11 +7143,14 @@ public final class MainActivity extends Activity {
 
     /** 两行式滑杆：标签与数值同一行（数值点按可键入），通栏轨道在下，白钮与开关圆钮同族。 */
     private ScaleControl settingSlider(LinearLayout parent, String label, String unit, final int min, int max, int current, final IntListener listener) {
+        addSettingsDivider(parent);
         LinearLayout wrap = new LinearLayout(this);
         wrap.setOrientation(1);
+        wrap.setPadding(dp(6), dp(8), dp(6), dp(6));
         LinearLayout head = new LinearLayout(this);
         head.setGravity(16);
-        TextView name = text(label, 11.0f, this.TEXT);
+        TextView name = text(label, 13.0f, this.TEXT);
+        name.setTypeface(appRegularTypeface(), Typeface.BOLD);
         head.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
         final EditText input = new EditText(this);
         input.setSingleLine(true);
@@ -6874,7 +7179,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams sliderParams = new LinearLayout.LayoutParams(-1, dp(26));
         sliderParams.topMargin = dp(1);
         wrap.addView(slider, sliderParams);
-        addTop(parent, wrap, 6);
+        parent.addView(wrap);
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -6895,37 +7200,6 @@ public final class MainActivity extends Activity {
         return new ScaleControl(input, slider);
     }
 
-    private void setScaleControlValue(ScaleControl control, int value, int min) {
-        if (control == null) {
-            return;
-        }
-        control.input.setText(String.valueOf(value));
-        control.input.setSelection(control.input.length());
-        control.slider.setProgress(Math.max(0, value - min));
-    }
-
-    private void updateDisplayPreview(LinearLayout preview, TextView heading, TextView body, TextView actionView, int ui, int textValue, int padding) {
-        if (ui >= 0) {
-            preview.setScaleX(1.0f);
-            preview.setScaleY(1.0f);
-            float scale = ui / 100.0f;
-            int vertical = Math.max(5, Math.round(7.0f * scale));
-            preview.setPadding(preview.getPaddingLeft(), dp(vertical), preview.getPaddingRight(), dp(vertical));
-            actionView.setMinHeight(dp(Math.max(24, Math.round(28.0f * scale))));
-            actionView.setPadding(dp(8), 0, dp(8), 0);
-        }
-        if (textValue >= 0) {
-            float scale2 = textValue / 100.0f;
-            heading.setTextSize(14.0f * scale2);
-            body.setTextSize(11.0f * scale2);
-            actionView.setTextSize(11.0f * scale2);
-        }
-        if (padding >= 0) {
-            int value = Math.round(padding * getResources().getDisplayMetrics().density);
-            preview.setPadding(value, preview.getPaddingTop(), value, preview.getPaddingBottom());
-        }
-    }
-
     private int currentPrimary() {
         try {
             String saved = this.session.primaryColor();
@@ -6933,7 +7207,7 @@ public final class MainActivity extends Activity {
                 return this.session.darkMode() ? -1 : -16777216;
             }
             return Color.parseColor(saved);
-        } catch (Exception e) {
+        } catch (IllegalArgumentException error) {
             return this.session.darkMode() ? -1 : -16777216;
         }
     }
@@ -6945,7 +7219,7 @@ public final class MainActivity extends Activity {
                 return this.session.darkMode() ? Color.rgb(150, 190, 220) : Color.rgb(35, 125, 178);
             }
             return Color.parseColor(saved);
-        } catch (Exception e) {
+        } catch (IllegalArgumentException error) {
             return this.session.darkMode() ? Color.rgb(150, 190, 220) : Color.rgb(35, 125, 178);
         }
     }
@@ -6959,11 +7233,7 @@ public final class MainActivity extends Activity {
     }
 
     private String appVersion() {
-        try {
-            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-        } catch (Exception e) {
-            return "1.70";
-        }
+        return BuildConfig.VERSION_NAME;
     }
 
     private void openImage(ImageView source, String url) {
@@ -6996,7 +7266,7 @@ public final class MainActivity extends Activity {
     private void openUrl(String url) {
         try {
             startActivity(new Intent("android.intent.action.VIEW", Uri.parse(url)));
-        } catch (Exception e) {
+        } catch (ActivityNotFoundException | SecurityException error) {
             toast("无法打开链接");
         }
     }
@@ -7096,7 +7366,7 @@ public final class MainActivity extends Activity {
                 }
                 installDownloadedUpdate(ready);
             });
-        } catch (Exception error) {
+        } catch (IOException | RuntimeException error) {
             String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
             if (this.localCache != null) {
                 this.localCache.log("update download failed: " + message);
@@ -7129,7 +7399,8 @@ public final class MainActivity extends Activity {
                 intent.setClipData(ClipData.newUri(getContentResolver(), apk.getName(), uri));
             }
             startActivity(intent);
-        } catch (Exception error) {
+        } catch (ActivityNotFoundException | SecurityException
+                 | IllegalArgumentException error) {
             if (this.localCache != null) {
                 this.localCache.log("update install failed: " + error.getClass().getSimpleName() + " " + error.getMessage());
             }
@@ -7285,75 +7556,6 @@ public final class MainActivity extends Activity {
         return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date(millis));
     }
 
-    private String buildDetailDiagnostics(JSONObject body, FeedItem fallback, JSONObject link,
-                                          JSONArray fallbackImages, JSONArray comments) {
-        StringBuilder out = new StringBuilder();
-        out.append("detail screen: ").append(this.screen).append('\n');
-        out.append("currentLinkId: ").append(this.currentLinkId).append('\n');
-        out.append("fallbackId: ").append(fallback == null ? "" : fallback.id).append('\n');
-        out.append("fallbackTitle: ").append(compactLogText(fallback == null ? "" : fallback.title, 180)).append('\n');
-        out.append("fallbackArticle: ").append(fallback != null && fallback.article).append('\n');
-        out.append("playGif: ").append(this.session.playGif()).append('\n');
-        out.append("bodyKeys: ");
-        if (body != null) {
-            Iterator<String> keys = body.keys();
-            while (keys.hasNext()) {
-                out.append(keys.next()).append(' ');
-            }
-        }
-        out.append('\n');
-        if (link == null) {
-            out.append("link: null\n");
-        } else {
-            out.append("linkid: ").append(link.optString("linkid", link.optString("link_id"))).append('\n');
-            out.append("title: ").append(compactLogText(link.optString("title"), 180)).append('\n');
-            out.append("use_concept_type: ").append(link.opt("use_concept_type")).append('\n');
-            out.append("is_article: ").append(link.opt("is_article")).append('\n');
-            out.append("link_type: ").append(link.opt("link_type")).append('\n');
-            out.append("content_type: ").append(link.opt("content_type")).append('\n');
-            out.append("has imgs: ").append(link.has("imgs")).append(" count=").append(link.optJSONArray("imgs") == null ? 0 : link.optJSONArray("imgs").length()).append('\n');
-            out.append(RichContent.diagnostics(link, fallbackImages));
-        }
-        appendCommentDiagnostics(out, comments);
-        return out.toString();
-    }
-
-    private void appendCommentDiagnostics(StringBuilder out, JSONArray groups) {
-        out.append("\ncomment diagnostics:\n");
-        if (groups == null) {
-            out.append("groups: null\n");
-            return;
-        }
-        out.append("groups: ").append(groups.length()).append('\n');
-        int limit = Math.min(groups.length(), 5);
-        for (int i = 0; i < limit; i++) {
-            JSONObject group = groups.optJSONObject(i);
-            JSONArray thread = group == null ? null : group.optJSONArray("comment");
-            JSONObject comment = thread == null ? group : thread.optJSONObject(0);
-            if (comment == null) continue;
-            String parsed = RichContent.commentText(comment.optString("text"),
-                    comment.optString("content"), comment.optString("html"),
-                    comment.optString("description"), comment.optString("desc_extra"),
-                    comment.optString("rich_text"), comment.optString("hb_rich_texts"));
-            out.append('[').append(i).append("] id=")
-                    .append(CommentData.commentId(comment))
-                    .append(" parsed=").append(compactLogText(parsed, 180)).append('\n');
-            out.append("  text=").append(compactLogText(comment.optString("text"), 180)).append('\n');
-            List<CommentData.CommentImage> images = CommentData.commentImages(comment);
-            out.append("  images=").append(images.size());
-            for (CommentData.CommentImage image : images) {
-                out.append(" [mime=").append(image.mimeType)
-                        .append(" animated=").append(image.animated)
-                        .append(" url=").append(compactLogText(image.url, 100)).append(']');
-            }
-            out.append('\n');
-        }
-    }
-
-    private String compactLogText(String value, int max) {
-        String clean = value == null ? "" : value.replace('\n', ' ').replace('\r', ' ').replaceAll("\\s+", " ").trim();
-        return clean.length() <= max ? clean : clean.substring(0, Math.max(0, max)) + "...";
-    }
     private static final class ScaleControl {
         final EditText input;
         final SeekBar slider;
@@ -7365,9 +7567,14 @@ public final class MainActivity extends Activity {
     }
 
     private EditText textField(LinearLayout parent, String label, String current) {
+        addSettingsDivider(parent);
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
-        row.addView(text(label, 12.0f, this.TEXT), new LinearLayout.LayoutParams(0, dp(40), 1.0f));
+        row.setPadding(dp(6), dp(8), dp(6), dp(8));
+        TextView name = text(label, 13.0f, this.TEXT);
+        name.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        name.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(name, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
         EditText input = new EditText(this);
         input.setText(current);
         input.setTextColor(this.TEXT);
@@ -7382,7 +7589,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(dp(96), -2);
         inputParams.leftMargin = dp(6);
         row.addView(input, inputParams);
-        addTop(parent, row, 3);
+        parent.addView(row);
         return input;
     }
 
@@ -7454,7 +7661,7 @@ public final class MainActivity extends Activity {
                 return null;
             }
             return Integer.valueOf(value);
-        } catch (Exception e) {
+        } catch (NumberFormatException error) {
             return null;
         }
     }
@@ -7816,6 +8023,28 @@ public final class MainActivity extends Activity {
         this.pageTransitions.run(this.content, next, !back, push);
     }
 
+    private void cancelAllMotion() {
+        this.pageTransitions.finishNow();
+        if (this.detailPager != null) this.detailPager.cancelMotion();
+        if (this.content instanceof BackSwipeFrameLayout) {
+            ((BackSwipeFrameLayout) this.content).cancelMotion();
+        }
+        Motions.resetTree(this.shellRoot);
+        this.shellAnimating = false;
+        this.pendingBackTransition = false;
+        this.pendingLateralPush = false;
+        this.bottomNavShowPending = false;
+        this.bottomNavAnimSerial++;
+        if (this.bottom != null) {
+            this.bottom.animate().cancel();
+            this.bottom.setTranslationY(0.0f);
+            this.bottom.setScaleX(1.0f);
+            this.bottom.setScaleY(1.0f);
+            this.bottom.setAlpha(this.bottomVisible ? 1.0f : 0.0f);
+            this.bottom.setVisibility(this.bottomVisible ? View.VISIBLE : View.GONE);
+        }
+    }
+
     /** 页面不满屏时下半截透明，转场重叠期会透出旧页并在结束时闪变，这里统一兜底成不透明底色。 */
     private void ensurePageBackdrop(View view) {
         if (view == null) return;
@@ -7868,21 +8097,25 @@ public final class MainActivity extends Activity {
     private LinearLayout card() {
         ThemeTokens themeTokensOf;
         LinearLayout card = vertical(this.PANEL);
-        card.setPadding(dp(12), dp(11), dp(12), dp(11));
+        int horizontal = dp(usesRoundLayout() ? 11 : 12);
+        card.setPadding(horizontal, dp(11), horizontal, dp(11));
         if (this.themeTokens == null) {
             themeTokensOf = ThemeTokens.of(this.session != null && this.session.darkMode(), this.PRIMARY, this.SECONDARY);
         } else {
             themeTokensOf = this.themeTokens;
         }
         ThemeTokens tokens = themeTokensOf;
-        Compat.setBackground(card, UiComponents.groupCard(this, tokens, this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
+        Compat.setBackground(card, UiComponents.round(this, tokens.panel,
+                usesRoundLayout() ? 9 : 10,
+                this.session == null ? 1.0f : this.session.uiScale() / 100.0f));
         return card;
     }
 
     private LinearLayout settingsList() {
         LinearLayout list = vertical(this.PANEL);
-        list.setPadding(dp(6), dp(3), dp(6), dp(3));
-        Compat.setBackground(list, UiComponents.groupCard(this, this.themeTokens,
+        list.setPadding(dp(4), dp(2), dp(4), dp(2));
+        Compat.setBackground(list, UiComponents.round(this,
+                this.themeTokens.panel, usesRoundLayout() ? 9 : 11,
                 this.session.uiScale() / 100.0f));
         return list;
     }

@@ -11,6 +11,7 @@ import android.text.TextUtils;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 
 public final class UpdateApkProvider extends ContentProvider {
     static final String AUTHORITY = "com.ronan.heyboxlite.preview.updateapk";
@@ -87,7 +88,7 @@ public final class UpdateApkProvider extends ContentProvider {
             File file = new File(root, name).getCanonicalFile();
             if (!file.getPath().startsWith(root.getPath())) return null;
             return file;
-        } catch (Exception ignored) {
+        } catch (IOException | SecurityException ignored) {
             return null;
         }
     }

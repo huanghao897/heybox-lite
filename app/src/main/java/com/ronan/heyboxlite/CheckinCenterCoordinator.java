@@ -8,6 +8,7 @@ import android.os.Looper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 final class CheckinCenterCoordinator {
     interface AuthorizationListener {
@@ -431,7 +432,9 @@ final class CheckinCenterCoordinator {
         String manufacturer = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.trim();
         String model = Build.MODEL == null ? "" : Build.MODEL.trim();
         if (model.isEmpty()) return "Android";
-        if (manufacturer.isEmpty() || model.toLowerCase().startsWith(manufacturer.toLowerCase())) {
+        if (manufacturer.isEmpty()
+                || model.toLowerCase(Locale.ROOT)
+                        .startsWith(manufacturer.toLowerCase(Locale.ROOT))) {
             return model;
         }
         return manufacturer + " " + model;

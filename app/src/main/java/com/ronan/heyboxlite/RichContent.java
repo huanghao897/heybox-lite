@@ -4,8 +4,10 @@ import android.text.Html;
 import android.os.Build;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -217,12 +219,12 @@ final class RichContent {
             try {
                 addDetailArray(result, new JSONArray(jsonText), articleMode);
                 return result;
-            } catch (Exception ignored) {
+            } catch (JSONException ignored) {
             }
             try {
                 addDetailObject(result, new JSONObject(jsonText), articleMode);
                 return result;
-            } catch (Exception ignored) {
+            } catch (JSONException ignored) {
             }
             if (addStructured(result.blocks, result.imageUrls, jsonText)
                     && !result.blocks.isEmpty()) {
@@ -393,14 +395,14 @@ final class RichContent {
                 String suffix = value.substring(arrayEnd + 1).trim();
                 addReadableFragment(blocks, imageUrls, suffix);
                 return true;
-            } catch (Exception ignored) {
+            } catch (JSONException ignored) {
             }
         }
         if (isLikelyJsonArray(value)) {
             try {
                 addArray(blocks, imageUrls, new JSONArray(value));
                 return true;
-            } catch (Exception ignored) {
+            } catch (JSONException ignored) {
             }
         }
         return addObjectStream(blocks, imageUrls, value);
@@ -614,7 +616,7 @@ final class RichContent {
                         addObject(blocks, imageUrls, object);
                         found = true;
                         lastEnd = i + 1;
-                    } catch (Exception ignored) {
+                    } catch (JSONException ignored) {
                     }
                     start = -1;
                 }
@@ -683,7 +685,7 @@ final class RichContent {
     private static String decodeJsonString(String value) {
         try {
             return new JSONArray("[\"" + value + "\"]").optString(0);
-        } catch (Exception ignored) {
+        } catch (JSONException ignored) {
             return value;
         }
     }
@@ -1153,7 +1155,7 @@ final class RichContent {
                         "UTF-8");
                 if (next.equals(decoded)) break;
                 decoded = next;
-            } catch (Exception ignored) {
+            } catch (IllegalArgumentException | UnsupportedEncodingException ignored) {
                 break;
             }
         }
@@ -1178,7 +1180,7 @@ final class RichContent {
                         "UTF-8");
                 if (next.equals(decoded)) break;
                 decoded = next;
-            } catch (Exception ignored) {
+            } catch (IllegalArgumentException | UnsupportedEncodingException ignored) {
                 break;
             }
         }

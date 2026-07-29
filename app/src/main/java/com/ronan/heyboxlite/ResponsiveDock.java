@@ -7,12 +7,22 @@ final class ResponsiveDock {
     private ResponsiveDock() {}
 
     static Dimensions fromScreen(int widthPixels, int heightPixels) {
+        return fromScreen(widthPixels, heightPixels, false);
+    }
+
+    static Dimensions fromScreen(int widthPixels, int heightPixels,
+                                 boolean roundScreen) {
         int shortEdge = Math.max(1, Math.min(widthPixels, heightPixels));
-        int width = Math.max(72, Math.round(shortEdge * WIDTH_RATIO));
+        float widthRatio = roundScreen ? 0.27f : WIDTH_RATIO;
+        int width = Math.max(roundScreen ? 68 : 72,
+                Math.round(shortEdge * widthRatio));
         width = Math.min(width, Math.max(1, shortEdge - 16));
-        int height = Math.min(Math.max(28, Math.round(width * HEIGHT_TO_WIDTH_RATIO)),
+        float heightRatio = roundScreen ? 0.40f : HEIGHT_TO_WIDTH_RATIO;
+        int height = Math.min(Math.max(roundScreen ? 30 : 28,
+                        Math.round(width * heightRatio)),
                 Math.max(1, shortEdge - 4));
-        int marginBottom = Math.max(3, Math.round(shortEdge * 0.01f));
+        int marginBottom = Math.max(3, Math.round(shortEdge
+                * (roundScreen ? 0.075f : 0.01f)));
         int paddingHorizontal = Math.max(2, Math.round(height * 0.08f));
         int paddingVertical = Math.max(1, Math.round(height * 0.05f));
         int itemMargin = Math.max(1, Math.round(height * 0.05f));

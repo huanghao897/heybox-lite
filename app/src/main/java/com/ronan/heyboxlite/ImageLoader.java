@@ -28,11 +28,14 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.Charset;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
@@ -40,6 +43,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 final class ImageLoader {
+    private static final Charset UTF_8 = Charset.forName("UTF-8");
+
     interface Logger {
         void log(String message);
     }
@@ -802,11 +807,13 @@ final class ImageLoader {
     private static String hash(String value) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes("UTF-8"));
+                    .digest(value.getBytes(UTF_8));
             StringBuilder out = new StringBuilder(digest.length * 2);
-            for (byte item : digest) out.append(String.format("%02x", item & 0xff));
+            for (byte item : digest) {
+                out.append(String.format(Locale.ROOT, "%02x", item & 0xff));
+            }
             return out.toString();
-        } catch (Exception ignored) {
+        } catch (NoSuchAlgorithmException ignored) {
             return Integer.toHexString(value.hashCode()) + "000000000000";
         }
     }

@@ -74,6 +74,15 @@ public class ArticleTextTest {
     }
 
     @Test
+    public void consumeLeadingLabel_doesNotStripWordsStartingWithHint() {
+        List<String> paragraphs = new ArrayList<>();
+
+        assertEquals("提示性的普通正文",
+                ArticleText.consumeLeadingArticleLabel(paragraphs, "提示性的普通正文"));
+        assertTrue(paragraphs.isEmpty());
+    }
+
+    @Test
     public void articleParagraphs_splitsOnNewlines() {
         List<String> ps = ArticleText.articleParagraphs("第一段\n第二段");
         assertEquals(2, ps.size());
@@ -92,5 +101,13 @@ public class ArticleTextTest {
     public void normalizeBreaks_insertsBeforeNumberedItem() {
         assertTrue(ArticleText.normalizeArticleBreaks("结尾1.开始").contains("\n"));
         assertEquals("普通文本", ArticleText.normalizeArticleBreaks("普通文本"));
+    }
+
+    @Test
+    public void markdownEmphasis_isRemovedWithoutChangingOrdinaryStars() {
+        assertEquals("这是重点和提醒",
+                ArticleText.stripMarkdownEmphasis("这是**重点**和__提醒__"));
+        assertEquals("2 * 3 = 6", ArticleText.stripMarkdownEmphasis("2 * 3 = 6"));
+        assertEquals("* 列表项", ArticleText.stripMarkdownEmphasis("* 列表项"));
     }
 }

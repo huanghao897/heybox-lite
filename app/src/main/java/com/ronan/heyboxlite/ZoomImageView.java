@@ -1,6 +1,7 @@
 package com.ronan.heyboxlite;
 
 import android.animation.ValueAnimator;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Matrix;
 import android.graphics.RectF;
@@ -87,6 +88,7 @@ final class ZoomImageView extends ImageView {
         post(this::fitImage);
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     @Override public boolean onTouchEvent(MotionEvent event) {
         scaleDetector.onTouchEvent(event);
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {

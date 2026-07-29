@@ -11,10 +11,16 @@ import android.os.Build;
 import android.provider.Settings;
 import android.util.Base64;
 
-import org.json.JSONObject;
 import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
+import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
+import java.nio.charset.Charset;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -25,8 +31,6 @@ import java.util.TimeZone;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
 
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
@@ -34,6 +38,7 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 final class SessionStore {
+    private static final Charset UTF_8 = Charset.forName("UTF-8");
     private static final String USER_NAME = "user_name";
     private static final String AVATAR = "avatar";
     private static final String NO_IMAGE = "no_image";
@@ -452,14 +457,14 @@ final class SessionStore {
     /** 动画等级：0 关闭 / 1 精简 / 2 完整。首次按设备内存一次性判定并固化，之后完全听用户设置。 */
     int motionLevel() {
         int stored = prefs.getInt(MOTION_LEVEL, -1);
-        if (stored >= 0) return Math.min(2, stored);
+        if (stored >= 0) return MotionLevel.clamp(stored);
         int resolved = detectDefaultMotionLevel();
         prefs.edit().putInt(MOTION_LEVEL, resolved).apply();
         return resolved;
     }
 
     void setMotionLevel(int value) {
-        prefs.edit().putInt(MOTION_LEVEL, Math.max(0, Math.min(2, value))).apply();
+        prefs.edit().putInt(MOTION_LEVEL, MotionLevel.clamp(value)).apply();
     }
 
     private int detectDefaultMotionLevel() {
@@ -467,13 +472,14 @@ final class SessionStore {
             android.app.ActivityManager manager = (android.app.ActivityManager)
                     context.getSystemService(Context.ACTIVITY_SERVICE);
             if (manager != null) {
-                if (Build.VERSION.SDK_INT >= 19 && manager.isLowRamDevice()) return 0;
-                if (manager.getMemoryClass() <= 64) return 0;
+                if (Build.VERSION.SDK_INT >= 19 && manager.isLowRamDevice()) {
+                    return MotionLevel.OFF;
+                }
+                if (manager.getMemoryClass() <= 64) return MotionLevel.OFF;
             }
-        } catch (Exception ignored) {
+        } catch (RuntimeException ignored) {
         }
-        // 默认精简；“完整”只由用户主动选择
-        return 1;
+        return MotionLevel.REDUCED;
     }
 
     boolean doubleTapCommentReply() {
@@ -528,7 +534,7 @@ final class SessionStore {
     private JSONArray seenAnnouncementArray() {
         try {
             return new JSONArray(prefs.getString(SEEN_ANNOUNCEMENT_IDS, "[]"));
-        } catch (Exception ignored) {
+        } catch (JSONException ignored) {
             return new JSONArray();
         }
     }
@@ -906,7 +912,7 @@ final class SessionStore {
         if (clean.contains("\u6211\u4f1a\u7ee7\u7eed")
                 || clean.contains("\u63a5\u53e3\u6821\u9a8c\u8fd8\u6ca1")
                 || clean.contains("\u5b98\u65b9\u7b7e\u5230\u53c2\u6570")
-                || clean.toLowerCase(java.util.Locale.US).contains("native")) {
+                || clean.toLowerCase(Locale.US).contains("native")) {
             return "\u7b7e\u5230\u5931\u8d25\uff1a\u63a5\u53e3\u6821\u9a8c\u672a\u901a\u8fc7\uff0c"
                     + "\u5df2\u4fdd\u7559\u7b7e\u5230\u72b6\u6001\u663e\u793a";
         }
@@ -914,14 +920,14 @@ final class SessionStore {
     }
 
     List<String> searchHistory() {
-        List<String> values = new java.util.ArrayList<>();
+        List<String> values = new ArrayList<>();
         try {
             JSONArray array = new JSONArray(prefs.getString(SEARCH_HISTORY, "[]"));
             for (int i = 0; i < array.length(); i++) {
                 String value = array.optString(i).trim();
                 if (!value.isEmpty()) values.add(value);
             }
-        } catch (Exception ignored) {
+        } catch (JSONException ignored) {
         }
         return values;
     }
@@ -1029,7 +1035,7 @@ final class SessionStore {
         try {
             source = Settings.Secure.getString(
                     context.getContentResolver(), Settings.Secure.ANDROID_ID);
-        } catch (Throwable ignored) {
+        } catch (RuntimeException ignored) {
         }
         if (source == null || source.trim().isEmpty()
                 || "9774d56d682e549c".equalsIgnoreCase(source.trim())
@@ -1038,13 +1044,14 @@ final class SessionStore {
         }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update("heybox-lite-presence-v1:".getBytes("UTF-8"));
-            digest.update(source.trim().getBytes("UTF-8"));
+            digest.update("heybox-lite-presence-v1:"
+                    .getBytes(UTF_8));
+            digest.update(source.trim().getBytes(UTF_8));
             byte[] bytes = digest.digest();
             StringBuilder value = new StringBuilder(bytes.length * 2);
             for (byte item : bytes) value.append(String.format(Locale.US, "%02x", item & 0xff));
             return value.toString();
-        } catch (Exception ignored) {
+        } catch (NoSuchAlgorithmException ignored) {
             return UUID.randomUUID().toString().replace("-", "");
         }
     }
@@ -1551,7 +1558,7 @@ final class SessionStore {
                 }
                 break;
             }
-        } catch (Exception ignored) {
+        } catch (JSONException ignored) {
         }
         return hasReplayUrl(replay) ? replay : new LinkedHashMap<>();
     }
@@ -1704,7 +1711,7 @@ final class SessionStore {
         String clean = value.trim();
         try {
             return URLDecoder.decode(clean, "UTF-8").trim();
-        } catch (Exception ignored) {
+        } catch (IllegalArgumentException | UnsupportedEncodingException ignored) {
             return clean;
         }
     }

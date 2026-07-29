@@ -5,12 +5,13 @@ import android.graphics.Color;
 
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.MultiFormatWriter;
+import com.google.zxing.WriterException;
 import com.google.zxing.common.BitMatrix;
 
 final class QrCode {
     private QrCode() {}
 
-    static Bitmap create(String value, int size) throws Exception {
+    static Bitmap create(String value, int size) throws WriterException {
         BitMatrix matrix = new MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE, size, size);
         int[] pixels = new int[size * size];
         for (int y = 0; y < size; y++) {

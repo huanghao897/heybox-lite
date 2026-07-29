@@ -4,12 +4,15 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -23,6 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 
 final class LocalCache {
+    private static final Charset UTF_8 = Charset.forName("UTF-8");
     private static final String PREFS = "heybox_local_cache";
     private static final String FEED_ITEMS = "feed_items";
     private static final String FEED_SAVED_AT = "feed_saved_at";
@@ -156,7 +160,7 @@ final class LocalCache {
             if (trimOfflineComments(body)) write(source, body.toString());
             source.setLastModified(System.currentTimeMillis());
             return body;
-        } catch (Exception ignored) {
+        } catch (JSONException | SecurityException ignored) {
             return null;
         }
     }
@@ -164,7 +168,7 @@ final class LocalCache {
     private JSONObject copyForOffline(JSONObject body) {
         try {
             return new JSONObject(body.toString());
-        } catch (Exception ignored) {
+        } catch (JSONException ignored) {
             return null;
         }
     }
@@ -178,7 +182,7 @@ final class LocalCache {
         try {
             result.put("comments", limited);
             return true;
-        } catch (Exception ignored) {
+        } catch (JSONException ignored) {
             return false;
         }
     }
@@ -218,7 +222,7 @@ final class LocalCache {
                 entry.put("updated_at", System.currentTimeMillis());
                 entry.put("images", encodeStrings(imageUrls));
                 changed = true;
-            } catch (Exception ignored) {
+            } catch (JSONException ignored) {
             }
             break;
         }
@@ -306,7 +310,7 @@ final class LocalCache {
             entry.put("saved_at", savedAt);
             entry.put("updated_at", updatedAt);
             entry.put("images", encodeStrings(imageUrls));
-        } catch (Exception ignored) {
+        } catch (JSONException ignored) {
         }
         return entry;
     }
@@ -316,7 +320,7 @@ final class LocalCache {
         if (value.isEmpty()) return new JSONArray();
         try {
             return new JSONArray(value);
-        } catch (Exception ignored) {
+        } catch (JSONException ignored) {
             return new JSONArray();
         }
     }
@@ -487,7 +491,7 @@ final class LocalCache {
                 JSONObject object = array.optJSONObject(i);
                 if (object != null) items.add(FeedItem.from(object));
             }
-        } catch (Exception ignored) {
+        } catch (JSONException ignored) {
         }
         return items;
     }
@@ -544,9 +548,10 @@ final class LocalCache {
             File parent = file.getParentFile();
             if (parent != null) parent.mkdirs();
             try (FileOutputStream output = new FileOutputStream(file, false)) {
-                output.write((value == null ? "" : value).getBytes("UTF-8"));
+                output.write((value == null ? "" : value)
+                        .getBytes(UTF_8));
             }
-        } catch (Exception ignored) {
+        } catch (IOException | SecurityException ignored) {
         }
     }
 
@@ -555,16 +560,20 @@ final class LocalCache {
     }
 
     private static String readStatic(File file) {
-        if (file == null || !file.exists()) return "";
+        try {
+            if (file == null || !file.exists()) return "";
+        } catch (SecurityException ignored) {
+            return "";
+        }
         try (FileInputStream input = new FileInputStream(file);
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[4096];
             int count;
             while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
-            return output.toString("UTF-8");
+            return new String(output.toByteArray(), UTF_8);
         } catch (OutOfMemoryError ignored) {
             return "";
-        } catch (Exception ignored) {
+        } catch (IOException | SecurityException ignored) {
             return "";
         }
     }
