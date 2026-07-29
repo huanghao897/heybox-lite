@@ -121,6 +121,7 @@ public final class MainActivity extends Activity {
     private TextView leading;
     private TextView action;
     private FeedAdapter feedAdapter;
+    private final FeedExposureTracker feedExposureTracker = new FeedExposureTracker();
     private ListView feedListView;
     private ListView cachedFeedListView;
     private View cachedFeedContainer;
@@ -1798,6 +1799,8 @@ public final class MainActivity extends Activity {
                     MainActivity.this.feedFirstVisible = Math.max(0, first);
                     View firstChild = view2.getChildAt(0);
                     MainActivity.this.feedFirstTop = firstChild == null ? 0 : firstChild.getTop();
+                    MainActivity.this.feedExposureTracker.markVisible(
+                            MainActivity.this.feed, first, visible, list.getHeaderViewsCount());
                 }
                 int remaining = total - first - visible;
                 if (total > 0 && remaining <= 5
@@ -2157,9 +2160,11 @@ public final class MainActivity extends Activity {
         }
         final int pull = reset ? 1 : 0;
         final String requestedLastval = this.feedLastval;
+        String unexposed = this.feedExposureTracker.valueForRequest(
+                reset, System.currentTimeMillis());
         Map<String, String> params = OfficialRequestParams.feed(
                 pull, this.feedLastPull, requestedLastval, this.feedFirstRequest,
-                null, reset ? refreshType : null);
+                unexposed, reset ? refreshType : null);
         this.api.get(EndpointProvider.feeds(), params, new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
@@ -2176,6 +2181,7 @@ public final class MainActivity extends Activity {
                     String responseLastval = result == null ? "" : result.optString("lastval", "");
                     boolean keepPrevious = Json.truthy(result, "keep_previous");
                     List<FeedItem> fresh = new ArrayList<>();
+                    List<FeedItem> loaded = new ArrayList<>();
                     int returned = 0;
                     int added = 0;
                     if (links != null) {
@@ -2183,6 +2189,7 @@ public final class MainActivity extends Activity {
                             JSONObject item = links.optJSONObject(i);
                             if (item != null) {
                                 FeedItem parsed = FeedItem.from(item);
+                                loaded.add(parsed);
                                 if (!FeedCollection.isBlocked(parsed, MainActivity.this.session.blockKeywordList())) {
                                     fresh.add(parsed);
                                 }
@@ -2190,6 +2197,8 @@ public final class MainActivity extends Activity {
                             }
                         }
                     }
+                    MainActivity.this.feedExposureTracker.recordLoaded(
+                            loaded, System.currentTimeMillis());
                     if (reset && fresh.isEmpty() && previous != null && !previous.isEmpty()) {
                         MainActivity.this.toast("没有获取到新内容，已保留原列表");
                     } else if (!reset && returned == 0) {

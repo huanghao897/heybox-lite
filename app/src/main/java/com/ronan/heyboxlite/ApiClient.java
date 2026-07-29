@@ -304,7 +304,7 @@ final class ApiClient {
     private void requestThroughGateway(String path, Map<String, String> extra,
                                        Callback callback) throws Exception {
         long appStartedAt = SystemClock.elapsedRealtime();
-        Map<String, String> params = new LinkedHashMap<>(session.commonParams());
+        Map<String, String> params = new LinkedHashMap<>(session.gatewayMobileParams());
         if (extra != null) params.putAll(extra);
         HeyboxGatewayClient.Result result = HeyboxGatewayClient.get(session, path, params);
         long validateStartedAt = SystemClock.elapsedRealtime();

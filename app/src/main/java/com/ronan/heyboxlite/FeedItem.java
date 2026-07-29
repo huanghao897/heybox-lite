@@ -153,11 +153,18 @@ final class FeedItem {
     }
 
     private static boolean isArticle(JSONObject json) {
-        if (json.has("use_concept_type")) return json.optInt("use_concept_type", 1) == 0;
-        if (json.optBoolean("is_article", false)) return true;
+        if (json.has("is_article")) return Json.truthy(json, "is_article");
+        int contentType = json.optInt("content_type", Integer.MIN_VALUE);
+        if (contentType == 101 || contentType == 103) return true;
+        if (contentType == 102) return false;
         String type = json.optString("link_type",
                 json.optString("content_type", json.optString("type")));
-        return "article".equalsIgnoreCase(type) || "文章".equals(type);
+        if ("article".equalsIgnoreCase(type) || "news".equalsIgnoreCase(type)
+                || "文章".equals(type)) {
+            return true;
+        }
+        return json.has("use_concept_type")
+                && "0".equals(String.valueOf(json.opt("use_concept_type")));
     }
 
     private static String hsrc(JSONObject json) {
@@ -245,12 +252,49 @@ final class FeedItem {
         addTopicValues(names, json.optJSONArray("topics"));
         addTopicValues(names, json.optJSONArray("topic_list"));
         addTopicValues(names, json.optJSONArray("tags"));
+        addTopicValues(names, json.optJSONArray("content_tags"));
+        addTopicValues(names, json.optJSONArray("list_content_tags"));
+        addTopicValues(names, json.optJSONArray("hashtags"));
+        addTopicValues(names, json.optJSONArray("act_hashtags"));
         addTopicValue(names, json.opt("topic"));
         addTopicValue(names, json.opt("tag"));
         addTopicValue(names, json.opt("topic_name"));
         addTopicValue(names, json.opt("tag_name"));
         addTopicValue(names, json.opt("category"));
+        addTopicValue(names, json.opt("post_tag"));
+        addTopicValue(names, json.opt("extra_tag"));
+        addTopicValue(names, json.opt("link_extra_tag"));
+        addUiKitLabels(names, json.opt("link_extra_tag_v2"), 0);
+        JSONObject nestedLink = json.optJSONObject("link");
+        if (nestedLink != null && nestedLink != json) {
+            addUnique(names, topicNames(nestedLink));
+        }
+        JSONObject linkContent = json.optJSONObject("link_content");
+        if (linkContent != null && linkContent != json) {
+            addUnique(names, topicNames(linkContent));
+        }
         return names;
+    }
+
+    private static void addUiKitLabels(List<String> names, Object value, int depth) {
+        if (depth > 3 || value == null || value == JSONObject.NULL) return;
+        if (value instanceof JSONArray) {
+            JSONArray array = (JSONArray) value;
+            for (int index = 0; index < array.length(); index++) {
+                addUiKitLabels(names, array.opt(index), depth + 1);
+            }
+            return;
+        }
+        if (!(value instanceof JSONObject)) return;
+        JSONObject object = (JSONObject) value;
+        addTopicValue(names, object);
+        addUiKitLabels(names, object.opt("children"), depth + 1);
+    }
+
+    private static void addUnique(List<String> names, List<String> candidates) {
+        for (String value : candidates) {
+            if (!names.contains(value)) names.add(value);
+        }
     }
 
     private static void addTopicValues(List<String> names, JSONArray values) {
@@ -266,11 +310,22 @@ final class FeedItem {
             JSONObject object = (JSONObject) value;
             label = first(object.optString("name"), object.optString("title"),
                     object.optString("topic_name"), object.optString("tag_name"),
-                    object.optString("label"));
+                    object.optString("label"), object.optString("text"));
         } else if (value instanceof String) {
             label = ((String) value).trim();
         }
-        if (!label.isEmpty() && !names.contains(label)) names.add(label);
+        if (!isReadableLabel(label) || names.contains(label)) return;
+        names.add(label);
+    }
+
+    private static boolean isReadableLabel(String value) {
+        if (value == null) return false;
+        String clean = value.trim();
+        if (clean.isEmpty() || clean.length() > 32 || clean.matches("\\d+")) return false;
+        return !clean.startsWith("http://")
+                && !clean.startsWith("https://")
+                && !clean.startsWith("{")
+                && !clean.startsWith("[");
     }
 
     private static String[] images(JSONArray primary, JSONArray secondary, String... extra) {

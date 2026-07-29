@@ -64,4 +64,34 @@ public class FeedItemTest {
         assertEquals("游戏", FeedItem.topicName(
                 new JSONObject().put("tag_name", "游戏")));
     }
+
+    @Test
+    public void topicNameReadsCurrentFeedContentTags() throws Exception {
+        JSONObject value = new JSONObject()
+                .put("content_tags", new JSONArray()
+                        .put(new JSONObject().put("text", "硬件交流")))
+                .put("link_tag", 27);
+
+        assertEquals("硬件交流", FeedItem.topicName(value));
+
+        JSONObject uiKitTag = new JSONObject()
+                .put("link_extra_tag_v2", new JSONObject()
+                        .put("children", new JSONArray()
+                                .put(new JSONObject().put("text", "评测"))));
+        assertEquals("评测", FeedItem.topicName(uiKitTag));
+    }
+
+    @Test
+    public void distinguishesOfficialArticleAndPostTypes() throws Exception {
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "article")
+                .put("is_article", 1)
+                .put("use_concept_type", 1)).article);
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "news")
+                .put("content_type", 101)).article);
+        assertFalse(FeedItem.from(new JSONObject()
+                .put("linkid", "post")
+                .put("content_type", 102)).article);
+    }
 }

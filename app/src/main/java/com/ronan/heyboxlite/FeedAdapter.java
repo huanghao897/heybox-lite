@@ -267,10 +267,10 @@ final class FeedAdapter extends BaseAdapter {
         holder.description.setVisibility(description.isEmpty() ? View.GONE : View.VISIBLE);
         holder.author.setText(item.author.isEmpty() ? "小黑盒社区" : item.author);
         holder.meta.setText(feedMeta(item));
-        holder.badge.setText(item.pinned ? "置顶" : "文章");
+        String contentType = item.article ? "文章" : "帖子";
+        holder.badge.setText(item.pinned ? "置顶 · " + contentType : contentType);
         holder.badge.setTextColor(item.pinned ? tokens.accent : mutedColor);
-        holder.badge.setVisibility(item.pinned || item.article
-                ? View.VISIBLE : View.GONE);
+        holder.badge.setVisibility(View.VISIBLE);
         holder.topic.setText(item.topicName);
         holder.topic.setVisibility(item.topicName.isEmpty() ? View.GONE : View.VISIBLE);
         updateFollowView(holder.follow, item);
