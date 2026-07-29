@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -22,6 +23,8 @@ import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -42,10 +45,15 @@ public final class ImageViewerActivity extends Activity {
 
     private FrameLayout root;
     private GalleryPager pager;
+    private FrameLayout[] imagePages;
     private ZoomImageView[] images;
     private LoadingSpinnerView[] spinners;
     private boolean[] loaded;
     private boolean[] originalLoaded;
+    private boolean[] longCandidates;
+    private boolean[] longLoading;
+    private int[] longRequestIds;
+    private ScrollView[] longViews;
     private long[] sizes;
     private String[] urls;
     private int current;
@@ -72,10 +80,15 @@ public final class ImageViewerActivity extends Activity {
         urls = resolveUrls();
         current = Math.max(0, Math.min(urls.length - 1, getIntent().getIntExtra(EXTRA_INDEX, 0)));
         int count = urls.length;
+        imagePages = new FrameLayout[count];
         images = new ZoomImageView[count];
         spinners = new LoadingSpinnerView[count];
         loaded = new boolean[count];
         originalLoaded = new boolean[count];
+        longCandidates = new boolean[count];
+        longLoading = new boolean[count];
+        longRequestIds = new int[count];
+        longViews = new ScrollView[count];
         sizes = new long[count];
         for (int i = 0; i < count; i++) sizes[i] = -1L;
 
@@ -92,6 +105,7 @@ public final class ImageViewerActivity extends Activity {
             spinner.setColor(Color.argb(210, 235, 238, 241));
             page.addView(spinner, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
             pager.addView(page, new ViewGroup.LayoutParams(-1, -1));
+            imagePages[i] = page;
             images[i] = view;
             spinners[i] = spinner;
         }
@@ -179,11 +193,16 @@ public final class ImageViewerActivity extends Activity {
     /** 翻到某页时同步：加载预览、更新页码、复位并刷新“查看原图（大小）”。 */
     private void onPageSelected(int index) {
         if (index == current) return;
+        int previous = current;
+        cancelLongLoad(previous);
         current = index;
         bindPage(index, false);
         preloadNeighbors(index);
         counter.setText((index + 1) + "/" + urls.length);
         refreshOriginalLabel();
+        pager.postDelayed(() -> {
+            if (!destroyed && current != previous) releaseLongPage(previous);
+        }, 300L);
     }
 
     private void bindPage(int index, boolean startup) {
@@ -204,7 +223,10 @@ public final class ImageViewerActivity extends Activity {
     }
 
     private void ensurePreview(int index) {
-        if (loaded[index]) return;
+        if (loaded[index]) {
+            maybeLoadLongPage(index);
+            return;
+        }
         loaded[index] = true;
         final ZoomImageView view = images[index];
         final LoadingSpinnerView spinner = spinners[index];
@@ -222,6 +244,7 @@ public final class ImageViewerActivity extends Activity {
             }
             view.setImageBitmap(bitmap);
             view.post(view::fitImage);
+            updateLongCandidate(index, bitmap);
             if (index == current && startupFade(view)) {
                 view.setAlpha(0f);
                 view.animate().alpha(1f).setDuration(150)
@@ -248,7 +271,126 @@ public final class ImageViewerActivity extends Activity {
         spinners[index].setVisibility(View.GONE);
         images[index].setImageBitmap(bitmap);
         images[index].post(images[index]::fitImage);
+        updateLongCandidate(index, bitmap);
         return true;
+    }
+
+    private void updateLongCandidate(int index, Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled() || GifSupport.isGifUrl(urls[index])) return;
+        longCandidates[index] = bitmap.getWidth() > 0
+                && bitmap.getHeight() > bitmap.getWidth() * 3L;
+        maybeLoadLongPage(index);
+    }
+
+    private void maybeLoadLongPage(int index) {
+        if (destroyed || index != current || !longCandidates[index]
+                || longLoading[index] || longViews[index] != null) {
+            return;
+        }
+        longLoading[index] = true;
+        int requestId = ++longRequestIds[index];
+        ImageLoader.loadLongImageTiles(urls[index],
+                getResources().getDisplayMetrics().widthPixels,
+                new ImageLoader.LongImageCallback() {
+                    @Override
+                    public boolean cancelled() {
+                        return destroyed || index != current
+                                || requestId != longRequestIds[index];
+                    }
+
+                    @Override
+                    public void onStart(int width, int height, int tileCount) {
+                        if (cancelled()) return;
+                        ScrollView scroll = new ScrollView(ImageViewerActivity.this);
+                        scroll.setFillViewport(false);
+                        scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+                        LinearLayout tiles = new LinearLayout(ImageViewerActivity.this);
+                        tiles.setOrientation(LinearLayout.VERTICAL);
+                        scroll.addView(tiles, new ScrollView.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT));
+                        scroll.setVisibility(View.INVISIBLE);
+                        imagePages[index].addView(scroll,
+                                new FrameLayout.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT));
+                        longViews[index] = scroll;
+                    }
+
+                    @Override
+                    public void onTile(int tileIndex, Bitmap bitmap) {
+                        ScrollView scroll = longViews[index];
+                        if (cancelled() || scroll == null || bitmap == null) {
+                            recycle(bitmap);
+                            return;
+                        }
+                        View child = scroll.getChildAt(0);
+                        if (!(child instanceof LinearLayout)) {
+                            recycle(bitmap);
+                            return;
+                        }
+                        ImageView tile = new ImageView(ImageViewerActivity.this);
+                        tile.setScaleType(ImageView.ScaleType.FIT_XY);
+                        tile.setImageBitmap(bitmap);
+                        int width = Math.max(1,
+                                getResources().getDisplayMetrics().widthPixels);
+                        int height = Math.max(1, Math.round(
+                                width * (bitmap.getHeight() / (float) bitmap.getWidth())));
+                        ((LinearLayout) child).addView(tile,
+                                new LinearLayout.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT, height));
+                        if (tileIndex == 0) {
+                            images[index].setVisibility(View.INVISIBLE);
+                            scroll.setVisibility(View.VISIBLE);
+                        }
+                    }
+
+                    @Override
+                    public void onComplete(boolean success) {
+                        if (requestId != longRequestIds[index]) return;
+                        longLoading[index] = false;
+                        if (!success || longViews[index] == null) {
+                            releaseLongPage(index);
+                            return;
+                        }
+                        originalLoaded[index] = true;
+                        if (index == current) refreshOriginalLabel();
+                    }
+                });
+    }
+
+    private void releaseLongPage(int index) {
+        if (index < 0 || index >= longViews.length) return;
+        cancelLongLoad(index);
+        ScrollView scroll = longViews[index];
+        longViews[index] = null;
+        if (scroll != null) {
+            View child = scroll.getChildAt(0);
+            if (child instanceof ViewGroup) {
+                ViewGroup tiles = (ViewGroup) child;
+                for (int i = 0; i < tiles.getChildCount(); i++) {
+                    View tile = tiles.getChildAt(i);
+                    if (tile instanceof ImageView) {
+                        Drawable drawable = ((ImageView) tile).getDrawable();
+                        if (drawable instanceof BitmapDrawable) {
+                            recycle(((BitmapDrawable) drawable).getBitmap());
+                        }
+                        ((ImageView) tile).setImageDrawable(null);
+                    }
+                }
+            }
+            imagePages[index].removeView(scroll);
+        }
+        images[index].setVisibility(View.VISIBLE);
+    }
+
+    private void cancelLongLoad(int index) {
+        longRequestIds[index]++;
+        longLoading[index] = false;
+    }
+
+    private void recycle(Bitmap bitmap) {
+        if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
     }
 
     private void probeSize(int index) {
@@ -314,6 +456,7 @@ public final class ImageViewerActivity extends Activity {
             view.setImageBitmap(bitmap);
             view.post(view::fitImage);
             view.animate().alpha(1f).setDuration(130).start();
+            updateLongCandidate(index, bitmap);
             if (index == current) refreshOriginalLabel();
         });
     }
@@ -401,6 +544,12 @@ public final class ImageViewerActivity extends Activity {
 
     @Override protected void onDestroy() {
         destroyed = true;
+        root.animate().cancel();
+        pager.animate().cancel();
+        pager.cancelSettle();
+        if (longViews != null) {
+            for (int i = 0; i < longViews.length; i++) releaseLongPage(i);
+        }
         if (images != null) {
             for (ZoomImageView view : images) {
                 if (view != null) ImageLoader.cancel(view);
@@ -411,8 +560,7 @@ public final class ImageViewerActivity extends Activity {
 
     private int previewTarget() {
         int width = getResources().getDisplayMetrics().widthPixels;
-        int height = getResources().getDisplayMetrics().heightPixels;
-        return Math.max(720, Math.min(1800, Math.max(width, height)));
+        return Math.max(480, Math.min(1440, Math.round(width * 1.25f)));
     }
 
     private int dp(int value) {
@@ -459,7 +607,9 @@ public final class ImageViewerActivity extends Activity {
             for (int i = 0; i < getChildCount(); i++) {
                 getChildAt(i).layout(i * width, 0, (i + 1) * width, height);
             }
-            scrollTo(this.page * width, 0);
+            if (!this.dragging && this.settleAnimator == null) {
+                scrollTo(this.page * width, 0);
+            }
         }
 
         @Override
@@ -510,7 +660,10 @@ public final class ImageViewerActivity extends Activity {
                     if (this.dragging) dragTo(event.getX() - this.startX);
                     break;
                 case MotionEvent.ACTION_UP:
-                    if (this.dragging) finishDrag(event);
+                    if (this.dragging) {
+                        finishDrag(event);
+                        performClick();
+                    }
                     this.dragging = false;
                     break;
                 case MotionEvent.ACTION_CANCEL:
@@ -519,6 +672,11 @@ public final class ImageViewerActivity extends Activity {
                     break;
             }
             return true;
+        }
+
+        @Override
+        public boolean performClick() {
+            return super.performClick();
         }
 
         private void dragTo(float dx) {

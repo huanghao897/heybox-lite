@@ -8,10 +8,12 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BitmapRegionDecoder;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.LruCache;
 import android.view.View;
 import android.view.ViewGroup;
@@ -35,8 +37,13 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 final class ImageLoader {
+    interface Logger {
+        void log(String message);
+    }
+
     interface Callback {
         void onLoaded(Bitmap bitmap);
     }
@@ -51,6 +58,13 @@ final class ImageLoader {
 
     interface PrefetchCallback {
         void onComplete(long bytes);
+    }
+
+    interface LongImageCallback {
+        boolean cancelled();
+        void onStart(int width, int height, int tileCount);
+        void onTile(int index, Bitmap bitmap);
+        void onComplete(boolean success);
     }
 
     private static final long MAX_HEAP_BYTES = Runtime.getRuntime().maxMemory();
@@ -73,6 +87,8 @@ final class ImageLoader {
             decodeThreadCount(MAX_HEAP_BYTES));
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final WeakHashMap<ImageView, ValueAnimator> REVEAL_ANIMATORS = new WeakHashMap<>();
+    private static final AtomicInteger PERFORMANCE_SAMPLES = new AtomicInteger();
+    private static volatile Logger performanceLogger;
 
     static synchronized void init(Context context) {
         if (context == null) return;
@@ -81,6 +97,10 @@ final class ImageLoader {
         offlineDir = new File(appContext.getFilesDir(),
                 "offline-cache/images");
         offlineDir.mkdirs();
+    }
+
+    static void setLogger(Logger logger) {
+        performanceLogger = logger;
     }
 
     static void into(ImageView view, String sourceUrl, int targetPx) {
@@ -360,6 +380,83 @@ final class ImageLoader {
         });
     }
 
+    static void loadLongImageTiles(String sourceUrl, int targetWidthPx,
+                                   LongImageCallback callback) {
+        String url = originalUrl(sourceUrl);
+        if (url.isEmpty() || callback == null) {
+            if (callback != null) MAIN.post(() -> callback.onComplete(false));
+            return;
+        }
+        EXECUTOR.execute(() -> {
+            long startedAt = SystemClock.elapsedRealtime();
+            byte[] bytes = readOffline(exactOfflineFile(url));
+            if (bytes == null && isNetworkConnected()) {
+                bytes = downloadBytes(url, MAX_DECODE_BYTES);
+                if (bytes != null) writeOffline(url, bytes);
+            }
+            if (bytes == null || callback.cancelled()) {
+                MAIN.post(() -> callback.onComplete(false));
+                return;
+            }
+            BitmapRegionDecoder decoder = null;
+            boolean success = false;
+            int decodedTiles = 0;
+            try {
+                decoder = BitmapRegionDecoder.newInstance(bytes, 0, bytes.length, false);
+                int width = decoder.getWidth();
+                int height = decoder.getHeight();
+                if (width <= 0 || height <= width * 3) {
+                    return;
+                }
+                int target = Math.max(240, targetWidthPx);
+                int sample = 1;
+                while (width / sample > Math.round(target * 1.25f)) sample *= 2;
+                int sourceTileHeight = Math.max(sample,
+                        target * 2 * sample);
+                int tileCount = Math.max(1,
+                        (height + sourceTileHeight - 1) / sourceTileHeight);
+                final int startWidth = width;
+                final int startHeight = height;
+                final int startTileCount = tileCount;
+                MAIN.post(() -> callback.onStart(
+                        startWidth, startHeight, startTileCount));
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inPreferredConfig = Bitmap.Config.RGB_565;
+                options.inSampleSize = sample;
+                for (int index = 0; index < tileCount; index++) {
+                    if (callback.cancelled()) break;
+                    int top = index * sourceTileHeight;
+                    int bottom = Math.min(height, top + sourceTileHeight);
+                    Bitmap tile = decoder.decodeRegion(
+                            new Rect(0, top, width, bottom), options);
+                    if (tile == null) break;
+                    int tileIndex = index;
+                    MAIN.post(() -> {
+                        if (callback.cancelled()) {
+                            tile.recycle();
+                        } else {
+                            callback.onTile(tileIndex, tile);
+                        }
+                    });
+                    decodedTiles++;
+                }
+                success = decodedTiles == tileCount && !callback.cancelled();
+            } catch (OutOfMemoryError error) {
+                CACHE.evictAll();
+            } catch (Exception ignored) {
+            } finally {
+                if (decoder != null) decoder.recycle();
+                boolean completed = success;
+                int tiles = decodedTiles;
+                logPerformance("perf image stage=long-tiles tiles=" + tiles
+                        + " totalMs=" + Math.max(0L,
+                        SystemClock.elapsedRealtime() - startedAt)
+                        + " success=" + completed);
+                MAIN.post(() -> callback.onComplete(completed));
+            }
+        });
+    }
+
     /** 详情页动图：拉原始 GIF 字节，后台解码，成功后替换已显示的静态缩略图。 */
     static void intoGif(ImageView view, String sourceUrl) {
         intoGif(view, sourceUrl, null);
@@ -430,6 +527,7 @@ final class ImageLoader {
     private static byte[] downloadBytes(String url, int maxBytes) {
         HttpURLConnection connection = null;
         try {
+            long networkStartedAt = SystemClock.elapsedRealtime();
             connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setConnectTimeout(8000);
             connection.setReadTimeout(15000);
@@ -445,7 +543,11 @@ final class ImageLoader {
                     if (output.size() + count > maxBytes) return null;
                     output.write(buffer, 0, count);
                 }
-                return output.toByteArray();
+                byte[] bytes = output.toByteArray();
+                logPerformance("perf image stage=raw-download bytes=" + bytes.length
+                        + " networkMs=" + Math.max(0L,
+                        SystemClock.elapsedRealtime() - networkStartedAt));
+                return bytes;
             }
         } catch (Throwable ignored) {
             return null;
@@ -457,6 +559,7 @@ final class ImageLoader {
     static void cancel(ImageView view) {
         if (view != null) {
             clearReveal(view);
+            GifSupport.setRunning(view.getDrawable(), false);
             view.setTag(null);
         }
     }
@@ -491,6 +594,7 @@ final class ImageLoader {
         if (!isNetworkConnected()) return offlineFallback(url, targetPx);
         HttpURLConnection connection = null;
         try {
+            long networkStartedAt = SystemClock.elapsedRealtime();
             connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setConnectTimeout(8000);
             connection.setReadTimeout(12000);
@@ -511,6 +615,9 @@ final class ImageLoader {
                 }
                 bytes = output.toByteArray();
             }
+            logPerformance("perf image stage=download bytes=" + bytes.length
+                    + " networkMs="
+                    + Math.max(0L, SystemClock.elapsedRealtime() - networkStartedAt));
 
             writeOffline(url, bytes);
             Bitmap bitmap = decode(bytes, targetPx);
@@ -547,6 +654,7 @@ final class ImageLoader {
 
     private static Bitmap decode(byte[] bytes, int targetPx) {
         if (bytes == null || bytes.length == 0) return null;
+        long startedAt = SystemClock.elapsedRealtime();
         synchronized (DECODE_LOCK) {
             try {
                 BitmapFactory.Options bounds = new BitmapFactory.Options();
@@ -554,22 +662,52 @@ final class ImageLoader {
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
                 BitmapFactory.Options options = decodeOptions(bounds, targetPx);
                 try {
-                    return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(
+                            bytes, 0, bytes.length, options);
+                    logDecode(bytes.length, targetPx, bounds, options, bitmap, startedAt);
+                    return bitmap;
                 } catch (OutOfMemoryError firstFailure) {
                     CACHE.evictAll();
                     options.inSampleSize = Math.min(128,
                             Math.max(2, options.inSampleSize * 2));
                     try {
-                        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+                        Bitmap bitmap = BitmapFactory.decodeByteArray(
+                                bytes, 0, bytes.length, options);
+                        logDecode(bytes.length, targetPx, bounds, options, bitmap, startedAt);
+                        return bitmap;
                     } catch (OutOfMemoryError ignored) {
+                        logDecode(bytes.length, targetPx, bounds, options, null, startedAt);
                         return null;
                     }
                 }
             } catch (OutOfMemoryError ignored) {
                 CACHE.evictAll();
+                logPerformance("perf image stage=decode result=oom bytes=" + bytes.length
+                        + " targetPx=" + targetPx);
                 return null;
             }
         }
+    }
+
+    private static void logDecode(int bytes, int targetPx,
+                                  BitmapFactory.Options bounds,
+                                  BitmapFactory.Options options,
+                                  Bitmap bitmap, long startedAt) {
+        long elapsed = Math.max(0L, SystemClock.elapsedRealtime() - startedAt);
+        if (elapsed < 40L && PERFORMANCE_SAMPLES.incrementAndGet() > 24) return;
+        logPerformance("perf image stage=decode bytes=" + bytes
+                + " targetPx=" + targetPx
+                + " source=" + Math.max(0, bounds.outWidth) + "x"
+                + Math.max(0, bounds.outHeight)
+                + " sample=" + Math.max(1, options.inSampleSize)
+                + " result=" + (bitmap == null ? "failed"
+                : bitmap.getWidth() + "x" + bitmap.getHeight())
+                + " decodeMs=" + elapsed);
+    }
+
+    private static void logPerformance(String message) {
+        Logger logger = performanceLogger;
+        if (logger != null) logger.log(message);
     }
 
     private static BitmapFactory.Options decodeOptions(BitmapFactory.Options bounds,

@@ -45,6 +45,8 @@ final class FeedAdapter extends BaseAdapter {
     private final int secondaryColor;
     private final ThemeTokens tokens;
     private final boolean compactScreen;
+    private final int avatarTargetPx;
+    private final int coverTargetPx;
     private final Set<String> animatedItems = new HashSet<>();
     private int initialAnimationCount;
 
@@ -76,6 +78,8 @@ final class FeedAdapter extends BaseAdapter {
         float widthDp = context.getResources().getDisplayMetrics().widthPixels
                 / context.getResources().getDisplayMetrics().density;
         compactScreen = widthDp <= 390f;
+        avatarTargetPx = dp(28);
+        coverTargetPx = dp(compactScreen ? 88 : 104);
         if (!EmojiStore.isLoaded()) EmojiStore.whenReady(this::notifyDataSetChanged);
     }
 
@@ -212,7 +216,7 @@ final class FeedAdapter extends BaseAdapter {
         boolean showAvatar = !noImage && !item.authorAvatar.isEmpty();
         if (showAvatar) {
             Compat.setBackground(holder.avatar, round(coverPlaceholderColor(), 14));
-            ImageLoader.intoPlain(holder.avatar, item.authorAvatar, 96);
+            ImageLoader.intoPlain(holder.avatar, item.authorAvatar, avatarTargetPx);
         } else {
             ImageLoader.cancel(holder.avatar);
             holder.avatar.setImageDrawable(null);
@@ -225,7 +229,7 @@ final class FeedAdapter extends BaseAdapter {
         holder.cover.setVisibility(showImage ? View.VISIBLE : View.GONE);
         if (showImage) {
             Compat.setBackground(holder.cover, round(coverPlaceholderColor(), 8));
-            ImageLoader.intoPlain(holder.cover, item.image, 320);
+            ImageLoader.intoPlain(holder.cover, item.image, coverTargetPx);
         } else {
             ImageLoader.cancel(holder.cover);
             holder.cover.setImageDrawable(null);

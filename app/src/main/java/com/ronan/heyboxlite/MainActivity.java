@@ -30,6 +30,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
@@ -171,6 +172,9 @@ public final class MainActivity extends Activity {
     private String currentAuthCode = "";
     private String lastDetailDiagnostics = "";
     private JSONObject currentDetailBody;
+    private boolean detailHasRendered;
+    private long detailLoadStartedAt;
+    private JSONObject pendingDetailBody;
     private boolean activityResumed;
     private boolean diagnosticsUploadInFlight;
     private boolean accountBlockedScreen;
@@ -242,6 +246,7 @@ public final class MainActivity extends Activity {
         });
         this.readingTimeTracker = new ReadingTimeTracker(this);
         ImageLoader.init(this);
+        ImageLoader.setLogger(this.localCache::log);
         if (this.session.autoOfflineCleanup()) {
             pruneOfflineCache(null);
         }
@@ -1710,7 +1715,7 @@ public final class MainActivity extends Activity {
         list.setOverScrollMode(View.OVER_SCROLL_NEVER);
         list.setSelector(new ColorDrawable(0));
         list.setPullRefreshAction(() -> {
-            loadFeed(true);
+            if (!loadFeed(true)) list.setRefreshing(false);
         });
         list.addHeaderView(feedTopBar(), null, false);
         this.feedFooter = feedFooterView();
@@ -1730,7 +1735,10 @@ public final class MainActivity extends Activity {
                     View firstChild = view2.getChildAt(0);
                     MainActivity.this.feedFirstTop = firstChild == null ? 0 : firstChild.getTop();
                 }
-                if (total > 0 && first + visible >= total - 2 && !MainActivity.this.feedNoMore && !MainActivity.this.feedLoadMoreFailed) {
+                int remaining = total - first - visible;
+                if (total > 0 && remaining <= 5
+                        && !MainActivity.this.feedNoMore
+                        && !MainActivity.this.feedLoadMoreFailed) {
                     MainActivity.this.loadFeed(false);
                 }
             }
@@ -2032,7 +2040,7 @@ public final class MainActivity extends Activity {
 
     private boolean loadFeed(final boolean reset, String refreshType) {
         if (reset) {
-            if (this.feedRefreshing) {
+            if (this.feedRefreshing || this.feedLoadingMore) {
                 return false;
             }
             this.feedRefreshing = true;
@@ -2048,6 +2056,7 @@ public final class MainActivity extends Activity {
         updateFeedFooter();
         final int requestSerial = this.feedRequestSerial + 1;
         this.feedRequestSerial = requestSerial;
+        final long loadStartedAt = SystemClock.elapsedRealtime();
         if (reset) {
             this.feedResetSerial = requestSerial;
         }
@@ -2130,6 +2139,15 @@ public final class MainActivity extends Activity {
                     MainActivity.this.updateFeedFooter();
                     if (MainActivity.this.feedAdapter != null) {
                         MainActivity.this.feedAdapter.notifyDataSetChanged();
+                    }
+                    if (MainActivity.this.feedListView != null) {
+                        MainActivity.this.feedListView.post(() ->
+                                MainActivity.this.localCache.log(
+                                        "perf app stage=feed-first-frame mode="
+                                                + (reset ? "refresh" : "prefetch")
+                                                + " totalMs=" + Math.max(0L,
+                                                SystemClock.elapsedRealtime()
+                                                        - loadStartedAt)));
                     }
                     if (reset) {
                         MainActivity.this.setFeedRefreshBusy(false, refreshList, requestSerial);
@@ -2385,7 +2403,8 @@ public final class MainActivity extends Activity {
 
             @Override
             public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount, int totalItemCount) {
-                if (totalItemCount > 0 && firstVisibleItem + visibleItemCount >= totalItemCount - 2) {
+                int remaining = totalItemCount - firstVisibleItem - visibleItemCount;
+                if (totalItemCount > 0 && remaining <= 5) {
                     MainActivity.this.loadMoreSearchResults(adapter, footer);
                 }
             }
@@ -2584,6 +2603,9 @@ public final class MainActivity extends Activity {
         this.currentAuthCode = "";
         this.currentDetailItem = item;
         this.currentDetailBody = null;
+        this.detailHasRendered = false;
+        this.pendingDetailBody = null;
+        this.detailLoadStartedAt = SystemClock.elapsedRealtime();
         this.subCommentStates.clear();
         this.localCache.rememberRecent(item);
         if (this.shellBar != null) {
@@ -2599,9 +2621,14 @@ public final class MainActivity extends Activity {
         transitionTo(detailLoadingPage());
         final int requestToken = this.detailRequestToken + 1;
         this.detailRequestToken = requestToken;
+        renderDetailAfterEntry(item, requestToken);
         if (!isNetworkConnected()) {
-            hideLoading();
-            handleDetailFailure(item, "当前无网络");
+            runAfterDetailEntry(() -> {
+                if (isCurrentDetailRequest(item, requestToken)) {
+                    hideLoading();
+                    handleDetailFailure(item, "当前无网络");
+                }
+            });
             return;
         }
         this.api.get(EndpointProvider.linkTreeV2(), detailParams(item), new ApiClient.Callback() {
@@ -2611,9 +2638,11 @@ public final class MainActivity extends Activity {
                     MainActivity.this.hideLoading();
                     String blocked = MainActivity.this.detailBlockedMessage(body);
                     if (!blocked.isEmpty()) {
-                        MainActivity.this.handleDetailFailure(item, blocked);
+                        MainActivity.this.handleDetailFailureAfterEntry(
+                                item, requestToken, blocked);
                     } else if (!MainActivity.this.hasDetailLink(body)) {
-                        MainActivity.this.handleDetailFailure(item, "详情数据为空");
+                        MainActivity.this.handleDetailFailureAfterEntry(
+                                item, requestToken, "详情数据为空");
                     } else {
                         MainActivity.this.cacheDetailAndRender(item, body);
                     }
@@ -2624,7 +2653,8 @@ public final class MainActivity extends Activity {
             public void onError(String message) {
                 if (MainActivity.this.isCurrentDetailRequest(item, requestToken)) {
                     MainActivity.this.hideLoading();
-                    MainActivity.this.handleDetailFailure(item, message);
+                    MainActivity.this.handleDetailFailureAfterEntry(
+                            item, requestToken, message);
                 }
             }
         });
@@ -2640,7 +2670,47 @@ public final class MainActivity extends Activity {
         if (this.localCache.isWatchLater(item.id)) {
             refreshWatchLaterOffline(item, normalized, null);
         }
-        renderDetail(normalized, item);
+        this.pendingDetailBody = normalized;
+        renderDetailAfterEntry(item, this.detailRequestToken);
+    }
+
+    private void renderDetailAfterEntry(FeedItem item, int requestToken) {
+        runAfterDetailEntry(() -> {
+            if (!isCurrentDetailRequest(item, requestToken)) return;
+            JSONObject body = this.pendingDetailBody;
+            this.pendingDetailBody = null;
+            if (body == null && !this.detailHasRendered) {
+                body = initialDetailBody(item);
+            }
+            if (body != null) renderDetail(body, item);
+        });
+    }
+
+    private void runAfterDetailEntry(Runnable action) {
+        long elapsed = Math.max(0L,
+                SystemClock.elapsedRealtime() - this.detailLoadStartedAt);
+        long delay = Math.max(0L, MotionSpec.TRANSITION_FULL_MS - elapsed);
+        this.handler.postDelayed(action, delay);
+    }
+
+    private JSONObject initialDetailBody(FeedItem item) {
+        JSONObject cached = this.localCache.detail(item.id);
+        if (cached != null && detailBlockedMessage(cached).isEmpty()
+                && hasDetailLink(cached)) {
+            this.localCache.log("perf app stage=detail-cache-hit link=true");
+            return cached;
+        }
+        try {
+            JSONObject result = new JSONObject();
+            result.put("link", item.toJson());
+            result.put("comments", new JSONArray());
+            JSONObject body = new JSONObject();
+            body.put("result", result);
+            body.put("_progressive_preview", true);
+            return body;
+        } catch (Exception error) {
+            return null;
+        }
     }
 
     private Map<String, String> detailParams(FeedItem item) {
@@ -2660,6 +2730,10 @@ public final class MainActivity extends Activity {
 
     private void handleDetailFailure(FeedItem item, String message) {
         this.localCache.log("detail failed " + item.id + ": " + message);
+        if (this.detailHasRendered) {
+            toast("详情更新失败，已保留当前内容");
+            return;
+        }
         JSONObject cached = this.localCache.detail(item.id);
         if (cached != null && detailBlockedMessage(cached).isEmpty() && hasDetailLink(cached)) {
             toast(MSG_OFFLINE_CACHE);
@@ -2667,6 +2741,15 @@ public final class MainActivity extends Activity {
         } else if (!renderFallbackDetail(item, message)) {
             showMessage("详情加载失败\n" + message);
         }
+    }
+
+    private void handleDetailFailureAfterEntry(FeedItem item, int requestToken,
+                                               String message) {
+        runAfterDetailEntry(() -> {
+            if (isCurrentDetailRequest(item, requestToken)) {
+                handleDetailFailure(item, message);
+            }
+        });
     }
 
     private boolean renderFallbackDetail(FeedItem item, String reason) {
@@ -2746,6 +2829,13 @@ public final class MainActivity extends Activity {
     }
 
     private void renderDetail(JSONObject body, FeedItem fallback) {
+        boolean replacing = this.detailHasRendered;
+        boolean previousComments = replacing && this.detailPager != null
+                && this.detailPager.showingComments();
+        int previousArticleScroll = replacing && this.detailScroll != null
+                ? this.detailScroll.getScrollY() : 0;
+        int previousCommentScroll = replacing && this.detailCommentScroll != null
+                ? this.detailCommentScroll.getScrollY() : 0;
         body = DetailResponseNormalizer.normalize(body);
         this.currentDetailBody = body;
         JSONObject result = body.optJSONObject("result");
@@ -2826,15 +2916,14 @@ public final class MainActivity extends Activity {
         }
         addDetailActions(article, fallback, link);
         page.addView(article);
-        addDetailCommentSection(page, comments);
+        LinearLayout articleCommentHost = deferredCommentHost(page, comments);
         ScrollView commentScroll = new ScrollView(this);
         commentScroll.setBackgroundColor(this.BG);
         LinearLayout commentPage = vertical(this.BG);
         commentPage.setPadding(pagePadding, dp(50), pagePadding, dp(18));
         commentScroll.addView(commentPage);
-        addDetailCommentSection(commentPage, comments);
+        LinearLayout commentPageHost = deferredCommentHost(commentPage, comments);
         pager.setPages(detailReturnPreview(), articleScroll, commentScroll);
-        pager.setReturnView(this.detailReturnView);
         FrameLayout detailRoot = new FrameLayout(this);
         detailRoot.setBackgroundColor(this.BG);
         detailRoot.addView(pager, match());
@@ -2844,18 +2933,68 @@ public final class MainActivity extends Activity {
         backParams.leftMargin = pagePadding;
         backParams.topMargin = dp(8);
         detailRoot.addView(back, backParams);
-        transitionTo(detailRoot);
+        installDetailRoot(detailRoot, pager, replacing, previousArticleScroll,
+                previousCommentScroll, previousComments, articleScroll, commentScroll);
+        populateDeferredComments(articleCommentHost, comments, pager, 72L,
+                articleScroll, previousArticleScroll);
+        populateDeferredComments(commentPageHost, comments, pager, 140L,
+                commentScroll, previousCommentScroll);
+        this.detailHasRendered = true;
         if (this.activityResumed && this.readingTimeTracker != null && fallback != null) {
             this.readingTimeTracker.start(fallback.article, fallback.id);
         }
         this.detailScroll = articleScroll;
         this.detailCommentScroll = commentScroll;
         int savedScroll = this.session.rememberDetailScroll() ? this.localCache.scroll(this.currentLinkId) : 0;
-        if (savedScroll > 0) {
+        if (!replacing && savedScroll > 0) {
             articleScroll.postDelayed(() -> {
                 articleScroll.scrollTo(0, savedScroll);
             }, 80L);
         }
+    }
+
+    private void installDetailRoot(FrameLayout root, DetailPager pager,
+                                   boolean replacing, int previousArticleScroll,
+                                   int previousCommentScroll, boolean previousComments,
+                                   ScrollView articleScroll, ScrollView commentScroll) {
+        if (!replacing) {
+            this.pageTransitions.finishNow();
+            if (this.detailReturnView != null) {
+                pager.setReturnView(this.detailReturnView);
+            }
+            transitionTo(root);
+        } else {
+            this.pageTransitions.finishNow();
+            View previous = this.content.getChildCount() == 0 ? null
+                    : this.content.getChildAt(this.content.getChildCount() - 1);
+            if (this.detailReturnView != null) {
+                pager.setReturnView(this.detailReturnView);
+            }
+            root.setVisibility(View.INVISIBLE);
+            this.content.addView(root, match());
+            root.post(() -> {
+                if (this.detailPager != pager || isFinishing()) return;
+                if (previousArticleScroll > 0) {
+                    articleScroll.scrollTo(0, previousArticleScroll);
+                }
+                if (previousComments) pager.showComments(false);
+                if (previousCommentScroll > 0) {
+                    commentScroll.scrollTo(0, previousCommentScroll);
+                }
+                root.setVisibility(View.VISIBLE);
+                if (previous != null && previous.getParent() == this.content) {
+                    this.content.removeView(previous);
+                }
+            });
+        }
+        root.post(() -> {
+            if (this.detailPager == pager && !isFinishing()) {
+                this.localCache.log("perf app stage=detail-first-frame totalMs="
+                        + Math.max(0L, SystemClock.elapsedRealtime()
+                        - this.detailLoadStartedAt)
+                        + " progressiveUpdate=" + replacing);
+            }
+        });
     }
 
     private ImageView detailBackButton() {
@@ -2871,6 +3010,35 @@ public final class MainActivity extends Activity {
         back.setOnClickListener(view ->
                 runWithPressFeedback(back, this::returnFromDetailSmooth));
         return back;
+    }
+
+    private LinearLayout deferredCommentHost(LinearLayout page, JSONArray comments) {
+        LinearLayout host = vertical(0);
+        TextView loading = text("评论 " + (comments == null ? 0 : comments.length()),
+                14.0f, this.TEXT);
+        loading.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        loading.setPadding(0, dp(10), 0, dp(10));
+        host.addView(loading);
+        page.addView(host, new LinearLayout.LayoutParams(-1, -2));
+        return host;
+    }
+
+    private void populateDeferredComments(LinearLayout host, JSONArray comments,
+                                          DetailPager pager, long delayMs,
+                                          ScrollView scroll, int restoreScroll) {
+        this.handler.postDelayed(() -> {
+            if (this.detailPager != pager || host.getParent() == null
+                    || isFinishing()) return;
+            host.removeAllViews();
+            addDetailCommentSection(host, comments);
+            if (restoreScroll > 0) {
+                scroll.post(() -> {
+                    if (this.detailPager == pager && !isFinishing()) {
+                        scroll.scrollTo(0, restoreScroll);
+                    }
+                });
+            }
+        }, delayMs);
     }
 
     private void addDetailCommentSection(LinearLayout page, JSONArray commentArray) {
@@ -4179,7 +4347,7 @@ public final class MainActivity extends Activity {
         int placeholder = this.session.darkMode() ? Color.rgb(28, 30, 32) : Color.rgb(235, 237, 240);
         Compat.setBackground(frame, round(placeholder, 7));
         Compat.clipToOutline(frame);
-        ImageView image = new ImageView(this);
+        ImageView image = new GifImageView(this);
         image.setScaleType(ImageView.ScaleType.FIT_CENTER);
         image.setAdjustViewBounds(false);
         frame.addView(image, match());
@@ -4205,7 +4373,7 @@ public final class MainActivity extends Activity {
     private int detailImageTargetPx() {
         int width = Math.max(320, getResources().getDisplayMetrics().widthPixels);
         int max = this.session != null && this.session.roundScreen() ? 720 : 900;
-        return Math.max(480, Math.min(max, Math.round(width * 1.25f)));
+        return Math.max(360, Math.min(max, width));
     }
 
     private int addComments(LinearLayout page, JSONArray groups, boolean latest) {
@@ -4748,20 +4916,20 @@ public final class MainActivity extends Activity {
 
     private ImageView commentImage(CommentData.CommentImage source, int sizeDp) {
         String url = source.url;
-        ImageView image = new ImageView(this);
+        ImageView image = new GifImageView(this);
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
         int placeholder = this.session.darkMode() ? Color.rgb(28, 30, 32)
                 : Color.rgb(235, 237, 240);
         Compat.setBackground(image, round(placeholder, 6));
         Compat.clipToOutline(image);
         image.setOnClickListener(view -> openImage(image, url));
-        ImageLoader.intoMeasuredRevealStable(image, url, Math.max(240, dp(sizeDp) * 2),
+        ImageLoader.intoMeasuredRevealStable(image, url, Math.max(96, dp(sizeDp)),
                 (success, bitmap) -> {
                     if (success && this.session.playGif()
                             && (source.animated || GifSupport.isGifUrl(url))) {
                         ImageLoader.intoGif(image, url, animated -> {
-                            this.localCache.log("comment gif " + (animated ? "started " : "failed ")
-                                    + compactLogText(url, 120));
+                            this.localCache.log("comment gif "
+                                    + (animated ? "started" : "failed"));
                         });
                     }
                     if (!success && image.getDrawable() == null) {

@@ -2,6 +2,7 @@ package com.ronan.heyboxlite;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import org.json.JSONObject;
 
@@ -151,6 +152,7 @@ final class ApiClient {
                          RequestProfile profile, Callback callback,
                          boolean mergeResponseCookies, boolean useSignInCredentials) {
         HttpURLConnection connection = null;
+        long requestStartedAt = SystemClock.elapsedRealtime();
         boolean taskRequest = isTaskPath(path);
         boolean debugRequest = taskRequest || isWritePath(path);
         try {
@@ -214,7 +216,9 @@ final class ApiClient {
                 }
             }
 
+            long connectStartedAt = SystemClock.elapsedRealtime();
             int status = connection.getResponseCode();
+            long responseStartedAt = SystemClock.elapsedRealtime();
             List<String> setCookies = connection.getHeaderFields()
                     .get(SecureStrings.setCookieHeader());
             if (setCookies == null) {
@@ -234,6 +238,7 @@ final class ApiClient {
                 stream = new GZIPInputStream(stream);
             }
             String text = read(stream);
+            long bodyReadAt = SystemClock.elapsedRealtime();
             if (debugRequest) {
                 logTask("api " + debugKind(path) + " response path=" + path
                         + " http=" + status
@@ -243,6 +248,7 @@ final class ApiClient {
                 throw new IllegalStateException(httpErrorMessage(status, text));
             }
             JSONObject json = new JSONObject(text);
+            long parsedAt = SystemClock.elapsedRealtime();
             if (debugRequest) {
                 logTask("api " + debugKind(path) + " json path=" + path
                         + " status=" + String.valueOf(json.opt("status"))
@@ -251,6 +257,12 @@ final class ApiClient {
                                 json.optString("message"), "")));
             }
             validateApiResponse(method, json);
+            logPerformance("official", path,
+                    Math.max(0L, parsedAt - requestStartedAt),
+                    Math.max(0L, responseStartedAt - connectStartedAt),
+                    Math.max(0L, bodyReadAt - responseStartedAt),
+                    Math.max(0L, parsedAt - bodyReadAt),
+                    -1L);
             postSuccess(callback, json);
         } catch (Exception error) {
             if (closed) return;
@@ -268,6 +280,9 @@ final class ApiClient {
                         + " algorithm=" + algorithm
                         + " message=" + trim(message));
             }
+            logPerformance("failed", path,
+                    Math.max(0L, SystemClock.elapsedRealtime() - requestStartedAt),
+                    -1L, -1L, -1L, -1L);
             postError(callback, message);
         } finally {
             if (connection != null) connection.disconnect();
@@ -288,12 +303,46 @@ final class ApiClient {
 
     private void requestThroughGateway(String path, Map<String, String> extra,
                                        Callback callback) throws Exception {
+        long appStartedAt = SystemClock.elapsedRealtime();
         Map<String, String> params = new LinkedHashMap<>(session.commonParams());
         if (extra != null) params.putAll(extra);
         HeyboxGatewayClient.Result result = HeyboxGatewayClient.get(session, path, params);
+        long validateStartedAt = SystemClock.elapsedRealtime();
         validateApiResponse("GET", result.body);
+        long totalMs = Math.max(0L, SystemClock.elapsedRealtime() - appStartedAt);
         logTask("api gateway success operation=" + HeyboxGatewayClient.operationFor(path));
+        logPerformance("gateway", path, totalMs, result.roundTripMs,
+                Math.max(0L, SystemClock.elapsedRealtime() - validateStartedAt),
+                result.gatewayMs, result.upstreamMs);
         postSuccess(callback, result.body);
+    }
+
+    private void logPerformance(String route, String path, long totalMs,
+                                long connectMs, long readMs, long parseOrGatewayMs,
+                                long upstreamMs) {
+        logTask("perf api route=" + route
+                + " operation=" + operationLabel(path)
+                + " totalMs=" + totalMs
+                + " connectOrRoundTripMs=" + connectMs
+                + " readOrValidateMs=" + readMs
+                + " parseOrGatewayMs=" + parseOrGatewayMs
+                + " upstreamMs=" + upstreamMs);
+    }
+
+    private static String operationLabel(String path) {
+        String gatewayOperation = HeyboxGatewayClient.operationFor(path);
+        if (!gatewayOperation.isEmpty()) return gatewayOperation;
+        if (normalizePath(EndpointProvider.favoriteTabs()).equals(normalizePath(path))) {
+            return "favorite.tabs";
+        }
+        if (normalizePath(EndpointProvider.favoriteLinks()).equals(normalizePath(path))) {
+            return "favorite.list";
+        }
+        if (normalizePath(EndpointProvider.history()).equals(normalizePath(path))) {
+            return "history.list";
+        }
+        return isWritePath(path) ? "write.action"
+                : isTaskPath(path) ? "task.action" : "other";
     }
 
     private static void validateApiResponse(String method, JSONObject json) {

@@ -56,6 +56,22 @@ final class GifSupport {
         if (Build.VERSION.SDK_INT >= 28 && drawable instanceof AnimatedImageDrawable) {
             ((AnimatedImageDrawable) drawable).start();
         }
+        if (view instanceof GifImageView) {
+            ((GifImageView) view).updatePlayback();
+        }
+    }
+
+    static void setRunning(Drawable drawable, boolean running) {
+        if (drawable == null) return;
+        if (Build.VERSION.SDK_INT >= 28 && drawable instanceof AnimatedImageDrawable) {
+            AnimatedImageDrawable animated = (AnimatedImageDrawable) drawable;
+            if (running && !animated.isRunning()) animated.start();
+            if (!running && animated.isRunning()) animated.stop();
+            return;
+        }
+        if (drawable instanceof MovieDrawable) {
+            ((MovieDrawable) drawable).setRunning(running);
+        }
     }
 
     @TargetApi(28)
@@ -93,8 +109,9 @@ final class GifSupport {
 
     private static final class MovieDrawable extends Drawable {
         private final Movie movie;
-        private final long startedAt = SystemClock.uptimeMillis();
+        private long startedAt = SystemClock.uptimeMillis();
         private final Runnable tick = this::invalidateSelf;
+        private boolean running = true;
 
         MovieDrawable(Movie movie) {
             this.movie = movie;
@@ -112,7 +129,19 @@ final class GifSupport {
                     bounds.height() / (float) movie.height());
             movie.draw(canvas, 0.0f, 0.0f);
             canvas.restoreToCount(save);
-            scheduleSelf(this.tick, SystemClock.uptimeMillis() + FRAME_DELAY_MS);
+            if (running) {
+                scheduleSelf(this.tick, SystemClock.uptimeMillis() + FRAME_DELAY_MS);
+            }
+        }
+
+        void setRunning(boolean value) {
+            if (running == value) return;
+            running = value;
+            unscheduleSelf(tick);
+            if (running) {
+                startedAt = SystemClock.uptimeMillis();
+                invalidateSelf();
+            }
         }
 
         @Override

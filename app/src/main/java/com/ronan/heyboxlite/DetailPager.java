@@ -85,6 +85,10 @@ final class DetailPager extends FrameLayout {
         settleToPage(PAGE_ARTICLE, animate);
     }
 
+    void showComments(boolean animate) {
+        settleToPage(PAGE_COMMENTS, animate);
+    }
+
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         int width = right - left;

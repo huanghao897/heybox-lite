@@ -1,5 +1,7 @@
 package com.ronan.heyboxlite;
 
+import android.os.SystemClock;
+
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -33,9 +35,15 @@ final class HeyboxGatewayClient {
 
     static final class Result {
         final JSONObject body;
+        final long roundTripMs;
+        final long gatewayMs;
+        final long upstreamMs;
 
-        Result(JSONObject body) {
+        Result(JSONObject body, long roundTripMs, long gatewayMs, long upstreamMs) {
             this.body = body;
+            this.roundTripMs = roundTripMs;
+            this.gatewayMs = gatewayMs;
+            this.upstreamMs = upstreamMs;
         }
     }
 
@@ -57,6 +65,7 @@ final class HeyboxGatewayClient {
         }
 
         HttpURLConnection connection = null;
+        long startedAt = SystemClock.elapsedRealtime();
         try {
             JSONObject payload = new JSONObject();
             payload.put("operation", operation);
@@ -99,7 +108,14 @@ final class HeyboxGatewayClient {
                 throw new GatewayException(status, "INVALID_RESPONSE",
                         "中转服务返回格式异常");
             }
-            return new Result(body);
+            JSONObject timing = response.optJSONObject("timing");
+            long gatewayMs = timing == null ? -1L
+                    : Math.max(-1L, timing.optLong("gatewayMs", -1L));
+            long upstreamMs = timing == null ? -1L
+                    : Math.max(-1L, timing.optLong("upstreamMs", -1L));
+            return new Result(body,
+                    Math.max(0L, SystemClock.elapsedRealtime() - startedAt),
+                    gatewayMs, upstreamMs);
         } catch (GatewayException error) {
             throw error;
         } catch (Exception error) {
