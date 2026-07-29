@@ -673,19 +673,16 @@ public final class MainActivity extends Activity {
                 this.bottomDockDimensions.paddingHorizontal,
                 this.bottomDockDimensions.paddingVertical);
         if (Build.VERSION.SDK_INT >= 21) this.bottom.setElevation(dp(10));
-        int navFill = Color.argb(this.session.darkMode() ? 232 : 224,
-                Color.red(this.themeTokens.panelElevated),
-                Color.green(this.themeTokens.panelElevated),
-                Color.blue(this.themeTokens.panelElevated));
-        Compat.setBackground(this.bottom, round(navFill, 22));
+        Compat.setBackground(this.bottom, UiComponents.dock(this, this.themeTokens,
+                this.session.uiScale() / 100.0f));
         this.bottom.setVisibility(8);
         this.bottom.setAlpha(0.0f);
         FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
                 this.bottomDockDimensions.width, this.bottomDockDimensions.height, 81);
         bottomParams.setMargins(0, 0, 0, this.bottomDockDimensions.marginBottom);
         body.addView(this.bottom, bottomParams);
-        addNav("社区", "feed", R.drawable.ic_home, this::onFeedNavClick);
-        addNav("我的", "profile", R.drawable.ic_person, () -> {
+        addNav("社区", "feed", R.drawable.ic_nav_home, this::onFeedNavClick);
+        addNav("我的", "profile", R.drawable.ic_nav_profile, () -> {
             showTopLevel(1);
         });
         setContentView(linearLayoutVertical);
@@ -1141,8 +1138,8 @@ public final class MainActivity extends Activity {
         }
         setBottomNavVisible(true);
         this.leading.setVisibility(4);
-        int activeColor = this.themeTokens.accent;
-        int inactiveColor = this.MUTED;
+        int activeColor = this.TEXT;
+        int inactiveColor = this.themeTokens.subtle;
         for (int i = 0; i < this.bottom.getChildCount(); i++) {
             View item = this.bottom.getChildAt(i);
             boolean active = key.equals(item.getTag());
@@ -1150,7 +1147,7 @@ public final class MainActivity extends Activity {
             if (item instanceof ImageView) {
                 ((ImageView) item).setColorFilter(active ? activeColor : inactiveColor);
                 Compat.setBackground(item, active
-                        ? UiComponents.softPill(this, this.themeTokens,
+                        ? UiComponents.navSelection(this, this.themeTokens,
                         this.session.uiScale() / 100.0f) : null);
             } else if (item instanceof TextView) {
                 TextView textItem = (TextView) item;
@@ -1751,24 +1748,23 @@ public final class MainActivity extends Activity {
 
     private View feedTopBar() {
         LinearLayout wrap = vertical(this.BG);
-        wrap.setPadding(dp(7), dp(5), dp(7), dp(4));
+        int horizontal = this.session.roundScreen() ? dp(12) : dp(10);
+        wrap.setPadding(horizontal, dp(6), horizontal, dp(4));
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(16);
-        heading.setPadding(dp(4), 0, dp(4), 0);
-        TextView name = text("社区", 21.0f, this.TEXT);
+        heading.setPadding(dp(2), 0, dp(2), 0);
+        TextView name = text("社区", 23.0f, this.TEXT);
         name.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        heading.addView(name, new LinearLayout.LayoutParams(0, dp(38), 1.0f));
-        TextView time = text(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), 10.5f, this.MUTED);
-        time.setGravity(21);
-        heading.addView(time, new LinearLayout.LayoutParams(dp(52), dp(38)));
+        heading.addView(name, new LinearLayout.LayoutParams(-1, dp(38)));
         wrap.addView(heading);
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
-        row.setPadding(dp(8), 0, dp(5), 0);
+        row.setPadding(dp(11), 0, dp(8), 0);
         ThemeTokens tokens = this.themeTokens == null ? ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY) : this.themeTokens;
-        Compat.setBackground(row, roundStroke(tokens.panelElevated, 21, tokens.glassStroke, 1));
-        wrap.addView(row, new LinearLayout.LayoutParams(-1, dp(42)));
-        TextView search = text("搜索帖子、作者或关键词", 12.0f, this.MUTED);
+        Compat.setBackground(row, UiComponents.round(this, tokens.panel, 12,
+                this.session.uiScale() / 100.0f));
+        wrap.addView(row, new LinearLayout.LayoutParams(-1, dp(40)));
+        TextView search = text("搜索帖子、作者或关键词", 12.5f, this.MUTED);
         search.setGravity(16);
         search.setSingleLine(true);
         setLeftIcon(search, R.drawable.ic_search, this.MUTED, 16);

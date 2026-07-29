@@ -11,9 +11,7 @@ final class UiComponents {
     private UiComponents() {}
 
     static GradientDrawable card(Context context, ThemeTokens tokens, float scale) {
-        GradientDrawable drawable = round(context, tokens.panel, 16, scale);
-        drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.glassStroke);
-        return drawable;
+        return round(context, tokens.panel, 10, scale);
     }
 
     static GradientDrawable softPill(Context context, ThemeTokens tokens, float scale) {
@@ -23,24 +21,21 @@ final class UiComponents {
         return drawable;
     }
 
-    /** 石墨单色图标芯片：深灰底 + 极淡描边，图标用前景色（全屏唯一彩色留给主题色）。 */
     static GradientDrawable monoChip(Context context, ThemeTokens tokens, float scale) {
         int fill = ThemeTokens.blend(tokens.panel, tokens.text, tokens.dark ? 0.06f : 0.05f);
-        GradientDrawable drawable = round(context, fill, 8, scale);
-        drawable.setStroke(Math.max(1, dp(context, 1, scale)),
-                ThemeTokens.blend(fill, tokens.text, 0.05f));
-        return drawable;
+        return round(context, fill, 7, scale);
     }
 
-    /** 设置分组卡：无描边，靠底色与卡面的色阶分层。 */
     static GradientDrawable groupCard(Context context, ThemeTokens tokens, float scale) {
-        return round(context, tokens.panel, 16, scale);
+        return round(context, tokens.panel, 10, scale);
     }
 
     static GradientDrawable dock(Context context, ThemeTokens tokens, float scale) {
-        GradientDrawable drawable = round(context, tokens.panelElevated, 21, scale);
-        drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.glassStroke);
-        return drawable;
+        return round(context, tokens.dockSurface(), 28, scale);
+    }
+
+    static GradientDrawable navSelection(Context context, ThemeTokens tokens, float scale) {
+        return round(context, tokens.navSelection(), 24, scale);
     }
 
     static GradientDrawable primaryButton(Context context, ThemeTokens tokens, float scale) {

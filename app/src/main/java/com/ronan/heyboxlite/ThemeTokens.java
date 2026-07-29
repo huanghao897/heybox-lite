@@ -22,24 +22,24 @@ final class ThemeTokens {
         this.primary = primary;
         this.secondary = secondary;
         if (dark) {
-            background = Color.rgb(11, 12, 14);
-            panel = Color.rgb(23, 25, 29);
-            panelElevated = Color.rgb(29, 33, 39);
-            text = Color.rgb(243, 245, 247);
-            muted = Color.rgb(155, 164, 174);
-            subtle = Color.rgb(104, 108, 112);
-            hairline = Color.rgb(43, 48, 56);
+            background = Color.rgb(11, 11, 12);
+            panel = Color.rgb(25, 25, 27);
+            panelElevated = Color.rgb(32, 32, 35);
+            text = Color.rgb(245, 245, 247);
+            muted = Color.rgb(165, 165, 170);
+            subtle = Color.rgb(116, 116, 121);
+            hairline = Color.rgb(43, 43, 46);
         } else {
-            background = Color.rgb(245, 246, 247);
+            background = Color.rgb(244, 244, 246);
             panel = Color.rgb(255, 255, 255);
-            panelElevated = Color.rgb(250, 251, 252);
-            text = Color.rgb(24, 25, 27);
-            muted = Color.rgb(96, 101, 106);
-            subtle = Color.rgb(154, 158, 162);
-            hairline = Color.rgb(224, 226, 228);
+            panelElevated = Color.rgb(248, 248, 250);
+            text = Color.rgb(25, 25, 27);
+            muted = Color.rgb(99, 99, 104);
+            subtle = Color.rgb(142, 142, 147);
+            hairline = Color.rgb(224, 224, 227);
         }
         accent = secondary;
-        glassStroke = blend(hairline, text, dark ? 0.12f : 0.06f);
+        glassStroke = blend(hairline, text, dark ? 0.06f : 0.04f);
         onPrimary = contrast(primary);
     }
 
@@ -61,6 +61,16 @@ final class ThemeTokens {
 
     int pressedSurface() {
         return blend(panel, text, dark ? 0.09f : 0.04f);
+    }
+
+    int dockSurface() {
+        return dark ? Color.argb(224, 30, 30, 33)
+                : Color.argb(232, 248, 248, 250);
+    }
+
+    int navSelection() {
+        return dark ? Color.argb(36, 255, 255, 255)
+                : Color.argb(22, 0, 0, 0);
     }
 
     static int contrast(int color) {
