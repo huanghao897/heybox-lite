@@ -1,6 +1,5 @@
 package com.ronan.heyboxlite;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -10,20 +9,33 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 final class HeyboxGatewayClient {
+    static final class GatewayException extends Exception {
+        final int status;
+        final String code;
+
+        GatewayException(int status, String code, String message) {
+            super(message);
+            this.status = status;
+            this.code = code == null ? "" : code;
+        }
+
+        GatewayException(String message, Throwable cause) {
+            super(message, cause);
+            this.status = 0;
+            this.code = "GATEWAY_UNAVAILABLE";
+        }
+    }
+
     static final class Result {
         final JSONObject body;
-        final List<String> setCookies;
 
-        Result(JSONObject body, List<String> setCookies) {
+        Result(JSONObject body) {
             this.body = body;
-            this.setCookies = setCookies;
         }
     }
 
@@ -38,21 +50,23 @@ final class HeyboxGatewayClient {
     }
 
     static Result get(SessionStore session, String path, Map<String, String> params)
-            throws Exception {
+            throws GatewayException {
         String operation = operationFor(path);
-        if (operation.isEmpty()) throw new IllegalArgumentException("unsupported gateway operation");
-
-        JSONObject payload = new JSONObject();
-        payload.put("operation", operation);
-        payload.put("params", new JSONObject(params == null
-                ? Collections.emptyMap() : params));
-        payload.put("cookie", session == null ? "" : session.getCookie());
-        payload.put("clientVersion", BuildConfig.VERSION_NAME);
-        payload.put("clientVersionCode", BuildConfig.VERSION_CODE);
-        byte[] bytes = payload.toString().getBytes(UTF_8);
+        if (operation.isEmpty()) {
+            throw new GatewayException(400, "UNSUPPORTED_OPERATION", "不支持该中转操作");
+        }
 
         HttpURLConnection connection = null;
         try {
+            JSONObject payload = new JSONObject();
+            payload.put("operation", operation);
+            payload.put("params", new JSONObject(params == null
+                    ? Collections.emptyMap() : params));
+            payload.put("cookie", session == null ? "" : session.getCookie());
+            payload.put("clientVersion", BuildConfig.VERSION_NAME);
+            payload.put("clientVersionCode", BuildConfig.VERSION_CODE);
+            byte[] bytes = payload.toString().getBytes(UTF_8);
+
             URL url = new URL(UpdateChecker.requireTrustedUrl(
                     BuildConfig.HEYBOX_GATEWAY_API_URL));
             connection = (HttpURLConnection) url.openConnection();
@@ -77,19 +91,19 @@ final class HeyboxGatewayClient {
             JSONObject response = new JSONObject(read(stream));
             if (status < 200 || status >= 300) {
                 String message = response.optString("error", "中转服务请求失败");
-                throw new IllegalStateException(message);
+                throw new GatewayException(status,
+                        response.optString("code", "GATEWAY_ERROR"), message);
             }
             JSONObject body = response.optJSONObject("body");
-            if (body == null) throw new IllegalStateException("中转服务返回格式异常");
-            JSONArray cookies = response.optJSONArray("setCookies");
-            List<String> setCookies = new ArrayList<>();
-            if (cookies != null) {
-                for (int index = 0; index < cookies.length(); index++) {
-                    String value = cookies.optString(index, "");
-                    if (!value.isEmpty()) setCookies.add(value);
-                }
+            if (body == null) {
+                throw new GatewayException(status, "INVALID_RESPONSE",
+                        "中转服务返回格式异常");
             }
-            return new Result(body, setCookies);
+            return new Result(body);
+        } catch (GatewayException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new GatewayException("暂时无法连接中转服务", error);
         } finally {
             if (connection != null) connection.disconnect();
         }

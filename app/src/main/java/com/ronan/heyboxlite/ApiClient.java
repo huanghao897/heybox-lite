@@ -157,8 +157,15 @@ final class ApiClient {
             if (closed || Thread.currentThread().isInterrupted()) return;
             if (shouldUseReadGateway(method, path, algorithm, profile,
                     useSignInCredentials)) {
-                requestThroughGateway(path, extra, callback);
-                return;
+                try {
+                    requestThroughGateway(path, extra, callback);
+                    return;
+                } catch (HeyboxGatewayClient.GatewayException gatewayError) {
+                    logTask("api gateway fallback operation="
+                            + HeyboxGatewayClient.operationFor(path)
+                            + " http=" + gatewayError.status
+                            + " code=" + gatewayError.code);
+                }
             }
             Map<String, String> params = new LinkedHashMap<>(
                     baseParams(profile, useSignInCredentials));
@@ -284,7 +291,6 @@ final class ApiClient {
         Map<String, String> params = new LinkedHashMap<>(session.commonParams());
         if (extra != null) params.putAll(extra);
         HeyboxGatewayClient.Result result = HeyboxGatewayClient.get(session, path, params);
-        session.mergeCookies(result.setCookies);
         validateApiResponse("GET", result.body);
         logTask("api gateway success operation=" + HeyboxGatewayClient.operationFor(path));
         postSuccess(callback, result.body);
