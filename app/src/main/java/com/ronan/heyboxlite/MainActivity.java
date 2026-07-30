@@ -156,6 +156,7 @@ public final class MainActivity extends Activity {
     private long lastExitBackAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final PageTransitionController pageTransitions = new PageTransitionController();
+    private final CrownScrollController crownScrollController = new CrownScrollController();
     private final List<FeedItem> feed = new ArrayList<>();
     private String cachedProfileUserId = "";
     private final Map<View, Integer> searchBarHeights = new HashMap<>();
@@ -355,13 +356,22 @@ public final class MainActivity extends Activity {
         if (event != null && event.getActionMasked() == MotionEvent.ACTION_SCROLL) {
             float axis = event.getAxisValue(AXIS_ROTARY_SCROLL);
             if (axis == 0.0f) axis = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
-            if (axis != 0.0f && scrollWithCrown(-Math.round(axis * dp(44)))) return true;
+            if (axis == 0.0f) return super.dispatchGenericMotionEvent(event);
+            if (this.session == null || !this.session.crownScrollEnabled()) {
+                this.crownScrollController.reset();
+                return true;
+            }
+            int distance = this.crownScrollController.distance(
+                    axis, dp(44), this.session.crownScrollSpeed());
+            if (distance == 0) return true;
+            if (scrollWithCrown(distance)) return true;
         }
         return super.dispatchGenericMotionEvent(event);
     }
 
     private boolean scrollWithCrown(int distance) {
         if (distance == 0) return false;
+        int direction = distance > 0 ? 1 : -1;
         View target;
         if ("detail".equals(this.screen)) {
             target = this.detailPager != null && this.detailPager.showingComments()
@@ -371,14 +381,17 @@ public final class MainActivity extends Activity {
         } else if ("search".equals(this.screen)) {
             target = this.searchListView;
         } else {
-            target = findScrollableView(this.content, distance > 0 ? 1 : -1);
+            target = findScrollableView(this.content, direction);
+        }
+        if (target == null || !target.canScrollVertically(direction)) {
+            target = findScrollableView(this.content, direction);
         }
         if (target instanceof ScrollView) {
-            ((ScrollView) target).smoothScrollBy(0, distance);
+            target.scrollBy(0, distance);
             return true;
         }
         if (target instanceof AbsListView) {
-            ((AbsListView) target).smoothScrollBy(distance, 90);
+            Compat.scrollListBy((AbsListView) target, distance);
             return true;
         }
         return false;
@@ -387,7 +400,7 @@ public final class MainActivity extends Activity {
     private View findScrollableView(View view, int direction) {
         if (view == null || view.getVisibility() != View.VISIBLE) return null;
         if ((view instanceof ScrollView || view instanceof AbsListView)
-                && (view.canScrollVertically(direction) || view.canScrollVertically(-direction))) {
+                && view.canScrollVertically(direction)) {
             return view;
         }
         if (!(view instanceof ViewGroup)) return null;
@@ -6614,6 +6627,20 @@ public final class MainActivity extends Activity {
         }), 0);
         addSettingEntry(panel, "网络模式", networkModeLabel(), R.drawable.il_globe,
                 this::showNetworkModePicker);
+        ScaleControl[] crownSpeed = new ScaleControl[1];
+        addTop(panel, toggleRow("表冠滚动", this.session.crownScrollEnabled(), value -> {
+            this.session.setCrownScrollEnabled(value);
+            if (!value) this.crownScrollController.reset();
+            setScaleControlEnabled(crownSpeed[0], value);
+        }), 0);
+        crownSpeed[0] = settingSlider(panel, "滚动速度", "%",
+                CrownScrollController.MIN_SPEED_PERCENT,
+                CrownScrollController.MAX_SPEED_PERCENT,
+                this.session.crownScrollSpeed(), this.session::setCrownScrollSpeed,
+                false);
+        crownSpeed[0].input.setFocusable(false);
+        crownSpeed[0].input.setClickable(false);
+        setScaleControlEnabled(crownSpeed[0], this.session.crownScrollEnabled());
         addTop(panel, toggleRow("右滑返回上一级", this.session.shellBackSwipe(),
                 this.session::setShellBackSwipe), 0);
         addTop(panel, toggleRow("退出确认", this.session.confirmExitOnBack(),
@@ -7143,6 +7170,7 @@ public final class MainActivity extends Activity {
         if (label.contains("退出确认")) return R.drawable.il_gesture_block;
         if (label.contains("右滑")) return R.drawable.il_swipe;
         if (label.contains("阅读位置")) return R.drawable.il_scroll;
+        if (label.contains("表冠")) return R.drawable.il_scroll;
         if (label.contains("清理")) return R.drawable.il_cleanup;
         if (label.contains("评论回复")) return R.drawable.il_reply;
         if (label.contains("更新")) return R.drawable.il_update;
@@ -7152,7 +7180,13 @@ public final class MainActivity extends Activity {
 
     /** 两行式滑杆：标签与数值同一行（数值点按可键入），通栏轨道在下，白钮与开关圆钮同族。 */
     private ScaleControl settingSlider(LinearLayout parent, String label, String unit, final int min, int max, int current, final IntListener listener) {
-        addSettingsDivider(parent);
+        return settingSlider(parent, label, unit, min, max, current, listener, true);
+    }
+
+    private ScaleControl settingSlider(LinearLayout parent, String label, String unit,
+                                       final int min, int max, int current,
+                                       final IntListener listener, boolean addDivider) {
+        if (addDivider) addSettingsDivider(parent);
         LinearLayout wrap = new LinearLayout(this);
         wrap.setOrientation(1);
         wrap.setPadding(dp(6), dp(8), dp(6), dp(6));
@@ -7207,6 +7241,15 @@ public final class MainActivity extends Activity {
             }
         });
         return new ScaleControl(input, slider);
+    }
+
+    private void setScaleControlEnabled(ScaleControl control, boolean enabled) {
+        if (control == null) return;
+        control.input.setEnabled(enabled);
+        control.slider.setEnabled(enabled);
+        float alpha = enabled ? 1.0f : 0.45f;
+        control.input.setAlpha(alpha);
+        control.slider.setAlpha(alpha);
     }
 
     private int currentPrimary() {

@@ -58,6 +58,8 @@ final class SessionStore {
     private static final String BODY_PARAGRAPH_SPACING = "body_paragraph_spacing";
     private static final String BODY_LINE_SPACING = "body_line_spacing";
     private static final String BODY_BOLD = "body_bold";
+    private static final String CROWN_SCROLL_ENABLED = "crown_scroll_enabled";
+    private static final String CROWN_SCROLL_SPEED = "crown_scroll_speed";
     private static final String AUTO_UPDATE_CHECK = "auto_update_check";
     private static final String SPLASH_ENABLED = "splash_enabled";
     private static final String SPLASH_TEXT = "splash_text";
@@ -340,6 +342,24 @@ final class SessionStore {
 
     void setBodyBold(boolean value) {
         prefs.edit().putBoolean(BODY_BOLD, value).apply();
+    }
+
+    boolean crownScrollEnabled() {
+        return prefs.getBoolean(CROWN_SCROLL_ENABLED, true);
+    }
+
+    void setCrownScrollEnabled(boolean value) {
+        prefs.edit().putBoolean(CROWN_SCROLL_ENABLED, value).apply();
+    }
+
+    int crownScrollSpeed() {
+        return CrownScrollController.clampSpeed(prefs.getInt(
+                CROWN_SCROLL_SPEED, CrownScrollController.DEFAULT_SPEED_PERCENT));
+    }
+
+    void setCrownScrollSpeed(int value) {
+        prefs.edit().putInt(CROWN_SCROLL_SPEED,
+                CrownScrollController.clampSpeed(value)).apply();
     }
 
     boolean autoUpdateCheck() {
@@ -1908,6 +1928,8 @@ final class SessionStore {
         int bodyParagraphSpacing = bodyParagraphSpacing();
         int bodyLineSpacing = bodyLineSpacing();
         boolean bodyBold = bodyBold();
+        boolean crownScrollEnabled = crownScrollEnabled();
+        int crownScrollSpeed = crownScrollSpeed();
         boolean autoUpdateCheck = autoUpdateCheck();
         boolean splashEnabled = splashEnabled();
         String splashText = splashText();
@@ -1948,6 +1970,8 @@ final class SessionStore {
                 .putInt(BODY_PARAGRAPH_SPACING, bodyParagraphSpacing)
                 .putInt(BODY_LINE_SPACING, bodyLineSpacing)
                 .putBoolean(BODY_BOLD, bodyBold)
+                .putBoolean(CROWN_SCROLL_ENABLED, crownScrollEnabled)
+                .putInt(CROWN_SCROLL_SPEED, crownScrollSpeed)
                 .putBoolean(AUTO_UPDATE_CHECK, autoUpdateCheck)
                 .putBoolean(SPLASH_ENABLED, splashEnabled)
                 .putString(SPLASH_TEXT, splashText)

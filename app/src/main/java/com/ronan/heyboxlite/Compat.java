@@ -7,6 +7,7 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.View;
 import android.view.Window;
+import android.widget.AbsListView;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.ProgressBar;
@@ -96,6 +97,14 @@ final class Compat {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN
                 && seekBar.getThumb() != null) {
             seekBar.getThumb().mutate().setColorFilter(thumbColor, PorterDuff.Mode.SRC_IN);
+        }
+    }
+
+    static void scrollListBy(AbsListView list, int distance) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            list.scrollListBy(distance);
+        } else {
+            list.smoothScrollBy(distance, 1);
         }
     }
 }
