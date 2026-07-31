@@ -6,6 +6,7 @@
         android:bottom="10dp">
         <bitmap
             android:gravity="fill"
-            android:src="@mipmap/heywear" />
+            android:src="@mipmap/heywear"
+            android:tint="#FFFFFFFF" />
     </item>
 </layer-list>

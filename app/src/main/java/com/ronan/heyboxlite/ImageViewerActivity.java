@@ -76,6 +76,7 @@ public final class ImageViewerActivity extends Activity {
         Compat.colorSystemBars(getWindow(), Color.rgb(26, 28, 31));
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
         session = new SessionStore(this);
+        Motions.setLevel(session.motionLevel());
 
         urls = resolveUrls();
         current = Math.max(0, Math.min(urls.length - 1, getIntent().getIntExtra(EXTRA_INDEX, 0)));
@@ -178,14 +179,42 @@ public final class ImageViewerActivity extends Activity {
     }
 
     private void prepareEnterAnimation() {
+        root.animate().cancel();
+        pager.animate().cancel();
+        if (Motions.off()) {
+            root.setAlpha(1f);
+            Motions.reset(pager);
+            return;
+        }
         root.setAlpha(0f);
-        pager.setScaleX(0.96f);
-        pager.setScaleY(0.96f);
         root.post(() -> {
-            root.animate().alpha(1f).setDuration(140).start();
+            if (destroyed || isFinishing()) return;
+            int width = Math.max(1, root.getWidth());
+            int height = Math.max(1, root.getHeight());
+            int originWidth = getIntent().getIntExtra(EXTRA_ORIGIN_WIDTH, 0);
+            int originHeight = getIntent().getIntExtra(EXTRA_ORIGIN_HEIGHT, 0);
+            float scaleX = originWidth > 0
+                    ? Math.max(0.08f, Math.min(0.96f, originWidth / (float) width))
+                    : 0.94f;
+            float scaleY = originHeight > 0
+                    ? Math.max(0.08f, Math.min(0.96f, originHeight / (float) height))
+                    : 0.94f;
+            float originX = getIntent().getIntExtra(EXTRA_ORIGIN_X, width / 2);
+            float originY = getIntent().getIntExtra(EXTRA_ORIGIN_Y, height / 2);
+            pager.setPivotX(width / 2.0f);
+            pager.setPivotY(height / 2.0f);
+            pager.setScaleX(scaleX);
+            pager.setScaleY(scaleY);
+            pager.setTranslationX(originX - width / 2.0f);
+            pager.setTranslationY(originY - height / 2.0f);
+
+            long duration = Motions.full() ? 220L : MotionSpec.IMAGE_MS;
+            root.animate().alpha(1f).setDuration(duration).start();
             pager.animate().scaleX(1f).scaleY(1f)
-                    .setDuration(190)
-                    .setInterpolator(new DecelerateInterpolator())
+                    .translationX(0f).translationY(0f)
+                    .setDuration(duration)
+                    .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
+                    .withEndAction(() -> Motions.reset(pager))
                     .start();
         });
     }

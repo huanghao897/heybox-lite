@@ -6670,9 +6670,10 @@ public final class MainActivity extends Activity {
             this.feed.clear();
             invalidateFeedView();
         }), 0);
-        addChoiceSettingEntry(panel, "网络模式", R.drawable.il_globe,
-                new String[]{"省流量", "标准", "原图"}, this.session.networkMode(),
-                this::setNetworkMode, null);
+        final SettingEntry[] networkModeEntry = new SettingEntry[1];
+        networkModeEntry[0] = addSettingEntryView(panel, "网络模式", null,
+                networkModeLabel(), R.drawable.il_globe,
+                () -> showNetworkModePicker(networkModeEntry[0]));
         addTop(panel, toggleRow("表冠滚动", this.session.crownScrollEnabled(), value -> {
             this.session.setCrownScrollEnabled(value);
             if (!value) this.crownScrollController.reset();
@@ -6907,44 +6908,49 @@ public final class MainActivity extends Activity {
 
     private void showAbout() {
         LinearLayout page = settingsPage("about", "关于");
-        addSectionLabel(page, "应用");
-        LinearLayout panel = settingsList();
-        panel.setPadding(dp(12), dp(11), dp(12), dp(11));
-        TextView appName = text("heybox Lite", 20.0f, this.TEXT);
-        appName.setTypeface(appRegularTypeface(), 1);
-        panel.addView(appName);
-        addTop(panel, text("版本 " + appVersion(), 13.0f, this.MUTED), 6);
-        addTop(panel, text("开发者：Ronan", 13.0f, this.TEXT), 5);
-        addTop(panel, text("2.0 正式版支持 Android 7.0 及以上系统", 12.0f, this.MUTED), 5);
-        TextView basedOn = text("基于 HeyWear 进行二次开发与方屏适配，非官方应用", 12.0f, this.TEXT);
-        basedOn.setLineSpacing(0.0f, 1.18f);
-        addTop(panel, basedOn, 7);
-        TextView disclaimer = text("免责声明：本项目仅用于学习、研究与个人使用，不代表小黑盒、HeyWear 或相关官方立场。本项目基于 HeyWear 进行二次开发与适配，开发者不对因使用本项目造成的账号、数据、设备或其他风险承担额外责任。请在遵守相关法律法规及平台规则的前提下使用", 11.0f, this.MUTED);
-        disclaimer.setLineSpacing(0.0f, 1.22f);
-        addTop(panel, disclaimer, 10);
-        page.addView(panel);
-        addSectionLabel(page, "支持");
+
+        int markSize = dp(usesRoundLayout() ? 64 : 72);
+        int iconSize = dp(usesRoundLayout() ? 52 : 58);
+        FrameLayout appMark = new FrameLayout(this);
+        Compat.setBackground(appMark, UiComponents.round(this,
+                this.themeTokens.panelElevated, 18,
+                this.session.uiScale() / 100.0f));
+        ImageView appIcon = new ImageView(this);
+        appIcon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        Drawable icon = Compat.tintedDrawable(this, R.mipmap.heywear, this.TEXT);
+        if (icon != null) appIcon.setImageDrawable(icon);
+        appMark.addView(appIcon, new FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER));
+        LinearLayout.LayoutParams markParams = new LinearLayout.LayoutParams(markSize, markSize);
+        markParams.gravity = Gravity.CENTER_HORIZONTAL;
+        markParams.topMargin = dp(14);
+        page.addView(appMark, markParams);
+
+        TextView appName = text("heybox Lite", 18.0f, this.TEXT);
+        appName.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        appName.setGravity(Gravity.CENTER);
+        addTop(page, appName, 8);
+        TextView version = text(appVersion() + " · " + BuildConfig.VERSION_CODE,
+                11.0f, this.MUTED);
+        version.setGravity(Gravity.CENTER);
+        addTop(page, version, 4);
+        TextView developer = text("开发者：Ronan", 13.0f, this.TEXT);
+        developer.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        developer.setGravity(Gravity.CENTER);
+        addTop(page, developer, 7);
+
+        addSectionLabel(page, "信息");
         LinearLayout actions = settingsList();
-        addSettingEntry(actions, "群二维码", "QQ 群 781941517，扫码进交流群", R.drawable.il_qr,
-                this::showFeedbackGroupQr);
-        addSettingEntry(actions, "公告列表", "历史公告与更新说明", R.drawable.il_info,
+        addSettingEntry(actions, "公告列表", null, R.drawable.il_info,
                 this::showAnnouncementsV2);
-        final UpdateChecker.Result[] found = {null};
+        addSettingEntry(actions, "交流群", null, R.drawable.il_qr,
+                this::showFeedbackGroupQr);
         final boolean[] checking = {false};
-        final TextView[] updateDesc = new TextView[1];
-        updateDesc[0] = addSettingEntry(actions, "检查更新", "当前版本 " + appVersion(),
-                R.drawable.il_update, () -> {
-                    if (found[0] != null) {
-                        rememberTestRelease(found[0]);
-                        openUpdateUrl(found[0].downloadUrl.isEmpty()
-                                ? found[0].releaseUrl : found[0].downloadUrl);
-                        return;
-                    }
+        addSettingEntry(actions, "检查更新", null, R.drawable.il_update, () -> {
                     if (checking[0]) {
                         return;
                     }
                     checking[0] = true;
-                    if (updateDesc[0] != null) updateDesc[0].setText("正在检查更新…");
+                    toast("正在检查更新");
                     UpdateChecker.check(appVersion(), MainActivity.this.session.userId(),
                             MainActivity.this.session.testReleaseId(), new UpdateChecker.Callback() {
                         @Override
@@ -6954,14 +6960,10 @@ public final class MainActivity extends Activity {
                             }
                             checking[0] = false;
                             if (result.updateAvailable) {
-                                found[0] = result;
                                 MainActivity.this.showUpdateDialog(result);
-                                if (updateDesc[0] != null) {
-                                    updateDesc[0].setText("发现新版 " + result.version + "，点按前往下载");
-                                }
                                 return;
                             }
-                            if (updateDesc[0] != null) updateDesc[0].setText("当前已是最新版");
+                            toast("当前已是最新版");
                         }
 
                         @Override
@@ -6970,13 +6972,25 @@ public final class MainActivity extends Activity {
                                 return;
                             }
                             checking[0] = false;
-                            if (updateDesc[0] != null) updateDesc[0].setText("检查失败：" + message);
+                            toast("检查更新失败：" + message);
                         }
                     });
                 });
-        addSettingEntry(actions, "打开 GitHub 项目", "huanghao897/heybox-lite", R.drawable.il_globe, () ->
+        addSettingEntry(actions, "GitHub 项目", null, R.drawable.il_globe, () ->
                 openUrl("https://github.com/huanghao897/heybox-lite"));
         page.addView(actions);
+
+        addSectionLabel(page, "说明");
+        LinearLayout notes = settingsList();
+        notes.setPadding(dp(14), dp(12), dp(14), dp(12));
+        TextView support = text("支持 Android 7.0 及以上系统", 12.0f, this.TEXT);
+        support.setLineSpacing(0.0f, 1.18f);
+        notes.addView(support);
+        TextView basedOn = text("基于 HeyWear 进行二次开发与方屏适配，非官方应用。",
+                12.0f, this.MUTED);
+        basedOn.setLineSpacing(0.0f, 1.18f);
+        addTop(notes, basedOn, 7);
+        page.addView(notes);
     }
 
     private void showFeedbackGroupQr() {
@@ -7182,8 +7196,8 @@ public final class MainActivity extends Activity {
             listener.onChanged(value);
         });
         AlertDialog[] holder = new AlertDialog[1];
-        TextView done = settingsDialogAction("完成", holder);
-        addTop(box, done, 12);
+        TextView done = settingsDialogAction("确定", holder);
+        addSettingsDialogAction(box, done);
         AlertDialog dialog = new AlertDialog.Builder(this).setView(box).create();
         holder[0] = dialog;
         dialog.setCanceledOnTouchOutside(true);
@@ -7288,8 +7302,8 @@ public final class MainActivity extends Activity {
                 this.session.uiScale() / 100.0f));
         box.addView(input, new LinearLayout.LayoutParams(-1, dp(44)));
         AlertDialog[] holder = new AlertDialog[1];
-        TextView done = settingsDialogAction("完成", holder);
-        addTop(box, done, 12);
+        TextView done = settingsDialogAction("确定", holder);
+        addSettingsDialogAction(box, done);
         AlertDialog dialog = new AlertDialog.Builder(this).setView(box).create();
         holder[0] = dialog;
         dialog.setCanceledOnTouchOutside(true);
@@ -7316,6 +7330,8 @@ public final class MainActivity extends Activity {
         TextView action = text(label, 13.0f, ThemeTokens.contrast(this.themeTokens.text));
         action.setGravity(Gravity.CENTER);
         action.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        action.setMinWidth(dp(72));
+        action.setPadding(dp(14), 0, dp(14), 0);
         Compat.setBackground(action, UiComponents.round(this, this.themeTokens.text, 11,
                 this.session.uiScale() / 100.0f));
         action.setOnClickListener(view -> {
@@ -7323,6 +7339,13 @@ public final class MainActivity extends Activity {
             if (dialog != null) dialog.dismiss();
         });
         return action;
+    }
+
+    private void addSettingsDialogAction(LinearLayout parent, TextView action) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.END);
+        row.addView(action, new LinearLayout.LayoutParams(-2, dp(36)));
+        addTop(parent, row, 12);
     }
 
     private void presentSettingsDialog(AlertDialog dialog, View contentView) {
@@ -7549,10 +7572,25 @@ public final class MainActivity extends Activity {
         return mode == 0 ? "省流量" : mode == 2 ? "原图" : "标准";
     }
 
-    private void setNetworkMode(int mode) {
+    private void showNetworkModePicker(SettingEntry entry) {
+        showLiteDialog("网络模式",
+                "省流量：使用缩略图，不自动播放动图\n标准：使用缩略图并播放动图\n原图：优先加载高清图片",
+                "标准", () -> setNetworkMode(1, entry),
+                "省流量", () -> setNetworkMode(0, entry),
+                "原图", () -> setNetworkMode(2, entry));
+    }
+
+    private void setNetworkMode(int mode, SettingEntry entry) {
+        boolean changed = this.session.networkMode() != mode;
         this.session.setNetworkMode(mode);
-        this.feed.clear();
-        invalidateFeedView();
+        if (entry != null && entry.value != null) {
+            entry.value.setText(networkModeLabel());
+            Motions.selected(entry.value);
+        }
+        if (changed) {
+            this.feed.clear();
+            invalidateFeedView();
+        }
         toast("已切换为" + networkModeLabel());
     }
 
