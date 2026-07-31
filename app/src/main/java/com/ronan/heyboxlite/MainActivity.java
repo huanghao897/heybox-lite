@@ -6917,7 +6917,7 @@ public final class MainActivity extends Activity {
                 this.session.uiScale() / 100.0f));
         ImageView appIcon = new ImageView(this);
         appIcon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        Drawable icon = Compat.tintedDrawable(this, R.mipmap.heywear, this.TEXT);
+        Drawable icon = Compat.tintedDrawable(this, R.mipmap.about_app_mark, this.TEXT);
         if (icon != null) appIcon.setImageDrawable(icon);
         appMark.addView(appIcon, new FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER));
         LinearLayout.LayoutParams markParams = new LinearLayout.LayoutParams(markSize, markSize);
