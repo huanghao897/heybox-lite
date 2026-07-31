@@ -33,7 +33,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.text.Editable;
-import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.DisplayMetrics;
@@ -53,7 +52,6 @@ import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
-import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -192,6 +190,20 @@ public final class MainActivity extends Activity {
     }
     private interface ToggleListener {
         void onChanged(boolean z);
+    }
+    private interface TextListener {
+        void onChanged(String value);
+    }
+    private static final class SettingEntry {
+        final LinearLayout root;
+        final TextView description;
+        final TextView value;
+
+        SettingEntry(LinearLayout root, TextView description, TextView value) {
+            this.root = root;
+            this.description = description;
+            this.value = value;
+        }
     }
     private static final class CommentLikeControl {
         final LinearLayout root;
@@ -620,20 +632,17 @@ public final class MainActivity extends Activity {
         Motions.dialogIn(linearLayout);
     }
     private TextView dialogAction(String label, boolean primary, AlertDialog[] holder, Runnable action) {
-        int iRgb;
-        int fill = primary ? this.PRIMARY : 0;
-        if (primary) {
-            iRgb = this.PRIMARY;
-        } else {
-            iRgb = this.session.darkMode() ? Color.rgb(82, 82, 82) : Color.rgb(198, 198, 198);
-        }
-        int stroke = iRgb;
-        int color = primary ? contrast(this.PRIMARY) : this.TEXT;
+        ThemeTokens tokens = this.themeTokens == null
+                ? ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY)
+                : this.themeTokens;
+        int fill = primary ? tokens.text : tokens.panelElevated;
+        int color = primary ? ThemeTokens.contrast(tokens.text) : tokens.text;
         TextView view = text(label, 13.0f, color);
         view.setTypeface(appRegularTypeface(), primary ? 1 : 0);
         view.setGravity(17);
         view.setPadding(dp(10), 0, dp(10), 0);
-        Compat.setBackground(view, roundStroke(fill, 18, stroke, 1));
+        Compat.setBackground(view, UiComponents.round(this, fill, 11,
+                this.session.uiScale() / 100.0f));
         view.setOnClickListener(v -> {
             runWithPressFeedback(view, () -> {
                 AlertDialog dialog = holder == null ? null : holder[0];
@@ -1872,7 +1881,7 @@ public final class MainActivity extends Activity {
         TextView search = text("搜索帖子、作者或关键词", 12.5f, this.MUTED);
         search.setGravity(16);
         search.setSingleLine(true);
-        setLeftIcon(search, R.drawable.ic_search, this.MUTED, 16);
+        setLeftIcon(search, R.drawable.il_search, this.MUTED, 16);
         search.setOnClickListener(view -> {
             showSearch();
         });
@@ -2346,7 +2355,7 @@ public final class MainActivity extends Activity {
         ImageView searchGlyph = new ImageView(this);
         searchGlyph.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         Drawable searchIcon = Compat.tintedDrawable(
-                this, R.drawable.ic_search, this.MUTED);
+                this, R.drawable.il_search, this.MUTED);
         if (searchIcon != null) searchGlyph.setImageDrawable(searchIcon);
         searchBar.addView(searchGlyph, new LinearLayout.LayoutParams(dp(20), dp(20)));
         EditText input = new EditText(this);
@@ -2362,7 +2371,7 @@ public final class MainActivity extends Activity {
         ImageView submit = new ImageView(this);
         submit.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         Drawable submitIcon = Compat.tintedDrawable(
-                this, R.drawable.ic_search, this.TEXT);
+                this, R.drawable.il_search, this.TEXT);
         if (submitIcon != null) submit.setImageDrawable(submitIcon);
         submit.setPadding(dp(roundLayout ? 7 : 8), dp(roundLayout ? 7 : 8),
                 dp(roundLayout ? 7 : 8), dp(roundLayout ? 7 : 8));
@@ -5633,28 +5642,34 @@ public final class MainActivity extends Activity {
 
     private TextView addSettingEntry(LinearLayout parent, String name, String description,
                                      String value, int icon, Runnable action) {
+        return addSettingEntryView(parent, name, description, value, icon, action).description;
+    }
+
+    private SettingEntry addSettingEntryView(LinearLayout parent, String name,
+                                             String description, String value,
+                                             int icon, Runnable action) {
         addSettingsDivider(parent);
         LinearLayout row = new LinearLayout(this);
         row.setGravity(16);
-        int rowHorizontal = dp(usesRoundLayout() ? 10 : 6);
-        int rowVertical = dp(usesRoundLayout() ? 8 : 11);
+        int rowHorizontal = dp(usesRoundLayout() ? 10 : 12);
+        int rowVertical = dp(usesRoundLayout() ? 7 : 9);
         row.setPadding(rowHorizontal, rowVertical,
                 rowHorizontal, rowVertical);
-        row.setMinimumHeight(dp(usesRoundLayout() ? 48 : 50));
+        row.setMinimumHeight(dp(60));
         ImageView marker = new ImageView(this);
         marker.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         Drawable iconDrawable = Compat.tintedDrawable(this, icon, this.themeTokens.text);
         if (iconDrawable != null) {
             marker.setImageDrawable(iconDrawable);
         }
-        marker.setPadding(dp(5), dp(5), dp(5), dp(5));
+        marker.setPadding(dp(8), dp(8), dp(8), dp(8));
         Compat.setBackground(marker, UiComponents.monoChip(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
-        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(27), dp(27));
-        markerParams.rightMargin = dp(12);
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(38), dp(38));
+        markerParams.rightMargin = dp(10);
         row.addView(marker, markerParams);
         LinearLayout copy = vertical(0);
-        TextView titleView = text(name, 14.0f,
+        TextView titleView = text(name, 15.0f,
                 name.startsWith("退出登录") ? Color.rgb(228, 88, 88) : this.TEXT);
         titleView.setTypeface(appRegularTypeface(), 1);
         copy.addView(titleView);
@@ -5668,16 +5683,19 @@ public final class MainActivity extends Activity {
         if ("阅读时长".equals(name)) {
             this.readingTodayView = descView;
         }
-        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        copyParams.rightMargin = dp(6);
+        row.addView(copy, copyParams);
+        TextView valueView = null;
         if (!TextUtils.isEmpty(value)) {
-            TextView valueView = text(value, 12.0f, this.MUTED);
+            valueView = text(value, 12.0f, this.MUTED);
             valueView.setSingleLine(true);
             valueView.setEllipsize(TextUtils.TruncateAt.END);
             valueView.setGravity(21);
             LinearLayout.LayoutParams valueParams =
                     new LinearLayout.LayoutParams(-2, -2);
-            valueParams.leftMargin = dp(8);
-            valueParams.rightMargin = dp(3);
+            valueParams.leftMargin = dp(4);
+            valueParams.rightMargin = dp(2);
             row.addView(valueView, valueParams);
         }
         ImageView arrow = new ImageView(this);
@@ -5692,7 +5710,7 @@ public final class MainActivity extends Activity {
             runWithPressFeedback(view, action);
         });
         parent.addView(row);
-        return descView;
+        return new SettingEntry(row, descView, valueView);
     }
 
     private void addProfileMenu(LinearLayout page, boolean loggedIn) {
@@ -6206,7 +6224,7 @@ public final class MainActivity extends Activity {
         search.setSingleLine(true);
         search.setTextSize(sp(12.0f));
         search.setPadding(dp(10), 0, dp(10), 0);
-        setLeftIcon(search, R.drawable.ic_search, this.MUTED, 16);
+        setLeftIcon(search, R.drawable.il_search, this.MUTED, 16);
         Compat.setBackground(search, UiComponents.groupCard(
                 this, this.themeTokens, this.session.uiScale() / 100.0f));
         FrameLayout results = new FrameLayout(this);
@@ -6336,7 +6354,7 @@ public final class MainActivity extends Activity {
                 : Color.argb(14, 0, 0, 0));
         LinearLayout.LayoutParams params =
                 new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-        params.leftMargin = dp(45);
+        params.leftMargin = dp(60);
         parent.addView(divider, params);
     }
 
@@ -6382,123 +6400,66 @@ public final class MainActivity extends Activity {
 
     private void showDisplaySettings() {
         LinearLayout linearLayout = settingsPage("display_settings", "显示");
-        addSectionLabel(linearLayout, "显示");
+        addSectionLabel(linearLayout, "外观");
         LinearLayout panel = settingsList();
-        boolean[] dark = {this.session.darkMode()};
-        boolean[] bodyBold = {this.session.bodyBold()};
-        boolean[] roundScreen = {this.session.roundScreen()};
-        addTop(panel, toggleRow("夜间模式", dark[0], value -> {
-            dark[0] = value;
+        addTop(panel, toggleRow("夜间模式", this.session.darkMode(), value -> {
+            this.session.setDarkMode(value);
+            refreshDisplayShell();
         }), 0);
-        addSettingEntry(panel, "查看界面预览", null, R.drawable.il_eye,
+        addSettingEntry(panel, "颜色主题", currentThemeCaption().replace("当前 · ", ""),
+                R.drawable.il_palette, this::showThemePicker);
+        addRangeSettingEntry(panel, "界面大小", "%", R.drawable.ic_expand,
+                70, 160, 1, this.session.uiScale(), this.session::setUiScale,
+                this::refreshDisplayShell);
+        addRangeSettingEntry(panel, "文字大小", "%", R.drawable.il_info,
+                70, 180, 1, this.session.textScale(), this.session::setTextScale,
+                this::refreshDisplayShell);
+        addRangeSettingEntry(panel, "左右边距", "dp", R.drawable.ic_expand,
+                0, 30, 1, this.session.pagePadding(), this.session::setPagePadding,
+                this::refreshDisplayShell);
+        addSettingEntry(panel, "界面预览", null, R.drawable.il_eye,
                 this::showDisplayPreview);
-        panel.addView(motionLevelRow());
         linearLayout.addView(panel);
-        addSectionLabel(linearLayout, "界面尺寸");
+        addSectionLabel(linearLayout, isSystemRoundScreen()
+                ? "屏幕适配 · 已识别圆屏" : "屏幕适配");
         panel = settingsList();
-        ScaleControl uiScale = settingSlider(panel, "界面大小", "%", 70, 160, this.session.uiScale(), value2 -> {
-        });
-        ScaleControl textScale = settingSlider(panel, "文字大小", "%", 70, 180, this.session.textScale(), value3 -> {
-        });
-        ScaleControl padding = settingSlider(panel, "左右边距", "dp", 0, 30, this.session.pagePadding(), value4 -> {
-        });
-        linearLayout.addView(panel);
-        addSectionLabel(linearLayout, "屏幕适配");
-        panel = settingsList();
-        TextView roundDesc = text(isSystemRoundScreen()
-                ? "已自动识别为圆屏，页面组件会使用圆屏布局"
-                : roundScreen[0]
-                ? "已手动启用圆屏布局"
-                : "未识别为圆屏，可在下方手动启用", 11.0f, this.MUTED);
-        roundDesc.setLineSpacing(0.0f, 1.16f);
-        roundDesc.setPadding(dp(6), dp(7), dp(6), dp(4));
-        panel.addView(roundDesc);
-        ScaleControl[] screenPaddingH = new ScaleControl[1];
-        ScaleControl[] screenPaddingV = new ScaleControl[1];
-        addTop(panel, toggleRow("手动启用圆屏布局", roundScreen[0], value5 -> {
-            roundScreen[0] = value5;
+        addTop(panel, toggleRow("圆屏适配", this.session.roundScreen(), value -> {
+            this.session.setRoundScreen(value);
+            refreshDisplayShell();
         }), 0);
-        screenPaddingH[0] = settingSlider(panel, "额外横向边距", "%", 0, 30,
-                this.session.screenPaddingHPercent(), value6 -> {
-                });
-        screenPaddingV[0] = settingSlider(panel, "额外纵向边距", "%", 0, 30,
-                this.session.screenPaddingVPercent(), value7 -> {
-                });
+        addRangeSettingEntry(panel, "横向安全区", "%", R.drawable.il_round_screen,
+                0, 30, 1, this.session.screenPaddingHPercent(),
+                this.session::setScreenPaddingHPercent, this::refreshDisplayShell);
+        addRangeSettingEntry(panel, "纵向安全区", "%", R.drawable.il_round_screen,
+                0, 30, 1, this.session.screenPaddingVPercent(),
+                this.session::setScreenPaddingVPercent, this::refreshDisplayShell);
         linearLayout.addView(panel);
         addSectionLabel(linearLayout, "正文排版");
         panel = settingsList();
-        ScaleControl bodyText = settingSlider(panel, "正文字号", "%", 75, 170, this.session.bodyTextScale(), value8 -> {
-        });
-        ScaleControl letterSpacing = settingSlider(panel, "字间", "", 0, 20, this.session.bodyLetterSpacing(), value9 -> {
-        });
-        ScaleControl paragraphSpacing = settingSlider(panel, "段落间距", "dp", 0, 24, this.session.bodyParagraphSpacing(), value10 -> {
-        });
-        ScaleControl lineSpacing = settingSlider(panel, "行距", "%", 100, 180, this.session.bodyLineSpacing(), value11 -> {
-        });
-        addTop(panel, toggleRow("正文与一级评论稍加粗", bodyBold[0], value12 -> {
-            bodyBold[0] = value12;
-        }), 0);
+        addRangeSettingEntry(panel, "正文字号", "%", R.drawable.il_info,
+                75, 170, 1, this.session.bodyTextScale(), this.session::setBodyTextScale, null);
+        addRangeSettingEntry(panel, "字间", "", R.drawable.il_info,
+                0, 20, 1, this.session.bodyLetterSpacing(), this.session::setBodyLetterSpacing, null);
+        addRangeSettingEntry(panel, "段落间距", "dp", R.drawable.ic_expand,
+                0, 24, 1, this.session.bodyParagraphSpacing(), this.session::setBodyParagraphSpacing, null);
+        addRangeSettingEntry(panel, "行距", "%", R.drawable.ic_expand,
+                100, 180, 1, this.session.bodyLineSpacing(), this.session::setBodyLineSpacing, null);
+        addTop(panel, toggleRow("正文与一级评论加粗", this.session.bodyBold(),
+                this.session::setBodyBold), 0);
         linearLayout.addView(panel);
-        addSectionLabel(linearLayout, "颜色主题");
+        addSectionLabel(linearLayout, "动画");
         panel = settingsList();
-        LinearLayout themeGrid = vertical(0);
-        int themeColumns = usesRoundLayout() ? 4 : 6;
-        for (int start = 0; start < THEME_NAMES.length; start += themeColumns) {
-            LinearLayout row = new LinearLayout(this);
-            for (int i = start; i < start + themeColumns; i++) {
-                LinearLayout cell = new LinearLayout(this);
-                cell.setGravity(17);
-                if (i < THEME_NAMES.length) {
-                    cell.addView(themeSwatch(i), new LinearLayout.LayoutParams(dp(34), dp(34)));
-                }
-                row.addView(cell, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
-            }
-            addTop(themeGrid, row, start == 0 ? 2 : 4);
-        }
-        panel.addView(themeGrid);
-        TextView themeCaption = text(currentThemeCaption(), 10.5f, this.MUTED);
-        addTop(panel, themeCaption, 2);
-        Button save = button("保存显示设置", R.drawable.ic_save);
-        save.setOnClickListener(view2 -> {
-            Integer ui = parseNumber(uiScale.input, 70, 160);
-            Integer text = parseNumber(textScale.input, 70, 180);
-            Integer pad = parseNumber(padding.input, 0, 30);
-            Integer insetH = parseNumber(screenPaddingH[0].input, 0, 30);
-            Integer insetV = parseNumber(screenPaddingV[0].input, 0, 30);
-            Integer bodySize = parseNumber(bodyText.input, 75, 170);
-            Integer letters = parseNumber(letterSpacing.input, 0, 20);
-            Integer paragraphs = parseNumber(paragraphSpacing.input, 0, 24);
-            Integer lines = parseNumber(lineSpacing.input, 100, 180);
-            if (ui == null || text == null || pad == null || insetH == null || insetV == null || bodySize == null || letters == null || paragraphs == null || lines == null) {
-                toast("请检查输入数值是否在滑杆范围");
-                return;
-            }
-            this.session.setDarkMode(dark[0]);
-            this.session.setUiScale(ui.intValue());
-            this.session.setTextScale(text.intValue());
-            this.session.setPagePadding(pad.intValue());
-            this.session.setRoundScreen(roundScreen[0]);
-            this.session.setScreenPaddingHPercent(insetH.intValue());
-            this.session.setScreenPaddingVPercent(insetV.intValue());
-            this.session.setBodyTextScale(bodySize.intValue());
-            this.session.setBodyLetterSpacing(letters.intValue());
-            this.session.setBodyParagraphSpacing(paragraphs.intValue());
-            this.session.setBodyLineSpacing(lines.intValue());
-            this.session.setBodyBold(bodyBold[0]);
-            applyPalette();
-            Compat.colorSystemBars(getWindow(), this.BG);
-            buildShell();
-            showDisplaySettings();
-            toast("显示设置已保存");
-        });
-        addTop(panel, save, 10);
-        addSettingEntry(panel, "恢复默认设置", "主题、字体、间距与界面大小全部还原", R.drawable.il_refresh, () -> {
+        addChoiceSettingEntry(panel, "动画效果", R.drawable.il_splash,
+                new String[]{"关闭", "精简", "完整"}, this.session.motionLevel(),
+                value -> {
+                    cancelAllMotion();
+                    this.session.setMotionLevel(value);
+                    Motions.setLevel(value);
+                }, null);
+        addSettingEntry(panel, "恢复默认设置", null, R.drawable.il_refresh, () -> {
             showLiteDialog("恢复默认显示设置", "主题、字体、间距和界面大小都将恢复为默认值", "恢复", () -> {
                 this.session.resetDisplaySettings();
-                applyPalette();
-                Compat.colorSystemBars(getWindow(), this.BG);
-                buildShell();
-                showDisplaySettings();
+                refreshDisplayShell();
                 toast("已恢复默认显示设置");
             }, "取消", null, null, null);
         });
@@ -6616,6 +6577,59 @@ public final class MainActivity extends Activity {
         return "当前 · 自定义配色";
     }
 
+    private void refreshDisplayShell() {
+        applyPalette();
+        Compat.colorSystemBars(getWindow(), this.BG);
+        buildShell();
+        if ("display_settings".equals(this.screen)) {
+            showDisplaySettings();
+        } else if ("display_preview".equals(this.screen)) {
+            showDisplayPreview();
+        }
+    }
+
+    private void showThemePicker() {
+        LinearLayout box = settingsDialogPanel("颜色主题");
+        LinearLayout grid = vertical(0);
+        int columns = usesRoundLayout() ? 3 : 4;
+        final int[] selected = {-1};
+        final AlertDialog[] holder = new AlertDialog[1];
+        for (int start = 0; start < THEME_NAMES.length; start += columns) {
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER);
+            for (int i = start; i < start + columns; i++) {
+                LinearLayout cell = vertical(0);
+                cell.setGravity(Gravity.CENTER);
+                if (i < THEME_NAMES.length) {
+                    int index = i;
+                    View swatch = themeSwatch(index);
+                    swatch.setOnClickListener(view -> {
+                        selected[0] = index;
+                        holder[0].dismiss();
+                    });
+                    cell.addView(swatch, new LinearLayout.LayoutParams(dp(36), dp(36)));
+                    TextView name = text(THEME_NAMES[i], 9.0f, this.MUTED);
+                    name.setGravity(Gravity.CENTER);
+                    cell.addView(name, new LinearLayout.LayoutParams(-1, dp(22)));
+                }
+                row.addView(cell, new LinearLayout.LayoutParams(0, dp(58), 1.0f));
+            }
+            addTop(grid, row, start == 0 ? 2 : 3);
+        }
+        box.addView(grid, new LinearLayout.LayoutParams(-1, -2));
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(box).create();
+        holder[0] = dialog;
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.setOnDismissListener(value -> {
+            if (selected[0] >= 0 && !isFinishing()) {
+                this.session.setTheme(Format.colorHex(THEME_COLORS[selected[0]][0]),
+                        Format.colorHex(THEME_COLORS[selected[0]][1]));
+                refreshDisplayShell();
+            }
+        });
+        presentSettingsDialog(dialog, box);
+    }
+
     private void showAppSettings() {
         LinearLayout page = settingsPage("app_settings", "内容与缓存");
         addSectionLabel(page, "浏览与交互");
@@ -6625,22 +6639,17 @@ public final class MainActivity extends Activity {
             this.feed.clear();
             invalidateFeedView();
         }), 0);
-        addSettingEntry(panel, "网络模式", networkModeLabel(), R.drawable.il_globe,
-                this::showNetworkModePicker);
-        ScaleControl[] crownSpeed = new ScaleControl[1];
+        addChoiceSettingEntry(panel, "网络模式", R.drawable.il_globe,
+                new String[]{"省流量", "标准", "原图"}, this.session.networkMode(),
+                this::setNetworkMode, null);
         addTop(panel, toggleRow("表冠滚动", this.session.crownScrollEnabled(), value -> {
             this.session.setCrownScrollEnabled(value);
             if (!value) this.crownScrollController.reset();
-            setScaleControlEnabled(crownSpeed[0], value);
         }), 0);
-        crownSpeed[0] = settingSlider(panel, "滚动速度", "%",
+        addRangeSettingEntry(panel, "滚动速度", "%", R.drawable.il_scroll,
                 CrownScrollController.MIN_SPEED_PERCENT,
                 CrownScrollController.MAX_SPEED_PERCENT,
-                this.session.crownScrollSpeed(), this.session::setCrownScrollSpeed,
-                false);
-        crownSpeed[0].input.setFocusable(false);
-        crownSpeed[0].input.setClickable(false);
-        setScaleControlEnabled(crownSpeed[0], this.session.crownScrollEnabled());
+                5, this.session.crownScrollSpeed(), this.session::setCrownScrollSpeed, null);
         addTop(panel, toggleRow("右滑返回上一级", this.session.shellBackSwipe(),
                 this.session::setShellBackSwipe), 0);
         addTop(panel, toggleRow("退出确认", this.session.confirmExitOnBack(),
@@ -6648,34 +6657,37 @@ public final class MainActivity extends Activity {
         addTop(panel, toggleRow("记住帖子阅读位置",
                 this.session.rememberDetailScroll(),
                 this.session::setRememberDetailScroll), 0);
-        addTop(panel, toggleRow("自动清理", "", "30 天",
-                this.session.autoOfflineCleanup(), value -> {
-                    this.session.setAutoOfflineCleanup(value);
-                    if (value) pruneOfflineCache(null);
-                }), 0);
+        addChoiceSettingEntry(panel, "自动清理", R.drawable.il_cleanup,
+                new String[]{"关闭", "30 天"}, this.session.autoOfflineCleanup() ? 1 : 0,
+                value -> {
+                    boolean enabled = value == 1;
+                    this.session.setAutoOfflineCleanup(enabled);
+                    if (enabled) pruneOfflineCache(null);
+                }, null);
         addTop(panel, toggleRow("双击评论回复",
                 this.session.doubleTapCommentReply(),
                 this.session::setDoubleTapCommentReply), 0);
         page.addView(panel);
         addSectionLabel(page, "内容过滤");
         LinearLayout filter = settingsList();
-        TextView filterLabel = text("屏蔽关键词（逗号分隔）", 11.0f, this.MUTED);
-        addTop(filter, filterLabel, 2);
+        filter.setPadding(dp(12), dp(12), dp(12), dp(12));
         EditText blockKeywords = new EditText(this);
         blockKeywords.setText(this.session.blockKeywords());
+        blockKeywords.setHint("屏蔽关键词，用逗号分隔");
         blockKeywords.setTextColor(this.TEXT);
-        blockKeywords.setTextSize(sp(11.0f));
+        blockKeywords.setHintTextColor(this.themeTokens.subtle);
+        blockKeywords.setTextSize(sp(13.0f));
         blockKeywords.setSingleLine(false);
-        blockKeywords.setMinLines(1);
+        blockKeywords.setMinLines(3);
         blockKeywords.setMaxLines(3);
-        blockKeywords.setMinHeight(dp(40));
+        blockKeywords.setMinHeight(dp(78));
         blockKeywords.setGravity(48);
-        Compat.tint(blockKeywords, this.themeTokens.accent);
-        blockKeywords.setPadding(dp(8), dp(6), dp(8), dp(6));
-        Compat.setBackground(blockKeywords, UiComponents.outlinedTextField(this, this.themeTokens,
+        blockKeywords.setPadding(dp(12), dp(10), dp(12), dp(10));
+        Compat.setBackground(blockKeywords, UiComponents.round(this,
+                this.session.darkMode() ? Color.rgb(16, 16, 17) : this.themeTokens.panelElevated, 9,
                 this.session.uiScale() / 100.0f));
-        addTop(filter, blockKeywords, 5);
-        Button saveFilter = button("保存内容过滤", R.drawable.ic_save);
+        filter.addView(blockKeywords, new LinearLayout.LayoutParams(-1, -2));
+        Button saveFilter = settingsCommandButton("保存内容过滤");
         saveFilter.setOnClickListener(view -> {
             this.session.setBlockKeywords(blockKeywords.getText().toString());
             this.feed.clear();
@@ -6684,30 +6696,33 @@ public final class MainActivity extends Activity {
             invalidateFeedView();
             toast("内容过滤已保存");
         });
-        addTop(filter, saveFilter, 9);
+        addTop(filter, saveFilter, 10);
         page.addView(filter);
         addSectionLabel(page, "维护");
         LinearLayout maintain = settingsList();
-        final TextView[] pruneDesc = new TextView[1];
-        pruneDesc[0] = addSettingEntry(maintain, "清理过期离线内容", offlineSummary(), R.drawable.il_cleanup, () ->
+        final SettingEntry[] pruneEntry = new SettingEntry[1];
+        pruneEntry[0] = addSettingEntryView(maintain, "清理过期离线内容", null,
+                this.localCache.detailCount() + " 篇", R.drawable.il_cleanup, () ->
                 pruneOfflineCache(() -> {
-                    if (pruneDesc[0] != null) pruneDesc[0].setText(offlineSummary());
+                    if (pruneEntry[0].value != null) {
+                        pruneEntry[0].value.setText(this.localCache.detailCount() + " 篇");
+                    }
                     toast("过期离线内容已清理");
                 }));
-        addSettingEntry(maintain, "导出日志", "生成诊断文件用于反馈问题", R.drawable.il_scroll,
+        addSettingEntry(maintain, "导出日志", null, R.drawable.il_scroll,
                 this::exportDiagnostics);
-        addSettingEntry(maintain, "上传日志", "直接提交脱敏日志", R.drawable.il_info,
+        addSettingEntry(maintain, "上传日志", null, R.drawable.il_info,
                 this::uploadDiagnostics);
-        final TextView[] cacheDesc = new TextView[1];
-        cacheDesc[0] = addSettingEntry(maintain, "清除缓存", "临时文件与图片缓存 " + Format.cacheMb(cacheBytes()),
-                R.drawable.il_cleanup, () -> {
+        final SettingEntry[] cacheEntry = new SettingEntry[1];
+        cacheEntry[0] = addSettingEntryView(maintain, "清除缓存", null,
+                Format.cacheMb(cacheBytes()), R.drawable.il_cleanup, () -> {
                     long before = tempCacheBytes();
                     long imageBefore = ((long) ImageLoader.cacheSizeKb()) * 1024;
                     clearTempCacheFiles(getCacheDir());
                     EmojiRenderer.clear();
                     ImageLoader.clear();
-                    if (cacheDesc[0] != null) {
-                        cacheDesc[0].setText("临时文件与图片缓存 " + Format.cacheMb(cacheBytes()));
+                    if (cacheEntry[0].value != null) {
+                        cacheEntry[0].value.setText(Format.cacheMb(cacheBytes()));
                     }
                     toast("已清除缓存 " + Format.cacheMb(before + imageBefore));
                 });
@@ -6725,43 +6740,21 @@ public final class MainActivity extends Activity {
         page.addView(maintain);
     }
 
-    private String offlineSummary() {
-        return "离线缓存 " + Format.cacheMb(this.localCache.offlineBytes())
-                + " · 已缓存帖子 " + this.localCache.detailCount();
-    }
-
     private void showStartupSettings() {
         LinearLayout page = settingsPage("startup_settings", "启动与更新");
         addSectionLabel(page, "启动与更新");
         LinearLayout panel = settingsList();
-        boolean[] autoUpdate = {this.session.autoUpdateCheck()};
-        boolean[] splashEnabled = {this.session.splashEnabled()};
-        addTop(panel, toggleRow("进入软件时检查更新", autoUpdate[0], value -> {
-            autoUpdate[0] = value;
-        }), 0);
-        addTop(panel, toggleRow("显示开屏动画", splashEnabled[0], value2 -> {
-            splashEnabled[0] = value2;
-        }), 0);
-        EditText splashText = textField(panel, "开屏文字", this.session.splashText());
-        ScaleControl duration = settingSlider(panel, "开屏时长", "ms", 500, 2600, this.session.splashDuration(), value3 -> {
-        });
+        addTop(panel, toggleRow("进入软件时检查更新", this.session.autoUpdateCheck(),
+                this.session::setAutoUpdateCheck), 0);
+        addTop(panel, toggleRow("显示开屏动画", this.session.splashEnabled(),
+                this.session::setSplashEnabled), 0);
+        addTextSettingEntry(panel, "开屏文字", this.session.splashText(),
+                R.drawable.il_info, this.session::setSplashText);
+        addRangeSettingEntry(panel, "开屏时长", "ms", R.drawable.il_history,
+                500, 2600, 50, this.session.splashDuration(),
+                this.session::setSplashDuration, null);
         addSettingEntry(panel, "预览开屏动画", null, R.drawable.il_eye, () ->
-                showSplashPreview(splashText.getText().toString().trim(),
-                        parseNumber(duration.input, 500, 2600)));
-        Button save = button("保存启动设置", R.drawable.ic_save);
-        save.setOnClickListener(view2 -> {
-            Integer durationValue = parseNumber(duration.input, 500, 2600);
-            if (durationValue == null) {
-                toast("开屏时长请输入 500-2600");
-                return;
-            }
-            this.session.setAutoUpdateCheck(autoUpdate[0]);
-            this.session.setSplashEnabled(splashEnabled[0]);
-            this.session.setSplashText(splashText.getText().toString());
-            this.session.setSplashDuration(durationValue.intValue());
-            toast("启动设置已保存");
-        });
-        addTop(panel, save, 7);
+                showSplashPreview(this.session.splashText(), this.session.splashDuration()));
         page.addView(panel);
     }
 
@@ -7004,38 +6997,38 @@ public final class MainActivity extends Activity {
         row.setOrientation(1);
         LinearLayout content = new LinearLayout(this);
         content.setGravity(16);
-        int horizontal = dp(usesRoundLayout() ? 10 : 6);
-        int vertical = dp(usesRoundLayout() ? 7 : 8);
+        int horizontal = dp(usesRoundLayout() ? 10 : 12);
+        int vertical = dp(usesRoundLayout() ? 7 : 9);
         content.setPadding(horizontal, vertical, horizontal, vertical);
 
         ImageView icon = new ImageView(this);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        icon.setPadding(dp(5), dp(5), dp(5), dp(5));
+        icon.setPadding(dp(8), dp(8), dp(8), dp(8));
         Drawable drawable = Compat.tintedDrawable(this, settingToggleIcon(label), this.themeTokens.text);
         if (drawable != null) {
             icon.setImageDrawable(drawable);
         }
         Compat.setBackground(icon, UiComponents.monoChip(this, this.themeTokens,
                 this.session.uiScale() / 100.0f));
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(27), dp(27));
-        iconParams.rightMargin = dp(12);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(38), dp(38));
+        iconParams.rightMargin = dp(10);
         content.addView(icon, iconParams);
 
         LinearLayout copy = vertical(0);
-        TextView title = text(label, 13.5f, this.TEXT);
+        TextView title = text(label, 15.0f, this.TEXT);
         title.setTypeface(appRegularTypeface(), Typeface.BOLD);
         copy.addView(title);
         if (description != null && !description.isEmpty()) {
-            TextView desc = text(description, 10.5f, this.MUTED);
+            TextView desc = text(description, 11.0f, this.MUTED);
             desc.setPadding(0, dp(1), 0, 0);
             copy.addView(desc);
         }
         LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        copyParams.rightMargin = dp(8);
+        copyParams.rightMargin = dp(6);
         content.addView(copy, copyParams);
 
         if (!TextUtils.isEmpty(trailingValue)) {
-            TextView trailing = text(trailingValue, 11.5f, this.MUTED);
+            TextView trailing = text(trailingValue, 12.0f, this.MUTED);
             trailing.setSingleLine(true);
             LinearLayout.LayoutParams trailingParams =
                     new LinearLayout.LayoutParams(-2, -2);
@@ -7048,16 +7041,16 @@ public final class MainActivity extends Activity {
         View thumb = new View(this);
         Compat.setBackground(thumb, round(Color.WHITE, 9));
         FrameLayout.LayoutParams thumbParams = new FrameLayout.LayoutParams(dp(18), dp(18), 16);
-        thumbParams.leftMargin = dp(4);
+        thumbParams.leftMargin = dp(3);
         toggle.addView(thumb, thumbParams);
-        final int travel = dp(16);
+        final int travel = dp(18);
         Runnable paintTrack = () -> Compat.setBackground(toggle, round(value[0]
-                ? this.themeTokens.accent
-                : (this.session.darkMode() ? Color.rgb(51, 55, 62) : Color.rgb(203, 208, 214)), 13));
+                ? (this.session.darkMode() ? Color.rgb(119, 119, 125) : Color.rgb(166, 166, 171))
+                : (this.session.darkMode() ? Color.rgb(58, 58, 62) : Color.rgb(209, 209, 214)), 12));
         paintTrack.run();
         thumb.setTranslationX(value[0] ? travel : 0.0f);
-        content.addView(toggle, new LinearLayout.LayoutParams(dp(42), dp(26)));
-        content.setMinimumHeight(dp(48));
+        content.addView(toggle, new LinearLayout.LayoutParams(dp(42), dp(24)));
+        content.setMinimumHeight(dp(60));
         row.addView(content, new LinearLayout.LayoutParams(-1, -2));
 
         View divider = new View(this);
@@ -7066,7 +7059,7 @@ public final class MainActivity extends Activity {
                 ? Color.argb(16, 255, 255, 255) : Color.argb(14, 0, 0, 0));
         LinearLayout.LayoutParams dividerParams =
                 new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-        dividerParams.leftMargin = dp(45);
+        dividerParams.leftMargin = dp(60);
         row.addView(divider, dividerParams);
         content.setOnClickListener(view -> {
             value[0] = !value[0];
@@ -7079,84 +7072,6 @@ public final class MainActivity extends Activity {
             listener.onChanged(value[0]);
         });
         row.setTag("settings_row_with_divider");
-        return row;
-    }
-
-    private View motionLevelRow() {
-        LinearLayout row = vertical(0);
-        View divider = new View(this);
-        divider.setBackgroundColor(this.session.darkMode()
-                ? Color.argb(16, 255, 255, 255)
-                : Color.argb(14, 0, 0, 0));
-        LinearLayout.LayoutParams dividerParams =
-                new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
-        dividerParams.leftMargin = dp(45);
-        row.addView(divider, dividerParams);
-
-        LinearLayout content = new LinearLayout(this);
-        content.setGravity(Gravity.CENTER_VERTICAL);
-        int horizontal = dp(usesRoundLayout() ? 10 : 6);
-        content.setPadding(horizontal, dp(8), horizontal, dp(8));
-
-        ImageView icon = new ImageView(this);
-        icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        icon.setPadding(dp(5), dp(5), dp(5), dp(5));
-        Drawable iconDrawable = Compat.tintedDrawable(
-                this, R.drawable.il_splash, this.themeTokens.text);
-        if (iconDrawable != null) icon.setImageDrawable(iconDrawable);
-        Compat.setBackground(icon, UiComponents.monoChip(
-                this, this.themeTokens, this.session.uiScale() / 100.0f));
-        LinearLayout.LayoutParams iconParams =
-                new LinearLayout.LayoutParams(dp(27), dp(27));
-        iconParams.rightMargin = dp(12);
-        content.addView(icon, iconParams);
-
-        TextView title = text("动画效果", 13.5f, this.TEXT);
-        title.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        content.addView(title, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        LinearLayout options = new LinearLayout(this);
-        options.setGravity(Gravity.CENTER);
-        options.setPadding(dp(2), dp(2), dp(2), dp(2));
-        Compat.setBackground(options, UiComponents.round(
-                this, this.themeTokens.panelElevated, 14,
-                this.session.uiScale() / 100.0f));
-        String[] labels = {"关闭", "精简", "完整"};
-        TextView[] choices = new TextView[labels.length];
-        Runnable repaint = () -> {
-            int selected = this.session.motionLevel();
-            for (int i = 0; i < choices.length; i++) {
-                boolean active = i == selected;
-                choices[i].setTextColor(active
-                        ? this.themeTokens.background : this.themeTokens.muted);
-                choices[i].setTypeface(appRegularTypeface(),
-                        active ? Typeface.BOLD : Typeface.NORMAL);
-                Compat.setBackground(choices[i], active
-                        ? UiComponents.round(this, this.themeTokens.text, 12,
-                        this.session.uiScale() / 100.0f)
-                        : null);
-            }
-        };
-        int optionWidth = dp(usesRoundLayout() ? 36 : 40);
-        for (int i = 0; i < labels.length; i++) {
-            int level = i;
-            TextView choice = text(labels[i], 10.0f, this.MUTED);
-            choice.setGravity(Gravity.CENTER);
-            choice.setOnClickListener(view -> {
-                if (this.session.motionLevel() == level) return;
-                cancelAllMotion();
-                this.session.setMotionLevel(level);
-                Motions.setLevel(level);
-                repaint.run();
-                Motions.selected(choice);
-            });
-            choices[i] = choice;
-            options.addView(choice, new LinearLayout.LayoutParams(
-                    optionWidth, dp(26)));
-        }
-        repaint.run();
-        content.addView(options, new LinearLayout.LayoutParams(-2, dp(30)));
-        row.addView(content, new LinearLayout.LayoutParams(-1, -2));
         return row;
     }
 
@@ -7178,78 +7093,216 @@ public final class MainActivity extends Activity {
         return R.drawable.il_settings;
     }
 
-    /** 两行式滑杆：标签与数值同一行（数值点按可键入），通栏轨道在下，白钮与开关圆钮同族。 */
-    private ScaleControl settingSlider(LinearLayout parent, String label, String unit, final int min, int max, int current, final IntListener listener) {
-        return settingSlider(parent, label, unit, min, max, current, listener, true);
+    private SettingEntry addRangeSettingEntry(LinearLayout parent, String label,
+                                               String unit, int icon, int min, int max,
+                                               int step, int current, IntListener listener,
+                                               Runnable afterDismiss) {
+        final SettingEntry[] entry = new SettingEntry[1];
+        final int[] selected = {current};
+        entry[0] = addSettingEntryView(parent, label, null,
+                formatSettingValue(current, unit), icon, () ->
+                showRangeSettingDialog(label, unit, min, max, step, selected[0], value -> {
+                    selected[0] = value;
+                    listener.onChanged(value);
+                    if (entry[0].value != null) {
+                        entry[0].value.setText(formatSettingValue(value, unit));
+                    }
+                }, afterDismiss));
+        return entry[0];
     }
 
-    private ScaleControl settingSlider(LinearLayout parent, String label, String unit,
-                                       final int min, int max, int current,
-                                       final IntListener listener, boolean addDivider) {
-        if (addDivider) addSettingsDivider(parent);
-        LinearLayout wrap = new LinearLayout(this);
-        wrap.setOrientation(1);
-        wrap.setPadding(dp(6), dp(8), dp(6), dp(6));
-        LinearLayout head = new LinearLayout(this);
-        head.setGravity(16);
-        TextView name = text(label, 13.0f, this.TEXT);
-        name.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        head.addView(name, new LinearLayout.LayoutParams(0, -2, 1.0f));
-        final EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setText(String.valueOf(current));
-        input.setTextSize(sp(11.5f));
-        input.setTextColor(this.TEXT);
-        input.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        input.setGravity(21);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        input.setPadding(dp(6), dp(2), 0, dp(2));
-        input.setMinWidth(dp(30));
-        Compat.setBackground(input, null);
-        head.addView(input, new LinearLayout.LayoutParams(-2, -2));
-        if (unit != null && !unit.isEmpty()) {
-            TextView suffix = text(unit, 8.5f, this.MUTED);
-            LinearLayout.LayoutParams suffixParams = new LinearLayout.LayoutParams(-2, -2);
-            suffixParams.leftMargin = dp(2);
-            head.addView(suffix, suffixParams);
-        }
-        wrap.addView(head, new LinearLayout.LayoutParams(-1, -2));
-        SeekBar slider = new SeekBar(this);
-        slider.setMax(max - min);
-        slider.setProgress(Math.max(0, Math.min(max - min, current - min)));
-        Compat.tint(slider, this.themeTokens.accent,
-                this.session.darkMode() ? Color.WHITE : this.themeTokens.accent);
-        LinearLayout.LayoutParams sliderParams = new LinearLayout.LayoutParams(-1, dp(26));
-        sliderParams.topMargin = dp(1);
-        wrap.addView(slider, sliderParams);
-        parent.addView(wrap);
-        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int value = min + progress;
-                input.setText(String.valueOf(value));
-                input.setSelection(input.length());
-                listener.onChanged(value);
-            }
+    private String formatSettingValue(int value, String unit) {
+        return TextUtils.isEmpty(unit) ? String.valueOf(value)
+                : value + ("%".equals(unit) ? "%" : " " + unit);
+    }
 
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
+    private void showRangeSettingDialog(String titleValue, String unit, int min, int max,
+                                        int step, int current, IntListener listener,
+                                        Runnable afterDismiss) {
+        LinearLayout box = settingsDialogPanel(titleValue);
+        LinearLayout valueRow = new LinearLayout(this);
+        valueRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView hint = text("拖动调整", 11.0f, this.MUTED);
+        valueRow.addView(hint, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        TextView valueView = text(formatSettingValue(current, unit), 19.0f, this.TEXT);
+        valueView.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        valueRow.addView(valueView, new LinearLayout.LayoutParams(-2, -2));
+        addTop(box, valueRow, 6);
 
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
+        SettingRangeView range = new SettingRangeView(this, this.themeTokens,
+                min, max, step, current);
+        LinearLayout.LayoutParams rangeParams = new LinearLayout.LayoutParams(-1, dp(52));
+        rangeParams.topMargin = dp(6);
+        box.addView(range, rangeParams);
+
+        LinearLayout limits = new LinearLayout(this);
+        limits.setGravity(Gravity.CENTER_VERTICAL);
+        TextView lower = text(formatSettingValue(min, unit), 10.0f, this.MUTED);
+        TextView upper = text(formatSettingValue(max, unit), 10.0f, this.MUTED);
+        limits.addView(lower, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        upper.setGravity(Gravity.RIGHT);
+        limits.addView(upper, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        addTop(box, limits, 0);
+
+        final boolean[] changed = {false};
+        range.setListener(value -> {
+            changed[0] = true;
+            valueView.setText(formatSettingValue(value, unit));
+            listener.onChanged(value);
+        });
+        AlertDialog[] holder = new AlertDialog[1];
+        TextView done = settingsDialogAction("完成", holder);
+        addTop(box, done, 12);
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(box).create();
+        holder[0] = dialog;
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.setOnDismissListener(value -> {
+            if (changed[0] && afterDismiss != null && !isFinishing()) {
+                handler.post(afterDismiss);
             }
         });
-        return new ScaleControl(input, slider);
+        done.setOnClickListener(view -> {
+            runWithPressFeedback(done, dialog::dismiss);
+        });
+        presentSettingsDialog(dialog, box);
     }
 
-    private void setScaleControlEnabled(ScaleControl control, boolean enabled) {
-        if (control == null) return;
-        control.input.setEnabled(enabled);
-        control.slider.setEnabled(enabled);
-        float alpha = enabled ? 1.0f : 0.45f;
-        control.input.setAlpha(alpha);
-        control.slider.setAlpha(alpha);
+    private SettingEntry addChoiceSettingEntry(LinearLayout parent, String label, int icon,
+                                                String[] options, int selected,
+                                                IntListener listener, Runnable afterDismiss) {
+        final SettingEntry[] entry = new SettingEntry[1];
+        final int[] chosen = {Math.max(0, Math.min(options.length - 1, selected))};
+        entry[0] = addSettingEntryView(parent, label, null,
+                options[chosen[0]], icon, () ->
+                showChoiceSettingDialog(label, options, chosen[0], value -> {
+                    chosen[0] = value;
+                    listener.onChanged(value);
+                    if (entry[0].value != null) entry[0].value.setText(options[value]);
+                }, afterDismiss));
+        return entry[0];
+    }
+
+    private void showChoiceSettingDialog(String titleValue, String[] options, int selected,
+                                         IntListener listener, Runnable afterDismiss) {
+        LinearLayout box = settingsDialogPanel(titleValue);
+        LinearLayout list = vertical(0);
+        addTop(box, list, 8);
+        final int[] choice = {-1};
+        AlertDialog[] holder = new AlertDialog[1];
+        for (int i = 0; i < options.length; i++) {
+            final int index = i;
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(10), 0, dp(8), 0);
+            TextView label = text(options[i], 14.0f,
+                    i == selected ? this.TEXT : this.MUTED);
+            label.setTypeface(appRegularTypeface(), i == selected ? Typeface.BOLD : Typeface.NORMAL);
+            row.addView(label, new LinearLayout.LayoutParams(0, dp(46), 1.0f));
+            TextView check = text(i == selected ? "✓" : "", 16.0f, this.TEXT);
+            check.setGravity(Gravity.CENTER);
+            row.addView(check, new LinearLayout.LayoutParams(dp(28), dp(46)));
+            row.setOnClickListener(view -> {
+                choice[0] = index;
+                runWithPressFeedback(row, () -> {
+                    AlertDialog dialog = holder[0];
+                    if (dialog != null) dialog.dismiss();
+                });
+            });
+            list.addView(row);
+            if (i < options.length - 1) {
+                View divider = new View(this);
+                divider.setBackgroundColor(this.themeTokens.hairline);
+                LinearLayout.LayoutParams dividerParams =
+                        new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2));
+                dividerParams.leftMargin = dp(10);
+                list.addView(divider, dividerParams);
+            }
+        }
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(box).create();
+        holder[0] = dialog;
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.setOnDismissListener(value -> {
+            if (choice[0] >= 0) {
+                listener.onChanged(choice[0]);
+                if (afterDismiss != null && !isFinishing()) handler.post(afterDismiss);
+            }
+        });
+        presentSettingsDialog(dialog, box);
+    }
+
+    private SettingEntry addTextSettingEntry(LinearLayout parent, String label, String value,
+                                              int icon, TextListener listener) {
+        final SettingEntry[] entry = new SettingEntry[1];
+        final String[] current = {value == null ? "" : value};
+        entry[0] = addSettingEntryView(parent, label, null, value, icon, () ->
+                showTextSettingDialog(label, current[0], updated -> {
+                    current[0] = updated;
+                    listener.onChanged(updated);
+                    if (entry[0].value != null) entry[0].value.setText(updated);
+                }));
+        return entry[0];
+    }
+
+    private void showTextSettingDialog(String titleValue, String current, TextListener listener) {
+        LinearLayout box = settingsDialogPanel(titleValue);
+        EditText input = new EditText(this);
+        input.setText(current == null ? "" : current);
+        input.setTextColor(this.TEXT);
+        input.setTextSize(sp(14.0f));
+        input.setSingleLine(true);
+        input.setSelectAllOnFocus(true);
+        input.setPadding(dp(12), 0, dp(12), 0);
+        Compat.setBackground(input, UiComponents.round(this,
+                this.themeTokens.panelElevated, 10,
+                this.session.uiScale() / 100.0f));
+        box.addView(input, new LinearLayout.LayoutParams(-1, dp(44)));
+        AlertDialog[] holder = new AlertDialog[1];
+        TextView done = settingsDialogAction("完成", holder);
+        addTop(box, done, 12);
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(box).create();
+        holder[0] = dialog;
+        dialog.setCanceledOnTouchOutside(true);
+        done.setOnClickListener(view -> {
+            String updated = input.getText().toString().trim();
+            listener.onChanged(updated);
+            dialog.dismiss();
+        });
+        presentSettingsDialog(dialog, box);
+    }
+
+    private LinearLayout settingsDialogPanel(String titleValue) {
+        LinearLayout box = vertical(this.themeTokens.panel);
+        box.setPadding(dp(16), dp(14), dp(16), dp(14));
+        Compat.setBackground(box, UiComponents.round(this, this.themeTokens.panel, 12,
+                this.session.uiScale() / 100.0f));
+        TextView title = text(titleValue, 17.0f, this.TEXT);
+        title.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        box.addView(title, new LinearLayout.LayoutParams(-1, -2));
+        return box;
+    }
+
+    private TextView settingsDialogAction(String label, AlertDialog[] holder) {
+        TextView action = text(label, 13.0f, ThemeTokens.contrast(this.themeTokens.text));
+        action.setGravity(Gravity.CENTER);
+        action.setTypeface(appRegularTypeface(), Typeface.BOLD);
+        Compat.setBackground(action, UiComponents.round(this, this.themeTokens.text, 11,
+                this.session.uiScale() / 100.0f));
+        action.setOnClickListener(view -> {
+            AlertDialog dialog = holder[0];
+            if (dialog != null) dialog.dismiss();
+        });
+        return action;
+    }
+
+    private void presentSettingsDialog(AlertDialog dialog, View contentView) {
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0));
+            dialog.getWindow().setDimAmount(this.session.darkMode() ? 0.46f : 0.30f);
+            int width = getResources().getDisplayMetrics().widthPixels;
+            dialog.getWindow().setLayout(Math.max(dp(220), Math.min(width - dp(24), dp(340))), -2);
+        }
+        Motions.dialogIn(contentView);
     }
 
     private int currentPrimary() {
@@ -7465,19 +7518,11 @@ public final class MainActivity extends Activity {
         return mode == 0 ? "省流量" : mode == 2 ? "原图" : "标准";
     }
 
-    private void showNetworkModePicker() {
-        showLiteDialog("网络模式", "省流量：缩略图且不播放动图\n标准：缩略图并播放动图\n原图：优先加载高清图片",
-                "标准", () -> setNetworkMode(1),
-                "省流量", () -> setNetworkMode(0),
-                "原图", () -> setNetworkMode(2));
-    }
-
     private void setNetworkMode(int mode) {
         this.session.setNetworkMode(mode);
         this.feed.clear();
         invalidateFeedView();
         toast("已切换为" + networkModeLabel());
-        if ("app_settings".equals(this.screen)) showAppSettings();
     }
 
     private void uploadDiagnostics() {
@@ -7608,43 +7653,6 @@ public final class MainActivity extends Activity {
         return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date(millis));
     }
 
-    private static final class ScaleControl {
-        final EditText input;
-        final SeekBar slider;
-
-        ScaleControl(EditText input, SeekBar slider) {
-            this.input = input;
-            this.slider = slider;
-        }
-    }
-
-    private EditText textField(LinearLayout parent, String label, String current) {
-        addSettingsDivider(parent);
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(16);
-        row.setPadding(dp(6), dp(8), dp(6), dp(8));
-        TextView name = text(label, 13.0f, this.TEXT);
-        name.setTypeface(appRegularTypeface(), Typeface.BOLD);
-        name.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(name, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
-        EditText input = new EditText(this);
-        input.setText(current);
-        input.setTextColor(this.TEXT);
-        input.setTextSize(sp(12.0f));
-        input.setGravity(17);
-        input.setSingleLine(true);
-        input.setSelectAllOnFocus(true);
-        Compat.tint(input, this.themeTokens.accent);
-        input.setPadding(dp(8), dp(4), dp(8), dp(4));
-        Compat.setBackground(input, roundStroke(this.themeTokens.panelElevated, 8,
-                this.themeTokens.hairline, 1));
-        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(dp(96), -2);
-        inputParams.leftMargin = dp(6);
-        row.addView(input, inputParams);
-        parent.addView(row);
-        return input;
-    }
-
     private long tempCacheBytes() {
         return dirSize(getCacheDir()) + (((long) EmojiRenderer.cacheSizeKb()) * 1024);
     }
@@ -7704,18 +7712,6 @@ public final class MainActivity extends Activity {
             }
         }
         file.delete();
-    }
-
-    private Integer parseNumber(EditText input, int min, int max) {
-        try {
-            int value = Integer.parseInt(input.getText().toString().trim());
-            if (value < min || value > max) {
-                return null;
-            }
-            return Integer.valueOf(value);
-        } catch (NumberFormatException error) {
-            return null;
-        }
     }
 
     @Override
@@ -8165,7 +8161,7 @@ public final class MainActivity extends Activity {
 
     private LinearLayout settingsList() {
         LinearLayout list = vertical(this.PANEL);
-        list.setPadding(dp(4), dp(2), dp(4), dp(2));
+        list.setPadding(0, 0, 0, 0);
         Compat.setBackground(list, UiComponents.round(this,
                 this.themeTokens.panel, usesRoundLayout() ? 9 : 11,
                 this.session.uiScale() / 100.0f));
@@ -8191,6 +8187,17 @@ public final class MainActivity extends Activity {
 
     private Button button(String value) {
         return button(value, 0);
+    }
+
+    private Button settingsCommandButton(String value) {
+        Button button = button(value);
+        button.setTextColor(this.TEXT);
+        button.setMinHeight(dp(40));
+        button.setMinimumHeight(dp(40));
+        Compat.setBackground(button, UiComponents.round(this,
+                this.themeTokens.panelElevated, 11,
+                this.session.uiScale() / 100.0f));
+        return button;
     }
 
     /** 主按钮：主题色粗体文字行——无底无框，全屏唯一的彩色本身就是按钮。 */
