@@ -600,23 +600,34 @@ public final class MainActivity extends Activity {
         scroll.addView(body, new FrameLayout.LayoutParams(-1, -2));
         linearLayout.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog[] holder = new AlertDialog[1];
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(1);
-        actions.setPadding(0, dp(8), 0, 0);
-        if (!TextUtils.isEmpty(positiveText)) {
-            actions.addView(dialogAction(positiveText, true, holder, positiveAction), new LinearLayout.LayoutParams(-1, dp(38)));
-        }
+        List<TextView> actionViews = new ArrayList<>();
         if (!TextUtils.isEmpty(neutralText)) {
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(36));
-            params.topMargin = dp(7);
-            actions.addView(dialogAction(neutralText, false, holder, neutralAction), params);
+            actionViews.add(dialogAction(neutralText, false, holder, neutralAction));
         }
         if (!TextUtils.isEmpty(negativeText)) {
-            LinearLayout.LayoutParams params2 = new LinearLayout.LayoutParams(-1, dp(36));
-            params2.topMargin = dp(7);
-            actions.addView(dialogAction(negativeText, false, holder, negativeAction), params2);
+            actionViews.add(dialogAction(negativeText, false, holder, negativeAction));
         }
-        if (actions.getChildCount() > 0) {
+        if (!TextUtils.isEmpty(positiveText)) {
+            actionViews.add(dialogAction(positiveText, true, holder, positiveAction));
+        }
+        if (!actionViews.isEmpty()) {
+            boolean compactActions = compactDialogActions(actionViews);
+            LinearLayout actions = new LinearLayout(this);
+            actions.setOrientation(compactActions ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+            actions.setGravity(compactActions ? Gravity.END : Gravity.CENTER_HORIZONTAL);
+            actions.setPadding(0, dp(8), 0, 0);
+            for (int i = 0; i < actionViews.size(); i++) {
+                TextView actionView = actionViews.get(i);
+                LinearLayout.LayoutParams params;
+                if (compactActions) {
+                    params = new LinearLayout.LayoutParams(-2, dp(36));
+                    if (i > 0) params.leftMargin = dp(7);
+                } else {
+                    params = new LinearLayout.LayoutParams(-1, dp(36));
+                    if (i > 0) params.topMargin = dp(7);
+                }
+                actions.addView(actionView, params);
+            }
             linearLayout.addView(actions);
         }
         AlertDialog dialog = new AlertDialog.Builder(this).setView(linearLayout).create();
@@ -626,8 +637,7 @@ public final class MainActivity extends Activity {
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0));
             dialog.getWindow().setDimAmount(this.session.darkMode() ? 0.46f : 0.32f);
-            int width = getResources().getDisplayMetrics().widthPixels;
-            dialog.getWindow().setLayout(Math.max(dp(220), Math.min(width - dp(28), dp(360))), -2);
+            dialog.getWindow().setLayout(liteDialogWidth(), -2);
         }
         Motions.dialogIn(linearLayout);
     }
@@ -640,7 +650,9 @@ public final class MainActivity extends Activity {
         TextView view = text(label, 13.0f, color);
         view.setTypeface(appRegularTypeface(), primary ? 1 : 0);
         view.setGravity(17);
-        view.setPadding(dp(10), 0, dp(10), 0);
+        view.setMinWidth(dp(72));
+        view.setMinHeight(dp(36));
+        view.setPadding(dp(12), 0, dp(12), 0);
         Compat.setBackground(view, UiComponents.round(this, fill, 11,
                 this.session.uiScale() / 100.0f));
         view.setOnClickListener(v -> {
@@ -655,6 +667,25 @@ public final class MainActivity extends Activity {
             });
         });
         return view;
+    }
+
+    private boolean compactDialogActions(List<TextView> actions) {
+        if (actions.isEmpty() || actions.size() > 2) {
+            return false;
+        }
+        int requiredWidth = dp(7) * (actions.size() - 1);
+        for (TextView action : actions) {
+            int textWidth = (int) Math.ceil(action.getPaint().measureText(action.getText().toString()));
+            requiredWidth += Math.max(dp(72), textWidth
+                    + action.getPaddingLeft() + action.getPaddingRight());
+        }
+        return requiredWidth <= liteDialogWidth() - dp(32);
+    }
+
+    private int liteDialogWidth() {
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int preferred = Math.max(dp(220), Math.min(screenWidth - dp(28), dp(360)));
+        return Math.max(1, Math.min(screenWidth - dp(8), preferred));
     }
 
     private String limitUpdateNotes(String notes) {
@@ -8269,7 +8300,7 @@ public final class MainActivity extends Activity {
         }
         drawable.setBounds(0, 0, dp(size), dp(size));
         view.setCompoundDrawables(drawable, null, null, null);
-        view.setCompoundDrawablePadding(dp(4));
+        view.setCompoundDrawablePadding(dp(resource == R.drawable.il_search ? 5 : 4));
     }
 
     private void animateIn(View view) {
