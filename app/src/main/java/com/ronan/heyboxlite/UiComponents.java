@@ -34,6 +34,12 @@ final class UiComponents {
         return round(context, tokens.dockSurface(), 28, scale);
     }
 
+    static GradientDrawable statusBanner(Context context, ThemeTokens tokens, float scale) {
+        GradientDrawable drawable = round(context, tokens.dockSurface(), 12, scale);
+        drawable.setStroke(Math.max(1, dp(context, 1, scale)), tokens.glassStroke);
+        return drawable;
+    }
+
     static GradientDrawable navSelection(Context context, ThemeTokens tokens, float scale) {
         return round(context, tokens.navSelection(), 24, scale);
     }

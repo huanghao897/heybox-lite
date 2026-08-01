@@ -56,6 +56,20 @@ final class Format {
         return compactDecimal(count / 100_000_000.0d) + "亿";
     }
 
+    static String relativeTime(long timestamp) {
+        long millis = timestamp > 100_000_000_000L
+                ? timestamp : timestamp * 1_000L;
+        long diff = Math.max(0L, System.currentTimeMillis() - millis);
+        long minute = 60_000L;
+        long hour = 60L * minute;
+        long day = 24L * hour;
+        if (diff < minute) return "刚刚";
+        if (diff < hour) return Math.max(1L, diff / minute) + "分钟前";
+        if (diff < day) return Math.max(1L, diff / hour) + "小时前";
+        return new SimpleDateFormat("MM-dd", Locale.getDefault())
+                .format(new Date(millis));
+    }
+
     static String announcementPreview(String value) {
         if (value == null) return "";
         String clean = value.replace('\r', '\n').replace("\n\n", "\n").trim();

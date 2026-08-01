@@ -181,7 +181,7 @@ public final class ImageViewerActivity extends Activity {
     private void prepareEnterAnimation() {
         root.animate().cancel();
         pager.animate().cancel();
-        if (Motions.off()) {
+        if (Motions.off() || Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
             root.setAlpha(1f);
             Motions.reset(pager);
             return;

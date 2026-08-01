@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.TimePickerDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -127,7 +128,8 @@ final class CheckinCenterPage {
         this.host = host;
         this.scale = session.uiScale() / 100.0f;
         this.roundLayout = session.roundScreen()
-                || activity.getResources().getConfiguration().isScreenRound();
+                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && activity.getResources().getConfiguration().isScreenRound());
         this.root = new FrameLayout(activity);
         this.root.setBackgroundColor(tokens.background);
         this.state = coordinator.paired() ? State.SYNCING : State.UNPAIRED;
