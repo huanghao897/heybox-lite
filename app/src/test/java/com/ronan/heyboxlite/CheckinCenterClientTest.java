@@ -3,8 +3,10 @@ package com.ronan.heyboxlite;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import org.json.JSONObject;
 import org.junit.Test;
 
 import java.net.URLEncoder;
@@ -164,6 +166,79 @@ public class CheckinCenterClientTest {
         assertFalse(CheckinCenterClient.validServicePassword("alllowercasepassword"));
         assertFalse(CheckinCenterClient.validServicePassword("Short-1!"));
         assertFalse(CheckinCenterClient.validServicePassword(" Watch-Account-92!"));
+    }
+
+    @Test
+    public void pairingResponseEnablesRequiredRegistrationEmail() throws Exception {
+        JSONObject response = new JSONObject()
+                .put("device_code", "ccpair1_pending-device")
+                .put("user_code", "ABCD-EFGH")
+                .put("verification_uri",
+                        "https://heyboxlite.xyz/checkin/lite/pair?code=ABCD-EFGH")
+                .put("expires_in", 600)
+                .put("interval", 3)
+                .put("registration_open", true)
+                .put("registration_email_required", true);
+
+        CheckinCenterClient.PairingStart start =
+                CheckinCenterClient.parsePairingStart(response);
+
+        assertTrue(start.registrationOpen);
+        assertTrue(start.registrationEmailRequired);
+        response.remove("registration_email_required");
+        assertFalse(CheckinCenterClient.parsePairingStart(response)
+                .registrationEmailRequired);
+    }
+
+    @Test
+    public void registrationEmailSessionUsesServerCooldownAndExpiry() throws Exception {
+        JSONObject response = new JSONObject()
+                .put("challenge_id", "email_challenge_1234567890")
+                .put("retry_after", 60)
+                .put("expires_in", 600);
+
+        CheckinCenterClient.RegistrationEmailSession session =
+                CheckinCenterClient.parseRegistrationEmailSession(response);
+
+        assertEquals("email_challenge_1234567890", session.challengeId);
+        assertEquals(60, session.retryAfterSeconds);
+        assertEquals(600, session.expiresInSeconds);
+        response.put("challenge_id", "short");
+        assertThrows(CheckinCenterClient.ApiError.class,
+                () -> CheckinCenterClient.parseRegistrationEmailSession(response));
+    }
+
+    @Test
+    public void registrationEmailValidationMatchesServerContract() {
+        assertTrue(CheckinCenterClient.validRegistrationEmail("user@example.com"));
+        assertTrue(CheckinCenterClient.validRegistrationEmail(" user@example.com "));
+        assertFalse(CheckinCenterClient.validRegistrationEmail("user@example"));
+        assertFalse(CheckinCenterClient.validRegistrationEmail("user @example.com"));
+        assertFalse(CheckinCenterClient.validRegistrationEmail(".user@example.com"));
+        assertFalse(CheckinCenterClient.validRegistrationEmail("user..name@example.com"));
+        assertFalse(CheckinCenterClient.validRegistrationEmail("user@-example.com"));
+        assertTrue(CheckinCenterClient.validRegistrationEmailCode("012345"));
+        assertFalse(CheckinCenterClient.validRegistrationEmailCode("12345"));
+        assertFalse(CheckinCenterClient.validRegistrationEmailCode("12A456"));
+        assertTrue(CheckinCenterClient.validRegistrationChallengeId(
+                "email_challenge_1234567890"));
+        assertFalse(CheckinCenterClient.validRegistrationChallengeId("short"));
+    }
+
+    @Test
+    public void registrationEmailErrorsPreserveSafeCooldownAndMessage() {
+        CheckinCenterClient.ApiError limited = CheckinCenterClient.statusError(
+                CheckinCenterClient.Operation.REGISTRATION_EMAIL, 429,
+                "{\"error\":\"registration email limit reached\",\"retry_after\":47}");
+        CheckinCenterClient.ApiError invalidCode = CheckinCenterClient.statusError(
+                CheckinCenterClient.Operation.PAIR_REGISTER, 422,
+                "{\"error\":\"registration email code is invalid\"}");
+
+        assertEquals(47, limited.retryAfterSeconds);
+        assertEquals("邮箱验证码发送过于频繁，请稍后重试", limited.getMessage());
+        assertEquals("邮箱验证码错误或已过期", invalidCode.getMessage());
+        assertEquals(0, CheckinCenterClient.serverRetryAfterSeconds(
+                "{\"retry_after\":7200}"));
     }
 
     @Test

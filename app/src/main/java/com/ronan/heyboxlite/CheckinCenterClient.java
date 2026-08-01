@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ConnectException;
+import java.net.IDN;
 import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -73,6 +74,7 @@ final class CheckinCenterClient {
         final ErrorKind kind;
         final String diagnosticCode;
         final String captchaUri;
+        final int retryAfterSeconds;
 
         ApiError(Operation operation, int statusCode, String message) {
             this(operation, statusCode, message,
@@ -90,12 +92,18 @@ final class CheckinCenterClient {
 
         ApiError(Operation operation, int statusCode, String message, ErrorKind kind,
                  String diagnosticCode, String captchaUri) {
+            this(operation, statusCode, message, kind, diagnosticCode, captchaUri, 0);
+        }
+
+        ApiError(Operation operation, int statusCode, String message, ErrorKind kind,
+                 String diagnosticCode, String captchaUri, int retryAfterSeconds) {
             super(message);
             this.operation = operation;
             this.statusCode = statusCode;
             this.kind = kind;
             this.diagnosticCode = diagnosticCode;
             this.captchaUri = captchaUri;
+            this.retryAfterSeconds = retryAfterSeconds;
         }
 
         boolean authorizationInvalid() {
@@ -375,8 +383,7 @@ final class CheckinCenterClient {
         String normalizedCode = userCode == null ? "" : userCode.trim();
         String normalizedEmail = email == null ? "" : email.trim();
         if (!normalizedCode.matches("[A-Z0-9]{4}-[A-Z0-9]{4}")
-                || normalizedEmail.length() > 254
-                || !normalizedEmail.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")) {
+                || !validRegistrationEmail(normalizedEmail)) {
             deliverError(callback, new ApiError(Operation.REGISTRATION_EMAIL, 422,
                     "请输入正确的邮箱地址"));
             return;
@@ -406,10 +413,9 @@ final class CheckinCenterClient {
         if (!normalizedCode.matches("[A-Z0-9]{4}-[A-Z0-9]{4}")
                 || !normalizedUsername.matches("[A-Za-z0-9_.-]{3,32}")
                 || !validServicePassword(rawPassword)
-                || (emailRequired && (normalizedEmail.length() > 254
-                || !normalizedEmail.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")
-                || challengeId.isEmpty() || challengeId.length() > 80
-                || !verificationCode.matches("[0-9]{6}")))) {
+                || (emailRequired && (!validRegistrationEmail(normalizedEmail)
+                || !validRegistrationChallengeId(challengeId)
+                || !validRegistrationEmailCode(verificationCode)))) {
             deliverError(callback, new ApiError(Operation.PAIR_REGISTER, 422,
                     "请检查注册信息"));
             return;
@@ -720,7 +726,7 @@ final class CheckinCenterClient {
         }
     }
 
-    private static PairingStart parsePairingStart(JSONObject value)
+    static PairingStart parsePairingStart(JSONObject value)
             throws JSONException, ApiError {
         String deviceCode = required(value, "device_code", Operation.PAIR_START);
         String userCode = required(value, "user_code", Operation.PAIR_START);
@@ -733,10 +739,12 @@ final class CheckinCenterClient {
                 value.optBoolean("registration_email_required", false));
     }
 
-    private static RegistrationEmailSession parseRegistrationEmailSession(JSONObject value)
+    static RegistrationEmailSession parseRegistrationEmailSession(JSONObject value)
             throws ApiError {
         String challengeId = required(value, "challenge_id", Operation.REGISTRATION_EMAIL);
-        if (challengeId.length() > 80) throw protocolError(Operation.REGISTRATION_EMAIL);
+        if (!validRegistrationChallengeId(challengeId)) {
+            throw protocolError(Operation.REGISTRATION_EMAIL);
+        }
         int retryAfter = positive(value.optInt("retry_after"), Operation.REGISTRATION_EMAIL);
         int expiresIn = positive(value.optInt("expires_in"), Operation.REGISTRATION_EMAIL);
         return new RegistrationEmailSession(challengeId, retryAfter, expiresIn);
@@ -922,6 +930,7 @@ final class CheckinCenterClient {
     static ApiError statusError(Operation operation, int status, String response) {
         String diagnosticCode = serverErrorCode(response);
         String captchaUri = "";
+        int retryAfterSeconds = serverRetryAfterSeconds(response);
         String message;
         switch (status) {
             case 401:
@@ -957,7 +966,9 @@ final class CheckinCenterClient {
                             ? "小黑盒要求安全验证，但验证页面不可用"
                             : "请完成小黑盒安全验证";
                 } else if (operation == Operation.PAIR_REGISTER) {
-                    message = "该签到服务账号已存在，或配对状态已变化";
+                    message = "registration_account_used".equals(diagnosticCode)
+                            ? "签到服务账号或邮箱已被注册"
+                            : "该签到服务账号已存在，或配对状态已变化";
                 } else {
                     message = "当前操作与服务器状态冲突，请稍后重试";
                 }
@@ -973,7 +984,9 @@ final class CheckinCenterClient {
                 if (operation == Operation.PAIR_APPROVE) {
                     message = "签到服务账号信息无效";
                 } else if (operation == Operation.PAIR_REGISTER) {
-                    message = "注册信息无效，请检查账号、密码和验证码";
+                    message = "registration_email_code_invalid".equals(diagnosticCode)
+                            ? "邮箱验证码错误或已过期"
+                            : "注册信息无效，请检查账号、密码和验证码";
                 } else if (operation == Operation.REGISTRATION_EMAIL) {
                     message = "邮箱地址或配对状态无效";
                 } else if (operation == Operation.SMS_SEND) {
@@ -989,7 +1002,9 @@ final class CheckinCenterClient {
                 }
                 break;
             case 429:
-                message = "操作过于频繁，请稍后重试";
+                message = operation == Operation.REGISTRATION_EMAIL
+                        ? "邮箱验证码发送过于频繁，请稍后重试"
+                        : "操作过于频繁，请稍后重试";
                 break;
             case 502:
             case 503:
@@ -1002,7 +1017,7 @@ final class CheckinCenterClient {
                 break;
         }
         return new ApiError(operation, status, message, ErrorKind.HTTP,
-                diagnosticCode, captchaUri);
+                diagnosticCode, captchaUri, retryAfterSeconds);
     }
 
     static String serverCaptchaUri(String response) {
@@ -1042,9 +1057,65 @@ final class CheckinCenterClient {
         try {
             String error = new JSONObject(response).optString("error", "");
             if ("captcha_required".equals(error)) return "captcha_required";
+            if ("registration email code is invalid".equals(error)) {
+                return "registration_email_code_invalid";
+            }
+            if ("registration account is already used".equals(error)) {
+                return "registration_account_used";
+            }
+            if ("registration email limit reached".equals(error)) {
+                return "registration_email_rate_limited";
+            }
         } catch (JSONException ignored) {
         }
         return "";
+    }
+
+    static int serverRetryAfterSeconds(String response) {
+        try {
+            int value = new JSONObject(response).optInt("retry_after", 0);
+            return value > 0 && value <= 3_600 ? value : 0;
+        } catch (JSONException ignored) {
+            return 0;
+        }
+    }
+
+    static boolean validRegistrationEmail(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isEmpty() || normalized.length() > 254
+                || normalized.indexOf('@') != normalized.lastIndexOf('@')) return false;
+        int separator = normalized.lastIndexOf('@');
+        if (separator <= 0 || separator == normalized.length() - 1) return false;
+        for (int index = 0; index < normalized.length(); index++) {
+            if (Character.isWhitespace(normalized.charAt(index))) return false;
+        }
+        String local = normalized.substring(0, separator);
+        if (local.length() > 64 || local.startsWith(".") || local.endsWith(".")
+                || local.contains("..")
+                || !local.matches("[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+")) return false;
+        final String asciiDomain;
+        try {
+            asciiDomain = IDN.toASCII(normalized.substring(separator + 1));
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
+        if (asciiDomain.length() > 253) return false;
+        String[] labels = asciiDomain.split("\\.", -1);
+        if (labels.length < 2) return false;
+        for (String label : labels) {
+            if (!label.matches("[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static boolean validRegistrationChallengeId(String value) {
+        return value != null && value.matches("[A-Za-z0-9_-]{20,80}");
+    }
+
+    static boolean validRegistrationEmailCode(String value) {
+        return value != null && value.matches("[0-9]{6}");
     }
 
     static boolean validServicePassword(String value) {

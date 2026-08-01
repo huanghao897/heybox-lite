@@ -7,6 +7,7 @@ import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.InputFilter;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -90,6 +91,7 @@ final class CheckinCenterPage {
     private String serviceUsername = "";
     private String serviceEmail = "";
     private String registrationEmailChallengeId = "";
+    private String registrationEmailChallengeAddress = "";
     private long registrationEmailRetryAtElapsed;
     private long registrationEmailExpiresAtElapsed;
     private EditText smsPhoneInput;
@@ -1014,6 +1016,9 @@ final class CheckinCenterPage {
     }
 
     private void addRegistrationEmailFields(LinearLayout card) {
+        TextView notice = body("注册需要验证邮箱，验证码 10 分钟内有效", tokens.muted);
+        notice.setLineSpacing(0f, 1.12f);
+        addTop(card, notice, 11);
         addTop(card, body("邮箱", tokens.text), 13);
         serviceEmailInput = input("用于接收验证码",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
@@ -1027,7 +1032,8 @@ final class CheckinCenterPage {
         addTop(card, registrationEmailSendButton, 7);
         addTop(card, body("邮箱验证码", tokens.text), 13);
         serviceEmailCodeInput = input("6 位验证码",
-                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+                InputType.TYPE_CLASS_NUMBER);
+        serviceEmailCodeInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(6)});
         addTop(card, serviceEmailCodeInput, 6);
     }
 
@@ -1037,9 +1043,7 @@ final class CheckinCenterPage {
         }
         rememberServiceInputs();
         serviceAccountMode = mode;
-        registrationEmailChallengeId = "";
-        registrationEmailRetryAtElapsed = 0L;
-        registrationEmailExpiresAtElapsed = 0L;
+        clearRegistrationEmailChallenge();
         handler.removeCallbacks(registrationEmailCountdownTask);
         clearPairingViews();
         render();
@@ -1109,10 +1113,26 @@ final class CheckinCenterPage {
                 : serviceEmailInput.getText().toString().trim();
         String emailCode = serviceEmailCodeInput == null ? ""
                 : serviceEmailCodeInput.getText().toString().trim();
-        if (emailRequired && (registrationEmailChallengeId.isEmpty()
-                || SystemClock.elapsedRealtime() >= registrationEmailExpiresAtElapsed)) {
-            setPairingStatus("请先发送并填写有效的邮箱验证码", tokens.text);
-            return;
+        if (emailRequired) {
+            if (!CheckinCenterClient.validRegistrationEmail(email)) {
+                setPairingStatus("请输入正确的邮箱地址", tokens.text);
+                return;
+            }
+            if (registrationEmailChallengeId.isEmpty()
+                    || SystemClock.elapsedRealtime() >= registrationEmailExpiresAtElapsed) {
+                setPairingStatus("请先发送邮箱验证码", tokens.text);
+                return;
+            }
+            if (!email.equalsIgnoreCase(registrationEmailChallengeAddress)) {
+                clearRegistrationEmailChallenge();
+                updateRegistrationEmailCountdown();
+                setPairingStatus("邮箱已更改，请重新发送验证码", tokens.text);
+                return;
+            }
+            if (!CheckinCenterClient.validRegistrationEmailCode(emailCode)) {
+                setPairingStatus("请输入 6 位邮箱验证码", tokens.text);
+                return;
+            }
         }
         serviceUsername = username;
         serviceEmail = email;
@@ -1145,9 +1165,17 @@ final class CheckinCenterPage {
     private void sendRegistrationEmail() {
         PairingSession current = pairing;
         if (registrationEmailInFlight || current == null || serviceEmailInput == null) return;
+        if (current.expired()) {
+            showError("配对已过期，请重新连接");
+            return;
+        }
         long now = SystemClock.elapsedRealtime();
         if (now < registrationEmailRetryAtElapsed) return;
         serviceEmail = serviceEmailInput.getText().toString().trim();
+        if (!CheckinCenterClient.validRegistrationEmail(serviceEmail)) {
+            setPairingStatus("请输入正确的邮箱地址", tokens.text);
+            return;
+        }
         registrationEmailInFlight = true;
         setPairingControlsEnabled(false);
         setPairingStatus("正在发送邮箱验证码", tokens.muted);
@@ -1158,6 +1186,7 @@ final class CheckinCenterPage {
                         if (closed || pairing != current || state != State.PAIRING) return;
                         registrationEmailInFlight = false;
                         registrationEmailChallengeId = value.challengeId;
+                        registrationEmailChallengeAddress = serviceEmail;
                         long receivedAt = SystemClock.elapsedRealtime();
                         registrationEmailRetryAtElapsed = receivedAt
                                 + value.retryAfterSeconds * SECOND_MS;
@@ -1165,6 +1194,7 @@ final class CheckinCenterPage {
                                 + value.expiresInSeconds * SECOND_MS;
                         setPairingControlsEnabled(true);
                         setPairingStatus("邮箱验证码已发送", tokens.accent);
+                        if (serviceEmailCodeInput != null) serviceEmailCodeInput.setText("");
                         updateRegistrationEmailCountdown();
                         if (serviceEmailCodeInput != null) serviceEmailCodeInput.requestFocus();
                     }
@@ -1173,8 +1203,13 @@ final class CheckinCenterPage {
                     public void onError(CheckinCenterClient.ApiError error) {
                         if (closed || pairing != current || state != State.PAIRING) return;
                         registrationEmailInFlight = false;
+                        if (error.retryAfterSeconds > 0) {
+                            registrationEmailRetryAtElapsed = SystemClock.elapsedRealtime()
+                                    + error.retryAfterSeconds * SECOND_MS;
+                        }
                         setPairingControlsEnabled(true);
                         setPairingStatus(error.getMessage(), tokens.text);
+                        updateRegistrationEmailCountdown();
                     }
                 });
     }
@@ -1227,9 +1262,7 @@ final class CheckinCenterPage {
         serviceAccountMode = ServiceAccountMode.LOGIN;
         serviceUsername = "";
         serviceEmail = "";
-        registrationEmailChallengeId = "";
-        registrationEmailRetryAtElapsed = 0L;
-        registrationEmailExpiresAtElapsed = 0L;
+        clearRegistrationEmailChallenge();
         clearPairingViews();
     }
 
@@ -1245,6 +1278,14 @@ final class CheckinCenterPage {
     private void clearServicePasswords() {
         if (servicePasswordInput != null) servicePasswordInput.setText("");
         if (serviceConfirmPasswordInput != null) serviceConfirmPasswordInput.setText("");
+    }
+
+    private void clearRegistrationEmailChallenge() {
+        registrationEmailChallengeId = "";
+        registrationEmailChallengeAddress = "";
+        registrationEmailRetryAtElapsed = 0L;
+        registrationEmailExpiresAtElapsed = 0L;
+        if (serviceEmailCodeInput != null) serviceEmailCodeInput.setText("");
     }
 
     private View errorBanner(String message) {
@@ -1329,9 +1370,8 @@ final class CheckinCenterPage {
         long now = SystemClock.elapsedRealtime();
         if (!registrationEmailChallengeId.isEmpty()
                 && now >= registrationEmailExpiresAtElapsed) {
-            registrationEmailChallengeId = "";
-            registrationEmailRetryAtElapsed = 0L;
-            registrationEmailExpiresAtElapsed = 0L;
+            clearRegistrationEmailChallenge();
+            setPairingStatus("邮箱验证码已过期，请重新发送", tokens.text);
         }
         long retrySeconds = Math.max(0L,
                 (registrationEmailRetryAtElapsed - now + 999L) / SECOND_MS);
