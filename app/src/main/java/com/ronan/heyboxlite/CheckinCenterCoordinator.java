@@ -1,13 +1,10 @@
 package com.ronan.heyboxlite;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 
 final class CheckinCenterCoordinator {
@@ -15,37 +12,18 @@ final class CheckinCenterCoordinator {
         void onAuthorizationChanged(boolean paired);
     }
 
-    private final SessionStore session;
     private final CheckinCenterStore store;
     private final CheckinCenterClient client;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final SharedPreferences sessionPreferences;
-    private final SharedPreferences.OnSharedPreferenceChangeListener cookieListener;
-    private final List<CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>>
-            syncCallbacks = new ArrayList<>();
-    private final Runnable changedCookieSync = () -> syncCredentials(false, null);
     private AuthorizationListener authorizationListener;
-    private boolean syncing;
-    private boolean resyncRequested;
-    private String activeSyncFingerprint = "";
-    private boolean closed;
 
-    CheckinCenterCoordinator(Context context, SessionStore session, LocalCache diagnostics) {
-        this.session = session;
-        this.store = new CheckinCenterStore(context);
-        this.client = new CheckinCenterClient(diagnostics::log);
-        this.sessionPreferences = context.getApplicationContext().getSharedPreferences(
-                SecureStrings.preferencesName(), Context.MODE_PRIVATE);
-        this.cookieListener = (preferences, key) -> {
-            if (!SecureStrings.encryptedCookieKey().equals(key)) return;
-            handler.removeCallbacks(changedCookieSync);
-            handler.postDelayed(changedCookieSync, 1_200L);
-        };
-        this.sessionPreferences.registerOnSharedPreferenceChangeListener(cookieListener);
+    CheckinCenterCoordinator(Context context, LocalCache diagnostics) {
+        store = new CheckinCenterStore(context);
+        client = new CheckinCenterClient(diagnostics::log);
     }
 
     void setAuthorizationListener(AuthorizationListener listener) {
-        this.authorizationListener = listener;
+        authorizationListener = listener;
     }
 
     boolean supported() {
@@ -76,6 +54,19 @@ final class CheckinCenterCoordinator {
         client.approvePairing(userCode, username, password, callback);
     }
 
+    void sendRegistrationEmail(String userCode, String email,
+                               CheckinCenterClient.Callback<
+                                       CheckinCenterClient.RegistrationEmailSession> callback) {
+        client.sendRegistrationEmail(userCode, email, callback);
+    }
+
+    void registerPairing(String userCode, String username, String password,
+                         String email, String emailChallengeId, String emailCode,
+                         boolean emailRequired, CheckinCenterClient.Callback<Boolean> callback) {
+        client.registerPairing(userCode, username, password, email, emailChallengeId,
+                emailCode, emailRequired, callback);
+    }
+
     boolean authorize(String deviceToken) {
         try {
             store.saveDeviceToken(deviceToken);
@@ -88,57 +79,6 @@ final class CheckinCenterCoordinator {
         }
     }
 
-    void syncIfNeeded() {
-        syncCredentials(false, null);
-    }
-
-    void preferServerManagedCredentials() {
-        store.preferServerManagedCredentials();
-        handler.removeCallbacks(changedCookieSync);
-    }
-
-    void syncCredentials(boolean force,
-                         CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount> callback) {
-        if (closed) return;
-        if (!paired()) {
-            fail(callback, CheckinCenterClient.Operation.CREDENTIAL_SYNC,
-                    "尚未连接签到服务");
-            return;
-        }
-        if (store.serverManagedCredentials()) {
-            completeWithoutSync(callback);
-            return;
-        }
-        if (!session.isLoggedIn()) {
-            completeWithoutSync(callback);
-            return;
-        }
-        final CheckinCredentialPayload payload;
-        try {
-            payload = CheckinCredentialPayload.fromSession(session);
-        } catch (CheckinCredentialPayload.InvalidCredentials error) {
-            if (callback != null) {
-                callback.onError(new CheckinCenterClient.ApiError(
-                        CheckinCenterClient.Operation.CREDENTIAL_SYNC, 422, error.getMessage()));
-            }
-            return;
-        }
-        if (!force && payload.fingerprint.equals(store.credentialFingerprint())) {
-            completeWithoutSync(callback);
-            return;
-        }
-        if (callback != null) syncCallbacks.add(callback);
-        if (syncing) {
-            if (!payload.fingerprint.equals(activeSyncFingerprint)) {
-                resyncRequested = true;
-            }
-            return;
-        }
-        syncing = true;
-        activeSyncFingerprint = payload.fingerprint;
-        syncAttempt(payload, 0);
-    }
-
     void getStatus(CheckinCenterClient.Callback<CheckinCenterClient.Status> callback) {
         String token = store.deviceToken();
         if (token.isEmpty()) {
@@ -146,11 +86,6 @@ final class CheckinCenterCoordinator {
             return;
         }
         statusAttempt(token, callback, 0);
-    }
-
-    void sendSmsCode(String phone,
-                     CheckinCenterClient.Callback<CheckinCenterClient.SmsSession> callback) {
-        sendSmsCode(phone, "", "", callback);
     }
 
     void sendSmsCode(String phone, String captchaTicket, String captchaRandstr,
@@ -164,33 +99,17 @@ final class CheckinCenterCoordinator {
                 authorizationAware(callback));
     }
 
-    void submitSmsCode(String sessionId, String code,
-                       CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount> callback) {
-        submitSmsCode(sessionId, code, "", "", callback);
-    }
-
     void submitSmsCode(String sessionId, String code, String captchaTicket,
                        String captchaRandstr,
-                       CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount> callback) {
+                       CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>
+                               callback) {
         String token = store.deviceToken();
         if (token.isEmpty()) {
             fail(callback, CheckinCenterClient.Operation.SMS_SUBMIT, "尚未连接签到服务");
             return;
         }
         client.submitSmsCode(token, sessionId, code, captchaTicket, captchaRandstr,
-                new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
-                    @Override
-                    public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
-                        preferServerManagedCredentials();
-                        if (callback != null) callback.onSuccess(value);
-                    }
-
-                    @Override
-                    public void onError(CheckinCenterClient.ApiError error) {
-                        handleAuthorizationError(error);
-                        if (callback != null) callback.onError(error);
-                    }
-                });
+                authorizationAware(callback));
     }
 
     void loginWithPassword(String phone, String password, String captchaTicket,
@@ -204,19 +123,7 @@ final class CheckinCenterCoordinator {
             return;
         }
         client.loginWithPassword(token, phone, password, captchaTicket, captchaRandstr,
-                new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
-                    @Override
-                    public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
-                        preferServerManagedCredentials();
-                        if (callback != null) callback.onSuccess(value);
-                    }
-
-                    @Override
-                    public void onError(CheckinCenterClient.ApiError error) {
-                        handleAuthorizationError(error);
-                        if (callback != null) callback.onError(error);
-                    }
-                });
+                authorizationAware(callback));
     }
 
     void updateTaskSettings(boolean enabled, String scheduleTime, int offsetMinutes,
@@ -248,103 +155,6 @@ final class CheckinCenterCoordinator {
             return;
         }
         revokeAttempt(token, callback, 0);
-    }
-
-    private void revokeAttempt(String token, CheckinCenterClient.Callback<Boolean> callback,
-                               int retries) {
-        client.revokeDevice(token, new CheckinCenterClient.Callback<Boolean>() {
-            @Override
-            public void onSuccess(Boolean value) {
-                clearAuthorization();
-                if (callback != null) callback.onSuccess(Boolean.TRUE);
-            }
-
-            @Override
-            public void onError(CheckinCenterClient.ApiError error) {
-                if (error.authorizationInvalid()) {
-                    clearAuthorization();
-                    if (callback != null) callback.onSuccess(Boolean.TRUE);
-                    return;
-                }
-                if (CheckinRetryPolicy.shouldRetry(error, retries)) {
-                    handler.postDelayed(() -> revokeAttempt(token, callback, retries + 1),
-                            CheckinRetryPolicy.delayMillis(error, retries, 0L));
-                    return;
-                }
-                if (callback != null) callback.onError(error);
-            }
-        });
-    }
-
-    private void syncAttempt(CheckinCredentialPayload payload, int retries) {
-        String token = store.deviceToken();
-        if (token.isEmpty()) {
-            finishSync(null, new CheckinCenterClient.ApiError(
-                    CheckinCenterClient.Operation.CREDENTIAL_SYNC, 401,
-                    "签到服务连接已失效，请重新连接"));
-            return;
-        }
-        client.syncCredentials(token, payload.json,
-                new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
-                    @Override
-                    public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
-                        store.saveCredentialFingerprint(payload.fingerprint);
-                        finishSync(value, null);
-                    }
-
-                    @Override
-                    public void onError(CheckinCenterClient.ApiError error) {
-                        if (handleAuthorizationError(error)) {
-                            finishSync(null, error);
-                            return;
-                        }
-                        if (CheckinRetryPolicy.shouldRetry(error, retries)) {
-                            handler.postDelayed(() -> syncAttempt(payload, retries + 1),
-                                    CheckinRetryPolicy.delayMillis(error, retries, 0L));
-                            return;
-                        }
-                        finishSync(null, error);
-                    }
-                });
-    }
-
-    private void finishSync(CheckinCenterClient.ConnectedAccount value,
-                            CheckinCenterClient.ApiError error) {
-        syncing = false;
-        activeSyncFingerprint = "";
-        if (error == null && resyncRequested && paired() && session.isLoggedIn()) {
-            resyncRequested = false;
-            try {
-                CheckinCredentialPayload next = CheckinCredentialPayload.fromSession(session);
-                if (!next.fingerprint.equals(store.credentialFingerprint())) {
-                    syncing = true;
-                    activeSyncFingerprint = next.fingerprint;
-                    syncAttempt(next, 0);
-                    return;
-                }
-            } catch (CheckinCredentialPayload.InvalidCredentials invalid) {
-                error = new CheckinCenterClient.ApiError(
-                        CheckinCenterClient.Operation.CREDENTIAL_SYNC, 422,
-                        invalid.getMessage());
-            }
-        }
-        resyncRequested = false;
-        List<CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>> callbacks =
-                new ArrayList<>(syncCallbacks);
-        syncCallbacks.clear();
-        for (CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount> callback
-                : callbacks) {
-            if (error == null) callback.onSuccess(value);
-            else callback.onError(error);
-        }
-    }
-
-    private void completeWithoutSync(
-            CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount> callback) {
-        if (callback == null) return;
-        handler.post(() -> {
-            if (!closed) callback.onSuccess(null);
-        });
     }
 
     private void statusAttempt(String token,
@@ -397,6 +207,32 @@ final class CheckinCenterCoordinator {
         });
     }
 
+    private void revokeAttempt(String token, CheckinCenterClient.Callback<Boolean> callback,
+                               int retries) {
+        client.revokeDevice(token, new CheckinCenterClient.Callback<Boolean>() {
+            @Override
+            public void onSuccess(Boolean value) {
+                clearAuthorization();
+                if (callback != null) callback.onSuccess(Boolean.TRUE);
+            }
+
+            @Override
+            public void onError(CheckinCenterClient.ApiError error) {
+                if (error.authorizationInvalid()) {
+                    clearAuthorization();
+                    if (callback != null) callback.onSuccess(Boolean.TRUE);
+                    return;
+                }
+                if (CheckinRetryPolicy.shouldRetry(error, retries)) {
+                    handler.postDelayed(() -> revokeAttempt(token, callback, retries + 1),
+                            CheckinRetryPolicy.delayMillis(error, retries, 0L));
+                    return;
+                }
+                if (callback != null) callback.onError(error);
+            }
+        });
+    }
+
     private boolean handleAuthorizationError(CheckinCenterClient.ApiError error) {
         if (error == null || !error.authorizationInvalid()) return false;
         clearAuthorization();
@@ -434,7 +270,7 @@ final class CheckinCenterCoordinator {
         if (model.isEmpty()) return "Android";
         if (manufacturer.isEmpty()
                 || model.toLowerCase(Locale.ROOT)
-                        .startsWith(manufacturer.toLowerCase(Locale.ROOT))) {
+                .startsWith(manufacturer.toLowerCase(Locale.ROOT))) {
             return model;
         }
         return manufacturer + " " + model;
@@ -447,10 +283,7 @@ final class CheckinCenterCoordinator {
     }
 
     public void close() {
-        closed = true;
-        sessionPreferences.unregisterOnSharedPreferenceChangeListener(cookieListener);
         handler.removeCallbacksAndMessages(null);
-        syncCallbacks.clear();
         client.close();
     }
 }

@@ -115,7 +115,6 @@ public class OfficialRequestParamsTest {
         assertEquals("/bbs/app/comment/support", EndpointProvider.supportComment());
         assertEquals("/bbs/app/comment/create", EndpointProvider.createComment());
         assertEquals("/rc/box_data/callback", EndpointProvider.boxDataCallback());
-        assertEquals("/task/sign_v3/sign", EndpointProvider.taskSignV3());
     }
 
     @Test

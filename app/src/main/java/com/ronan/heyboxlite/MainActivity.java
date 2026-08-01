@@ -85,7 +85,6 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_CHECKIN_CAPTCHA = 9134;
     private static final String TRANSITION_OVERLAY_TAG = "shell_transition_overlay";
     private static final String WELCOME_ANNOUNCEMENT_ID = "welcome-heybox-lite-1.77";
-    private static final boolean SIGN_IN_ENABLED = false;
     private static final long OFFLINE_MAX_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
     private static final String[] THEME_NAMES = {"默认蓝", "红色", "粉色", "紫色", "绿色", "青色", "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"};
     private static final int[][] THEME_COLORS = {new int[]{-14386760, -9193242}, new int[]{-3982790, -1083529}, new int[]{-2597743, -1006399}, new int[]{-9022795, -4744481}, new int[]{-14185897, -9320552}, new int[]{-15299695, -9713717}, new int[]{-2921692, -1007516}, new int[]{-3958250, -995480}, new int[]{-7894890, -5327686}, new int[]{-15253642, -10646588}, new int[]{-15263977, -3102658}, new int[]{-13530253, -7808833}};
@@ -256,8 +255,7 @@ public final class MainActivity extends Activity {
         Motions.setLevel(this.session.motionLevel());
         this.localCache = new LocalCache(this);
         boolean pendingCrashReport = !CrashReporter.pendingCrashReport(this).isEmpty();
-        this.checkinCenterCoordinator = new CheckinCenterCoordinator(
-                this, this.session, this.localCache);
+        this.checkinCenterCoordinator = new CheckinCenterCoordinator(this, this.localCache);
         this.checkinCenterCoordinator.setAuthorizationListener(paired -> {
             this.cachedProfileContainer = null;
             if (!paired && this.checkinCenterPage != null
@@ -312,7 +310,6 @@ public final class MainActivity extends Activity {
             this.handler.postDelayed(this::checkAnnouncementOnLaunch,
                     pendingCrashReport ? 2_100L : 950L);
         }
-        this.checkinCenterCoordinator.syncIfNeeded();
     }
 
     private void applyAccessStatus(AccessStatus status) {
@@ -5780,11 +5777,6 @@ public final class MainActivity extends Activity {
                     this.checkinCenterCoordinator, this.themeTokens,
                     new CheckinCenterPage.Host() {
                         @Override
-                        public void openLogin() {
-                            MainActivity.this.showLogin();
-                        }
-
-                        @Override
                         public void openCaptcha(String verificationUri) {
                             try {
                                 MainActivity.this.startActivityForResult(
@@ -7672,7 +7664,6 @@ public final class MainActivity extends Activity {
         out.append("device: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append('\n');
         out.append("screen: ").append(this.screen).append('\n');
         out.append("loggedIn: ").append(this.session.isLoggedIn()).append('\n');
-        out.append("signInEnabled: false\n");
         out.append("feedCount: ").append(this.feed.size()).append('\n');
         out.append("feedLastvalPresent: ").append(!this.feedLastval.isEmpty()).append('\n');
         out.append("feedLastPull: ").append(this.feedLastPull).append('\n');
@@ -8038,11 +8029,6 @@ public final class MainActivity extends Activity {
         this.activityResumed = true;
         if (this.checkinCenterPage != null && "checkin_center".equals(this.screen)) {
             this.checkinCenterPage.onResume();
-        }
-        if (this.checkinCenterCoordinator != null
-                && (this.checkinCenterPage == null
-                || !this.checkinCenterPage.mobileLoginActive())) {
-            this.checkinCenterCoordinator.syncIfNeeded();
         }
         if ("login".equals(this.screen) && this.qrLoginController != null) {
             this.qrLoginController.resume();

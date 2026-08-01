@@ -23,7 +23,6 @@ import java.util.Locale;
 
 final class CheckinCenterPage {
     interface Host {
-        void openLogin();
         void openCaptcha(String verificationUri);
         void confirmRevoke(Runnable confirmed);
         void showMessage(String message);
@@ -39,6 +38,11 @@ final class CheckinCenterPage {
     private enum LoginMode {
         SMS,
         PASSWORD
+    }
+
+    private enum ServiceAccountMode {
+        LOGIN,
+        REGISTER
     }
 
     private enum State {
@@ -64,6 +68,9 @@ final class CheckinCenterPage {
     private final Runnable pollTask = this::pollPairing;
     private final Runnable countdownTask = this::updatePairingCountdown;
     private final Runnable smsCountdownTask = this::updateSmsCountdown;
+    private final Runnable registrationEmailCountdownTask =
+            this::updateRegistrationEmailCountdown;
+    private final boolean roundLayout;
     private State state;
     private PairingSession pairing;
     private CheckinCenterClient.Status status;
@@ -71,9 +78,20 @@ final class CheckinCenterPage {
     private TextView pairingCountdown;
     private EditText serviceUsernameInput;
     private EditText servicePasswordInput;
+    private EditText serviceConfirmPasswordInput;
+    private EditText serviceEmailInput;
+    private EditText serviceEmailCodeInput;
     private Button pairingApproveButton;
+    private Button registrationEmailSendButton;
     private TextView pairingStatus;
     private boolean pairingApprovalInFlight;
+    private boolean registrationEmailInFlight;
+    private ServiceAccountMode serviceAccountMode = ServiceAccountMode.LOGIN;
+    private String serviceUsername = "";
+    private String serviceEmail = "";
+    private String registrationEmailChallengeId = "";
+    private long registrationEmailRetryAtElapsed;
+    private long registrationEmailExpiresAtElapsed;
     private EditText smsPhoneInput;
     private EditText smsCodeInput;
     private EditText passwordInput;
@@ -106,6 +124,8 @@ final class CheckinCenterPage {
         this.tokens = tokens;
         this.host = host;
         this.scale = session.uiScale() / 100.0f;
+        this.roundLayout = session.roundScreen()
+                || activity.getResources().getConfiguration().isScreenRound();
         this.root = new FrameLayout(activity);
         this.root.setBackgroundColor(tokens.background);
         this.state = coordinator.paired() ? State.SYNCING : State.UNPAIRED;
@@ -115,10 +135,6 @@ final class CheckinCenterPage {
 
     View view() {
         return root;
-    }
-
-    boolean mobileLoginActive() {
-        return !closed && state == State.MOBILE_LOGIN;
     }
 
     void refresh() {
@@ -133,21 +149,7 @@ final class CheckinCenterPage {
         state = State.SYNCING;
         errorMessage = "";
         render();
-        coordinator.syncCredentials(false, new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
-            @Override
-            public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
-                loadStatus();
-            }
-
-            @Override
-            public void onError(CheckinCenterClient.ApiError error) {
-                if (error.authorizationInvalid()) {
-                    showError(error.getMessage());
-                } else {
-                    loadStatus(error.getMessage());
-                }
-            }
-        });
+        loadStatus();
     }
 
     boolean handleBack() {
@@ -172,21 +174,22 @@ final class CheckinCenterPage {
             handler.removeCallbacks(smsCountdownTask);
             handler.post(smsCountdownTask);
         }
+        if (state == State.PAIRING && !registrationEmailChallengeId.isEmpty()) {
+            handler.removeCallbacks(registrationEmailCountdownTask);
+            handler.post(registrationEmailCountdownTask);
+        }
     }
 
     void onPause() {
         handler.removeCallbacks(pollTask);
         handler.removeCallbacks(countdownTask);
         handler.removeCallbacks(smsCountdownTask);
+        handler.removeCallbacks(registrationEmailCountdownTask);
     }
 
     private void beginPairing() {
         if (!coordinator.supported()) {
             showError("小黑盒自动签到需要 Android 7.0 或更高版本");
-            return;
-        }
-        if (!session.isLoggedIn()) {
-            host.openLogin();
             return;
         }
         state = State.SYNCING;
@@ -229,27 +232,15 @@ final class CheckinCenterPage {
                             return;
                         }
                         if (!coordinator.authorize(value.deviceToken)) {
-                            pairing = null;
+                            clearPairingSessionState();
                             showError("无法安全保存签到服务连接，请检查系统安全组件");
                             return;
                         }
-                        pairing = null;
+                        clearPairingSessionState();
                         state = State.SYNCING;
-                        clearPairingViews();
                         render();
-                        coordinator.syncCredentials(true,
-                                new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
-                                    @Override
-                                    public void onSuccess(CheckinCenterClient.ConnectedAccount account) {
-                                        host.showMessage("小黑盒自动签到已连接");
-                                        loadStatus();
-                                    }
-
-                                    @Override
-                                    public void onError(CheckinCenterClient.ApiError error) {
-                                        showError(error.getMessage());
-                                    }
-                                });
+                        host.showMessage("签到服务已连接");
+                        loadStatus();
                     }
 
                     @Override
@@ -320,10 +311,9 @@ final class CheckinCenterPage {
                 @Override
                 public void onSuccess(Boolean value) {
                     status = null;
-                    pairing = null;
+                    clearPairingSessionState();
                     state = State.UNPAIRED;
                     errorMessage = "";
-                    clearPairingViews();
                     render();
                     host.showMessage("已撤销此设备");
                 }
@@ -558,6 +548,7 @@ final class CheckinCenterPage {
     private void finishMobileLogin() {
         handler.removeCallbacks(smsCountdownTask);
         smsRequestInFlight = false;
+        mobilePhone = "";
         smsSessionId = "";
         smsRetryAtElapsed = 0L;
         smsExpiresAtElapsed = 0L;
@@ -570,9 +561,7 @@ final class CheckinCenterPage {
     }
 
     private void showError(String message) {
-        pairing = null;
-        pairingApprovalInFlight = false;
-        clearPairingViews();
+        clearPairingSessionState();
         state = coordinator.paired() ? State.ERROR : State.UNPAIRED;
         errorMessage = message == null ? "签到服务请求失败" : message;
         render();
@@ -593,7 +582,7 @@ final class CheckinCenterPage {
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
         LinearLayout page = column(tokens.background);
-        page.setPadding(dp(10), dp(8), dp(10), dp(18));
+        applyPageInsets(page, false);
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
         if (!errorMessage.isEmpty()) page.addView(errorBanner(errorMessage));
         if (!coordinator.paired()) renderUnpaired(page);
@@ -615,15 +604,12 @@ final class CheckinCenterPage {
                 tokens.text);
         description.setLineSpacing(0f, 1.16f);
         addTop(card, description, 12);
-        if (!session.isLoggedIn()) {
-            addTop(card, body("连接前需要先在 Lite 登录小黑盒账号。", tokens.muted), 8);
-        }
-        Button connect = primaryButton(session.isLoggedIn() ? "连接签到服务" : "登录小黑盒");
+        addTop(card, body("可直接登录或注册签到服务账号，无需打开浏览器。", tokens.muted), 8);
+        Button connect = primaryButton("连接签到服务");
         connect.setEnabled(coordinator.supported());
         connect.setOnClickListener(view -> {
             UiComponents.press(view);
-            if (session.isLoggedIn()) beginPairing();
-            else host.openLogin();
+            beginPairing();
         });
         addTop(card, connect, 16);
         page.addView(card);
@@ -641,12 +627,25 @@ final class CheckinCenterPage {
     }
 
     private void renderConnected(LinearLayout page) {
+        boolean accountConnected = "connected".equalsIgnoreCase(status.account.state);
         LinearLayout card = card();
         card.addView(heading("小黑盒自动签到"));
-        String stateLabel = state == State.RUNNING ? "执行中" : taskStateLabel(status.task);
+        String stateLabel = !accountConnected ? "等待手机号登录"
+                : state == State.RUNNING ? "执行中" : taskStateLabel(status.task);
         addTop(card, body(stateLabel, state == State.RUNNING ? tokens.accent
-                : status.task.active() ? tokens.text : tokens.muted), 5);
-        addTop(card, infoRow("账号", accountLabel(status.account)), 14);
+                : accountConnected && status.task.active() ? tokens.text : tokens.muted), 5);
+        addTop(card, infoRow("小黑盒账号", accountConnected
+                ? accountLabel(status.account) : "尚未登录"), 14);
+        if (!accountConnected) {
+            addTop(card, body("自动签到必须使用手机号验证码或密码登录小黑盒。Lite 的二维码登录仅用于浏览，不会上传到签到服务。",
+                    tokens.text), 10);
+            page.addView(card);
+            addMobileLoginCard(page, false);
+            Button revoke = ghostButton("撤销此设备");
+            revoke.setOnClickListener(view -> requestRevoke());
+            addTop(page, revoke, 9);
+            return;
+        }
         addTop(card, infoRow("服务器签到", taskEnabledLabel(status.task)), 2);
         addTop(card, infoRow("计划时间", scheduleLabel(status.task)), 2);
         addTop(card, infoRow("随机偏移", offsetLabel(status.task.offsetMinutes)), 2);
@@ -677,7 +676,7 @@ final class CheckinCenterPage {
         }
         addTop(page, latest, 9);
 
-        addMobileLoginCard(page, "connected".equalsIgnoreCase(status.account.state));
+        addMobileLoginCard(page, true);
 
         Button run = primaryButton(state == State.RUNNING ? "正在签到" : "立即签到");
         run.setEnabled(state != State.RUNNING && status.task.active());
@@ -721,25 +720,38 @@ final class CheckinCenterPage {
         addTop(settings, taskTimeButton, 4);
 
         LinearLayout offsetRow = new LinearLayout(activity);
+        offsetRow.setOrientation(roundLayout ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         offsetRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView offsetTitle = body("随机偏移", tokens.text);
-        offsetRow.addView(offsetTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+        offsetRow.addView(offsetTitle, roundLayout
+                ? new LinearLayout.LayoutParams(-1, -2)
+                : new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout offsetControls = roundLayout ? new LinearLayout(activity) : offsetRow;
+        offsetControls.setGravity(Gravity.CENTER);
         taskOffsetMinusButton = compactButton("-");
         taskOffsetMinusButton.setContentDescription("减少随机偏移");
         taskOffsetMinusButton.setEnabled(!taskSettingsInFlight && task.offsetMinutes > 0);
         taskOffsetMinusButton.setOnClickListener(view -> saveTaskSettings(task.enabled,
                 normalizedScheduleTime(task), Math.max(0, task.offsetMinutes - 30)));
-        offsetRow.addView(taskOffsetMinusButton, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        offsetControls.addView(taskOffsetMinusButton,
+                new LinearLayout.LayoutParams(dp(36), dp(36)));
         TextView offsetValue = body(offsetLabel(task.offsetMinutes), tokens.text);
         offsetValue.setGravity(Gravity.CENTER);
         offsetValue.setSingleLine(true);
-        offsetRow.addView(offsetValue, new LinearLayout.LayoutParams(dp(76), dp(36)));
+        offsetControls.addView(offsetValue,
+                new LinearLayout.LayoutParams(dp(roundLayout ? 70 : 76), dp(36)));
         taskOffsetPlusButton = compactButton("+");
         taskOffsetPlusButton.setContentDescription("增加随机偏移");
         taskOffsetPlusButton.setEnabled(!taskSettingsInFlight && task.offsetMinutes < 720);
         taskOffsetPlusButton.setOnClickListener(view -> saveTaskSettings(task.enabled,
                 normalizedScheduleTime(task), Math.min(720, task.offsetMinutes + 30)));
-        offsetRow.addView(taskOffsetPlusButton, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        offsetControls.addView(taskOffsetPlusButton,
+                new LinearLayout.LayoutParams(dp(36), dp(36)));
+        if (roundLayout) {
+            LinearLayout.LayoutParams controlsParams = new LinearLayout.LayoutParams(-1, -2);
+            controlsParams.topMargin = dp(5);
+            offsetRow.addView(offsetControls, controlsParams);
+        }
         addTop(settings, offsetRow, 4);
 
         if (task.platformBlocked || task.signBlocked) {
@@ -818,13 +830,15 @@ final class CheckinCenterPage {
 
     private void addMobileLoginCard(LinearLayout page, boolean connected) {
         LinearLayout login = card();
-        login.addView(sectionTitle("手机号登录小黑盒"));
+        login.addView(sectionTitle(connected ? "小黑盒账号" : "登录小黑盒"));
         TextView description = body(
-                "用于生成服务器自动签到所需的移动端凭据。手机号和短信验证码仅由签到服务处理，Lite 不会保存。",
+                connected
+                        ? "需要更换签到账号时，可重新使用手机号验证码或密码登录。"
+                        : "自动签到只支持手机号验证码或密码登录。手机号和凭据由签到服务处理，Lite 不会保存。",
                 tokens.muted);
         description.setLineSpacing(0f, 1.15f);
         addTop(login, description, 7);
-        Button open = ghostButton(connected ? "重新登录" : "手机号登录");
+        Button open = connected ? ghostButton("重新登录") : primaryButton("手机号登录");
         open.setOnClickListener(view -> {
             UiComponents.press(view);
             openMobileLogin();
@@ -837,7 +851,7 @@ final class CheckinCenterPage {
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
         LinearLayout page = column(tokens.background);
-        page.setPadding(dp(10), dp(8), dp(10), dp(18));
+        applyPageInsets(page, true);
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
 
         LinearLayout card = card();
@@ -850,7 +864,8 @@ final class CheckinCenterPage {
 
         LinearLayout modes = new LinearLayout(activity);
         Button smsMode = loginMode == LoginMode.SMS
-                ? primaryButton("短信验证码") : ghostButton("短信验证码");
+                ? primaryButton(roundLayout ? "验证码" : "短信验证码")
+                : ghostButton(roundLayout ? "验证码" : "短信验证码");
         Button passwordMode = loginMode == LoginMode.PASSWORD
                 ? primaryButton("密码登录") : ghostButton("密码登录");
         smsMode.setOnClickListener(view -> switchLoginMode(LoginMode.SMS));
@@ -916,35 +931,76 @@ final class CheckinCenterPage {
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
         LinearLayout page = column(tokens.background);
-        page.setPadding(dp(10), dp(8), dp(10), dp(18));
+        applyPageInsets(page, true);
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
 
         LinearLayout card = card();
         card.addView(heading("连接签到服务"));
         TextView description = body(
-                "输入签到服务账号完成设备连接。这里不是小黑盒手机号登录，账号和密码不会保存在 Lite 中。",
+                serviceAccountMode == ServiceAccountMode.LOGIN
+                        ? "登录签到服务账号并连接此设备。这里不是小黑盒手机号登录。"
+                        : "创建签到服务账号并连接此设备，全程无需打开浏览器。",
                 tokens.muted);
         description.setLineSpacing(0f, 1.16f);
         addTop(card, description, 7);
-        addTop(card, body("配对码  " + pairing.start.userCode, tokens.text), 12);
+        addTop(card, body("配对码  " + pairing.start.userCode, tokens.muted), 9);
         pairingCountdown = body("", tokens.muted);
         addTop(card, pairingCountdown, 3);
 
+        if (pairing.start.registrationOpen) {
+            LinearLayout modes = new LinearLayout(activity);
+            String loginLabel = roundLayout ? "登录" : "已有账号";
+            String registerLabel = roundLayout ? "注册" : "注册账号";
+            Button loginMode = serviceAccountMode == ServiceAccountMode.LOGIN
+                    ? primaryButton(loginLabel) : ghostButton(loginLabel);
+            Button registerMode = serviceAccountMode == ServiceAccountMode.REGISTER
+                    ? primaryButton(registerLabel) : ghostButton(registerLabel);
+            loginMode.setOnClickListener(view -> switchServiceAccountMode(
+                    ServiceAccountMode.LOGIN));
+            registerMode.setOnClickListener(view -> switchServiceAccountMode(
+                    ServiceAccountMode.REGISTER));
+            LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, dp(38), 1f);
+            left.rightMargin = dp(4);
+            modes.addView(loginMode, left);
+            LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, dp(38), 1f);
+            right.leftMargin = dp(4);
+            modes.addView(registerMode, right);
+            addTop(card, modes, 12);
+        } else {
+            serviceAccountMode = ServiceAccountMode.LOGIN;
+        }
+
         addTop(card, body("签到服务账号", tokens.text), 14);
         serviceUsernameInput = input("账号", InputType.TYPE_CLASS_TEXT);
+        serviceUsernameInput.setText(serviceUsername);
         addTop(card, serviceUsernameInput, 6);
         addTop(card, body("密码", tokens.text), 13);
         servicePasswordInput = input("密码",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         addTop(card, servicePasswordInput, 6);
 
-        pairingApproveButton = primaryButton("确认连接");
+        if (serviceAccountMode == ServiceAccountMode.REGISTER) {
+            addTop(card, body("确认密码", tokens.text), 13);
+            serviceConfirmPasswordInput = input("再次输入密码",
+                    InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            addTop(card, serviceConfirmPasswordInput, 6);
+            TextView passwordRule = body(
+                    "至少 12 位，并包含大小写字母、数字、符号中的三类", tokens.muted);
+            passwordRule.setLineSpacing(0f, 1.12f);
+            addTop(card, passwordRule, 6);
+            if (pairing.start.registrationEmailRequired) {
+                addRegistrationEmailFields(card);
+            }
+        }
+
+        pairingApproveButton = primaryButton(serviceAccountMode == ServiceAccountMode.LOGIN
+                ? "登录并连接" : "注册并连接");
         pairingApproveButton.setOnClickListener(view -> {
             UiComponents.press(view);
-            approvePairing();
+            submitServiceAccount();
         });
         addTop(card, pairingApproveButton, 10);
-        pairingStatus = body("连接过程使用固定证书加密，不会打开网页", tokens.muted);
+        pairingStatus = body("账号密码只用于本次请求，不会保存在 Lite 中", tokens.muted);
         pairingStatus.setLineSpacing(0f, 1.14f);
         addTop(card, pairingStatus, 9);
         page.addView(card);
@@ -954,6 +1010,44 @@ final class CheckinCenterPage {
         addTop(page, cancel, 9);
         root.addView(scroll, match());
         updatePairingCountdown();
+        updateRegistrationEmailCountdown();
+    }
+
+    private void addRegistrationEmailFields(LinearLayout card) {
+        addTop(card, body("邮箱", tokens.text), 13);
+        serviceEmailInput = input("用于接收验证码",
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        serviceEmailInput.setText(serviceEmail);
+        addTop(card, serviceEmailInput, 6);
+        registrationEmailSendButton = ghostButton("发送邮箱验证码");
+        registrationEmailSendButton.setOnClickListener(view -> {
+            UiComponents.press(view);
+            sendRegistrationEmail();
+        });
+        addTop(card, registrationEmailSendButton, 7);
+        addTop(card, body("邮箱验证码", tokens.text), 13);
+        serviceEmailCodeInput = input("6 位验证码",
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        addTop(card, serviceEmailCodeInput, 6);
+    }
+
+    private void switchServiceAccountMode(ServiceAccountMode mode) {
+        if (pairingApprovalInFlight || registrationEmailInFlight || mode == serviceAccountMode) {
+            return;
+        }
+        rememberServiceInputs();
+        serviceAccountMode = mode;
+        registrationEmailChallengeId = "";
+        registrationEmailRetryAtElapsed = 0L;
+        registrationEmailExpiresAtElapsed = 0L;
+        handler.removeCallbacks(registrationEmailCountdownTask);
+        clearPairingViews();
+        render();
+    }
+
+    private void submitServiceAccount() {
+        if (serviceAccountMode == ServiceAccountMode.REGISTER) registerPairing();
+        else approvePairing();
     }
 
     private void approvePairing() {
@@ -994,12 +1088,99 @@ final class CheckinCenterPage {
                 });
     }
 
+    private void registerPairing() {
+        PairingSession current = pairing;
+        if (pairingApprovalInFlight || current == null || serviceUsernameInput == null
+                || servicePasswordInput == null || serviceConfirmPasswordInput == null) return;
+        if (current.expired()) {
+            showError("配对已过期，请重新连接");
+            return;
+        }
+        String username = serviceUsernameInput.getText().toString().trim();
+        String password = servicePasswordInput.getText().toString();
+        String confirmation = serviceConfirmPasswordInput.getText().toString();
+        if (!password.equals(confirmation)) {
+            clearServicePasswords();
+            setPairingStatus("两次输入的密码不一致", tokens.text);
+            return;
+        }
+        boolean emailRequired = current.start.registrationEmailRequired;
+        String email = serviceEmailInput == null ? ""
+                : serviceEmailInput.getText().toString().trim();
+        String emailCode = serviceEmailCodeInput == null ? ""
+                : serviceEmailCodeInput.getText().toString().trim();
+        if (emailRequired && (registrationEmailChallengeId.isEmpty()
+                || SystemClock.elapsedRealtime() >= registrationEmailExpiresAtElapsed)) {
+            setPairingStatus("请先发送并填写有效的邮箱验证码", tokens.text);
+            return;
+        }
+        serviceUsername = username;
+        serviceEmail = email;
+        pairingApprovalInFlight = true;
+        setPairingControlsEnabled(false);
+        setPairingStatus("正在创建签到服务账号", tokens.muted);
+        coordinator.registerPairing(current.start.userCode, username, password, email,
+                registrationEmailChallengeId, emailCode, emailRequired,
+                new CheckinCenterClient.Callback<Boolean>() {
+                    @Override
+                    public void onSuccess(Boolean value) {
+                        if (closed || pairing != current || state != State.PAIRING) return;
+                        pairingApprovalInFlight = false;
+                        clearServicePasswords();
+                        setPairingStatus("注册成功，正在完成设备连接", tokens.accent);
+                        schedulePoll(0L);
+                    }
+
+                    @Override
+                    public void onError(CheckinCenterClient.ApiError error) {
+                        if (closed || pairing != current || state != State.PAIRING) return;
+                        pairingApprovalInFlight = false;
+                        clearServicePasswords();
+                        setPairingControlsEnabled(true);
+                        setPairingStatus(error.getMessage(), tokens.text);
+                    }
+                });
+    }
+
+    private void sendRegistrationEmail() {
+        PairingSession current = pairing;
+        if (registrationEmailInFlight || current == null || serviceEmailInput == null) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now < registrationEmailRetryAtElapsed) return;
+        serviceEmail = serviceEmailInput.getText().toString().trim();
+        registrationEmailInFlight = true;
+        setPairingControlsEnabled(false);
+        setPairingStatus("正在发送邮箱验证码", tokens.muted);
+        coordinator.sendRegistrationEmail(current.start.userCode, serviceEmail,
+                new CheckinCenterClient.Callback<CheckinCenterClient.RegistrationEmailSession>() {
+                    @Override
+                    public void onSuccess(CheckinCenterClient.RegistrationEmailSession value) {
+                        if (closed || pairing != current || state != State.PAIRING) return;
+                        registrationEmailInFlight = false;
+                        registrationEmailChallengeId = value.challengeId;
+                        long receivedAt = SystemClock.elapsedRealtime();
+                        registrationEmailRetryAtElapsed = receivedAt
+                                + value.retryAfterSeconds * SECOND_MS;
+                        registrationEmailExpiresAtElapsed = receivedAt
+                                + value.expiresInSeconds * SECOND_MS;
+                        setPairingControlsEnabled(true);
+                        setPairingStatus("邮箱验证码已发送", tokens.accent);
+                        updateRegistrationEmailCountdown();
+                        if (serviceEmailCodeInput != null) serviceEmailCodeInput.requestFocus();
+                    }
+
+                    @Override
+                    public void onError(CheckinCenterClient.ApiError error) {
+                        if (closed || pairing != current || state != State.PAIRING) return;
+                        registrationEmailInFlight = false;
+                        setPairingControlsEnabled(true);
+                        setPairingStatus(error.getMessage(), tokens.text);
+                    }
+                });
+    }
+
     private void cancelPairing() {
-        handler.removeCallbacks(pollTask);
-        handler.removeCallbacks(countdownTask);
-        pairing = null;
-        pairingApprovalInFlight = false;
-        clearPairingViews();
+        clearPairingSessionState();
         state = State.UNPAIRED;
         errorMessage = "";
         render();
@@ -1008,6 +1189,13 @@ final class CheckinCenterPage {
     private void setPairingControlsEnabled(boolean enabled) {
         if (serviceUsernameInput != null) serviceUsernameInput.setEnabled(enabled);
         if (servicePasswordInput != null) servicePasswordInput.setEnabled(enabled);
+        if (serviceConfirmPasswordInput != null) serviceConfirmPasswordInput.setEnabled(enabled);
+        if (serviceEmailInput != null) serviceEmailInput.setEnabled(enabled);
+        if (serviceEmailCodeInput != null) serviceEmailCodeInput.setEnabled(enabled);
+        if (registrationEmailSendButton != null) {
+            registrationEmailSendButton.setEnabled(enabled
+                    && SystemClock.elapsedRealtime() >= registrationEmailRetryAtElapsed);
+        }
         if (pairingApproveButton != null) pairingApproveButton.setEnabled(enabled);
     }
 
@@ -1018,12 +1206,45 @@ final class CheckinCenterPage {
     }
 
     private void clearPairingViews() {
-        if (serviceUsernameInput != null) serviceUsernameInput.setText("");
-        if (servicePasswordInput != null) servicePasswordInput.setText("");
+        clearServicePasswords();
         serviceUsernameInput = null;
         servicePasswordInput = null;
+        serviceConfirmPasswordInput = null;
+        serviceEmailInput = null;
+        serviceEmailCodeInput = null;
         pairingApproveButton = null;
+        registrationEmailSendButton = null;
         pairingStatus = null;
+    }
+
+    private void clearPairingSessionState() {
+        handler.removeCallbacks(pollTask);
+        handler.removeCallbacks(countdownTask);
+        handler.removeCallbacks(registrationEmailCountdownTask);
+        pairing = null;
+        pairingApprovalInFlight = false;
+        registrationEmailInFlight = false;
+        serviceAccountMode = ServiceAccountMode.LOGIN;
+        serviceUsername = "";
+        serviceEmail = "";
+        registrationEmailChallengeId = "";
+        registrationEmailRetryAtElapsed = 0L;
+        registrationEmailExpiresAtElapsed = 0L;
+        clearPairingViews();
+    }
+
+    private void rememberServiceInputs() {
+        if (serviceUsernameInput != null) {
+            serviceUsername = serviceUsernameInput.getText().toString().trim();
+        }
+        if (serviceEmailInput != null) {
+            serviceEmail = serviceEmailInput.getText().toString().trim();
+        }
+    }
+
+    private void clearServicePasswords() {
+        if (servicePasswordInput != null) servicePasswordInput.setText("");
+        if (serviceConfirmPasswordInput != null) serviceConfirmPasswordInput.setText("");
     }
 
     private View errorBanner(String message) {
@@ -1052,7 +1273,7 @@ final class CheckinCenterPage {
         view.setMinimumHeight(0);
         view.setPadding(dp(11), 0, dp(11), 0);
         Compat.setBackground(view, UiComponents.outlinedTextField(activity, tokens, scale));
-        view.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(42)));
+        view.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(roundLayout ? 40 : 42)));
         return view;
     }
 
@@ -1102,6 +1323,27 @@ final class CheckinCenterPage {
         handler.postDelayed(smsCountdownTask, SECOND_MS);
     }
 
+    private void updateRegistrationEmailCountdown() {
+        handler.removeCallbacks(registrationEmailCountdownTask);
+        if (closed || state != State.PAIRING || registrationEmailSendButton == null) return;
+        long now = SystemClock.elapsedRealtime();
+        if (!registrationEmailChallengeId.isEmpty()
+                && now >= registrationEmailExpiresAtElapsed) {
+            registrationEmailChallengeId = "";
+            registrationEmailRetryAtElapsed = 0L;
+            registrationEmailExpiresAtElapsed = 0L;
+        }
+        long retrySeconds = Math.max(0L,
+                (registrationEmailRetryAtElapsed - now + 999L) / SECOND_MS);
+        registrationEmailSendButton.setText(retrySeconds > 0L
+                ? retrySeconds + " 秒后可重发" : "发送邮箱验证码");
+        registrationEmailSendButton.setEnabled(!pairingApprovalInFlight
+                && !registrationEmailInFlight && retrySeconds == 0L);
+        if (retrySeconds > 0L || !registrationEmailChallengeId.isEmpty()) {
+            handler.postDelayed(registrationEmailCountdownTask, SECOND_MS);
+        }
+    }
+
     private void resetSmsSession(String message) {
         handler.removeCallbacks(smsCountdownTask);
         smsSessionId = "";
@@ -1130,23 +1372,47 @@ final class CheckinCenterPage {
 
     private LinearLayout infoRow(String label, String value) {
         LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(roundLayout ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.TOP);
         TextView left = body(label, tokens.muted);
-        row.addView(left, new LinearLayout.LayoutParams(0, -2, 0.44f));
+        row.addView(left, roundLayout
+                ? new LinearLayout.LayoutParams(-1, -2)
+                : new LinearLayout.LayoutParams(0, -2, 0.44f));
         TextView right = body(value, tokens.text);
-        right.setGravity(Gravity.END);
+        right.setGravity(roundLayout ? Gravity.START : Gravity.END);
         right.setMaxLines(3);
-        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -2, 0.56f);
-        rightParams.leftMargin = dp(8);
+        LinearLayout.LayoutParams rightParams = roundLayout
+                ? new LinearLayout.LayoutParams(-1, -2)
+                : new LinearLayout.LayoutParams(0, -2, 0.56f);
+        if (roundLayout) rightParams.topMargin = dp(2);
+        else rightParams.leftMargin = dp(8);
         row.addView(right, rightParams);
         return row;
     }
 
     private LinearLayout card() {
         LinearLayout card = column(Color.TRANSPARENT);
-        card.setPadding(dp(14), dp(13), dp(14), dp(13));
+        int horizontal = roundLayout ? dp(12) : dp(14);
+        int vertical = roundLayout ? dp(11) : dp(13);
+        card.setPadding(horizontal, vertical, horizontal, vertical);
         Compat.setBackground(card, UiComponents.card(activity, tokens, scale));
         return card;
+    }
+
+    private void applyPageInsets(LinearLayout page, boolean subpage) {
+        int width = activity.getResources().getDisplayMetrics().widthPixels;
+        int height = activity.getResources().getDisplayMetrics().heightPixels;
+        int horizontal = roundLayout
+                ? RoundLayoutMetrics.componentInset(width,
+                RoundLayoutMetrics.PAGE_HORIZONTAL_RATIO, dp(10))
+                : dp(10);
+        int top = roundLayout
+                ? RoundLayoutMetrics.componentInset(Math.min(width, height),
+                subpage ? RoundLayoutMetrics.SUBPAGE_TOP_RATIO
+                        : RoundLayoutMetrics.PAGE_TOP_RATIO, dp(8))
+                : dp(8);
+        page.setPadding(horizontal, top, horizontal,
+                roundLayout ? Math.max(top, dp(18)) : dp(18));
     }
 
     private LinearLayout column(int color) {
@@ -1157,7 +1423,7 @@ final class CheckinCenterPage {
     }
 
     private TextView heading(String value) {
-        TextView view = label(value, 18f, tokens.text);
+        TextView view = label(value, roundLayout ? 17f : 18f, tokens.text);
         view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         return view;
     }
@@ -1224,7 +1490,7 @@ final class CheckinCenterPage {
         button.setMinHeight(0);
         button.setMinimumHeight(0);
         button.setPadding(dp(12), 0, dp(12), 0);
-        button.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(42)));
+        button.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(roundLayout ? 38 : 42)));
         return button;
     }
 
@@ -1341,10 +1607,10 @@ final class CheckinCenterPage {
 
     public void close() {
         closed = true;
-        pairing = null;
         clearCaptchaRequest();
+        mobilePhone = "";
         handler.removeCallbacksAndMessages(null);
-        clearPairingViews();
+        clearPairingSessionState();
         clearSmsViews();
         taskEnabledSwitch = null;
         taskTimeButton = null;

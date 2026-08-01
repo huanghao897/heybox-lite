@@ -132,20 +132,6 @@ final class ApiClient {
         executor.execute(() -> request("GET", path, extra, null, algorithm, profile, callback));
     }
 
-    void getSignedIsolated(String path, Map<String, String> extra,
-                           HeyboxSigner.Algorithm algorithm, RequestProfile profile,
-                           Callback callback) {
-        if (closed) return;
-        executor.execute(() -> request("GET", path, extra, null, algorithm, profile,
-                callback, false, true));
-    }
-
-    void getRawIsolated(String label, String rawUrl, Map<String, String> headers,
-                        Callback callback) {
-        if (closed) return;
-        executor.execute(() -> rawRequest(label, rawUrl, headers, callback));
-    }
-
     void postForm(String path, Map<String, String> body, Callback callback) {
         if (closed) return;
         executor.execute(() -> request("POST", path, new LinkedHashMap<>(), body,
@@ -187,29 +173,13 @@ final class ApiClient {
     private void request(String method, String path, Map<String, String> extra,
                          Map<String, String> body, HeyboxSigner.Algorithm algorithm,
                          RequestProfile profile, Callback callback) {
-        request(method, path, extra, body, algorithm, profile, callback, true);
-    }
-
-    private void request(String method, String path, Map<String, String> extra,
-                         Map<String, String> body, HeyboxSigner.Algorithm algorithm,
-                         RequestProfile profile, Callback callback,
-                         boolean mergeResponseCookies) {
-        request(method, path, extra, body, algorithm, profile, callback,
-                mergeResponseCookies, false);
-    }
-
-    private void request(String method, String path, Map<String, String> extra,
-                         Map<String, String> body, HeyboxSigner.Algorithm algorithm,
-                         RequestProfile profile, Callback callback,
-                         boolean mergeResponseCookies, boolean useSignInCredentials) {
         HttpURLConnection connection = null;
         long requestStartedAt = SystemClock.elapsedRealtime();
         boolean taskRequest = isTaskPath(path);
         boolean debugRequest = taskRequest || isWritePath(path);
         try {
             if (closed || Thread.currentThread().isInterrupted()) return;
-            if (shouldUseReadGateway(method, path, algorithm, profile,
-                    useSignInCredentials)) {
+            if (shouldUseReadGateway(method, path, algorithm, profile)) {
                 try {
                     requestThroughGateway(path, extra, callback);
                     return;
@@ -220,8 +190,7 @@ final class ApiClient {
                             + " code=" + gatewayError.code);
                 }
             }
-            Map<String, String> params = new LinkedHashMap<>(
-                    baseParams(profile, useSignInCredentials));
+            Map<String, String> params = new LinkedHashMap<>(baseParams(profile));
             if (extra != null) params.putAll(extra);
             params.putAll(HeyboxSigner.sign(path, algorithm));
             Map<String, String> signParams = nativeSignParams(method, profile, params, body);
@@ -246,7 +215,7 @@ final class ApiClient {
             connection.setInstanceFollowRedirects(true);
             connection.setConnectTimeout(7000);
             connection.setReadTimeout(12000);
-            applyHeaders(connection, profile, useSignInCredentials);
+            applyHeaders(connection, profile);
             if (debugRequest) {
                 logTask("api " + debugKind(path) + " headers path=" + path
                         + " profile=" + profile
@@ -275,12 +244,7 @@ final class ApiClient {
             if (setCookies == null) {
                 setCookies = connection.getHeaderFields().get(SecureStrings.setCookieHeaderLower());
             }
-            if (mergeResponseCookies) {
-                session.mergeCookies(setCookies);
-            } else if (debugRequest && setCookies != null && !setCookies.isEmpty()) {
-                logTask("api " + debugKind(path) + " isolated response cookies ignored path="
-                        + path + " count=" + setCookies.size());
-            }
+            session.mergeCookies(setCookies);
             InputStream stream = status >= 200 && status < 300
                     ? connection.getInputStream() : connection.getErrorStream();
             String contentEncoding = connection.getContentEncoding();
@@ -342,12 +306,10 @@ final class ApiClient {
 
     private boolean shouldUseReadGateway(String method, String path,
                                          HeyboxSigner.Algorithm algorithm,
-                                         RequestProfile profile,
-                                         boolean useSignInCredentials) {
+                                         RequestProfile profile) {
         return "GET".equals(method)
                 && algorithm == HeyboxSigner.Algorithm.LEGACY
                 && profile == RequestProfile.WEB
-                && !useSignInCredentials
                 && !HeyboxGatewayClient.operationFor(path).isEmpty()
                 && RemoteConfig.readGatewayEnabled(session.userId());
     }
@@ -425,78 +387,6 @@ final class ApiClient {
         if (failed) {
             throw new IllegalStateException(first(
                     json.optString("msg"), json.optString("message"), "接口返回失败"));
-        }
-    }
-
-    private void rawRequest(String label, String rawUrl, Map<String, String> headers,
-                            Callback callback) {
-        HttpURLConnection connection = null;
-        String safeLabel = label == null || label.isEmpty() ? "raw" : label;
-        try {
-            if (closed || Thread.currentThread().isInterrupted()) return;
-            if (rawUrl == null || !rawUrl.startsWith("https://api.xiaoheihe.cn/")) {
-                throw new IllegalArgumentException("bad replay url");
-            }
-            URL url = new URL(rawUrl);
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setUseCaches(false);
-            connection.setInstanceFollowRedirects(true);
-            connection.setConnectTimeout(7000);
-            connection.setReadTimeout(12000);
-            if (headers != null) {
-                for (Map.Entry<String, String> entry : headers.entrySet()) {
-                    String key = entry.getKey();
-                    String value = entry.getValue();
-                    if (key != null && !key.isEmpty() && value != null && !value.isEmpty()) {
-                        connection.setRequestProperty(key, value);
-                    }
-                }
-            }
-            logTask("api task replay request label=" + safeLabel
-                    + " headers=" + requestHeaderSummary(connection)
-                    + " query=" + querySummary(url));
-            int status = connection.getResponseCode();
-            InputStream stream = status >= 200 && status < 300
-                    ? connection.getInputStream() : connection.getErrorStream();
-            String contentEncoding = connection.getContentEncoding();
-            if (stream != null && contentEncoding != null
-                    && "gzip".equalsIgnoreCase(contentEncoding.trim())) {
-                stream = new GZIPInputStream(stream);
-            }
-            String text = read(stream);
-            logTask("api task replay response label=" + safeLabel
-                    + " http=" + status
-                    + " bytes=" + (text == null ? 0 : text.length()));
-            if (status < 200 || status >= 300) {
-                throw new IllegalStateException(httpErrorMessage(status, text));
-            }
-            JSONObject json = new JSONObject(text);
-            logTask("api task replay json label=" + safeLabel
-                    + " status=" + String.valueOf(json.opt("status"))
-                    + " keys=" + jsonKeys(json)
-                    + " msg=" + trim(first(json.optString("msg"),
-                            json.optString("message"), "")));
-            Object apiStatus = json.opt("status");
-            boolean failed = apiStatus instanceof Number && ((Number) apiStatus).intValue() < 0;
-            if (apiStatus instanceof String) {
-                String statusText = ((String) apiStatus).trim();
-                failed = "failed".equalsIgnoreCase(statusText)
-                        || "fail".equalsIgnoreCase(statusText)
-                        || "error".equalsIgnoreCase(statusText)
-                        || "login".equalsIgnoreCase(statusText)
-                        || "relogin".equalsIgnoreCase(statusText);
-            }
-            if (failed) {
-                throw new IllegalStateException(trim(first(json.optString("msg"),
-                        json.optString("message"), "请求失败")));
-            }
-            postSuccess(callback, json);
-        } catch (Exception error) {
-            postError(callback, error.getMessage() == null
-                    ? error.getClass().getSimpleName() : error.getMessage());
-        } finally {
-            if (connection != null) connection.disconnect();
         }
     }
 
@@ -772,63 +662,38 @@ final class ApiClient {
         return EndpointProvider.baseUrl();
     }
 
-    private Map<String, String> baseParams(RequestProfile profile,
-                                           boolean useSignInCredentials) {
+    private Map<String, String> baseParams(RequestProfile profile) {
         switch (profile.paramMode) {
             case MOBILE:
                 return session.mobileCommonParams();
             case OFFICIAL:
-                return useSignInCredentials
-                        ? session.signInOfficialMobileParams(true)
-                        : session.officialMobileParams(true);
+                return session.officialMobileParams(true);
             case OFFICIAL_SPARSE:
-                return useSignInCredentials
-                        ? session.signInOfficialMobileParams(false)
-                        : session.officialMobileParams(false);
+                return session.officialMobileParams(false);
             default:
                 return session.commonParams();
         }
     }
 
-    private void applyHeaders(HttpURLConnection connection, RequestProfile profile,
-                              boolean useSignInCredentials) {
+    private void applyHeaders(HttpURLConnection connection, RequestProfile profile) {
         switch (profile.headerMode) {
             case MOBILE:
                 HeaderProvider.applyMobile(connection, session);
                 return;
             case OFFICIAL_MOBILE:
-                if (useSignInCredentials) {
-                    HeaderProvider.applySignInOfficialMobile(
-                            connection, session, profile.includesClientKeys());
-                } else {
-                    HeaderProvider.applyOfficialMobile(
-                            connection, session, profile.includesClientKeys());
-                }
+                HeaderProvider.applyOfficialMobile(
+                        connection, session, profile.includesClientKeys());
                 return;
             case OFFICIAL_REQUEST:
-                if (useSignInCredentials) {
-                    HeaderProvider.applySignInOfficialRequest(
-                            connection, session, profile.includesClientKeys());
-                } else {
-                    HeaderProvider.applyOfficialRequest(
-                            connection, session, profile.includesClientKeys());
-                }
+                HeaderProvider.applyOfficialRequest(
+                        connection, session, profile.includesClientKeys());
                 return;
             case OFFICIAL_MINIMAL:
-                if (useSignInCredentials) {
-                    HeaderProvider.applySignInOfficialMinimalRequest(
-                            connection, session, profile.includesClientKeys());
-                } else {
-                    HeaderProvider.applyOfficialMinimalRequest(
-                            connection, session, profile.includesClientKeys());
-                }
+                HeaderProvider.applyOfficialMinimalRequest(
+                        connection, session, profile.includesClientKeys());
                 return;
             case OFFICIAL_RAW:
-                if (useSignInCredentials) {
-                    HeaderProvider.applySignInOfficialMobileRawCookie(connection, session);
-                } else {
-                    HeaderProvider.applyOfficialMobileRawCookie(connection, session);
-                }
+                HeaderProvider.applyOfficialMobileRawCookie(connection, session);
                 return;
             default:
                 HeaderProvider.apply(connection, session);

@@ -7,8 +7,9 @@ import android.os.Build;
 final class CheckinCenterStore {
     private static final String PREFERENCES = "heybox_checkin_center";
     private static final String DEVICE_TOKEN = "device_token_encrypted";
-    private static final String CREDENTIAL_FINGERPRINT = "credential_fingerprint";
-    private static final String SERVER_MANAGED_CREDENTIALS = "server_managed_credentials";
+    private static final String LEGACY_CREDENTIAL_FINGERPRINT = "credential_fingerprint";
+    private static final String LEGACY_SERVER_MANAGED_CREDENTIALS =
+            "server_managed_credentials";
     private static final String TOKEN_PREFIX = "CCSEC1:";
 
     private final SharedPreferences preferences;
@@ -44,40 +45,18 @@ final class CheckinCenterStore {
         }
         String encrypted = TOKEN_PREFIX + ModernCookieCrypto.encrypt(token);
         if (!preferences.edit().putString(DEVICE_TOKEN, encrypted)
-                .remove(CREDENTIAL_FINGERPRINT)
-                .remove(SERVER_MANAGED_CREDENTIALS)
+                .remove(LEGACY_CREDENTIAL_FINGERPRINT)
+                .remove(LEGACY_SERVER_MANAGED_CREDENTIALS)
                 .commit()) {
             throw new IllegalStateException("Device authorization could not be persisted");
         }
     }
 
-    boolean serverManagedCredentials() {
-        return preferences.getBoolean(SERVER_MANAGED_CREDENTIALS, false);
-    }
-
-    void preferServerManagedCredentials() {
-        preferences.edit()
-                .putBoolean(SERVER_MANAGED_CREDENTIALS, true)
-                .remove(CREDENTIAL_FINGERPRINT)
-                .apply();
-    }
-
-    String credentialFingerprint() {
-        String value = preferences.getString(CREDENTIAL_FINGERPRINT, "");
-        return value == null ? "" : value;
-    }
-
-    void saveCredentialFingerprint(String fingerprint) {
-        String value = fingerprint == null ? "" : fingerprint.trim();
-        if (!value.matches("[0-9a-f]{64}")) return;
-        preferences.edit().putString(CREDENTIAL_FINGERPRINT, value).apply();
-    }
-
     void clearAuthorization() {
         preferences.edit()
                 .remove(DEVICE_TOKEN)
-                .remove(CREDENTIAL_FINGERPRINT)
-                .remove(SERVER_MANAGED_CREDENTIALS)
+                .remove(LEGACY_CREDENTIAL_FINGERPRINT)
+                .remove(LEGACY_SERVER_MANAGED_CREDENTIALS)
                 .apply();
     }
 

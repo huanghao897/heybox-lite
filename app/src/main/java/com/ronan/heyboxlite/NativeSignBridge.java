@@ -78,16 +78,11 @@ final class NativeSignBridge {
                     Messenger remote = new Messenger(service);
                     Message message = Message.obtain(null, NativeSignService.MSG_SIGN);
                     Bundle data = new Bundle();
-                    String signUserId = session.signInUserId().isEmpty()
-                            ? session.userId() : session.signInUserId();
-                    String signPkey = session.signInPkey().isEmpty()
-                            ? session.officialPkey() : session.signInPkey();
-                    String signToken = session.signInXhhToken().isEmpty()
-                            ? session.officialXhhToken() : session.signInXhhToken();
                     data.putString(NativeSignService.EXTRA_PATH, path);
-                    data.putString(NativeSignService.EXTRA_USER_ID, signUserId);
-                    data.putString(NativeSignService.EXTRA_PKEY, signPkey);
-                    data.putString(NativeSignService.EXTRA_XHH_TOKEN, signToken);
+                    data.putString(NativeSignService.EXTRA_USER_ID, session.userId());
+                    data.putString(NativeSignService.EXTRA_PKEY, session.officialPkey());
+                    data.putString(NativeSignService.EXTRA_XHH_TOKEN,
+                            session.officialXhhToken());
                     data.putBoolean(NativeSignService.EXTRA_FORCE_FALLBACK, forceFallback);
                     data.putString(NativeSignService.EXTRA_RND_CODE, session.nativeRndCode());
                     data.putInt(NativeSignService.EXTRA_RND_VERSION,

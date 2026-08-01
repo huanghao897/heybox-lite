@@ -133,8 +133,10 @@ public class CheckinCenterClientTest {
                 CheckinCenterClient.Operation.PAIR_START));
         assertEquals(25_000, CheckinCenterClient.readTimeoutMillis(
                 CheckinCenterClient.Operation.STATUS));
-        assertTrue(CheckinCenterClient.readTimeoutMillis(
-                CheckinCenterClient.Operation.CREDENTIAL_SYNC) >= 120_000);
+        assertEquals(25_000, CheckinCenterClient.readTimeoutMillis(
+                CheckinCenterClient.Operation.PAIR_REGISTER));
+        assertEquals(25_000, CheckinCenterClient.readTimeoutMillis(
+                CheckinCenterClient.Operation.REGISTRATION_EMAIL));
         assertTrue(CheckinCenterClient.readTimeoutMillis(
                 CheckinCenterClient.Operation.RUN_NOW) >= 120_000);
         assertTrue(CheckinCenterClient.readTimeoutMillis(
@@ -149,14 +151,19 @@ public class CheckinCenterClientTest {
 
     @Test
     public void serverErrorDetailsUseOnlyKnownDiagnosticCodes() {
-        assertEquals("payload_invalid", CheckinCenterClient.serverErrorCode(
-                "{\"error\":\"credential payload is invalid\"}"));
-        assertEquals("credentials_rejected", CheckinCenterClient.serverErrorCode(
-                "{\"error\":\"Xiaoheihe rejected the credentials\"}"));
         assertEquals("captcha_required", CheckinCenterClient.serverErrorCode(
                 "{\"error\":\"captcha_required\"}"));
         assertEquals("", CheckinCenterClient.serverErrorCode(
                 "{\"error\":\"Cookie: pkey=private-value\"}"));
+    }
+
+    @Test
+    public void serviceRegistrationPasswordMatchesServerPolicy() {
+        assertTrue(CheckinCenterClient.validServicePassword("Watch-Account-92!"));
+        assertTrue(CheckinCenterClient.validServicePassword("lowercase-1234"));
+        assertFalse(CheckinCenterClient.validServicePassword("alllowercasepassword"));
+        assertFalse(CheckinCenterClient.validServicePassword("Short-1!"));
+        assertFalse(CheckinCenterClient.validServicePassword(" Watch-Account-92!"));
     }
 
     @Test

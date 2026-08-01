@@ -25,19 +25,9 @@ final class HeaderProvider {
         applyOfficial(connection, session.officialMobileCookie(addClientKey));
     }
 
-    static void applySignInOfficialMobile(HttpURLConnection connection, SessionStore session,
-                                          boolean addClientKey) {
-        applyOfficial(connection, session.signInOfficialMobileCookie(addClientKey));
-    }
-
     static void applyOfficialRequest(HttpURLConnection connection, SessionStore session,
                                      boolean includeClientKeys) {
         applyOfficial(connection, session.officialBridgeCookie(includeClientKeys));
-    }
-
-    static void applySignInOfficialRequest(HttpURLConnection connection, SessionStore session,
-                                           boolean includeClientKeys) {
-        applyOfficial(connection, session.signInOfficialBridgeCookie(includeClientKeys));
     }
 
     static void applyOfficialMinimalRequest(HttpURLConnection connection, SessionStore session,
@@ -45,18 +35,8 @@ final class HeaderProvider {
         applyOfficial(connection, session.officialMinimalCookie(includeClientKeys));
     }
 
-    static void applySignInOfficialMinimalRequest(HttpURLConnection connection, SessionStore session,
-                                                  boolean includeClientKeys) {
-        applyOfficial(connection, session.signInOfficialMinimalCookie(includeClientKeys));
-    }
-
     static void applyOfficialMobileRawCookie(HttpURLConnection connection, SessionStore session) {
         applyOfficial(connection, session.getCookie());
-    }
-
-    static void applySignInOfficialMobileRawCookie(HttpURLConnection connection,
-                                                   SessionStore session) {
-        applyOfficial(connection, session.signInOfficialRawCookie());
     }
 
     private static void applyOfficial(HttpURLConnection connection, String cookie) {

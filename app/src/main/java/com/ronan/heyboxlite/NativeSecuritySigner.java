@@ -240,9 +240,7 @@ final class NativeSecuritySigner {
     }
 
     static Map<String, String> officialParams(SessionStore session) {
-        Map<String, String> result = session.hasSignInCredentials()
-                ? session.signInOfficialMobileParams(true)
-                : session.officialMobileParams(true);
+        Map<String, String> result = session.officialMobileParams(true);
         result.put("time_zone", TimeZone.getDefault().getID());
         return result;
     }

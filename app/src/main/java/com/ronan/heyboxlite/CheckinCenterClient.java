@@ -37,8 +37,9 @@ final class CheckinCenterClient {
     enum Operation {
         PAIR_START,
         PAIR_APPROVE,
+        PAIR_REGISTER,
+        REGISTRATION_EMAIL,
         PAIR_POLL,
-        CREDENTIAL_SYNC,
         SMS_SEND,
         SMS_SUBMIT,
         PASSWORD_LOGIN,
@@ -115,13 +116,31 @@ final class CheckinCenterClient {
         final String userCode;
         final int expiresInSeconds;
         final int intervalSeconds;
+        final boolean registrationOpen;
+        final boolean registrationEmailRequired;
 
         PairingStart(String deviceCode, String userCode,
-                     int expiresInSeconds, int intervalSeconds) {
+                     int expiresInSeconds, int intervalSeconds,
+                     boolean registrationOpen, boolean registrationEmailRequired) {
             this.deviceCode = deviceCode;
             this.userCode = userCode;
             this.expiresInSeconds = expiresInSeconds;
             this.intervalSeconds = intervalSeconds;
+            this.registrationOpen = registrationOpen;
+            this.registrationEmailRequired = registrationEmailRequired;
+        }
+    }
+
+    static final class RegistrationEmailSession {
+        final String challengeId;
+        final int retryAfterSeconds;
+        final int expiresInSeconds;
+
+        RegistrationEmailSession(String challengeId, int retryAfterSeconds,
+                                 int expiresInSeconds) {
+            this.challengeId = challengeId;
+            this.retryAfterSeconds = retryAfterSeconds;
+            this.expiresInSeconds = expiresInSeconds;
         }
     }
 
@@ -351,18 +370,71 @@ final class CheckinCenterClient {
                 }));
     }
 
-    void syncCredentials(String deviceToken, JSONObject payload,
-                         Callback<ConnectedAccount> callback) {
-        final String token;
-        try {
-            token = requirePrefix(deviceToken, "ccdevice1_", Operation.CREDENTIAL_SYNC);
-        } catch (ApiError error) {
-            deliverError(callback, error);
+    void sendRegistrationEmail(String userCode, String email,
+                               Callback<RegistrationEmailSession> callback) {
+        String normalizedCode = userCode == null ? "" : userCode.trim();
+        String normalizedEmail = email == null ? "" : email.trim();
+        if (!normalizedCode.matches("[A-Z0-9]{4}-[A-Z0-9]{4}")
+                || normalizedEmail.length() > 254
+                || !normalizedEmail.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")) {
+            deliverError(callback, new ApiError(Operation.REGISTRATION_EMAIL, 422,
+                    "请输入正确的邮箱地址"));
             return;
         }
-        submit(callback, () -> request(Operation.CREDENTIAL_SYNC, "POST",
-                "/credentials/heybox", token, payload,
-                CheckinCenterClient::parseConnectedAccount));
+        JSONObject body = new JSONObject();
+        try {
+            body.put("user_code", normalizedCode);
+            body.put("email", normalizedEmail);
+        } catch (JSONException impossible) {
+            deliverError(callback, protocolError(Operation.REGISTRATION_EMAIL));
+            return;
+        }
+        submit(callback, () -> request(Operation.REGISTRATION_EMAIL, "POST",
+                "/pair/register/email/send", "", body,
+                CheckinCenterClient::parseRegistrationEmailSession));
+    }
+
+    void registerPairing(String userCode, String username, String password,
+                         String email, String emailChallengeId, String emailCode,
+                         boolean emailRequired, Callback<Boolean> callback) {
+        String normalizedCode = userCode == null ? "" : userCode.trim();
+        String normalizedUsername = username == null ? "" : username.trim();
+        String rawPassword = password == null ? "" : password;
+        String normalizedEmail = email == null ? "" : email.trim();
+        String challengeId = emailChallengeId == null ? "" : emailChallengeId.trim();
+        String verificationCode = emailCode == null ? "" : emailCode.trim();
+        if (!normalizedCode.matches("[A-Z0-9]{4}-[A-Z0-9]{4}")
+                || !normalizedUsername.matches("[A-Za-z0-9_.-]{3,32}")
+                || !validServicePassword(rawPassword)
+                || (emailRequired && (normalizedEmail.length() > 254
+                || !normalizedEmail.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")
+                || challengeId.isEmpty() || challengeId.length() > 80
+                || !verificationCode.matches("[0-9]{6}")))) {
+            deliverError(callback, new ApiError(Operation.PAIR_REGISTER, 422,
+                    "请检查注册信息"));
+            return;
+        }
+        JSONObject body = new JSONObject();
+        try {
+            body.put("user_code", normalizedCode);
+            body.put("username", normalizedUsername);
+            body.put("password", rawPassword);
+            if (emailRequired) {
+                body.put("email", normalizedEmail);
+                body.put("email_challenge_id", challengeId);
+                body.put("email_code", verificationCode);
+            }
+        } catch (JSONException impossible) {
+            deliverError(callback, protocolError(Operation.PAIR_REGISTER));
+            return;
+        }
+        submit(callback, () -> request(Operation.PAIR_REGISTER, "POST", "/pair/register", "",
+                body, value -> {
+                    if (!"approved".equals(value.optString("state", ""))) {
+                        throw protocolError(Operation.PAIR_REGISTER);
+                    }
+                    return Boolean.TRUE;
+                }));
     }
 
     void sendSmsCode(String deviceToken, String phone, Callback<SmsSession> callback) {
@@ -445,7 +517,7 @@ final class CheckinCenterClient {
         }
         submit(callback, () -> request(Operation.SMS_SUBMIT, "POST",
                 "/heybox/login/sms/submit", token, body,
-                CheckinCenterClient::parseConnectedAccount));
+                value -> parseConnectedAccount(value, Operation.SMS_SUBMIT)));
     }
 
     void loginWithPassword(String deviceToken, String phone, String password,
@@ -484,7 +556,7 @@ final class CheckinCenterClient {
         }
         submit(callback, () -> request(Operation.PASSWORD_LOGIN, "POST",
                 "/heybox/login/password", token, body,
-                CheckinCenterClient::parseConnectedAccount));
+                value -> parseConnectedAccount(value, Operation.PASSWORD_LOGIN)));
     }
 
     void getStatus(String deviceToken, Callback<Status> callback) {
@@ -656,7 +728,18 @@ final class CheckinCenterClient {
         requireTrustedPairingUri(verificationUri);
         int expiresIn = positive(value.optInt("expires_in"), Operation.PAIR_START);
         int interval = positive(value.optInt("interval"), Operation.PAIR_START);
-        return new PairingStart(deviceCode, userCode, expiresIn, interval);
+        return new PairingStart(deviceCode, userCode, expiresIn, interval,
+                value.optBoolean("registration_open", false),
+                value.optBoolean("registration_email_required", false));
+    }
+
+    private static RegistrationEmailSession parseRegistrationEmailSession(JSONObject value)
+            throws ApiError {
+        String challengeId = required(value, "challenge_id", Operation.REGISTRATION_EMAIL);
+        if (challengeId.length() > 80) throw protocolError(Operation.REGISTRATION_EMAIL);
+        int retryAfter = positive(value.optInt("retry_after"), Operation.REGISTRATION_EMAIL);
+        int expiresIn = positive(value.optInt("expires_in"), Operation.REGISTRATION_EMAIL);
+        return new RegistrationEmailSession(challengeId, retryAfter, expiresIn);
     }
 
     private static PairingPoll parsePairingPoll(JSONObject value) throws ApiError {
@@ -668,9 +751,10 @@ final class CheckinCenterClient {
         return new PairingPoll(state, token);
     }
 
-    private static ConnectedAccount parseConnectedAccount(JSONObject value) throws ApiError {
+    private static ConnectedAccount parseConnectedAccount(JSONObject value, Operation operation)
+            throws ApiError {
         if (!"connected".equals(value.optString("state", ""))) {
-            throw protocolError(Operation.CREDENTIAL_SYNC);
+            throw protocolError(operation);
         }
         return new ConnectedAccount(value.optString("display_name", ""),
                 value.optString("external_id_masked", ""),
@@ -795,8 +879,8 @@ final class CheckinCenterClient {
     }
 
     static int readTimeoutMillis(Operation operation) {
-        return operation == Operation.CREDENTIAL_SYNC || operation == Operation.RUN_NOW
-                || operation == Operation.SMS_SEND || operation == Operation.SMS_SUBMIT
+        return operation == Operation.RUN_NOW || operation == Operation.SMS_SEND
+                || operation == Operation.SMS_SUBMIT
                 || operation == Operation.PASSWORD_LOGIN
                 ? SIGNING_READ_TIMEOUT_MS : STANDARD_READ_TIMEOUT_MS;
     }
@@ -804,9 +888,7 @@ final class CheckinCenterClient {
     private static ApiError networkError(Operation operation, IOException error) {
         if (error instanceof SocketTimeoutException) {
             String message;
-            if (operation == Operation.CREDENTIAL_SYNC) {
-                message = "签到资料校验超时，请稍后重试";
-            } else if (operation == Operation.RUN_NOW) {
+            if (operation == Operation.RUN_NOW) {
                 message = "签到执行超时，请稍后刷新状态";
             } else if (operation == Operation.PASSWORD_LOGIN) {
                 message = "小黑盒登录超时，请稍后重试";
@@ -847,8 +929,16 @@ final class CheckinCenterClient {
                         ? "签到服务账号或密码错误"
                         : "签到服务连接已失效，请重新连接";
                 break;
+            case 403:
+                message = operation == Operation.PAIR_REGISTER
+                        || operation == Operation.REGISTRATION_EMAIL
+                        ? "签到服务当前未开放注册"
+                        : "当前操作没有权限";
+                break;
             case 404:
-                if (operation == Operation.PAIR_POLL || operation == Operation.PAIR_APPROVE) {
+                if (operation == Operation.PAIR_POLL || operation == Operation.PAIR_APPROVE
+                        || operation == Operation.PAIR_REGISTER
+                        || operation == Operation.REGISTRATION_EMAIL) {
                     message = "配对请求不存在，请重新连接";
                 } else if (operation == Operation.SMS_SEND
                         || operation == Operation.SMS_SUBMIT
@@ -866,8 +956,8 @@ final class CheckinCenterClient {
                     message = captchaUri.isEmpty()
                             ? "小黑盒要求安全验证，但验证页面不可用"
                             : "请完成小黑盒安全验证";
-                } else if (operation == Operation.CREDENTIAL_SYNC) {
-                    message = "签到服务已绑定其他小黑盒账号，请先在网页解除旧绑定";
+                } else if (operation == Operation.PAIR_REGISTER) {
+                    message = "该签到服务账号已存在，或配对状态已变化";
                 } else {
                     message = "当前操作与服务器状态冲突，请稍后重试";
                 }
@@ -882,6 +972,10 @@ final class CheckinCenterClient {
             case 422:
                 if (operation == Operation.PAIR_APPROVE) {
                     message = "签到服务账号信息无效";
+                } else if (operation == Operation.PAIR_REGISTER) {
+                    message = "注册信息无效，请检查账号、密码和验证码";
+                } else if (operation == Operation.REGISTRATION_EMAIL) {
+                    message = "邮箱地址或配对状态无效";
                 } else if (operation == Operation.SMS_SEND) {
                     message = "手机号无效或发送过于频繁，请稍后重试";
                 } else if (operation == Operation.SMS_SUBMIT) {
@@ -890,14 +984,8 @@ final class CheckinCenterClient {
                     message = "手机号或密码错误，登录失败";
                 } else if (operation == Operation.TASK_SETTINGS) {
                     message = "签到时间或随机偏移无效";
-                } else if (operation != Operation.CREDENTIAL_SYNC) {
-                    message = "签到服务请求无效";
-                } else if ("payload_invalid".equals(diagnosticCode)) {
-                    message = "当前 Cookie 内的账号资料不一致，请重新登录小黑盒";
-                } else if ("credentials_rejected".equals(diagnosticCode)) {
-                    message = "小黑盒已拒绝当前登录凭据，请重新登录后重试";
                 } else {
-                    message = "Cookie、账号或设备资料不一致，请重新登录小黑盒";
+                    message = "签到服务请求无效";
                 }
                 break;
             case 429:
@@ -905,7 +993,9 @@ final class CheckinCenterClient {
                 break;
             case 502:
             case 503:
-                message = "签到服务暂时不可用，请稍后重试";
+                message = operation == Operation.REGISTRATION_EMAIL
+                        ? "验证邮件暂时无法发送，请稍后重试"
+                        : "签到服务暂时不可用，请稍后重试";
                 break;
             default:
                 message = "签到服务请求失败";
@@ -952,16 +1042,27 @@ final class CheckinCenterClient {
         try {
             String error = new JSONObject(response).optString("error", "");
             if ("captcha_required".equals(error)) return "captcha_required";
-            if ("credential payload is invalid".equals(error)) return "payload_invalid";
-            if ("Xiaoheihe rejected the credentials".equals(error)) {
-                return "credentials_rejected";
-            }
-            if ("Xiaoheihe validation is temporarily unavailable".equals(error)) {
-                return "validation_unavailable";
-            }
         } catch (JSONException ignored) {
         }
         return "";
+    }
+
+    static boolean validServicePassword(String value) {
+        if (value == null || value.length() < 12 || value.length() > 128
+                || !value.trim().equals(value)) return false;
+        boolean lower = false;
+        boolean upper = false;
+        boolean digit = false;
+        boolean symbol = false;
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (character >= 'a' && character <= 'z') lower = true;
+            else if (character >= 'A' && character <= 'Z') upper = true;
+            else if (character >= '0' && character <= '9') digit = true;
+            else if (!Character.isWhitespace(character)) symbol = true;
+        }
+        return (lower ? 1 : 0) + (upper ? 1 : 0) + (digit ? 1 : 0)
+                + (symbol ? 1 : 0) >= 3;
     }
 
     private <T> void submit(Callback<T> callback, Call<T> call) {

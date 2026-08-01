@@ -24,17 +24,24 @@ public class CheckinSecurityConfigurationTest {
     }
 
     @Test
-    public void localSignInRemainsDisabledAndUnreferencedByActivity() throws Exception {
+    public void legacyLocalSignInAndQrCredentialUploadAreRemoved() throws Exception {
         String activity = readSource("MainActivity.java");
-        String legacy = readSource("SignInManager.java");
         String client = readSource("CheckinCenterClient.java");
+        String coordinator = readSource("CheckinCenterCoordinator.java");
 
-        assertTrue(activity.contains("SIGN_IN_ENABLED = false"));
-        assertTrue(legacy.contains("ENABLED = false"));
+        assertFalse(sourceFile("SignInManager.java").isFile());
+        assertFalse(sourceFile("CheckinCredentialPayload.java").isFile());
+        assertFalse(activity.contains("SIGN_IN_ENABLED"));
         assertFalse(activity.contains("new SignInManager"));
         assertFalse(activity.contains(".autoSignInIfNeeded("));
         assertFalse(activity.contains(".signIn("));
         assertFalse(client.contains("/task/sign_v3/"));
+        assertFalse(client.contains("/credentials/heybox"));
+        assertTrue(client.contains("/pair/register"));
+        assertFalse(coordinator.contains("SessionStore"));
+        assertFalse(coordinator.contains("OnSharedPreferenceChangeListener"));
+        assertTrue(client.contains("/heybox/login/sms/send"));
+        assertTrue(client.contains("/heybox/login/password"));
     }
 
     @Test
@@ -70,8 +77,14 @@ public class CheckinSecurityConfigurationTest {
 
     private static String readSource(String name) throws Exception {
         return new String(Files.readAllBytes(
-                resolve("src/main/java/com/ronan/heyboxlite/" + name).toPath()),
+                sourceFile(name).toPath()),
                 StandardCharsets.UTF_8);
+    }
+
+    private static File sourceFile(String name) {
+        File direct = new File("src/main/java/com/ronan/heyboxlite/" + name);
+        if (direct.isFile()) return direct;
+        return new File("app/src/main/java/com/ronan/heyboxlite/" + name);
     }
 
     private static File resolve(String moduleRelative) {
