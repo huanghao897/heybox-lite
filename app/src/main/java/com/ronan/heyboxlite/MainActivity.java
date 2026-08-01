@@ -990,7 +990,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean canHeaderBack() {
-        return "detail".equals(this.screen) || "user_space".equals(this.screen) || "search".equals(this.screen) || "saved".equals(this.screen) || "reading_center".equals(this.screen) || "reading_stats".equals(this.screen) || "checkin_center".equals(this.screen) || "announcement_board".equals(this.screen) || "settings_home".equals(this.screen) || "display_preview".equals(this.screen) || "display_settings".equals(this.screen) || "startup_settings".equals(this.screen) || "app_settings".equals(this.screen) || "about".equals(this.screen);
+        return ScreenRoutes.canNavigateBack(this.screen);
     }
 
     private int topLevelIndex() {
@@ -1041,18 +1041,8 @@ public final class MainActivity extends Activity {
         if ("user_space".equals(this.screen)) {
             return this.userSpaceReturnItem == null ? this.userSpaceReturnScreen : "detail";
         }
-        if ("search".equals(this.screen)) return "feed";
         if ("saved".equals(this.screen)) return this.savedReturnScreen;
-        if ("reading_stats".equals(this.screen)) return "reading_center";
-        if ("reading_center".equals(this.screen)) return "profile";
-        if ("checkin_center".equals(this.screen)) return "profile";
-        if ("announcement_board".equals(this.screen)) return "about";
-        if ("display_preview".equals(this.screen)) return "display_settings";
-        if ("display_settings".equals(this.screen) || "startup_settings".equals(this.screen)
-                || "app_settings".equals(this.screen) || "about".equals(this.screen)) {
-            return "settings_home";
-        }
-        return "settings_home".equals(this.screen) ? "profile" : "feed";
+        return ScreenRoutes.staticParentOrDefault(this.screen, "feed");
     }
 
     private boolean canDetailSwipeBack() {

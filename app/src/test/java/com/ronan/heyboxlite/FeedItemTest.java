@@ -94,4 +94,20 @@ public class FeedItemTest {
                 .put("linkid", "post")
                 .put("content_type", 102)).article);
     }
+
+    @Test
+    public void likesUseFirstValidOfficialField() throws Exception {
+        FeedItem fallback = FeedItem.from(new JSONObject()
+                .put("linkid", "fallback")
+                .put("link_award_num", "invalid")
+                .put("like_num", 12)
+                .put("up", 99));
+        FeedItem priority = FeedItem.from(new JSONObject()
+                .put("linkid", "priority")
+                .put("link_award_num", 0)
+                .put("like_num", 12));
+
+        assertEquals(12, fallback.likes);
+        assertEquals(0, priority.likes);
+    }
 }

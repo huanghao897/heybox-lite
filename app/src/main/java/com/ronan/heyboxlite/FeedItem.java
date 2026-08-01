@@ -12,6 +12,19 @@ import java.util.List;
 import java.util.Set;
 
 final class FeedItem {
+    private static final String[] LIKE_KEYS = {
+            "link_award_num", "like_num", "award_num", "award_count", "up_num", "up"
+    };
+    private static final String[] TOPIC_ARRAY_KEYS = {
+            "topics", "topic_list", "tags", "content_tags", "list_content_tags",
+            "hashtags", "act_hashtags"
+    };
+    private static final String[] TOPIC_VALUE_KEYS = {
+            "topic", "tag", "topic_name", "tag_name", "category", "post_tag",
+            "extra_tag", "link_extra_tag"
+    };
+    private static final String[] NESTED_TOPIC_KEYS = {"link", "link_content"};
+
     final String id;
     final String hsrc;
     final String title;
@@ -94,11 +107,7 @@ final class FeedItem {
                 firstInt(json, "comment_num", "comment_count", "reply_num",
                         "reply_count", "comments"),
                 firstInt(json, "click", "click_num", "read_num", "view_num", "views"),
-                json.optInt("link_award_num",
-                        json.optInt("like_num",
-                                json.optInt("award_num",
-                                        json.optInt("award_count",
-                                                json.optInt("up_num", json.optInt("up")))))),
+                firstInt(json, LIKE_KEYS),
                 isArticle(json),
                 json.optBoolean("is_award", json.optBoolean("liked",
                         json.optBoolean("is_liked", json.optInt("has_award") == 1))),
@@ -249,29 +258,18 @@ final class FeedItem {
     static List<String> topicNames(JSONObject json) {
         List<String> names = new ArrayList<>();
         if (json == null) return names;
-        addTopicValues(names, json.optJSONArray("topics"));
-        addTopicValues(names, json.optJSONArray("topic_list"));
-        addTopicValues(names, json.optJSONArray("tags"));
-        addTopicValues(names, json.optJSONArray("content_tags"));
-        addTopicValues(names, json.optJSONArray("list_content_tags"));
-        addTopicValues(names, json.optJSONArray("hashtags"));
-        addTopicValues(names, json.optJSONArray("act_hashtags"));
-        addTopicValue(names, json.opt("topic"));
-        addTopicValue(names, json.opt("tag"));
-        addTopicValue(names, json.opt("topic_name"));
-        addTopicValue(names, json.opt("tag_name"));
-        addTopicValue(names, json.opt("category"));
-        addTopicValue(names, json.opt("post_tag"));
-        addTopicValue(names, json.opt("extra_tag"));
-        addTopicValue(names, json.opt("link_extra_tag"));
-        addUiKitLabels(names, json.opt("link_extra_tag_v2"), 0);
-        JSONObject nestedLink = json.optJSONObject("link");
-        if (nestedLink != null && nestedLink != json) {
-            addUnique(names, topicNames(nestedLink));
+        for (String key : TOPIC_ARRAY_KEYS) {
+            addTopicValues(names, json.optJSONArray(key));
         }
-        JSONObject linkContent = json.optJSONObject("link_content");
-        if (linkContent != null && linkContent != json) {
-            addUnique(names, topicNames(linkContent));
+        for (String key : TOPIC_VALUE_KEYS) {
+            addTopicValue(names, json.opt(key));
+        }
+        addUiKitLabels(names, json.opt("link_extra_tag_v2"), 0);
+        for (String key : NESTED_TOPIC_KEYS) {
+            JSONObject nested = json.optJSONObject(key);
+            if (nested != null && nested != json) {
+                addUnique(names, topicNames(nested));
+            }
         }
         return names;
     }
@@ -374,7 +372,9 @@ final class FeedItem {
 
     private static int firstInt(JSONObject json, String... keys) {
         for (String key : keys) {
-            if (json.has(key)) return json.optInt(key, 0);
+            if (!json.has(key)) continue;
+            int value = json.optInt(key, Integer.MIN_VALUE);
+            if (value != Integer.MIN_VALUE) return value;
         }
         return 0;
     }

@@ -927,16 +927,7 @@ final class SessionStore {
     }
 
     private String sanitizeSignSummary(String value) {
-        if (value == null) return "";
-        String clean = value.trim();
-        if (clean.contains("\u6211\u4f1a\u7ee7\u7eed")
-                || clean.contains("\u63a5\u53e3\u6821\u9a8c\u8fd8\u6ca1")
-                || clean.contains("\u5b98\u65b9\u7b7e\u5230\u53c2\u6570")
-                || clean.toLowerCase(Locale.US).contains("native")) {
-            return "\u7b7e\u5230\u5931\u8d25\uff1a\u63a5\u53e3\u6821\u9a8c\u672a\u901a\u8fc7\uff0c"
-                    + "\u5df2\u4fdd\u7559\u7b7e\u5230\u72b6\u6001\u663e\u793a";
-        }
-        return clean;
+        return value == null ? "" : value.trim();
     }
 
     List<String> searchHistory() {
@@ -1354,37 +1345,23 @@ final class SessionStore {
     }
 
     String officialMobileCookieKeysForLog(boolean addClientKey) {
-        Map<String, String> values = cookieMap(officialMobileCookie(addClientKey));
-        StringBuilder result = new StringBuilder();
-        for (String key : values.keySet()) {
-            if (result.length() > 0) result.append(',');
-            result.append(key);
-        }
-        return result.length() == 0 ? "none" : result.toString();
+        return cookieKeysForLog(officialMobileCookie(addClientKey));
     }
 
     String officialRequestCookieKeysForLog(boolean includeClientKeys) {
-        Map<String, String> values = cookieMap(officialRequestCookie(includeClientKeys));
-        StringBuilder result = new StringBuilder();
-        for (String key : values.keySet()) {
-            if (result.length() > 0) result.append(',');
-            result.append(key);
-        }
-        return result.length() == 0 ? "none" : result.toString();
+        return cookieKeysForLog(officialRequestCookie(includeClientKeys));
     }
 
     String officialMinimalCookieKeysForLog(boolean includeClientKeys) {
-        Map<String, String> values = cookieMap(officialMinimalCookie(includeClientKeys));
-        StringBuilder result = new StringBuilder();
-        for (String key : values.keySet()) {
-            if (result.length() > 0) result.append(',');
-            result.append(key);
-        }
-        return result.length() == 0 ? "none" : result.toString();
+        return cookieKeysForLog(officialMinimalCookie(includeClientKeys));
     }
 
     String officialBridgeCookieKeysForLog(boolean includeClientKeys) {
-        Map<String, String> values = cookieMap(officialBridgeCookie(includeClientKeys));
+        return cookieKeysForLog(officialBridgeCookie(includeClientKeys));
+    }
+
+    private String cookieKeysForLog(String cookie) {
+        Map<String, String> values = cookieMap(cookie);
         StringBuilder result = new StringBuilder();
         for (String key : values.keySet()) {
             if (result.length() > 0) result.append(',');
@@ -1748,19 +1725,20 @@ final class SessionStore {
         if (values == null || values.isEmpty()) return;
         String pkey = firstCookieValue(values, officialPkeyKey(),
                 SecureStrings.userPkey(), SecureStrings.xPkey());
-        if (!pkey.isEmpty()) {
-            putCookieIfMissing(values, officialPkeyKey(), pkey);
-            putCookieIfMissing(values, SecureStrings.userPkey(), pkey);
-            putCookieIfMissing(values, SecureStrings.xPkey(), pkey);
-        }
+        putCookieAliases(values, pkey, officialPkeyKey(),
+                SecureStrings.userPkey(), SecureStrings.xPkey());
 
         String id = firstCookieValue(values, SecureStrings.userHeyboxId(),
                 SecureStrings.xHeyboxId(), SecureStrings.heyboxId(),
                 SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
-        if (!id.isEmpty()) {
-            putCookieIfMissing(values, SecureStrings.userHeyboxId(), id);
-            putCookieIfMissing(values, SecureStrings.xHeyboxId(), id);
-            putCookieIfMissing(values, SecureStrings.heyboxId(), id);
+        putCookieAliases(values, id, SecureStrings.userHeyboxId(),
+                SecureStrings.xHeyboxId(), SecureStrings.heyboxId());
+    }
+
+    private void putCookieAliases(Map<String, String> values, String value, String... keys) {
+        if (value == null || value.isEmpty()) return;
+        for (String key : keys) {
+            putCookieIfMissing(values, key, value);
         }
     }
 

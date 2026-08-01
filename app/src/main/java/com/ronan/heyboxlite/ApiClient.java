@@ -28,20 +28,71 @@ final class ApiClient {
     private static final String OFFICIAL_TASK_CHANNEL = "heybox_oppo";
     private static final String OFFICIAL_TASK_APP = "heybox";
 
+    private enum ParamMode { COMMON, MOBILE, OFFICIAL, OFFICIAL_SPARSE }
+
+    private enum HeaderMode {
+        DEFAULT, MOBILE, OFFICIAL_MOBILE, OFFICIAL_REQUEST, OFFICIAL_MINIMAL, OFFICIAL_RAW
+    }
+
     enum RequestProfile {
-        WEB,
-        MOBILE,
-        OFFICIAL_MOBILE,
-        OFFICIAL_MOBILE_CLIENT,
-        OFFICIAL_MOBILE_CLIENT_MIN_COOKIE,
-        OFFICIAL_MOBILE_CLIENT_MIN_COOKIE_ENCODED,
-        OFFICIAL_MOBILE_CLIENT_MERGED,
-        OFFICIAL_MOBILE_CLIENT_KEYS,
-        OFFICIAL_MOBILE_CLIENT_FALLBACK,
-        OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS,
-        OFFICIAL_MOBILE_CLIENT_RAW_COOKIE,
-        OFFICIAL_SPARSE,
-        OFFICIAL_SPARSE_CLIENT
+        WEB(ParamMode.COMMON, HeaderMode.DEFAULT, false, false, false, false),
+        MOBILE(ParamMode.MOBILE, HeaderMode.MOBILE, false, false, false, false),
+        OFFICIAL_MOBILE(ParamMode.OFFICIAL, HeaderMode.OFFICIAL_MOBILE,
+                false, false, false, false),
+        OFFICIAL_MOBILE_CLIENT(ParamMode.OFFICIAL, HeaderMode.OFFICIAL_REQUEST,
+                false, true, false, true),
+        OFFICIAL_MOBILE_CLIENT_MIN_COOKIE(ParamMode.OFFICIAL, HeaderMode.OFFICIAL_MINIMAL,
+                false, true, false, true),
+        OFFICIAL_MOBILE_CLIENT_MIN_COOKIE_ENCODED(ParamMode.OFFICIAL,
+                HeaderMode.OFFICIAL_MINIMAL, false, true, false, true),
+        OFFICIAL_MOBILE_CLIENT_MERGED(ParamMode.OFFICIAL, HeaderMode.OFFICIAL_REQUEST,
+                false, true, false, false),
+        OFFICIAL_MOBILE_CLIENT_KEYS(ParamMode.OFFICIAL, HeaderMode.OFFICIAL_REQUEST,
+                true, true, false, true),
+        OFFICIAL_MOBILE_CLIENT_FALLBACK(ParamMode.OFFICIAL, HeaderMode.OFFICIAL_REQUEST,
+                false, true, true, true),
+        OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS(ParamMode.OFFICIAL,
+                HeaderMode.OFFICIAL_REQUEST, true, true, true, true),
+        OFFICIAL_MOBILE_CLIENT_RAW_COOKIE(ParamMode.OFFICIAL, HeaderMode.OFFICIAL_RAW,
+                false, true, false, true),
+        OFFICIAL_SPARSE(ParamMode.OFFICIAL_SPARSE, HeaderMode.OFFICIAL_MOBILE,
+                false, false, false, false),
+        OFFICIAL_SPARSE_CLIENT(ParamMode.OFFICIAL_SPARSE, HeaderMode.OFFICIAL_REQUEST,
+                true, false, false, false);
+
+        private final ParamMode paramMode;
+        private final HeaderMode headerMode;
+        private final boolean includeClientKeys;
+        private final boolean officialNativeClient;
+        private final boolean fallbackSigner;
+        private final boolean nativeUrlOverride;
+
+        RequestProfile(ParamMode paramMode, HeaderMode headerMode, boolean includeClientKeys,
+                       boolean officialNativeClient, boolean fallbackSigner,
+                       boolean nativeUrlOverride) {
+            this.paramMode = paramMode;
+            this.headerMode = headerMode;
+            this.includeClientKeys = includeClientKeys;
+            this.officialNativeClient = officialNativeClient;
+            this.fallbackSigner = fallbackSigner;
+            this.nativeUrlOverride = nativeUrlOverride;
+        }
+
+        boolean includesClientKeys() {
+            return includeClientKeys;
+        }
+
+        boolean usesOfficialNativeClient() {
+            return officialNativeClient;
+        }
+
+        boolean forcesFallbackSigner() {
+            return fallbackSigner;
+        }
+
+        boolean usesNativeUrlOverride() {
+            return nativeUrlOverride;
+        }
     }
 
     interface Callback {
@@ -452,7 +503,7 @@ final class ApiClient {
     private String addNativeSecurityParamsIfNeeded(String path, RequestProfile profile,
                                                    Map<String, String> params,
                                                    Map<String, String> signParams) {
-        if (!isOfficialNativeClient(profile)
+        if (!profile.usesOfficialNativeClient()
                 || !isNativeSecurityPath(path)) {
             return "";
         }
@@ -461,7 +512,7 @@ final class ApiClient {
             return "";
         }
         Map<String, String> nativeParams = NativeSignBridge.sign(
-                session.appContext(), session, path, signParams, forceFallbackSigner(profile),
+                session.appContext(), session, path, signParams, profile.forcesFallbackSigner(),
                 this::logTask);
         if (nativeParams.isEmpty()) {
             logTask("native signer skipped path=" + path
@@ -474,9 +525,9 @@ final class ApiClient {
         logTask("native signer applied path=" + path
                 + " security=" + securityKeys(params)
                 + " urlOverride=" + (nativeUrl != null && !nativeUrl.isEmpty())
-                + " useNativeUrl=" + useNativeUrlOverride(profile));
+                + " useNativeUrl=" + profile.usesNativeUrlOverride());
         if (isTaskPath(path)) return "";
-        return useNativeUrlOverride(profile) && nativeUrl != null ? nativeUrl : "";
+        return profile.usesNativeUrlOverride() && nativeUrl != null ? nativeUrl : "";
     }
 
     private void normalizeOfficialTaskParams(String path, Map<String, String> params) {
@@ -530,7 +581,7 @@ final class ApiClient {
 
     private boolean replaceWithOfficialNativeParams(String path, RequestProfile profile,
                                                     Map<String, String> nativeParams) {
-        if (!isOfficialNativeClient(profile) || !isTaskPath(path)
+        if (!profile.usesOfficialNativeClient() || !isTaskPath(path)
                 || nativeParams == null || nativeParams.isEmpty()) {
             return false;
         }
@@ -617,7 +668,7 @@ final class ApiClient {
                                                         Map<String, String> body) {
         Map<String, String> out = new LinkedHashMap<>();
         if (query != null) out.putAll(query);
-        if ("POST".equals(method) && isOfficialNativeClient(profile)
+        if ("POST".equals(method) && profile.usesOfficialNativeClient()
                 && body != null && !body.isEmpty()) {
             for (Map.Entry<String, String> entry : body.entrySet()) {
                 String key = entry.getKey();
@@ -723,120 +774,65 @@ final class ApiClient {
 
     private Map<String, String> baseParams(RequestProfile profile,
                                            boolean useSignInCredentials) {
-        if (profile == RequestProfile.MOBILE) return session.mobileCommonParams();
-        if (profile == RequestProfile.OFFICIAL_MOBILE
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MIN_COOKIE
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MIN_COOKIE_ENCODED
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MERGED
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_KEYS
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_RAW_COOKIE) {
-            if (useSignInCredentials) return session.signInOfficialMobileParams(true);
-            return session.officialMobileParams(true);
+        switch (profile.paramMode) {
+            case MOBILE:
+                return session.mobileCommonParams();
+            case OFFICIAL:
+                return useSignInCredentials
+                        ? session.signInOfficialMobileParams(true)
+                        : session.officialMobileParams(true);
+            case OFFICIAL_SPARSE:
+                return useSignInCredentials
+                        ? session.signInOfficialMobileParams(false)
+                        : session.officialMobileParams(false);
+            default:
+                return session.commonParams();
         }
-        if (profile == RequestProfile.OFFICIAL_SPARSE
-                || profile == RequestProfile.OFFICIAL_SPARSE_CLIENT) {
-            if (useSignInCredentials) return session.signInOfficialMobileParams(false);
-            return session.officialMobileParams(false);
-        }
-        return session.commonParams();
     }
 
     private void applyHeaders(HttpURLConnection connection, RequestProfile profile,
                               boolean useSignInCredentials) {
-        if (profile == RequestProfile.MOBILE) {
-            HeaderProvider.applyMobile(connection, session);
-            return;
-        }
-        if (profile == RequestProfile.OFFICIAL_MOBILE
-                || profile == RequestProfile.OFFICIAL_SPARSE) {
-            if (useSignInCredentials) {
-                HeaderProvider.applySignInOfficialMobile(connection, session, false);
+        switch (profile.headerMode) {
+            case MOBILE:
+                HeaderProvider.applyMobile(connection, session);
                 return;
-            }
-            HeaderProvider.applyOfficialMobile(connection, session, false);
-            return;
-        }
-        if (profile == RequestProfile.OFFICIAL_MOBILE_CLIENT) {
-            if (useSignInCredentials) {
-                HeaderProvider.applySignInOfficialRequest(connection, session, false);
+            case OFFICIAL_MOBILE:
+                if (useSignInCredentials) {
+                    HeaderProvider.applySignInOfficialMobile(
+                            connection, session, profile.includesClientKeys());
+                } else {
+                    HeaderProvider.applyOfficialMobile(
+                            connection, session, profile.includesClientKeys());
+                }
                 return;
-            }
-            HeaderProvider.applyOfficialRequest(connection, session, false);
-            return;
-        }
-        if (profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MIN_COOKIE
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MIN_COOKIE_ENCODED) {
-            if (useSignInCredentials) {
-                HeaderProvider.applySignInOfficialMinimalRequest(connection, session, false);
+            case OFFICIAL_REQUEST:
+                if (useSignInCredentials) {
+                    HeaderProvider.applySignInOfficialRequest(
+                            connection, session, profile.includesClientKeys());
+                } else {
+                    HeaderProvider.applyOfficialRequest(
+                            connection, session, profile.includesClientKeys());
+                }
                 return;
-            }
-            HeaderProvider.applyOfficialMinimalRequest(connection, session, false);
-            return;
-        }
-        if (profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MERGED) {
-            if (useSignInCredentials) {
-                HeaderProvider.applySignInOfficialRequest(connection, session, false);
+            case OFFICIAL_MINIMAL:
+                if (useSignInCredentials) {
+                    HeaderProvider.applySignInOfficialMinimalRequest(
+                            connection, session, profile.includesClientKeys());
+                } else {
+                    HeaderProvider.applyOfficialMinimalRequest(
+                            connection, session, profile.includesClientKeys());
+                }
                 return;
-            }
-            HeaderProvider.applyOfficialRequest(connection, session, false);
-            return;
-        }
-        if (profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_KEYS
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS
-                || profile == RequestProfile.OFFICIAL_SPARSE_CLIENT) {
-            if (useSignInCredentials) {
-                HeaderProvider.applySignInOfficialRequest(connection, session, true);
+            case OFFICIAL_RAW:
+                if (useSignInCredentials) {
+                    HeaderProvider.applySignInOfficialMobileRawCookie(connection, session);
+                } else {
+                    HeaderProvider.applyOfficialMobileRawCookie(connection, session);
+                }
                 return;
-            }
-            HeaderProvider.applyOfficialRequest(connection, session, true);
-            return;
+            default:
+                HeaderProvider.apply(connection, session);
         }
-        if (profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK) {
-            if (useSignInCredentials) {
-                HeaderProvider.applySignInOfficialRequest(connection, session, false);
-                return;
-            }
-            HeaderProvider.applyOfficialRequest(connection, session, false);
-            return;
-        }
-        if (profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_RAW_COOKIE) {
-            if (useSignInCredentials) {
-                HeaderProvider.applySignInOfficialMobileRawCookie(connection, session);
-                return;
-            }
-            HeaderProvider.applyOfficialMobileRawCookie(connection, session);
-            return;
-        }
-        HeaderProvider.apply(connection, session);
-    }
-
-    private static boolean isOfficialNativeClient(RequestProfile profile) {
-        return profile == RequestProfile.OFFICIAL_MOBILE_CLIENT
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MIN_COOKIE
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MIN_COOKIE_ENCODED
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MERGED
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_KEYS
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_RAW_COOKIE;
-    }
-
-    private static boolean forceFallbackSigner(RequestProfile profile) {
-        return profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS;
-    }
-
-    private static boolean useNativeUrlOverride(RequestProfile profile) {
-        return profile == RequestProfile.OFFICIAL_MOBILE_CLIENT
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MIN_COOKIE
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_MIN_COOKIE_ENCODED
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_KEYS
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_FALLBACK_KEYS
-                || profile == RequestProfile.OFFICIAL_MOBILE_CLIENT_RAW_COOKIE;
     }
 
     private static boolean isNativeSecurityParam(String key) {
