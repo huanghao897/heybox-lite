@@ -6480,13 +6480,10 @@ public final class MainActivity extends Activity {
         linearLayout.addView(panel);
         addSectionLabel(linearLayout, "动画");
         panel = settingsList();
-        addChoiceSettingEntry(panel, "动画效果", R.drawable.il_splash,
-                new String[]{"关闭", "精简", "完整"}, this.session.motionLevel(),
-                value -> {
-                    cancelAllMotion();
-                    this.session.setMotionLevel(value);
-                    Motions.setLevel(value);
-                }, null);
+        final SettingEntry[] motionLevelEntry = new SettingEntry[1];
+        motionLevelEntry[0] = addSettingEntryView(panel, "动画效果", null,
+                motionLevelLabel(), R.drawable.il_splash,
+                () -> showMotionLevelPicker(motionLevelEntry[0]));
         addSettingEntry(panel, "恢复默认设置", null, R.drawable.il_refresh, () -> {
             showLiteDialog("恢复默认显示设置", "主题、字体、间距和界面大小都将恢复为默认值", "恢复", () -> {
                 this.session.resetDisplaySettings();
@@ -7570,6 +7567,30 @@ public final class MainActivity extends Activity {
     private String networkModeLabel() {
         int mode = this.session.networkMode();
         return mode == 0 ? "省流量" : mode == 2 ? "原图" : "标准";
+    }
+
+    private String motionLevelLabel() {
+        int level = this.session.motionLevel();
+        return level == MotionLevel.OFF ? "关闭"
+                : level == MotionLevel.FULL ? "完整" : "精简";
+    }
+
+    private void showMotionLevelPicker(SettingEntry entry) {
+        showLiteDialog("动画效果",
+                "关闭：不播放过渡动画\n精简：仅保留基础过渡\n完整：播放全部动画",
+                "精简", () -> setMotionLevel(MotionLevel.REDUCED, entry),
+                "关闭", () -> setMotionLevel(MotionLevel.OFF, entry),
+                "完整", () -> setMotionLevel(MotionLevel.FULL, entry));
+    }
+
+    private void setMotionLevel(int level, SettingEntry entry) {
+        cancelAllMotion();
+        this.session.setMotionLevel(level);
+        Motions.setLevel(level);
+        if (entry != null && entry.value != null) {
+            entry.value.setText(motionLevelLabel());
+            Motions.selected(entry.value);
+        }
     }
 
     private void showNetworkModePicker(SettingEntry entry) {
