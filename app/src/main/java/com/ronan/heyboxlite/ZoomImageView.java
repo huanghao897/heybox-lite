@@ -6,6 +6,7 @@ import android.content.Context;
 import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.ViewConfiguration;
@@ -13,14 +14,24 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
 
 final class ZoomImageView extends ImageView {
+    interface GestureListener {
+        void onPull(float dx, float dy, float progress);
+
+        void onPullEnd(boolean dismiss, float direction);
+    }
+
     private static final float MIN_DOUBLE_TAP_ZOOM = 2.35f;
     private static final float MAX_ZOOM = 12f;
+    private static final long PHONE_DOUBLE_TAP_TIMEOUT_MS = 340L;
+    private static final long WATCH_DOUBLE_TAP_TIMEOUT_MS = 480L;
     private final Matrix matrix = new Matrix();
     private final float[] startValues = new float[9];
     private final float[] endValues = new float[9];
     private final float[] animValues = new float[9];
     private final ScaleGestureDetector scaleDetector;
     private final int touchSlop;
+    private final long doubleTapTimeout;
+    private final float doubleTapSlop;
     private float scale = 1f;
     private float lastX;
     private float lastY;
@@ -30,17 +41,31 @@ final class ZoomImageView extends ImageView {
     private float lastTapX;
     private float lastTapY;
     private boolean moved;
+    private boolean pulling;
+    private boolean secondTap;
+    private boolean roundDisplay;
     private Runnable blankClickListener;
-    private Runnable pendingSingleTap;
+    private GestureListener gestureListener;
     private ValueAnimator matrixAnimator;
     private int tapZoomLevel;
+    private float animationStartScale;
 
     ZoomImageView(Context context) {
         super(context);
         setScaleType(ScaleType.MATRIX);
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        doubleTapTimeout = RoundLayoutMetrics.isWatchDisplay(context)
+                ? WATCH_DOUBLE_TAP_TIMEOUT_MS : PHONE_DOUBLE_TAP_TIMEOUT_MS;
+        doubleTapSlop = Math.max(dp(24), touchSlop * 3.0f);
         scaleDetector = new ScaleGestureDetector(context,
                 new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override public boolean onScaleBegin(ScaleGestureDetector detector) {
+                        pulling = false;
+                        moved = true;
+                        cancelMatrixAnimation();
+                        return true;
+                    }
+
                     @Override public boolean onScale(ScaleGestureDetector detector) {
                         cancelMatrixAnimation();
                         float factor = detector.getScaleFactor();
@@ -58,10 +83,15 @@ final class ZoomImageView extends ImageView {
     }
 
     void fitImage() {
+        cancelMatrixAnimation();
         Drawable drawable = getDrawable();
         if (drawable == null || getWidth() == 0 || getHeight() == 0) return;
-        float sx = getWidth() / (float) drawable.getIntrinsicWidth();
-        float sy = getHeight() / (float) drawable.getIntrinsicHeight();
+        float inset = roundDisplay
+                ? Math.min(getWidth(), getHeight()) * 0.10f : 0.0f;
+        float availableWidth = Math.max(1.0f, getWidth() - inset * 2.0f);
+        float availableHeight = Math.max(1.0f, getHeight() - inset * 2.0f);
+        float sx = availableWidth / (float) drawable.getIntrinsicWidth();
+        float sy = availableHeight / (float) drawable.getIntrinsicHeight();
         float fit = Math.min(sx, sy);
         float dx = (getWidth() - drawable.getIntrinsicWidth() * fit) / 2f;
         float dy = (getHeight() - drawable.getIntrinsicHeight() * fit) / 2f;
@@ -78,6 +108,29 @@ final class ZoomImageView extends ImageView {
         blankClickListener = listener;
     }
 
+    void setGestureListener(GestureListener listener) {
+        gestureListener = listener;
+    }
+
+    void setRoundDisplay(boolean value) {
+        roundDisplay = value;
+        if (getDrawable() != null) post(this::fitImage);
+    }
+
+    boolean isSecondTapCandidate(float x, float y, long eventTime) {
+        return isSecondTap(x, y, eventTime);
+    }
+
+    void imageDisplayRect(RectF out) {
+        out.set(0f, 0f, 0f, 0f);
+        Drawable drawable = getDrawable();
+        if (drawable == null) return;
+        RectF bounds = new RectF(0f, 0f,
+                drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight());
+        matrix.mapRect(bounds);
+        out.set(bounds);
+    }
+
     /** 是否已放大：用于外层横滑图集判断——放大时手势归缩放/平移，未放大时才翻页。 */
     boolean isZoomed() {
         return scale > 1.01f;
@@ -91,75 +144,110 @@ final class ZoomImageView extends ImageView {
     @SuppressLint("ClickableViewAccessibility")
     @Override public boolean onTouchEvent(MotionEvent event) {
         scaleDetector.onTouchEvent(event);
-        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-            lastX = event.getX();
-            lastY = event.getY();
-            downX = lastX;
-            downY = lastY;
-            moved = false;
-            return true;
-        }
-        if (event.getActionMasked() == MotionEvent.ACTION_MOVE && !scaleDetector.isInProgress()) {
-            if (Math.abs(event.getX() - downX) > touchSlop
-                    || Math.abs(event.getY() - downY) > touchSlop) {
-                moved = true;
-            }
-            if (scale > 1f) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
                 cancelMatrixAnimation();
-                matrix.postTranslate(event.getX() - lastX, event.getY() - lastY);
+                lastX = event.getX();
+                lastY = event.getY();
+                downX = lastX;
+                downY = lastY;
+                moved = false;
+                pulling = false;
+                secondTap = isSecondTap(event.getX(), event.getY(), event.getEventTime());
+                if (secondTap) {
+                    toggleDoubleTap(event.getX(), event.getY());
+                    lastTapAt = 0L;
+                }
+                return true;
+            case MotionEvent.ACTION_MOVE:
+                if (scaleDetector.isInProgress()) return true;
+                float dx = event.getX() - downX;
+                float dy = event.getY() - downY;
+                if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) moved = true;
+                if (!pulling && scale <= 1.01f
+                        && Math.abs(dy) > touchSlop
+                        && Math.abs(dy) > Math.abs(dx) * 1.18f) {
+                    pulling = true;
+                    if (getParent() != null) {
+                        getParent().requestDisallowInterceptTouchEvent(true);
+                    }
+                }
+                if (pulling) {
+                    float progress = Math.min(1.0f,
+                            Math.abs(dy) / Math.max(1.0f, getHeight()));
+                    if (gestureListener != null) {
+                        gestureListener.onPull(dx * 0.22f, dy, progress);
+                    }
+                    return true;
+                }
+                if (scale > 1f) {
+                    cancelMatrixAnimation();
+                    matrix.postTranslate(event.getX() - lastX, event.getY() - lastY);
+                    correctBounds();
+                    setImageMatrix(matrix);
+                }
+                lastX = event.getX();
+                lastY = event.getY();
+                return true;
+            case MotionEvent.ACTION_UP:
+                if (pulling) {
+                    finishPull(event);
+                    return true;
+                }
                 correctBounds();
                 setImageMatrix(matrix);
-            }
-            lastX = event.getX();
-            lastY = event.getY();
-            return true;
+                if (!moved && !scaleDetector.isInProgress() && !secondTap) {
+                    handleSingleTap(event.getX(), event.getY(), event.getEventTime());
+                }
+                return true;
+            case MotionEvent.ACTION_CANCEL:
+                if (pulling && gestureListener != null) {
+                    gestureListener.onPullEnd(false, 0.0f);
+                }
+                pulling = false;
+                secondTap = false;
+                correctBounds();
+                setImageMatrix(matrix);
+                return true;
+            default:
+                return true;
         }
-        if (event.getActionMasked() == MotionEvent.ACTION_UP
-                || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-            correctBounds();
-            setImageMatrix(matrix);
-            if (event.getActionMasked() == MotionEvent.ACTION_UP && !moved
-                    && !scaleDetector.isInProgress()) {
-                handleTap(event.getX(), event.getY());
-            } else if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-                removePendingSingleTap();
-            }
-        }
-        return true;
     }
 
-    private void handleTap(float x, float y) {
-        long now = System.currentTimeMillis();
-        boolean doubleTap = now - lastTapAt < 320
-                && Math.abs(x - lastTapX) < touchSlop * 2f
-                && Math.abs(y - lastTapY) < touchSlop * 2f;
-        if (doubleTap) {
-            removePendingSingleTap();
-            toggleDoubleTap(x, y);
+    private void handleSingleTap(float x, float y, long eventTime) {
+        performClick();
+        if (tapZoomLevel >= 2) {
+            animateFitImage();
             lastTapAt = 0L;
             return;
         }
-        lastTapAt = now;
+        if (!isOnImage(x, y) && blankClickListener != null) {
+            blankClickListener.run();
+            lastTapAt = 0L;
+            return;
+        }
+        lastTapAt = eventTime > 0L ? eventTime : SystemClock.uptimeMillis();
         lastTapX = x;
         lastTapY = y;
-        removePendingSingleTap();
-        pendingSingleTap = () -> {
-            pendingSingleTap = null;
-            performClick();
-            if (tapZoomLevel >= 2) {
-                animateFitImage();
-            } else if (!isOnImage(x, y) && blankClickListener != null) {
-                blankClickListener.run();
-            }
-        };
-        postDelayed(pendingSingleTap, 260);
     }
 
-    private void removePendingSingleTap() {
-        if (pendingSingleTap != null) {
-            removeCallbacks(pendingSingleTap);
-            pendingSingleTap = null;
+    private boolean isSecondTap(float x, float y, long eventTime) {
+        if (lastTapAt <= 0L) return false;
+        long now = eventTime > 0L ? eventTime : SystemClock.uptimeMillis();
+        return now - lastTapAt <= doubleTapTimeout
+                && Math.abs(x - lastTapX) <= doubleTapSlop
+                && Math.abs(y - lastTapY) <= doubleTapSlop;
+    }
+
+    private void finishPull(MotionEvent event) {
+        float dy = event.getY() - downY;
+        long elapsed = Math.max(1L, event.getEventTime() - event.getDownTime());
+        float velocity = dy * 1000.0f / elapsed;
+        boolean dismiss = Math.abs(dy) > getHeight() * 0.18f || Math.abs(velocity) > 720.0f;
+        if (gestureListener != null) {
+            gestureListener.onPullEnd(dismiss, dy < 0.0f ? -1.0f : 1.0f);
         }
+        pulling = false;
     }
 
     private void toggleDoubleTap(float x, float y) {
@@ -208,6 +296,7 @@ final class ZoomImageView extends ImageView {
         cancelMatrixAnimation();
         matrix.getValues(startValues);
         targetMatrix.getValues(endValues);
+        animationStartScale = scale;
         matrixAnimator = ValueAnimator.ofFloat(0f, 1f);
         matrixAnimator.setDuration(duration);
         matrixAnimator.setInterpolator(new DecelerateInterpolator());
@@ -217,6 +306,8 @@ final class ZoomImageView extends ImageView {
                 animValues[i] = startValues[i] + ((endValues[i] - startValues[i]) * fraction);
             }
             matrix.setValues(animValues);
+            scale = animationStartScale
+                    + ((targetScale - animationStartScale) * fraction);
             setImageMatrix(matrix);
         });
         matrixAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
@@ -257,21 +348,29 @@ final class ZoomImageView extends ImageView {
         RectF bounds = new RectF(0, 0,
                 drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight());
         targetMatrix.mapRect(bounds);
+        float inset = roundDisplay
+                ? Math.min(getWidth(), getHeight()) * 0.10f : 0.0f;
+        float leftEdge = inset;
+        float topEdge = inset;
+        float rightEdge = getWidth() - inset;
+        float bottomEdge = getHeight() - inset;
+        float viewportWidth = Math.max(1.0f, rightEdge - leftEdge);
+        float viewportHeight = Math.max(1.0f, bottomEdge - topEdge);
         float dx = 0f;
         float dy = 0f;
-        if (bounds.width() <= getWidth()) {
-            dx = getWidth() / 2f - bounds.centerX();
-        } else if (bounds.left > 0f) {
-            dx = -bounds.left;
-        } else if (bounds.right < getWidth()) {
-            dx = getWidth() - bounds.right;
+        if (bounds.width() <= viewportWidth) {
+            dx = (leftEdge + rightEdge) / 2f - bounds.centerX();
+        } else if (bounds.left > leftEdge) {
+            dx = leftEdge - bounds.left;
+        } else if (bounds.right < rightEdge) {
+            dx = rightEdge - bounds.right;
         }
-        if (bounds.height() <= getHeight()) {
-            dy = getHeight() / 2f - bounds.centerY();
-        } else if (bounds.top > 0f) {
-            dy = -bounds.top;
-        } else if (bounds.bottom < getHeight()) {
-            dy = getHeight() - bounds.bottom;
+        if (bounds.height() <= viewportHeight) {
+            dy = (topEdge + bottomEdge) / 2f - bounds.centerY();
+        } else if (bounds.top > topEdge) {
+            dy = topEdge - bounds.top;
+        } else if (bounds.bottom < bottomEdge) {
+            dy = bottomEdge - bounds.bottom;
         }
         if (dx != 0f || dy != 0f) targetMatrix.postTranslate(dx, dy);
     }
@@ -279,8 +378,12 @@ final class ZoomImageView extends ImageView {
     private Matrix fitMatrix() {
         Drawable drawable = getDrawable();
         if (drawable == null || getWidth() == 0 || getHeight() == 0) return null;
-        float sx = getWidth() / (float) drawable.getIntrinsicWidth();
-        float sy = getHeight() / (float) drawable.getIntrinsicHeight();
+        float inset = roundDisplay
+                ? Math.min(getWidth(), getHeight()) * 0.10f : 0.0f;
+        float availableWidth = Math.max(1.0f, getWidth() - inset * 2.0f);
+        float availableHeight = Math.max(1.0f, getHeight() - inset * 2.0f);
+        float sx = availableWidth / (float) drawable.getIntrinsicWidth();
+        float sy = availableHeight / (float) drawable.getIntrinsicHeight();
         float fit = Math.min(sx, sy);
         float dx = (getWidth() - drawable.getIntrinsicWidth() * fit) / 2f;
         float dy = (getHeight() - drawable.getIntrinsicHeight() * fit) / 2f;
@@ -297,6 +400,10 @@ final class ZoomImageView extends ImageView {
                 drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight());
         matrix.mapRect(bounds);
         return bounds.contains(x, y);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     @Override public boolean performClick() {

@@ -34,6 +34,11 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 final class SessionStore {
+    static final int MIN_UI_SCALE = 50;
+    static final int MAX_UI_SCALE = 160;
+    static final int MIN_TEXT_SCALE = 50;
+    static final int MAX_TEXT_SCALE = 180;
+
     private static final Charset UTF_8 = Charset.forName("UTF-8");
     private static final String USER_NAME = "user_name";
     private static final String AVATAR = "avatar";
@@ -198,19 +203,54 @@ final class SessionStore {
     }
 
     int uiScale() {
-        return prefs.getInt(UI_SCALE, 100);
+        return Math.round(configuredUiScale() * watchUiFactor(false));
+    }
+
+    int configuredUiScale() {
+        return clamp(prefs.getInt(UI_SCALE, 100), MIN_UI_SCALE, MAX_UI_SCALE);
     }
 
     void setUiScale(int value) {
-        prefs.edit().putInt(UI_SCALE, value).apply();
+        prefs.edit().putInt(UI_SCALE, clamp(value, MIN_UI_SCALE, MAX_UI_SCALE)).apply();
     }
 
     int textScale() {
-        return prefs.getInt(TEXT_SCALE, 100);
+        return Math.round(configuredTextScale() * watchUiFactor(true));
+    }
+
+    int configuredTextScale() {
+        return clamp(prefs.getInt(TEXT_SCALE, 100), MIN_TEXT_SCALE, MAX_TEXT_SCALE);
     }
 
     void setTextScale(int value) {
-        prefs.edit().putInt(TEXT_SCALE, value).apply();
+        prefs.edit().putInt(TEXT_SCALE, clamp(value, MIN_TEXT_SCALE, MAX_TEXT_SCALE)).apply();
+    }
+
+    /** Rectangular watches use compact sizing; only round watches receive corner insets. */
+    private float watchUiFactor(boolean text) {
+        boolean round = usesRoundLayout();
+        boolean watch = round || RoundLayoutMetrics.isWatchDisplay(context);
+        if (!watch) return 1.0f;
+        android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        int shortPixels = Math.min(metrics.widthPixels, metrics.heightPixels);
+        float shortDp = shortPixels / Math.max(1.0f, metrics.density);
+        if (round) {
+            if (shortPixels <= 420 || shortDp <= 220.0f) return text ? 0.86f : 0.78f;
+            if (shortPixels <= 520 || shortDp <= 270.0f) return text ? 0.89f : 0.82f;
+            return text ? 0.92f : 0.86f;
+        }
+        if (shortPixels <= 420 || shortDp <= 220.0f) return text ? 0.90f : 0.82f;
+        return text ? 0.93f : 0.87f;
+    }
+
+    private static int clamp(int value, int minimum, int maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
+    }
+
+    boolean usesRoundLayout() {
+        if (RoundLayoutMetrics.isRoundDisplay(context)) return true;
+        return prefs.getBoolean(ROUND_SCREEN, false)
+                && !RoundLayoutMetrics.isWatchDisplay(context);
     }
 
     int pagePadding() {

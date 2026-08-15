@@ -2,7 +2,6 @@ package com.ronan.heyboxlite;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -75,10 +74,12 @@ final class DisplaySettingsPage {
         addEntry(panel, "颜色主题", currentThemeCaption().replace("当前 · ", ""),
                 R.drawable.il_palette, this::showThemePicker);
         this.settingsUi.addRangeEntry(panel, "界面大小", "%", R.drawable.ic_expand,
-                70, 160, 1, this.session.uiScale(), this.session::setUiScale,
+                SessionStore.MIN_UI_SCALE, SessionStore.MAX_UI_SCALE, 1,
+                this.session.configuredUiScale(), this.session::setUiScale,
                 () -> refresh("display_settings"));
         this.settingsUi.addRangeEntry(panel, "文字大小", "%", R.drawable.il_info,
-                70, 180, 1, this.session.textScale(), this.session::setTextScale,
+                SessionStore.MIN_TEXT_SCALE, SessionStore.MAX_TEXT_SCALE, 1,
+                this.session.configuredTextScale(), this.session::setTextScale,
                 () -> refresh("display_settings"));
         this.settingsUi.addRangeEntry(panel, "左右边距", "dp", R.drawable.ic_expand,
                 0, 30, 1, this.session.pagePadding(), this.session::setPagePadding,
@@ -86,22 +87,26 @@ final class DisplaySettingsPage {
         addEntry(panel, "界面预览", null, R.drawable.il_eye, this::showPreview);
         page.addView(panel);
 
-        this.settingsUi.addSection(page, isSystemRoundScreen()
-                ? "屏幕适配 · 已识别圆屏" : "屏幕适配");
+        this.settingsUi.addSection(page, screenAdaptationLabel());
         panel = this.settingsUi.list();
-        addTop(panel, this.settingsUi.toggle("圆屏适配", "", null,
-                this.session.roundScreen(), value -> {
-                    this.session.setRoundScreen(value);
-                    refresh("display_settings");
-                }), 0);
-        this.settingsUi.addRangeEntry(panel, "横向安全区", "%",
-                R.drawable.il_round_screen, 0, 30, 1,
-                this.session.screenPaddingHPercent(), this.session::setScreenPaddingHPercent,
-                () -> refresh("display_settings"));
-        this.settingsUi.addRangeEntry(panel, "纵向安全区", "%",
-                R.drawable.il_round_screen, 0, 30, 1,
-                this.session.screenPaddingVPercent(), this.session::setScreenPaddingVPercent,
-                () -> refresh("display_settings"));
+        if (RoundLayoutMetrics.isRectangularWatchDisplay(this.activity)) {
+            this.settingsUi.addInfoEntry(panel, "屏幕形状", null, "方屏",
+                    R.drawable.il_round_screen);
+        } else {
+            addTop(panel, this.settingsUi.toggle("圆屏适配", "", null,
+                    this.session.roundScreen(), value -> {
+                        this.session.setRoundScreen(value);
+                        refresh("display_settings");
+                    }), 0);
+            this.settingsUi.addRangeEntry(panel, "横向安全区", "%",
+                    R.drawable.il_round_screen, 0, 30, 1,
+                    this.session.screenPaddingHPercent(), this.session::setScreenPaddingHPercent,
+                    () -> refresh("display_settings"));
+            this.settingsUi.addRangeEntry(panel, "纵向安全区", "%",
+                    R.drawable.il_round_screen, 0, 30, 1,
+                    this.session.screenPaddingVPercent(), this.session::setScreenPaddingVPercent,
+                    () -> refresh("display_settings"));
+        }
         page.addView(panel);
 
         this.settingsUi.addSection(page, "正文排版");
@@ -124,10 +129,9 @@ final class DisplaySettingsPage {
 
         this.settingsUi.addSection(page, "动画");
         panel = this.settingsUi.list();
-        SettingsUi.Entry[] motionEntry = new SettingsUi.Entry[1];
-        motionEntry[0] = this.settingsUi.addEntry(panel, "动画效果", null,
-                motionLevelLabel(), R.drawable.il_splash,
-                () -> showMotionLevelPicker(motionEntry[0]));
+        this.settingsUi.addChoiceEntry(panel, "动画效果", R.drawable.il_splash,
+                new String[]{"关闭", "精简", "完整"}, this.session.motionLevel(),
+                this::setMotionLevel, null);
         addEntry(panel, "恢复默认设置", null, R.drawable.il_refresh, () ->
                 this.host.showDialog("恢复默认显示设置",
                         "主题、字体、间距和界面大小都将恢复为默认值", "恢复", () -> {
@@ -308,22 +312,10 @@ final class DisplaySettingsPage {
         }
     }
 
-    private void showMotionLevelPicker(SettingsUi.Entry entry) {
-        this.host.showDialog("动画效果",
-                "关闭：不播放过渡动画\n精简：仅保留基础过渡\n完整：播放全部动画",
-                "精简", () -> setMotionLevel(MotionLevel.REDUCED, entry),
-                "关闭", () -> setMotionLevel(MotionLevel.OFF, entry),
-                "完整", () -> setMotionLevel(MotionLevel.FULL, entry));
-    }
-
-    private void setMotionLevel(int level, SettingsUi.Entry entry) {
+    private void setMotionLevel(int level) {
         this.host.cancelAllMotion();
         this.session.setMotionLevel(level);
         Motions.setLevel(level);
-        if (entry != null && entry.value != null) {
-            entry.value.setText(motionLevelLabel());
-            Motions.selected(entry.value);
-        }
     }
 
     private String motionLevelLabel() {
@@ -337,8 +329,15 @@ final class DisplaySettingsPage {
     }
 
     private boolean isSystemRoundScreen() {
-        return Build.VERSION.SDK_INT >= 23
-                && this.activity.getResources().getConfiguration().isScreenRound();
+        return RoundLayoutMetrics.isRoundDisplay(this.activity);
+    }
+
+    private String screenAdaptationLabel() {
+        if (isSystemRoundScreen()) return "屏幕适配 · 已识别圆屏手表";
+        if (RoundLayoutMetrics.isRectangularWatchDisplay(this.activity)) {
+            return "屏幕适配 · 已识别方屏手表";
+        }
+        return "屏幕适配";
     }
 
     private void addEntry(LinearLayout parent, String name, String description,
@@ -356,7 +355,7 @@ final class DisplaySettingsPage {
     }
 
     private Button commandButton(String value, int iconResource) {
-        Button button = new Button(this.activity);
+        Button button = UiComponents.button(this.activity);
         button.setText(value);
         button.setTextSize(sp(12.0f));
         button.setTextColor(this.tokens.accent);

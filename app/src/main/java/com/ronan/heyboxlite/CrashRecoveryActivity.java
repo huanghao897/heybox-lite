@@ -126,7 +126,7 @@ public final class CrashRecoveryActivity extends Activity {
     }
 
     private Button button(String value, int color, int textColor) {
-        Button button = new Button(this);
+        Button button = UiComponents.button(this);
         button.setText(value);
         button.setTextColor(textColor);
         button.setTextSize(13);

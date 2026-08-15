@@ -18,11 +18,6 @@ final class AppSettingsPage {
     interface Host {
         LinearLayout openPage(String key, String title);
 
-        void showDialog(String title, String message, String positiveText,
-                        Runnable positiveAction, String negativeText,
-                        Runnable negativeAction, String neutralText,
-                        Runnable neutralAction);
-
         void reloadFeed(boolean resetPaging);
 
         void exportDiagnostics();
@@ -67,10 +62,9 @@ final class AppSettingsPage {
             this.session.setNoImage(value);
             this.host.reloadFeed(false);
         }), 0);
-        SettingsUi.Entry[] networkEntry = new SettingsUi.Entry[1];
-        networkEntry[0] = this.settingsUi.addEntry(panel, "网络模式", null,
-                networkModeLabel(), R.drawable.il_globe,
-                () -> showNetworkModePicker(networkEntry[0]));
+        this.settingsUi.addChoiceEntry(panel, "网络模式", R.drawable.il_globe,
+                new String[]{"省流量", "标准", "原图"}, this.session.networkMode(),
+                this::setNetworkMode, null);
         addTop(panel, toggle("表冠滚动", this.session.crownScrollEnabled(), value -> {
             this.session.setCrownScrollEnabled(value);
             if (!value) this.crownScrollController.reset();
@@ -236,21 +230,9 @@ final class AppSettingsPage {
         animation.run();
     }
 
-    private void showNetworkModePicker(SettingsUi.Entry entry) {
-        this.host.showDialog("网络模式",
-                "省流量：使用缩略图，不自动播放动图\n标准：使用缩略图并播放动图\n原图：优先加载高清图片",
-                "标准", () -> setNetworkMode(1, entry),
-                "省流量", () -> setNetworkMode(0, entry),
-                "原图", () -> setNetworkMode(2, entry));
-    }
-
-    private void setNetworkMode(int mode, SettingsUi.Entry entry) {
+    private void setNetworkMode(int mode) {
         boolean changed = this.session.networkMode() != mode;
         this.session.setNetworkMode(mode);
-        if (entry != null && entry.value != null) {
-            entry.value.setText(networkModeLabel());
-            Motions.selected(entry.value);
-        }
         if (changed) this.host.reloadFeed(false);
         this.host.showToast("已切换为" + networkModeLabel());
     }
@@ -271,7 +253,7 @@ final class AppSettingsPage {
     }
 
     private Button commandButton(String value) {
-        Button button = new Button(this.activity);
+        Button button = UiComponents.button(this.activity);
         button.setText(value);
         button.setTextSize(sp(12.0f));
         button.setTextColor(this.tokens.text);

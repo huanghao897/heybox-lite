@@ -44,6 +44,7 @@ public final class ImageViewerActivity extends Activity {
     static final String EXTRA_ORIGIN_HEIGHT = "origin_height";
 
     private FrameLayout root;
+    private View backdrop;
     private GalleryPager pager;
     private FrameLayout[] imagePages;
     private ZoomImageView[] images;
@@ -59,8 +60,13 @@ public final class ImageViewerActivity extends Activity {
     private int current;
     private TextView counter;
     private TextView original;
+    private ImageView download;
+    private ImageView closeButton;
     private boolean closing;
     private boolean destroyed;
+    private boolean roundDisplay;
+    private boolean pageTransitionStarted;
+    private boolean pullingImage;
     private SessionStore session;
     private static String pendingPreviewUrl;
     private static WeakReference<Bitmap> pendingPreviewBitmap;
@@ -77,6 +83,7 @@ public final class ImageViewerActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
         session = new SessionStore(this);
         Motions.setLevel(session.motionLevel());
+        roundDisplay = session.usesRoundLayout();
 
         urls = resolveUrls();
         current = Math.max(0, Math.min(urls.length - 1, getIntent().getIntExtra(EXTRA_INDEX, 0)));
@@ -94,13 +101,29 @@ public final class ImageViewerActivity extends Activity {
         for (int i = 0; i < count; i++) sizes[i] = -1L;
 
         root = new FrameLayout(this);
-        root.setBackgroundColor(Color.argb(230, 16, 17, 19));
+        root.setBackgroundColor(Color.TRANSPARENT);
+
+        backdrop = new View(this);
+        backdrop.setBackgroundColor(Color.rgb(16, 17, 19));
+        backdrop.setAlpha(Motions.off() ? 1.0f : 0.0f);
+        root.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
 
         pager = new GalleryPager(this);
         for (int i = 0; i < count; i++) {
             FrameLayout page = new FrameLayout(this);
             ZoomImageView view = new ZoomImageView(this);
+            view.setRoundDisplay(roundDisplay);
             view.setOnBlankClickListener(this::closeViewer);
+            final int pageIndex = i;
+            view.setGestureListener(new ZoomImageView.GestureListener() {
+                @Override public void onPull(float dx, float dy, float progress) {
+                    updatePull(pageIndex, dx, dy, progress);
+                }
+
+                @Override public void onPullEnd(boolean dismiss, float direction) {
+                    finishPull(pageIndex, dismiss, direction);
+                }
+            });
             page.addView(view, new FrameLayout.LayoutParams(-1, -1));
             LoadingSpinnerView spinner = new LoadingSpinnerView(this);
             spinner.setColor(Color.argb(210, 235, 238, 241));
@@ -126,13 +149,13 @@ public final class ImageViewerActivity extends Activity {
         Compat.setBackground(counter, counterBg);
         FrameLayout.LayoutParams counterParams = new FrameLayout.LayoutParams(-2, -2,
                 Gravity.TOP | Gravity.END);
-        counterParams.topMargin = dp(14);
-        counterParams.rightMargin = dp(14);
+        counterParams.topMargin = chromeInset();
+        counterParams.rightMargin = chromeInset();
         root.addView(counter, counterParams);
         counter.setVisibility(count > 1 ? View.VISIBLE : View.GONE);
 
         // 紧凑下载按钮：左下角小圆钮，不占地方、不遮挡图片
-        ImageView download = new ImageView(this);
+        download = new ImageView(this);
         download.setImageResource(R.drawable.ic_download);
         download.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         download.setPadding(dp(10), dp(10), dp(10), dp(10));
@@ -143,9 +166,31 @@ public final class ImageViewerActivity extends Activity {
         download.setOnClickListener(view -> saveImage());
         FrameLayout.LayoutParams downloadParams = new FrameLayout.LayoutParams(dp(40), dp(40),
                 Gravity.BOTTOM | Gravity.START);
-        downloadParams.leftMargin = dp(16);
-        downloadParams.bottomMargin = dp(16);
+        downloadParams.leftMargin = chromeInset();
+        downloadParams.bottomMargin = chromeInset();
         root.addView(download, downloadParams);
+
+        if (roundDisplay) {
+            closeButton = new ImageView(this);
+            Drawable closeIcon = Compat.tintedDrawable(this, R.drawable.ic_close, Color.WHITE);
+            if (closeIcon != null) closeButton.setImageDrawable(closeIcon);
+            closeButton.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            closeButton.setPadding(dp(10), dp(10), dp(10), dp(10));
+            GradientDrawable closeBg = new GradientDrawable();
+            closeBg.setColor(Color.argb(120, 0, 0, 0));
+            closeBg.setShape(GradientDrawable.OVAL);
+            Compat.setBackground(closeButton, closeBg);
+            closeButton.setContentDescription("关闭图片");
+            closeButton.setOnClickListener(view -> {
+                UiComponents.press(view);
+                closeViewer();
+            });
+            FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
+                    dp(40), dp(40), Gravity.TOP | Gravity.START);
+            closeParams.leftMargin = chromeInset();
+            closeParams.topMargin = chromeInset();
+            root.addView(closeButton, closeParams);
+        }
 
         // 查看原图（大小）：仅在允许查看原图时显示，居中底部
         original = new TextView(this);
@@ -161,7 +206,7 @@ public final class ImageViewerActivity extends Activity {
         original.setOnClickListener(view -> loadOriginal());
         FrameLayout.LayoutParams originalParams = new FrameLayout.LayoutParams(-2, -2,
                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        originalParams.bottomMargin = dp(18);
+        originalParams.bottomMargin = chromeInset();
         root.addView(original, originalParams);
         original.setVisibility(session.originalImages() ? View.VISIBLE : View.GONE);
 
@@ -179,44 +224,122 @@ public final class ImageViewerActivity extends Activity {
     }
 
     private void prepareEnterAnimation() {
-        root.animate().cancel();
+        backdrop.animate().cancel();
         pager.animate().cancel();
+        pageTransitionStarted = false;
+        setChromeAlpha(Motions.off() ? 1.0f : 0.0f);
         if (Motions.off() || Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
-            root.setAlpha(1f);
-            Motions.reset(pager);
+            backdrop.setAlpha(1.0f);
+            setChromeAlpha(1.0f);
             return;
         }
-        root.setAlpha(0f);
+        backdrop.setAlpha(0.0f);
         root.post(() -> {
             if (destroyed || isFinishing()) return;
-            int width = Math.max(1, root.getWidth());
-            int height = Math.max(1, root.getHeight());
-            int originWidth = getIntent().getIntExtra(EXTRA_ORIGIN_WIDTH, 0);
-            int originHeight = getIntent().getIntExtra(EXTRA_ORIGIN_HEIGHT, 0);
-            float scaleX = originWidth > 0
-                    ? Math.max(0.08f, Math.min(0.96f, originWidth / (float) width))
-                    : 0.94f;
-            float scaleY = originHeight > 0
-                    ? Math.max(0.08f, Math.min(0.96f, originHeight / (float) height))
-                    : 0.94f;
-            float originX = getIntent().getIntExtra(EXTRA_ORIGIN_X, width / 2);
-            float originY = getIntent().getIntExtra(EXTRA_ORIGIN_Y, height / 2);
-            pager.setPivotX(width / 2.0f);
-            pager.setPivotY(height / 2.0f);
-            pager.setScaleX(scaleX);
-            pager.setScaleY(scaleY);
-            pager.setTranslationX(originX - width / 2.0f);
-            pager.setTranslationY(originY - height / 2.0f);
+            long duration = Motions.full() ? 240L : 205L;
+            backdrop.animate().alpha(1.0f).setDuration(duration).start();
+            root.postDelayed(() -> {
+                if (!destroyed && !isFinishing()) setChromeAlpha(1.0f);
+            }, Math.min(80L, duration / 3L));
+        });
+    }
 
-            long duration = Motions.full() ? 220L : MotionSpec.IMAGE_MS;
-            root.animate().alpha(1f).setDuration(duration).start();
-            pager.animate().scaleX(1f).scaleY(1f)
-                    .translationX(0f).translationY(0f)
+    private void startPageEnter(int index) {
+        if (pageTransitionStarted || destroyed || isFinishing()
+                || index != current || images[index].getDrawable() == null) return;
+        if (root.getWidth() == 0 || root.getHeight() == 0
+                || imagePages[index].getWidth() == 0) {
+            images[index].post(() -> startPageEnter(index));
+            return;
+        }
+        pageTransitionStarted = true;
+        FrameLayout page = imagePages[index];
+        if (Motions.off()) {
+            Motions.reset(page);
+            return;
+        }
+        ZoomImageView image = images[index];
+        android.graphics.RectF imageRect = new android.graphics.RectF();
+        image.imageDisplayRect(imageRect);
+        int[] rootLocation = new int[2];
+        root.getLocationOnScreen(rootLocation);
+        float originX = getIntent().getIntExtra(EXTRA_ORIGIN_X, root.getWidth() / 2)
+                - rootLocation[0];
+        float originY = getIntent().getIntExtra(EXTRA_ORIGIN_Y, root.getHeight() / 2)
+                - rootLocation[1];
+        float originWidth = getIntent().getIntExtra(EXTRA_ORIGIN_WIDTH, 0);
+        float originHeight = getIntent().getIntExtra(EXTRA_ORIGIN_HEIGHT, 0);
+        float scale = 0.94f;
+        if (imageRect.width() > 0.0f && imageRect.height() > 0.0f
+                && originWidth > 0.0f && originHeight > 0.0f) {
+            scale = Math.max(0.08f, Math.min(0.96f,
+                    Math.min(originWidth / imageRect.width(),
+                            originHeight / imageRect.height())));
+        }
+        page.setPivotX(page.getWidth() / 2.0f);
+        page.setPivotY(page.getHeight() / 2.0f);
+        page.setScaleX(scale);
+        page.setScaleY(scale);
+        page.setTranslationX(originX - page.getWidth() / 2.0f);
+        page.setTranslationY(originY - page.getHeight() / 2.0f);
+        long duration = Motions.full() ? 240L : 205L;
+        page.animate().scaleX(1.0f).scaleY(1.0f)
+                .translationX(0.0f).translationY(0.0f)
+                .setDuration(duration)
+                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
+                .withEndAction(() -> Motions.reset(page))
+                .start();
+    }
+
+    private void updatePull(int index, float dx, float dy, float progress) {
+        if (destroyed || closing || index != current) return;
+        FrameLayout page = imagePages[index];
+        if (!pullingImage) {
+            pullingImage = true;
+            page.animate().cancel();
+        }
+        float scale = 1.0f - Math.min(0.16f, progress * 0.20f);
+        page.setTranslationX(dx);
+        page.setTranslationY(dy);
+        page.setScaleX(scale);
+        page.setScaleY(scale);
+        backdrop.setAlpha(1.0f - Math.min(0.82f, progress * 0.82f));
+        setChromeAlpha(1.0f - Math.min(0.75f, progress * 0.75f));
+    }
+
+    private void finishPull(int index, boolean dismiss, float direction) {
+        if (destroyed || index != current) return;
+        pullingImage = false;
+        FrameLayout page = imagePages[index];
+        if (dismiss) {
+            closing = true;
+            long duration = Motions.off() ? 0L : (Motions.full() ? 220L : 180L);
+            page.animate().translationY(direction * Math.max(1, root.getHeight()))
+                    .translationX(page.getTranslationX() * 1.25f)
+                    .scaleX(0.84f).scaleY(0.84f).alpha(0.0f)
                     .setDuration(duration)
                     .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
-                    .withEndAction(() -> Motions.reset(pager))
+                    .withEndAction(this::finishViewer)
                     .start();
-        });
+            backdrop.animate().alpha(0.0f).setDuration(duration).start();
+            setChromeAlpha(0.0f);
+            return;
+        }
+        page.animate().translationX(0.0f).translationY(0.0f)
+                .scaleX(1.0f).scaleY(1.0f).alpha(1.0f)
+                .setDuration(Motions.off() ? 0L : 190L)
+                .setInterpolator(MotionSpec.EASE_OUT)
+                .withEndAction(() -> Motions.reset(page))
+                .start();
+        backdrop.animate().alpha(1.0f).setDuration(Motions.off() ? 0L : 190L).start();
+        setChromeAlpha(1.0f);
+    }
+
+    private void setChromeAlpha(float alpha) {
+        if (counter != null) counter.setAlpha(alpha);
+        if (download != null) download.setAlpha(alpha);
+        if (original != null) original.setAlpha(alpha);
+        if (closeButton != null) closeButton.setAlpha(alpha);
     }
 
     /** 翻到某页时同步：加载预览、更新页码、复位并刷新“查看原图（大小）”。 */
@@ -272,18 +395,12 @@ public final class ImageViewerActivity extends Activity {
                 return;
             }
             view.setImageBitmap(bitmap);
-            view.post(view::fitImage);
+            view.post(() -> {
+                view.fitImage();
+                if (index == current) startPageEnter(index);
+            });
             updateLongCandidate(index, bitmap);
-            if (index == current && startupFade(view)) {
-                view.setAlpha(0f);
-                view.animate().alpha(1f).setDuration(150)
-                        .setInterpolator(new DecelerateInterpolator()).start();
-            }
         });
-    }
-
-    private boolean startupFade(ZoomImageView view) {
-        return view.getAlpha() >= 0.99f;
     }
 
     private boolean showPreparedPreview(int index) {
@@ -299,7 +416,10 @@ public final class ImageViewerActivity extends Activity {
         loaded[index] = true;
         spinners[index].setVisibility(View.GONE);
         images[index].setImageBitmap(bitmap);
-        images[index].post(images[index]::fitImage);
+        images[index].post(() -> {
+            images[index].fitImage();
+            startPageEnter(index);
+        });
         updateLongCandidate(index, bitmap);
         return true;
     }
@@ -318,8 +438,7 @@ public final class ImageViewerActivity extends Activity {
         }
         longLoading[index] = true;
         int requestId = ++longRequestIds[index];
-        ImageLoader.loadLongImageTiles(urls[index],
-                getResources().getDisplayMetrics().widthPixels,
+        ImageLoader.loadLongImageTiles(urls[index], longImageTargetWidth(),
                 new ImageLoader.LongImageCallback() {
                     @Override
                     public boolean cancelled() {
@@ -333,6 +452,11 @@ public final class ImageViewerActivity extends Activity {
                         ScrollView scroll = new ScrollView(ImageViewerActivity.this);
                         scroll.setFillViewport(false);
                         scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+                        int inset = roundImageInset();
+                        if (inset > 0) {
+                            scroll.setPadding(inset, inset, inset, inset);
+                            scroll.setClipToPadding(false);
+                        }
                         LinearLayout tiles = new LinearLayout(ImageViewerActivity.this);
                         tiles.setOrientation(LinearLayout.VERTICAL);
                         scroll.addView(tiles, new ScrollView.LayoutParams(
@@ -361,8 +485,7 @@ public final class ImageViewerActivity extends Activity {
                         ImageView tile = new ImageView(ImageViewerActivity.this);
                         tile.setScaleType(ImageView.ScaleType.FIT_XY);
                         tile.setImageBitmap(bitmap);
-                        int width = Math.max(1,
-                                getResources().getDisplayMetrics().widthPixels);
+                        int width = longImageTargetWidth();
                         int height = Math.max(1, Math.round(
                                 width * (bitmap.getHeight() / (float) bitmap.getWidth())));
                         ((LinearLayout) child).addView(tile,
@@ -554,17 +677,54 @@ public final class ImageViewerActivity extends Activity {
     private void closeViewer() {
         if (closing) return;
         closing = true;
-        pager.animate().scaleX(0.985f).scaleY(0.985f).alpha(0f)
-                .setDuration(140)
-                .setInterpolator(new DecelerateInterpolator())
-                .start();
-        root.animate().alpha(0f).setDuration(150).start();
-        root.postDelayed(() -> {
-            if (!isFinishing()) {
-                finish();
-                overridePendingTransition(0, 0);
+        FrameLayout page = imagePages[current];
+        page.animate().cancel();
+        backdrop.animate().cancel();
+        setChromeAlpha(0.0f);
+        if (Motions.off()) {
+            finishViewer();
+            return;
+        }
+
+        float scale = 0.94f;
+        float translationX = 0.0f;
+        float translationY = 0.0f;
+        int requestedIndex = Math.max(0, Math.min(urls.length - 1,
+                getIntent().getIntExtra(EXTRA_INDEX, 0)));
+        if (current == requestedIndex && !images[current].isZoomed()) {
+            android.graphics.RectF imageRect = new android.graphics.RectF();
+            images[current].imageDisplayRect(imageRect);
+            int[] rootLocation = new int[2];
+            root.getLocationOnScreen(rootLocation);
+            float originWidth = getIntent().getIntExtra(EXTRA_ORIGIN_WIDTH, 0);
+            float originHeight = getIntent().getIntExtra(EXTRA_ORIGIN_HEIGHT, 0);
+            if (imageRect.width() > 0.0f && imageRect.height() > 0.0f
+                    && originWidth > 0.0f && originHeight > 0.0f) {
+                scale = Math.max(0.08f, Math.min(0.96f,
+                        Math.min(originWidth / imageRect.width(),
+                                originHeight / imageRect.height())));
+                float originX = getIntent().getIntExtra(
+                        EXTRA_ORIGIN_X, root.getWidth() / 2) - rootLocation[0];
+                float originY = getIntent().getIntExtra(
+                        EXTRA_ORIGIN_Y, root.getHeight() / 2) - rootLocation[1];
+                translationX = originX - page.getWidth() / 2.0f;
+                translationY = originY - page.getHeight() / 2.0f;
             }
-        }, 155);
+        }
+        long duration = Motions.full() ? 220L : 180L;
+        page.animate().scaleX(scale).scaleY(scale).translationX(translationX)
+                .translationY(translationY).alpha(0.0f)
+                .setDuration(duration)
+                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
+                .withEndAction(this::finishViewer)
+                .start();
+        backdrop.animate().alpha(0.0f).setDuration(duration).start();
+    }
+
+    private void finishViewer() {
+        if (destroyed || isFinishing()) return;
+        finish();
+        overridePendingTransition(0, 0);
     }
 
     @Override public void onBackPressed() {
@@ -573,9 +733,17 @@ public final class ImageViewerActivity extends Activity {
 
     @Override protected void onDestroy() {
         destroyed = true;
-        root.animate().cancel();
-        pager.animate().cancel();
-        pager.cancelSettle();
+        if (root != null) root.animate().cancel();
+        if (backdrop != null) backdrop.animate().cancel();
+        if (pager != null) {
+            pager.animate().cancel();
+            pager.cancelSettle();
+        }
+        if (imagePages != null) {
+            for (FrameLayout page : imagePages) {
+                if (page != null) page.animate().cancel();
+            }
+        }
         if (longViews != null) {
             for (int i = 0; i < longViews.length; i++) releaseLongPage(i);
         }
@@ -592,6 +760,22 @@ public final class ImageViewerActivity extends Activity {
         return Math.max(480, Math.min(1440, Math.round(width * 1.25f)));
     }
 
+    private int chromeInset() {
+        return dp(roundDisplay ? 36 : 16);
+    }
+
+    private int roundImageInset() {
+        if (!roundDisplay) return 0;
+        int width = getResources().getDisplayMetrics().widthPixels;
+        int height = getResources().getDisplayMetrics().heightPixels;
+        return Math.round(Math.min(width, height) * 0.10f);
+    }
+
+    private int longImageTargetWidth() {
+        int width = getResources().getDisplayMetrics().widthPixels;
+        return Math.max(320, width - roundImageInset() * 2);
+    }
+
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
@@ -606,6 +790,7 @@ public final class ImageViewerActivity extends Activity {
         private int page;
         private boolean dragging;
         private boolean ignoring;
+        private boolean preservingSecondTap;
         private ValueAnimator settleAnimator;
 
         GalleryPager(Context context) {
@@ -653,9 +838,15 @@ public final class ImageViewerActivity extends Activity {
                     this.startScrollX = getScrollX();
                     this.dragging = false;
                     this.ignoring = false;
+                    this.preservingSecondTap = images[current].isSecondTapCandidate(
+                            event.getX(), event.getY(), event.getEventTime());
                     break;
                 case MotionEvent.ACTION_MOVE:
                     if (this.ignoring || this.dragging) break;
+                    if (this.preservingSecondTap) {
+                        this.ignoring = true;
+                        break;
+                    }
                     if (event.getPointerCount() > 1
                             || images[current].isZoomed()) {
                         this.ignoring = true;

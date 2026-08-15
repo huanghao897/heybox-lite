@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.view.View;
+import android.widget.Button;
 import android.widget.TextView;
 
 final class UiComponents {
@@ -88,6 +89,26 @@ final class UiComponents {
         view.setTextColor(color);
         Compat.setLetterSpacing(view, 0);
         return view;
+    }
+
+    static Button button(Context context) {
+        Button button = new Button(context);
+        button.setAllCaps(false);
+        button.setIncludeFontPadding(false);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(0, 0, 0, 0);
+        button.setGravity(android.view.Gravity.CENTER);
+        button.setTypeface(android.graphics.Typeface.DEFAULT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            button.setStateListAnimator(null);
+            button.setElevation(0.0f);
+        }
+        Compat.setLetterSpacing(button, 0);
+        Compat.setBackground(button, null);
+        return button;
     }
 
     static int dp(Context context, int value, float scale) {

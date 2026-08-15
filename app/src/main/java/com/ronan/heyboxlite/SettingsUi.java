@@ -105,6 +105,16 @@ final class SettingsUi {
 
     Entry addEntry(LinearLayout parent, String name, String description,
                    String value, int icon, Runnable action) {
+        return addEntry(parent, name, description, value, icon, action, true);
+    }
+
+    Entry addInfoEntry(LinearLayout parent, String name, String description,
+                       String value, int icon) {
+        return addEntry(parent, name, description, value, icon, null, false);
+    }
+
+    private Entry addEntry(LinearLayout parent, String name, String description,
+                           String value, int icon, Runnable action, boolean navigates) {
         addDivider(parent);
         LinearLayout row = new LinearLayout(activity);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -151,13 +161,16 @@ final class SettingsUi {
             valueParams.rightMargin = dp(2);
             row.addView(valueView, valueParams);
         }
-        ImageView arrow = new ImageView(activity);
-        arrow.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        Drawable chevron = Compat.tintedDrawable(activity, R.drawable.il_chevron, tokens.muted);
-        if (chevron != null) arrow.setImageDrawable(chevron);
-        arrow.setAlpha(0.55f);
-        row.addView(arrow, new LinearLayout.LayoutParams(dp(18), dp(18)));
-        row.setOnClickListener(view -> runCommand(row, action));
+        if (navigates) {
+            ImageView arrow = new ImageView(activity);
+            arrow.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            Drawable chevron = Compat.tintedDrawable(
+                    activity, R.drawable.il_chevron, tokens.muted);
+            if (chevron != null) arrow.setImageDrawable(chevron);
+            arrow.setAlpha(0.55f);
+            row.addView(arrow, new LinearLayout.LayoutParams(dp(18), dp(18)));
+            row.setOnClickListener(view -> runCommand(row, action));
+        }
         parent.addView(row);
         return new Entry(row, descriptionView, valueView);
     }
@@ -235,10 +248,13 @@ final class SettingsUi {
     Entry addRangeEntry(LinearLayout parent, String label, String unit, int icon,
                         int min, int max, int step, int current,
                         IntListener listener, Runnable afterDismiss) {
+        int lower = Math.min(min, max);
+        int upper = Math.max(min, max);
+        int selectedValue = Math.max(lower, Math.min(upper, current));
         Entry[] entry = new Entry[1];
-        int[] selected = {current};
-        entry[0] = addEntry(parent, label, null, formatValue(current, unit), icon, () ->
-                showRangeDialog(label, unit, min, max, step, selected[0], value -> {
+        int[] selected = {selectedValue};
+        entry[0] = addEntry(parent, label, null, formatValue(selectedValue, unit), icon, () ->
+                showRangeDialog(label, unit, lower, upper, step, selected[0], value -> {
                     selected[0] = value;
                     listener.onChanged(value);
                     entry[0].value.setText(formatValue(value, unit));
@@ -343,34 +359,51 @@ final class SettingsUi {
     private void showChoiceDialog(String title, String[] options, int selected,
                                   IntListener listener, Runnable afterDismiss) {
         LinearLayout box = dialogPanel(title);
-        LinearLayout list = vertical(0);
-        addTop(box, list, 8);
-        int[] choice = {-1};
         AlertDialog dialog = new AlertDialog.Builder(activity).setView(box).create();
+        LinearLayout selector = new LinearLayout(activity);
+        selector.setGravity(Gravity.CENTER_VERTICAL);
+        selector.setPadding(dp(3), dp(3), dp(3), dp(3));
+        Compat.setBackground(selector, UiComponents.round(
+                activity, tokens.panelElevated, 11, uiScale));
+        TextView[] choices = new TextView[options.length];
+        int[] choice = {-1};
+        int initial = Math.max(0, Math.min(options.length - 1, selected));
+        Runnable paint = () -> {
+            for (int i = 0; i < choices.length; i++) {
+                TextView item = choices[i];
+                if (item == null) continue;
+                boolean active = i == (choice[0] >= 0 ? choice[0] : initial);
+                item.setTextColor(active ? ThemeTokens.contrast(tokens.text) : tokens.muted);
+                item.setTypeface(Typeface.DEFAULT, active
+                        ? Typeface.BOLD : Typeface.NORMAL);
+                Compat.setBackground(item, UiComponents.round(activity,
+                        active ? tokens.text : Color.TRANSPARENT, 8, uiScale));
+            }
+        };
         for (int i = 0; i < options.length; i++) {
             int index = i;
-            LinearLayout row = new LinearLayout(activity);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(10), 0, dp(8), 0);
-            TextView label = text(options[i], 14.0f,
-                    i == selected ? tokens.text : tokens.muted);
-            label.setTypeface(Typeface.DEFAULT,
-                    i == selected ? Typeface.BOLD : Typeface.NORMAL);
-            row.addView(label, new LinearLayout.LayoutParams(0, dp(46), 1.0f));
-            TextView check = text(i == selected ? "✓" : "", 16.0f, tokens.text);
-            check.setGravity(Gravity.CENTER);
-            row.addView(check, new LinearLayout.LayoutParams(dp(28), dp(46)));
-            row.setOnClickListener(view -> {
+            TextView item = text(options[i], 12.0f, tokens.muted);
+            item.setGravity(Gravity.CENTER);
+            item.setSingleLine(true);
+            item.setPadding(dp(5), 0, dp(5), 0);
+            choices[i] = item;
+            item.setOnClickListener(view -> {
                 choice[0] = index;
-                runCommand(row, dialog::dismiss);
+                paint.run();
+                UiComponents.press(item);
+                item.postDelayed(() -> {
+                    if (!dialog.isShowing()) return;
+                    listener.onChanged(index);
+                    dialog.dismiss();
+                }, Motions.off() ? 0L : 110L);
             });
-            list.addView(row);
-            if (i < options.length - 1) addChoiceDivider(list);
+            selector.addView(item, new LinearLayout.LayoutParams(0, dp(40), 1.0f));
         }
+        paint.run();
+        addTop(box, selector, 10);
         dialog.setCanceledOnTouchOutside(true);
-        dialog.setOnDismissListener(value -> {
+        dialog.setOnDismissListener(ignored -> {
             if (choice[0] < 0) return;
-            listener.onChanged(choice[0]);
             if (afterDismiss != null && !activity.isFinishing()) handler.post(afterDismiss);
         });
         present(dialog, box);
@@ -440,15 +473,6 @@ final class SettingsUi {
                 -1, Math.max(1, dp(1) / 2));
         params.leftMargin = dp(60);
         row.addView(divider, params);
-    }
-
-    private void addChoiceDivider(LinearLayout list) {
-        View divider = new View(activity);
-        divider.setBackgroundColor(tokens.hairline);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                -1, Math.max(1, dp(1) / 2));
-        params.leftMargin = dp(10);
-        list.addView(divider, params);
     }
 
     private int dividerColor() {

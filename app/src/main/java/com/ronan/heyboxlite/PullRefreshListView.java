@@ -23,6 +23,7 @@ final class PullRefreshListView extends ListView {
     private final int triggerHeight;
     private final int maxPullHeight;
     private final float uiScale;
+    private final boolean watchDisplay;
     private final int mutedColor;
     private final int accentColor;
     private float startX;
@@ -37,6 +38,7 @@ final class PullRefreshListView extends ListView {
                         int accentColor, float uiScale, float textScale) {
         super(context);
         this.uiScale = uiScale;
+        this.watchDisplay = RoundLayoutMetrics.isWatchDisplay(context);
         this.mutedColor = mutedColor;
         this.accentColor = accentColor;
         this.touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
@@ -343,7 +345,7 @@ final class PullRefreshListView extends ListView {
         }
         ValueAnimator animator = ValueAnimator.ofInt(start, normalizedTarget);
         this.headerAnimator = animator;
-        animator.setDuration(160L);
+        animator.setDuration(this.watchDisplay ? MotionSpec.WATCH_TRANSITION_MS : 160L);
         animator.setInterpolator(new DecelerateInterpolator());
         animator.addUpdateListener(value -> {
             if (this.headerAnimator != animator) return;

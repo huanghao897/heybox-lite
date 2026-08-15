@@ -7,8 +7,13 @@ import android.widget.FrameLayout;
 /** Moves two fully built pages through one transition owned by this controller. */
 final class PageTransitionController {
     private Transition current;
+    private boolean compactMotion;
 
     PageTransitionController() {}
+
+    void setCompactMotion(boolean compact) {
+        compactMotion = compact;
+    }
 
     void finishNow() {
         Transition pending = current;
@@ -72,6 +77,10 @@ final class PageTransitionController {
         };
 
         int width = container.getWidth();
+        if (compactMotion) {
+            runCompact(transition, end, width, forward, push);
+            return;
+        }
         if (!Motions.full()) {
             runReduced(transition, end, width, forward, push);
             return;
@@ -107,6 +116,31 @@ final class PageTransitionController {
                     .translationX(forward ? -width * 0.30f : width)
                     .alpha(forward ? 0.72f : 1.0f)
                     .setDuration(MotionSpec.TRANSITION_FULL_MS)
+                    .setInterpolator(MotionSpec.EASE_OUT)
+                    .start();
+        });
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.JELLY_BEAN)
+    private void runCompact(Transition transition, Runnable end, int width,
+                            boolean forward, boolean push) {
+        View oldView = transition.oldView;
+        View next = transition.nextView;
+        float nextOffset = (forward ? 1.0f : -1.0f)
+                * width * (push ? 0.10f : 0.075f);
+        float oldOffset = (forward ? -1.0f : 1.0f)
+                * width * (push ? 0.055f : 0.075f);
+        next.setTranslationX(nextOffset);
+        next.setAlpha(1.0f);
+        next.post(() -> {
+            if (current == null) return;
+            next.animate().translationX(0.0f)
+                    .setDuration(MotionSpec.WATCH_TRANSITION_MS)
+                    .setInterpolator(MotionSpec.EASE_OUT)
+                    .withEndAction(end)
+                    .start();
+            oldView.animate().translationX(oldOffset).alpha(1.0f)
+                    .setDuration(MotionSpec.WATCH_TRANSITION_MS)
                     .setInterpolator(MotionSpec.EASE_OUT)
                     .start();
         });

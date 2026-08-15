@@ -39,6 +39,8 @@ final class BackSwipeFrameLayout extends FrameLayout {
 
         void setShellGestureActive(boolean active);
 
+        boolean compactShellMotion();
+
         void navigateAfterShellSwipe(boolean topLevel, int direction,
                                      String targetKey, Runnable settled);
 
@@ -161,11 +163,15 @@ final class BackSwipeFrameLayout extends FrameLayout {
             tracking = false;
             return false;
         }
-        if (Math.abs(dx) <= touchSlop * 2
-                || Math.abs(dx) <= Math.abs(dy) * 1.18f
+        boolean compact = host.compactShellMotion();
+        if (Math.abs(dx) <= touchSlop * (compact
+                ? MotionSpec.WATCH_TOUCH_SLOP_MULTIPLIER : 2)
+                || Math.abs(dx) <= Math.abs(dy) * (compact
+                ? MotionSpec.WATCH_AXIS_RATIO : 1.18f)
                 || !host.hasShellSwipeTarget(dx)) {
             return false;
         }
+        if (compact && !isSafeSwipeOrigin(dx)) return false;
         gestureMode = host.shellTopLevelIndex() >= 0 ? MODE_TOP_LEVEL : MODE_BACK;
         gestureDirection = gestureMode == MODE_BACK || dx >= 0.0f ? -1 : 1;
         dragChild = currentShellChild();
@@ -213,9 +219,11 @@ final class BackSwipeFrameLayout extends FrameLayout {
         if (dragChild == null) return;
         int width = Math.max(1, getWidth());
         float exitSign = -gestureDirection;
+        float visualDx = host.compactShellMotion()
+                ? dx * MotionSpec.WATCH_DRAG_RESPONSE : dx;
         float offset = exitSign < 0.0f
-                ? Math.max(-width, Math.min(0.0f, dx))
-                : Math.max(0.0f, Math.min(width, dx));
+                ? Math.max(-width, Math.min(0.0f, visualDx))
+                : Math.max(0.0f, Math.min(width, visualDx));
         dragChild.setTranslationX(offset);
         dragChild.setAlpha(1.0f);
         if (previewChild != null) {
@@ -230,10 +238,13 @@ final class BackSwipeFrameLayout extends FrameLayout {
         long duration = Math.max(1L, event.getEventTime() - startTime);
         float velocity = dx * 1000.0f / duration;
         float offset = dragChild == null ? 0.0f : dragChild.getTranslationX();
+        boolean compact = host.compactShellMotion();
         boolean enoughDistance = Math.abs(offset) > Math.max(host.shellDp(52),
-                getWidth() * 0.24f);
-        boolean enoughVelocity = -gestureDirection * velocity > host.shellDp(300);
-        if (Math.abs(dx) <= Math.abs(dy) * 1.1f
+                getWidth() * (compact ? MotionSpec.WATCH_COMMIT_DISTANCE_RATIO : 0.24f));
+        boolean enoughVelocity = -gestureDirection * velocity
+                > host.shellDp(compact ? MotionSpec.WATCH_COMMIT_VELOCITY_DP : 300);
+        if (Math.abs(dx) <= Math.abs(dy) * (compact
+                ? MotionSpec.WATCH_AXIS_RATIO : 1.1f)
                 || (!enoughDistance && !enoughVelocity)) {
             settleShellDrag(0.0f, this::resetShellDrag);
             return;
@@ -260,7 +271,10 @@ final class BackSwipeFrameLayout extends FrameLayout {
             return;
         }
         int distance = Math.round(Math.abs(fromX - targetX));
-        int duration = Math.max(120, Math.min(260, distance / 3));
+        int duration = host.compactShellMotion()
+                ? Math.max((int) MotionSpec.WATCH_SETTLE_MIN_MS,
+                Math.min((int) MotionSpec.WATCH_SETTLE_MAX_MS, distance / 2))
+                : Math.max(120, Math.min(260, distance / 3));
         swipeAnimator = ValueAnimator.ofFloat(fromX, targetX);
         swipeAnimator.setDuration(duration);
         swipeAnimator.setInterpolator(MotionSpec.EASE_OUT);
@@ -345,6 +359,14 @@ final class BackSwipeFrameLayout extends FrameLayout {
         swipeAnimator.removeAllListeners();
         swipeAnimator.cancel();
         swipeAnimator = null;
+    }
+
+    private boolean isSafeSwipeOrigin(float dx) {
+        int width = Math.max(1, getWidth());
+        int topLevel = host.shellTopLevelIndex();
+        if (topLevel < 0) return startX <= width * 0.40f;
+        if (dx < 0.0f) return startX >= width * 0.54f;
+        return startX <= width * 0.46f;
     }
 
     void cancelMotion() {

@@ -34,6 +34,7 @@ final class CheckinCenterClient {
     private static final int STANDARD_READ_TIMEOUT_MS = 25_000;
     private static final int SIGNING_READ_TIMEOUT_MS = 125_000;
     private static final int MAX_RESPONSE_BYTES = 64 * 1024;
+    private static final int MAX_QR_BYTES = 512 * 1024;
 
     enum Operation {
         PAIR_START,
@@ -47,7 +48,11 @@ final class CheckinCenterClient {
         STATUS,
         TASK_SETTINGS,
         RUN_NOW,
-        REVOKE
+        REVOKE,
+        BILLING_CREATE,
+        BILLING_STATUS,
+        BILLING_QR,
+        BILLING_CLAIM
     }
 
     interface Callback<T> {
@@ -116,6 +121,10 @@ final class CheckinCenterClient {
 
         boolean captchaRequired() {
             return "captcha_required".equals(diagnosticCode) && !captchaUri.isEmpty();
+        }
+
+        boolean subscriptionRequired() {
+            return "subscription_required".equals(diagnosticCode) || statusCode == 402;
         }
     }
 
@@ -194,11 +203,14 @@ final class CheckinCenterClient {
         final Account account;
         final Task task;
         final LastRun lastRun;
+        final CheckinBilling.Membership membership;
 
-        Status(Account account, Task task, LastRun lastRun) {
+        Status(Account account, Task task, LastRun lastRun,
+               CheckinBilling.Membership membership) {
             this.account = account;
             this.task = task;
             this.lastRun = lastRun;
+            this.membership = membership;
         }
     }
 
@@ -636,7 +648,71 @@ final class CheckinCenterClient {
                         throw protocolError(Operation.REVOKE);
                     }
                     return Boolean.TRUE;
-                }));
+                 }));
+    }
+
+    void createBillingOrder(String deviceToken, Callback<CheckinBilling.Order> callback) {
+        billingToken(deviceToken, Operation.BILLING_CREATE, callback,
+                token -> submit(callback, () -> request(Operation.BILLING_CREATE, "POST",
+                        "/billing/orders", token, null, CheckinBilling::parseOrder)));
+    }
+
+    void getBillingOrder(String deviceToken, String orderId,
+                         Callback<CheckinBilling.Order> callback) {
+        if (!CheckinBilling.validOrderId(orderId)) {
+            deliverError(callback, protocolError(Operation.BILLING_STATUS));
+            return;
+        }
+        billingToken(deviceToken, Operation.BILLING_STATUS, callback,
+                token -> submit(callback, () -> request(Operation.BILLING_STATUS, "GET",
+                        "/billing/orders/" + orderId, token, null, CheckinBilling::parseOrder)));
+    }
+
+    void loadBillingQr(String deviceToken, String orderId, Callback<byte[]> callback) {
+        if (!CheckinBilling.validOrderId(orderId)) {
+            deliverError(callback, protocolError(Operation.BILLING_QR));
+            return;
+        }
+        billingToken(deviceToken, Operation.BILLING_QR, callback,
+                token -> submit(callback, () -> requestBytes(Operation.BILLING_QR,
+                        "/billing/orders/" + orderId + "/qr", token)));
+    }
+
+    void submitBillingClaim(String deviceToken, String orderId, String paymentReference,
+                            Callback<CheckinBilling.Review> callback) {
+        if (!CheckinBilling.validOrderId(orderId)
+                || !CheckinBilling.validPaymentReference(paymentReference)) {
+            deliverError(callback, new ApiError(Operation.BILLING_CLAIM, 422,
+                    "支付订单号格式不正确"));
+            return;
+        }
+        JSONObject body = new JSONObject();
+        try {
+            body.put("payment_reference", paymentReference.trim());
+        } catch (JSONException impossible) {
+            deliverError(callback, protocolError(Operation.BILLING_CLAIM));
+            return;
+        }
+        billingToken(deviceToken, Operation.BILLING_CLAIM, callback,
+                token -> submit(callback, () -> request(Operation.BILLING_CLAIM, "POST",
+                        "/billing/orders/" + orderId + "/claim", token, body,
+                        CheckinBilling::parseClaim)));
+    }
+
+    private <T> void billingToken(String deviceToken, Operation operation,
+                                  Callback<T> callback, TokenCall<T> call) {
+        final String token;
+        try {
+            token = requirePrefix(deviceToken, "ccdevice1_", operation);
+        } catch (ApiError error) {
+            deliverError(callback, error);
+            return;
+        }
+        call.run(token);
+    }
+
+    private interface TokenCall<T> {
+        void run(String token);
     }
 
     static URI requireTrustedPairingUri(String value) throws ApiError {
@@ -705,24 +781,71 @@ final class CheckinCenterClient {
         }
     }
 
+    private byte[] requestBytes(Operation operation, String path, String token)
+            throws ApiError {
+        HttpsURLConnection connection = null;
+        long startedAt = SystemClock.elapsedRealtime();
+        try {
+            URI uri = requireTrustedUri(API_BASE + path, true, operation);
+            URL url = uri.toURL();
+            connection = (HttpsURLConnection) url.openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setUseCaches(false);
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(STANDARD_READ_TIMEOUT_MS);
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Accept", "image/png");
+            connection.setRequestProperty("User-Agent", "heybox-Lite/" + BuildConfig.VERSION_NAME);
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+            int status = connection.getResponseCode();
+            if (status >= 300 && status < 400) {
+                throw new ApiError(operation, status, "签到服务拒绝了跳转响应");
+            }
+            if (status < 200 || status >= 300) {
+                String response = readResponse(connection, status, operation);
+                throw statusError(operation, status, response);
+            }
+            String contentType = connection.getContentType();
+            if (contentType == null || !contentType.toLowerCase(Locale.ROOT)
+                    .startsWith("image/png")) {
+                throw protocolError(operation);
+            }
+            return readBytes(connection.getInputStream(), MAX_QR_BYTES, operation);
+        } catch (ApiError error) {
+            logFailure(error, startedAt);
+            throw error;
+        } catch (IOException error) {
+            ApiError classified = networkError(operation, error);
+            logFailure(classified, startedAt);
+            throw classified;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
     private static String readResponse(HttpsURLConnection connection, int status,
                                        Operation operation)
             throws IOException, ApiError {
         InputStream input = status >= 200 && status < 400
                 ? connection.getInputStream() : connection.getErrorStream();
         if (input == null) return "";
+        return new String(readBytes(input, MAX_RESPONSE_BYTES, operation), "UTF-8");
+    }
+
+    private static byte[] readBytes(InputStream input, int maxBytes, Operation operation)
+            throws IOException, ApiError {
         try (InputStream stream = input; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[4096];
             int total = 0;
             int count;
             while ((count = stream.read(buffer)) != -1) {
                 total += count;
-                if (total > MAX_RESPONSE_BYTES) {
+                if (total > maxBytes) {
                     throw new ApiError(operation, 0, "签到服务响应异常");
                 }
                 output.write(buffer, 0, count);
             }
-            return output.toString("UTF-8");
+            return output.toByteArray();
         }
     }
 
@@ -790,7 +913,7 @@ final class CheckinCenterClient {
                 runJson.optString("status", ""), runJson.optString("summary", ""),
                 runJson.optString("started_at", ""), runJson.optString("finished_at", ""),
                 parseCheckinResult(runJson.optJSONObject("check_in")));
-        return new Status(account, task, run);
+        return new Status(account, task, run, CheckinBilling.parseMembership(value));
     }
 
     private static Task parseTask(JSONObject taskJson) {
@@ -938,6 +1061,9 @@ final class CheckinCenterClient {
                         ? "签到服务账号或密码错误"
                         : "签到服务连接已失效，请重新连接";
                 break;
+            case 402:
+                message = "小黑盒签到会员已到期，请先续费";
+                break;
             case 403:
                 message = operation == Operation.PAIR_REGISTER
                         || operation == Operation.REGISTRATION_EMAIL
@@ -953,6 +1079,10 @@ final class CheckinCenterClient {
                         || operation == Operation.SMS_SUBMIT
                         || operation == Operation.PASSWORD_LOGIN) {
                     message = "服务器暂未支持手机号登录，请稍后重试";
+                } else if (operation == Operation.BILLING_STATUS
+                        || operation == Operation.BILLING_QR
+                        || operation == Operation.BILLING_CLAIM) {
+                    message = "支付订单不存在";
                 } else {
                     message = "签到任务尚未配置";
                 }
@@ -974,8 +1104,14 @@ final class CheckinCenterClient {
                 }
                 break;
             case 410:
-                message = operation == Operation.SMS_SUBMIT
-                        ? "短信验证码已过期，请重新发送" : "配对已过期，请重新连接";
+                if (operation == Operation.SMS_SUBMIT) {
+                    message = "短信验证码已过期，请重新发送";
+                } else if (operation == Operation.BILLING_QR
+                        || operation == Operation.BILLING_STATUS) {
+                    message = "支付订单已过期，请重新生成";
+                } else {
+                    message = "配对已过期，请重新连接";
+                }
                 break;
             case 413:
                 message = "签到资料异常，请更新客户端后重试";
@@ -997,6 +1133,8 @@ final class CheckinCenterClient {
                     message = "手机号或密码错误，登录失败";
                 } else if (operation == Operation.TASK_SETTINGS) {
                     message = "签到时间或随机偏移无效";
+                } else if (operation == Operation.BILLING_CLAIM) {
+                    message = "支付订单号格式不正确";
                 } else {
                     message = "签到服务请求无效";
                 }
@@ -1056,6 +1194,8 @@ final class CheckinCenterClient {
     static String serverErrorCode(String response) {
         try {
             String error = new JSONObject(response).optString("error", "");
+            String code = new JSONObject(response).optString("code", "");
+            if ("subscription_required".equals(code)) return code;
             if ("captcha_required".equals(error)) return "captcha_required";
             if ("registration email code is invalid".equals(error)) {
                 return "registration_email_code_invalid";

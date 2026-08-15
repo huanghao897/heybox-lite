@@ -40,6 +40,7 @@ public final class CheckinCaptchaActivity extends Activity {
     static final String EXTRA_RANDSTR = "checkin_captcha_randstr";
     static final String EXTRA_ERROR = "checkin_captcha_error";
     static final String EXTRA_DIAGNOSTIC = "checkin_captcha_diagnostic";
+    static final String EXTRA_ROUND_LAYOUT = "checkin_captcha_round_layout";
 
     private static final long TIMEOUT_MS = 180_000L;
     private static final Object WEBVIEW_INIT_LOCK = new Object();
@@ -52,11 +53,17 @@ public final class CheckinCaptchaActivity extends Activity {
     private ImageButton retryButton;
     private String verificationUri = "";
     private String lastDiagnosticCode = "";
+    private boolean roundLayout;
     private boolean finished;
 
     static Intent intent(Context context, String verificationUri) {
+        return intent(context, verificationUri, false);
+    }
+
+    static Intent intent(Context context, String verificationUri, boolean roundLayout) {
         return new Intent(context, CheckinCaptchaActivity.class)
-                .putExtra(EXTRA_URI, verificationUri);
+                .putExtra(EXTRA_URI, verificationUri)
+                .putExtra(EXTRA_ROUND_LAYOUT, roundLayout);
     }
 
     @Override
@@ -65,6 +72,8 @@ public final class CheckinCaptchaActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_SECURE);
         setFinishOnTouchOutside(false);
+        roundLayout = getIntent().getBooleanExtra(EXTRA_ROUND_LAYOUT, false)
+                || isSystemRoundScreen();
         verificationUri = getIntent().getStringExtra(EXTRA_URI);
         if (!CheckinCaptchaContract.isTrustedPageUri(verificationUri)) {
             finishError("安全验证地址无效", "untrusted_uri");
@@ -146,11 +155,15 @@ public final class CheckinCaptchaActivity extends Activity {
         WindowManager.LayoutParams attributes = getWindow().getAttributes();
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
-        int availableWidth = Math.max(dp(120), screenWidth - dp(12));
-        int availableHeight = Math.max(dp(160), screenHeight - dp(20));
-        int width = Math.min(availableWidth, dp(420));
+        int edgeInset = roundLayout ? 4 : 12;
+        int bottomInset = roundLayout ? 4 : 20;
+        int availableWidth = Math.max(dp(120), screenWidth - dp(edgeInset));
+        int availableHeight = Math.max(dp(160), screenHeight - dp(bottomInset));
+        int width = roundLayout ? availableWidth : Math.min(availableWidth, dp(420));
         int preferredHeight = Math.min(Math.round(screenHeight * 0.72f), dp(520));
-        int height = Math.min(availableHeight, Math.max(dp(210), preferredHeight));
+        int height = roundLayout
+                ? availableHeight
+                : Math.min(availableHeight, Math.max(dp(210), preferredHeight));
         attributes.width = width;
         attributes.height = height;
         attributes.gravity = Gravity.CENTER;
@@ -185,6 +198,9 @@ public final class CheckinCaptchaActivity extends Activity {
                 settings.setSafeBrowsingEnabled(true);
             }
             webView.setBackgroundColor(Color.WHITE);
+            webView.setVerticalScrollBarEnabled(true);
+            webView.setHorizontalScrollBarEnabled(false);
+            webView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
             webView.setWebViewClient(new CaptchaWebViewClient());
             webView.setWebChromeClient(new WebChromeClient() {
                 @Override
@@ -361,5 +377,9 @@ public final class CheckinCaptchaActivity extends Activity {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private boolean isSystemRoundScreen() {
+        return RoundLayoutMetrics.isRoundDisplay(this);
     }
 }

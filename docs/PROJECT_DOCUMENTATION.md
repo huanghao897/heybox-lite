@@ -271,8 +271,9 @@ heybox-admin/
 | `error_logs` | 服务错误记录 |
 | `presence` / `presence_daily` | 按 **IP** 的在线心跳与每日活跃 |
 | `presence_users` / `presence_users_daily` | 按**用户/设备身份**聚合的在线数据与每日活跃 |
+| `presence_accounts` | 从 App 心跳中提取并按小黑盒 `userId` 永久去重的账号统计 |
 
-> **在线统计为双轨**：`presence`（IP 级）用于兜底与访客视角；`presence_users`（用户/设备级，2.0.4 起 App 上报公开身份后启用）用于更精准的「当前在线 / 注册用户数 / 累计设备 / 今日活跃」。管理后台的用户视图主要基于 `presence_users`。2.0.5 起客户端每 10 分钟发送一次心跳，服务端在线窗口为 15 分钟。
+> **在线统计为双轨**：`presence`（IP 级）用于兜底与访客视角；`presence_users` 保存按来源隔离的心跳记录，`presence_accounts` 则按心跳中的数字型小黑盒 `userId` 去重。后台的「小黑盒账号」不是签到站注册人数，也不是经过服务端认证的账号数；它只表示曾由匹配版本的 HeyBox Lite App 心跳上报过的不同小黑盒 ID。2.0.5 起客户端每 10 分钟发送一次心跳，服务端在线窗口为 15 分钟。
 
 ### 9.4 公开接口
 

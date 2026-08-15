@@ -299,7 +299,7 @@ final class ProfilePage {
     }
 
     private Button commandButton(String value, int iconResource) {
-        Button button = new Button(this.activity);
+        Button button = UiComponents.button(this.activity);
         button.setText(value);
         button.setTextSize(sp(12.0f));
         button.setTextColor(this.tokens.accent);

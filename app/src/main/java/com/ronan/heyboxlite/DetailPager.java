@@ -26,6 +26,7 @@ final class DetailPager extends FrameLayout {
     private static final int PAGE_COMMENTS = 1;
     private final Dp dimensions;
     private final Listener listener;
+    private final boolean compactMotion;
     private final int touchSlop;
     private float startX;
     private float startY;
@@ -38,9 +39,10 @@ final class DetailPager extends FrameLayout {
     private boolean realReturnView;
     private ValueAnimator settleAnimator;
 
-    DetailPager(Context context, Dp dimensions, Listener listener) {
+    DetailPager(Context context, Dp dimensions, boolean compactMotion, Listener listener) {
         super(context);
         this.dimensions = dimensions;
+        this.compactMotion = compactMotion;
         this.listener = listener;
         this.touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
     }
@@ -120,8 +122,11 @@ final class DetailPager extends FrameLayout {
                 float dx = event.getX() - this.startX;
                 float dy = event.getY() - this.startY;
                 if ((this.currentPage != PAGE_ARTICLE || dx <= 0.0f || this.listener.canSwipeBack())
-                        && Math.abs(dx) > this.touchSlop * 2
-                        && Math.abs(dx) > Math.abs(dy) * 1.15f) {
+                        && Math.abs(dx) > this.touchSlop * (this.compactMotion
+                        ? MotionSpec.WATCH_TOUCH_SLOP_MULTIPLIER : 2)
+                        && Math.abs(dx) > Math.abs(dy) * (this.compactMotion
+                        ? MotionSpec.WATCH_AXIS_RATIO : 1.15f)
+                        && (!this.compactMotion || safeOrigin(dx))) {
                     this.dragging = true;
                     getParent().requestDisallowInterceptTouchEvent(true);
                 }
@@ -141,18 +146,27 @@ final class DetailPager extends FrameLayout {
                 this.startY = event.getY();
                 this.startTime = event.getEventTime();
                 this.startScrollX = getScrollX();
-                this.dragging = true;
+                this.dragging = !this.compactMotion;
                 this.returning = false;
                 break;
             case MotionEvent.ACTION_UP:
-                finishHorizontalDrag(event);
+                if (this.dragging) finishHorizontalDrag(event);
                 performClick();
                 break;
             case MotionEvent.ACTION_MOVE:
-                dragTo(event.getX() - this.startX);
+                float dx = event.getX() - this.startX;
+                float dy = event.getY() - this.startY;
+                if (!this.dragging && this.compactMotion
+                        && Math.abs(dx) > this.touchSlop * MotionSpec.WATCH_TOUCH_SLOP_MULTIPLIER
+                        && Math.abs(dx) > Math.abs(dy) * MotionSpec.WATCH_AXIS_RATIO
+                        && safeOrigin(dx)) {
+                    this.dragging = true;
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                }
+                if (this.dragging) dragTo(dx);
                 break;
             case MotionEvent.ACTION_CANCEL:
-                settleToPage(this.currentPage, true);
+                if (this.dragging) settleToPage(this.currentPage, true);
                 this.dragging = false;
                 this.returning = false;
                 break;
@@ -165,7 +179,10 @@ final class DetailPager extends FrameLayout {
     private void dragTo(float dx) {
         int width = Math.max(1, getWidth());
         int min = this.currentPage == PAGE_ARTICLE && this.listener.canSwipeBack() ? -width : 0;
-        scrollTo(Math.max(min, Math.min(width, this.startScrollX - Math.round(dx))), 0);
+        float visualDx = this.compactMotion
+                ? dx * MotionSpec.WATCH_DRAG_RESPONSE : dx;
+        scrollTo(Math.max(min, Math.min(width,
+                this.startScrollX - Math.round(visualDx))), 0);
     }
 
     private void finishHorizontalDrag(MotionEvent event) {
@@ -174,15 +191,22 @@ final class DetailPager extends FrameLayout {
         long duration = Math.max(1L, event.getEventTime() - this.startTime);
         float velocity = dx * 1000.0f / duration;
         if (this.currentPage == PAGE_ARTICLE && getScrollX() < 0) {
-            boolean enoughDistance = Math.abs(getScrollX()) > Math.max(this.dimensions.dp(52), width * 0.24f);
-            boolean enoughVelocity = velocity > this.dimensions.dp(320);
+            boolean enoughDistance = Math.abs(getScrollX()) > Math.max(
+                    this.dimensions.dp(52),
+                    width * (this.compactMotion
+                            ? MotionSpec.WATCH_COMMIT_DISTANCE_RATIO : 0.24f));
+            boolean enoughVelocity = velocity > this.dimensions.dp(
+                    this.compactMotion ? MotionSpec.WATCH_COMMIT_VELOCITY_DP : 320);
             this.dragging = false;
             if (enoughDistance || enoughVelocity) settleToReturn();
             else settleToPage(PAGE_ARTICLE, true);
             return;
         }
         int target = getScrollX() > width / 2 ? PAGE_COMMENTS : PAGE_ARTICLE;
-        if (Math.abs(velocity) > this.dimensions.dp(360)) target = velocity < 0.0f ? PAGE_COMMENTS : PAGE_ARTICLE;
+        if (Math.abs(velocity) > this.dimensions.dp(this.compactMotion
+                ? MotionSpec.WATCH_COMMIT_VELOCITY_DP : 360)) {
+            target = velocity < 0.0f ? PAGE_COMMENTS : PAGE_ARTICLE;
+        }
         this.dragging = false;
         settleToPage(target, true);
     }
@@ -203,7 +227,10 @@ final class DetailPager extends FrameLayout {
             return;
         }
         this.settleAnimator = ValueAnimator.ofInt(from, destination);
-        this.settleAnimator.setDuration(Math.max(160, Math.min(300, distance / 3)));
+        this.settleAnimator.setDuration(this.compactMotion
+                ? Math.max((int) MotionSpec.WATCH_SETTLE_MIN_MS,
+                Math.min((int) MotionSpec.WATCH_SETTLE_MAX_MS, distance / 2))
+                : Math.max(160, Math.min(300, distance / 3)));
         this.settleAnimator.setInterpolator(new DecelerateInterpolator());
         this.settleAnimator.addUpdateListener(value -> scrollTo((Integer) value.getAnimatedValue(), 0));
         this.settleAnimator.start();
@@ -226,7 +253,10 @@ final class DetailPager extends FrameLayout {
         }
         int distance = Math.abs(destination - from);
         this.settleAnimator = ValueAnimator.ofInt(from, destination);
-        this.settleAnimator.setDuration(Math.max(150, Math.min(280, distance / 3)));
+        this.settleAnimator.setDuration(this.compactMotion
+                ? Math.max((int) MotionSpec.WATCH_SETTLE_MIN_MS,
+                Math.min((int) MotionSpec.WATCH_SETTLE_MAX_MS, distance / 2))
+                : Math.max(150, Math.min(280, distance / 3)));
         this.settleAnimator.setInterpolator(new DecelerateInterpolator());
         this.settleAnimator.addUpdateListener(value -> scrollTo((Integer) value.getAnimatedValue(), 0));
         this.settleAnimator.addListener(new AnimatorListenerAdapter() {
@@ -247,6 +277,13 @@ final class DetailPager extends FrameLayout {
         this.returning = false;
         this.settleAnimator.cancel();
         this.settleAnimator = null;
+    }
+
+    private boolean safeOrigin(float dx) {
+        if (currentPage == PAGE_ARTICLE && dx > 0.0f) {
+            return startX <= Math.max(dimensions.dp(30), getWidth() * 0.40f);
+        }
+        return currentPage != PAGE_ARTICLE || startX >= getWidth() * 0.40f;
     }
 
     void cancelMotion() {

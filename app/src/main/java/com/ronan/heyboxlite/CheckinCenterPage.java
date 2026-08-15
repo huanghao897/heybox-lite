@@ -4,7 +4,7 @@ import android.app.Activity;
 import android.app.TimePickerDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.os.Build;
+import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -16,15 +16,16 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Switch;
 import android.widget.TextView;
 
 import java.util.Locale;
 
 final class CheckinCenterPage {
     interface Host {
+        void closePage();
         void openCaptcha(String verificationUri);
         void confirmRevoke(Runnable confirmed);
         void showMessage(String message);
@@ -51,6 +52,8 @@ final class CheckinCenterPage {
         UNPAIRED,
         PAIRING,
         MOBILE_LOGIN,
+        TASK_SETTINGS,
+        BILLING,
         SYNCING,
         CONNECTED,
         RUNNING,
@@ -67,6 +70,7 @@ final class CheckinCenterPage {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final float scale;
     private final FrameLayout root;
+    private final SettingsUi settingsUi;
     private final Runnable pollTask = this::pollPairing;
     private final Runnable countdownTask = this::updatePairingCountdown;
     private final Runnable smsCountdownTask = this::updateSmsCountdown;
@@ -102,7 +106,7 @@ final class CheckinCenterPage {
     private Button smsSubmitButton;
     private Button passwordSubmitButton;
     private TextView smsStatus;
-    private Switch taskEnabledSwitch;
+    private View taskEnabledSwitch;
     private View taskTimeButton;
     private Button taskOffsetMinusButton;
     private Button taskOffsetPlusButton;
@@ -117,6 +121,7 @@ final class CheckinCenterPage {
     private String captchaCode = "";
     private String captchaPassword = "";
     private boolean taskSettingsInFlight;
+    private CheckinPaymentPage paymentPage;
     private boolean closed;
 
     CheckinCenterPage(Activity activity, SessionStore session,
@@ -127,9 +132,12 @@ final class CheckinCenterPage {
         this.tokens = tokens;
         this.host = host;
         this.scale = session.uiScale() / 100.0f;
-        this.roundLayout = session.roundScreen()
-                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                && activity.getResources().getConfiguration().isScreenRound());
+        this.roundLayout = session.usesRoundLayout();
+        int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+        int roundHeaderInset = roundLayout
+                ? RoundLayoutMetrics.headerInnerInset(screenWidth) : 0;
+        this.settingsUi = new SettingsUi(activity, session, tokens, roundLayout,
+                roundHeaderInset, handler, this::navigateBack);
         this.root = new FrameLayout(activity);
         this.root.setBackgroundColor(tokens.background);
         this.state = coordinator.paired() ? State.SYNCING : State.UNPAIRED;
@@ -141,8 +149,16 @@ final class CheckinCenterPage {
         return root;
     }
 
+    private void navigateBack() {
+        if (!handleBack()) host.closePage();
+    }
+
     void refresh() {
         if (closed) return;
+        if (state == State.BILLING && paymentPage != null) {
+            paymentPage.onResume();
+            return;
+        }
         if (!coordinator.paired()) {
             state = State.UNPAIRED;
             status = null;
@@ -157,6 +173,14 @@ final class CheckinCenterPage {
     }
 
     boolean handleBack() {
+        if (state == State.BILLING && paymentPage != null) {
+            return paymentPage.handleBack();
+        }
+        if (state == State.TASK_SETTINGS) {
+            state = status == null ? State.SYNCING : State.CONNECTED;
+            render();
+            return true;
+        }
         if (state == State.MOBILE_LOGIN) {
             finishMobileLogin();
             return true;
@@ -169,6 +193,7 @@ final class CheckinCenterPage {
     }
 
     void onResume() {
+        if (paymentPage != null && state == State.BILLING) paymentPage.onResume();
         if (pairing != null) {
             schedulePoll(0L);
             handler.removeCallbacks(countdownTask);
@@ -185,6 +210,7 @@ final class CheckinCenterPage {
     }
 
     void onPause() {
+        if (paymentPage != null) paymentPage.onPause();
         handler.removeCallbacks(pollTask);
         handler.removeCallbacks(countdownTask);
         handler.removeCallbacks(smsCountdownTask);
@@ -583,13 +609,22 @@ final class CheckinCenterPage {
             renderMobileLogin();
             return;
         }
+        if (state == State.BILLING && paymentPage != null) {
+            root.addView(paymentPage.view(), match());
+            return;
+        }
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
         LinearLayout page = column(tokens.background);
         applyPageInsets(page, false);
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
-        if (!errorMessage.isEmpty()) page.addView(errorBanner(errorMessage));
+        page.addView(settingsUi.topCard(
+                state == State.TASK_SETTINGS ? "签到设置" : "小黑盒签到"));
+        if (!errorMessage.isEmpty()) addTop(page, errorBanner(errorMessage), 6);
         if (!coordinator.paired()) renderUnpaired(page);
+        else if (state == State.TASK_SETTINGS && status != null) {
+            renderTaskSettings(page);
+        }
         else if (state == State.SYNCING || state == State.ERROR || status == null) {
             renderLoading(page);
         } else {
@@ -600,168 +635,187 @@ final class CheckinCenterPage {
 
     private void renderUnpaired(LinearLayout page) {
         LinearLayout card = card();
-        card.addView(heading("小黑盒自动签到"));
-        TextView stateText = body(coordinator.supported() ? "未连接签到服务"
-                : "当前系统不支持安全配对", tokens.muted);
-        addTop(card, stateText, 5);
-        TextView description = body("连接后，服务器会按照设定时间完成每日小黑盒签到。",
-                tokens.text);
-        description.setLineSpacing(0f, 1.16f);
-        addTop(card, description, 12);
-        addTop(card, body("可直接登录或注册签到服务账号，无需打开浏览器。", tokens.muted), 8);
+        String subtitle = coordinator.supported()
+                ? "连接后由服务器按计划执行"
+                : "当前设备不支持安全连接";
+        card.addView(statusHeader(R.drawable.il_calendar, "未连接", subtitle, tokens.text));
+        addTop(card, body("登录签到服务后，再连接需要签到的小黑盒账号。",
+                tokens.muted), 12);
         Button connect = primaryButton("连接签到服务");
         connect.setEnabled(coordinator.supported());
         connect.setOnClickListener(view -> {
             UiComponents.press(view);
             beginPairing();
         });
-        addTop(card, connect, 16);
+        addTop(card, connect, 13);
         page.addView(card);
     }
 
     private void renderLoading(LinearLayout page) {
         LinearLayout card = card();
-        card.addView(heading(state == State.SYNCING ? "正在连接签到服务" : "小黑盒自动签到"));
-        String message = state == State.SYNCING ? "正在读取账号和签到计划"
+        String title = state == State.SYNCING ? "正在连接" : "暂时无法连接";
+        String message = state == State.SYNCING ? "正在读取账号与签到计划"
                 : state == State.ERROR ? "可重新加载状态，或撤销此设备"
                 : "正在处理签到任务";
-        addTop(card, body(message, tokens.muted), 6);
+        card.addView(statusHeader(R.drawable.il_refresh, title, message,
+                state == State.ERROR ? tokens.muted : tokens.text));
         page.addView(card);
         if (state == State.ERROR) addRecoveryActions(page);
     }
 
     private void renderConnected(LinearLayout page) {
         boolean accountConnected = "connected".equalsIgnoreCase(status.account.state);
-        LinearLayout card = card();
-        card.addView(heading("小黑盒自动签到"));
+        LinearLayout statusCard = card();
         String stateLabel = !accountConnected ? "等待手机号登录"
                 : state == State.RUNNING ? "执行中" : taskStateLabel(status.task);
-        addTop(card, body(stateLabel, state == State.RUNNING ? tokens.accent
-                : accountConnected && status.task.active() ? tokens.text : tokens.muted), 5);
-        addTop(card, infoRow("小黑盒账号", accountConnected
-                ? accountLabel(status.account) : "尚未登录"), 14);
+        int stateColor = state == State.RUNNING || accountConnected && status.task.active()
+                ? tokens.text : tokens.muted;
+        statusCard.addView(statusHeader(R.drawable.il_calendar, stateLabel,
+                accountConnected ? accountLabel(status.account) : "尚未连接小黑盒账号",
+                stateColor));
         if (!accountConnected) {
-            addTop(card, body("自动签到必须使用手机号验证码或密码登录小黑盒。Lite 的二维码登录仅用于浏览，不会上传到签到服务。",
-                    tokens.text), 10);
-            page.addView(card);
-            addMobileLoginCard(page, false);
-            Button revoke = ghostButton("撤销此设备");
-            revoke.setOnClickListener(view -> requestRevoke());
-            addTop(page, revoke, 9);
+            addTop(statusCard, body("自动签到需要单独使用手机号登录小黑盒。",
+                    tokens.muted), 11);
+            Button login = primaryButton("手机号登录");
+            login.setOnClickListener(view -> {
+                UiComponents.press(view);
+                openMobileLogin();
+            });
+            addTop(statusCard, login, 12);
+            page.addView(statusCard);
+
+            CheckinBilling.Membership membership = status.membership;
+            settingsUi.addSection(page, "服务");
+            LinearLayout service = settingsUi.list();
+            if (membership != null) {
+                if (!membership.admin && "paid".equals(membership.mode)) {
+                    settingsUi.addEntry(service, "会员权益", null,
+                            membershipLabel(membership), R.drawable.il_qr,
+                            () -> openBilling(membership));
+                } else {
+                    settingsUi.addInfoEntry(service, "会员权益", null,
+                            membershipLabel(membership), R.drawable.il_qr);
+                }
+            }
+            settingsUi.addEntry(service, "撤销此设备", null, null,
+                    R.drawable.ic_logout, this::requestRevoke);
+            page.addView(service);
             return;
         }
-        addTop(card, infoRow("服务器签到", taskEnabledLabel(status.task)), 2);
-        addTop(card, infoRow("计划时间", scheduleLabel(status.task)), 2);
-        addTop(card, infoRow("随机偏移", offsetLabel(status.task.offsetMinutes)), 2);
-        if (!status.task.windowStart.isEmpty() || !status.task.windowEnd.isEmpty()) {
-            addTop(card, infoRow("执行区间", windowLabel(status.task)), 2);
-        }
-        page.addView(card);
-
-        addTaskSettingsCard(page);
-
-        LinearLayout latest = card();
-        latest.addView(sectionTitle("最近一次签到"));
-        if (status.lastRun == null) {
-            addTop(latest, body("暂无执行记录", tokens.muted), 8);
-        } else {
-            addTop(latest, infoRow("结果", runStatusLabel(status.lastRun)), 8);
-            addTop(latest, infoRow("时间", runTime(status.lastRun)), 2);
-            String reward = rewardLabel(status.lastRun.checkIn);
-            if (!reward.isEmpty()) {
-                addTop(latest, infoRow("本次获得", reward), 2);
-            }
-            String summaryText = runSummary(status.lastRun);
-            if (!summaryText.isEmpty()) {
-                TextView summary = body(summaryText, tokens.text);
-                summary.setLineSpacing(0f, 1.15f);
-                addTop(latest, summary, 9);
-            }
-        }
-        addTop(page, latest, 9);
-
-        addMobileLoginCard(page, true);
-
+        addTop(statusCard, scheduleMetric(status.task), 13);
         Button run = primaryButton(state == State.RUNNING ? "正在签到" : "立即签到");
         run.setEnabled(state != State.RUNNING && status.task.active());
         run.setOnClickListener(view -> {
             UiComponents.press(view);
             runNow();
         });
-        addTop(page, run, 12);
-        Button revoke = ghostButton("撤销此设备");
+        addTop(statusCard, run, 12);
+        page.addView(statusCard);
+
+        settingsUi.addSection(page, "管理");
+        LinearLayout management = settingsUi.list();
+        settingsUi.addEntry(management, "签到设置", null,
+                scheduleLabel(status.task) + " · " + offsetLabel(status.task.offsetMinutes),
+                R.drawable.il_settings, this::openTaskSettings);
+        CheckinBilling.Membership membership = status.membership;
+        if (membership != null) {
+            if (!membership.admin && "paid".equals(membership.mode)) {
+                settingsUi.addEntry(management, "会员权益", null,
+                        membershipLabel(membership), R.drawable.il_qr,
+                        () -> openBilling(membership));
+            } else {
+                settingsUi.addInfoEntry(management, "会员权益", null,
+                        membershipLabel(membership), R.drawable.il_qr);
+            }
+        }
+        settingsUi.addEntry(management, "更换账号", null, "手机号登录",
+                R.drawable.il_person, this::openMobileLogin);
+        page.addView(management);
+
+        settingsUi.addSection(page, "最近签到");
+        LinearLayout latest = settingsUi.list();
+        if (status.lastRun == null) {
+            settingsUi.addInfoEntry(latest, "暂无记录", null, null,
+                    R.drawable.il_history);
+        } else {
+            String reward = rewardLabel(status.lastRun.checkIn);
+            String result = runStatusLabel(status.lastRun);
+            if (!reward.isEmpty()) result += " · " + reward;
+            settingsUi.addInfoEntry(latest, result, runSummary(status.lastRun),
+                    runTime(status.lastRun), R.drawable.il_history);
+        }
+        page.addView(latest);
+
+        Button revoke = quietButton("撤销此设备");
         revoke.setEnabled(state != State.RUNNING);
-        revoke.setOnClickListener(view -> {
-            UiComponents.press(view);
-            requestRevoke();
-        });
-        addTop(page, revoke, 7);
+        revoke.setOnClickListener(view -> requestRevoke());
+        addTop(page, revoke, 8);
     }
 
     private void addTaskSettingsCard(LinearLayout page) {
         CheckinCenterClient.Task task = status.task;
-        LinearLayout settings = card();
-        settings.addView(sectionTitle("自动签到设置"));
-
-        LinearLayout enabledRow = new LinearLayout(activity);
-        enabledRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView enabledLabel = body("自动签到", tokens.text);
-        enabledRow.addView(enabledLabel, new LinearLayout.LayoutParams(0, -2, 1f));
-        taskEnabledSwitch = new Switch(activity);
-        taskEnabledSwitch.setChecked(task.enabled);
+        settingsUi.addSection(page, "计划");
+        LinearLayout settings = settingsUi.list();
+        taskEnabledSwitch = settingsUi.toggle("自动签到", null,
+                taskEnabledLabel(task), task.enabled, checked -> {
+                    if (!taskSettingsInFlight) {
+                        saveTaskSettings(checked, normalizedScheduleTime(task),
+                                task.offsetMinutes);
+                    }
+                });
         taskEnabledSwitch.setEnabled(!taskSettingsInFlight);
-        enabledRow.addView(taskEnabledSwitch, new LinearLayout.LayoutParams(-2, dp(36)));
-        taskEnabledSwitch.setOnCheckedChangeListener((button, checked) -> {
-            if (!taskSettingsInFlight) {
-                saveTaskSettings(checked, normalizedScheduleTime(task), task.offsetMinutes);
-            }
-        });
-        addTop(settings, enabledRow, 10);
+        settings.addView(taskEnabledSwitch);
 
-        taskTimeButton = settingRow("执行时间", scheduleLabel(task));
+        taskTimeButton = settingsUi.addEntry(settings, "执行时间", null,
+                scheduleLabel(task), R.drawable.il_calendar,
+                () -> showTaskTimePicker(task)).root;
         taskTimeButton.setEnabled(!taskSettingsInFlight);
-        taskTimeButton.setOnClickListener(view -> showTaskTimePicker(task));
-        addTop(settings, taskTimeButton, 4);
 
-        LinearLayout offsetRow = new LinearLayout(activity);
-        offsetRow.setOrientation(roundLayout ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
-        offsetRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView offsetTitle = body("随机偏移", tokens.text);
-        offsetRow.addView(offsetTitle, roundLayout
-                ? new LinearLayout.LayoutParams(-1, -2)
-                : new LinearLayout.LayoutParams(0, -2, 1f));
-        LinearLayout offsetControls = roundLayout ? new LinearLayout(activity) : offsetRow;
-        offsetControls.setGravity(Gravity.CENTER);
-        taskOffsetMinusButton = compactButton("-");
-        taskOffsetMinusButton.setContentDescription("减少随机偏移");
-        taskOffsetMinusButton.setEnabled(!taskSettingsInFlight && task.offsetMinutes > 0);
-        taskOffsetMinusButton.setOnClickListener(view -> saveTaskSettings(task.enabled,
-                normalizedScheduleTime(task), Math.max(0, task.offsetMinutes - 30)));
-        offsetControls.addView(taskOffsetMinusButton,
-                new LinearLayout.LayoutParams(dp(36), dp(36)));
-        TextView offsetValue = body(offsetLabel(task.offsetMinutes), tokens.text);
-        offsetValue.setGravity(Gravity.CENTER);
-        offsetValue.setSingleLine(true);
-        offsetControls.addView(offsetValue,
-                new LinearLayout.LayoutParams(dp(roundLayout ? 70 : 76), dp(36)));
-        taskOffsetPlusButton = compactButton("+");
-        taskOffsetPlusButton.setContentDescription("增加随机偏移");
-        taskOffsetPlusButton.setEnabled(!taskSettingsInFlight && task.offsetMinutes < 720);
-        taskOffsetPlusButton.setOnClickListener(view -> saveTaskSettings(task.enabled,
-                normalizedScheduleTime(task), Math.min(720, task.offsetMinutes + 30)));
-        offsetControls.addView(taskOffsetPlusButton,
-                new LinearLayout.LayoutParams(dp(36), dp(36)));
-        if (roundLayout) {
-            LinearLayout.LayoutParams controlsParams = new LinearLayout.LayoutParams(-1, -2);
-            controlsParams.topMargin = dp(5);
-            offsetRow.addView(offsetControls, controlsParams);
-        }
-        addTop(settings, offsetRow, 4);
-
+        settingsUi.addDivider(settings);
+        settings.addView(offsetSettingRow(task));
         if (task.platformBlocked || task.signBlocked) {
-            addTop(settings, body("签到服务当前已暂停此任务，设置会保留。", tokens.muted), 7);
+            TextView warning = body("服务已暂停此任务，当前设置会保留。", tokens.muted);
+            warning.setPadding(dp(12), dp(8), dp(12), dp(10));
+            settings.addView(warning);
         }
-        addTop(page, settings, 9);
+        page.addView(settings);
+    }
+
+    private void renderTaskSettings(LinearLayout page) {
+        addTaskSettingsCard(page);
+    }
+
+    private void openTaskSettings() {
+        if (status == null || state == State.RUNNING) return;
+        state = State.TASK_SETTINGS;
+        render();
+    }
+
+    private void openBilling(CheckinBilling.Membership membership) {
+        if (membership == null || membership.admin || !"paid".equals(membership.mode)
+                || state == State.RUNNING) return;
+        if (paymentPage != null) paymentPage.close();
+        paymentPage = new CheckinPaymentPage(activity, session, coordinator, tokens,
+                roundLayout, membership, new CheckinPaymentPage.Host() {
+                    @Override
+                    public void closePayment(boolean membershipChanged) {
+                        if (paymentPage != null) {
+                            paymentPage.close();
+                            paymentPage = null;
+                        }
+                        state = membershipChanged ? State.SYNCING : State.CONNECTED;
+                        render();
+                        if (membershipChanged) loadStatus();
+                    }
+
+                    @Override
+                    public void showMessage(String message) {
+                        host.showMessage(message);
+                    }
+                });
+        state = State.BILLING;
+        render();
+        paymentPage.onResume();
     }
 
     private void showTaskTimePicker(CheckinCenterClient.Task task) {
@@ -793,8 +847,8 @@ final class CheckinCenterPage {
                             return;
                         }
                         status = new CheckinCenterClient.Status(current.account, value,
-                                current.lastRun);
-                        state = State.CONNECTED;
+                                current.lastRun, current.membership);
+                        state = State.TASK_SETTINGS;
                         errorMessage = "";
                         render();
                     }
@@ -814,41 +868,33 @@ final class CheckinCenterPage {
     }
 
     private void setTaskSettingsControls(boolean enabled) {
-        if (taskEnabledSwitch != null) taskEnabledSwitch.setEnabled(enabled);
+        if (taskEnabledSwitch != null) setEnabledTree(taskEnabledSwitch, enabled);
         if (taskTimeButton != null) taskTimeButton.setEnabled(enabled);
         if (taskOffsetMinusButton != null) taskOffsetMinusButton.setEnabled(enabled);
         if (taskOffsetPlusButton != null) taskOffsetPlusButton.setEnabled(enabled);
     }
 
-    private void addRecoveryActions(LinearLayout page) {
-        addMobileLoginCard(page, false);
-        Button retry = primaryButton("重新加载");
-        retry.setOnClickListener(view -> refresh());
-        addTop(page, retry, 10);
-        if (coordinator.paired()) {
-            Button revoke = ghostButton("撤销此设备");
-            revoke.setOnClickListener(view -> requestRevoke());
-            addTop(page, revoke, 7);
+    private void setEnabledTree(View view, boolean enabled) {
+        view.setEnabled(enabled);
+        if (!(view instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) view;
+        for (int index = 0; index < group.getChildCount(); index++) {
+            setEnabledTree(group.getChildAt(index), enabled);
         }
     }
 
-    private void addMobileLoginCard(LinearLayout page, boolean connected) {
-        LinearLayout login = card();
-        login.addView(sectionTitle(connected ? "小黑盒账号" : "登录小黑盒"));
-        TextView description = body(
-                connected
-                        ? "需要更换签到账号时，可重新使用手机号验证码或密码登录。"
-                        : "自动签到只支持手机号验证码或密码登录。手机号和凭据由签到服务处理，Lite 不会保存。",
-                tokens.muted);
-        description.setLineSpacing(0f, 1.15f);
-        addTop(login, description, 7);
-        Button open = connected ? ghostButton("重新登录") : primaryButton("手机号登录");
-        open.setOnClickListener(view -> {
-            UiComponents.press(view);
-            openMobileLogin();
-        });
-        addTop(login, open, 11);
-        addTop(page, login, 9);
+    private void addRecoveryActions(LinearLayout page) {
+        settingsUi.addSection(page, "操作");
+        LinearLayout actions = settingsUi.list();
+        settingsUi.addEntry(actions, "登录小黑盒", null, "手机号",
+                R.drawable.il_person, this::openMobileLogin);
+        settingsUi.addEntry(actions, "重新加载", null, null,
+                R.drawable.il_refresh, this::refresh);
+        if (coordinator.paired()) {
+            settingsUi.addEntry(actions, "撤销此设备", null, null,
+                    R.drawable.ic_logout, this::requestRevoke);
+        }
+        page.addView(actions);
     }
 
     private void renderMobileLogin() {
@@ -857,75 +903,74 @@ final class CheckinCenterPage {
         LinearLayout page = column(tokens.background);
         applyPageInsets(page, true);
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
+        page.addView(settingsUi.topCard("手机号登录"));
 
         LinearLayout card = card();
-        card.addView(heading("手机号登录小黑盒"));
-        TextView description = body(
-                "登录成功后，服务器会加密保存移动端凭据并用于自动签到。Lite 不保存手机号、验证码或登录凭据。",
-                tokens.muted);
-        description.setLineSpacing(0f, 1.16f);
-        addTop(card, description, 7);
+        card.addView(statusHeader(R.drawable.il_person, "登录小黑盒",
+                "仅用于服务器自动签到", tokens.text));
 
         LinearLayout modes = new LinearLayout(activity);
-        Button smsMode = loginMode == LoginMode.SMS
-                ? primaryButton(roundLayout ? "验证码" : "短信验证码")
-                : ghostButton(roundLayout ? "验证码" : "短信验证码");
-        Button passwordMode = loginMode == LoginMode.PASSWORD
-                ? primaryButton("密码登录") : ghostButton("密码登录");
+        modes.setPadding(dp(3), dp(3), dp(3), dp(3));
+        Compat.setBackground(modes, UiComponents.round(
+                activity, tokens.panelElevated, 10, scale));
+        Button smsMode = segmentButton(roundLayout ? "验证码" : "短信验证码",
+                loginMode == LoginMode.SMS);
+        Button passwordMode = segmentButton("密码", loginMode == LoginMode.PASSWORD);
         smsMode.setOnClickListener(view -> switchLoginMode(LoginMode.SMS));
         passwordMode.setOnClickListener(view -> switchLoginMode(LoginMode.PASSWORD));
-        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
-        modeParams.rightMargin = dp(4);
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(0, dp(34), 1f);
+        modeParams.rightMargin = dp(2);
         modes.addView(smsMode, modeParams);
-        LinearLayout.LayoutParams passwordModeParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
-        passwordModeParams.leftMargin = dp(4);
+        LinearLayout.LayoutParams passwordModeParams = new LinearLayout.LayoutParams(0, dp(34), 1f);
+        passwordModeParams.leftMargin = dp(2);
         modes.addView(passwordMode, passwordModeParams);
-        addTop(card, modes, 13);
+        addTop(card, modes, 12);
 
-        addTop(card, body("手机号", tokens.text), 14);
-        smsPhoneInput = input("+86 13800000000", InputType.TYPE_CLASS_PHONE);
+        smsPhoneInput = input("+86 手机号", InputType.TYPE_CLASS_PHONE);
         smsPhoneInput.setText(mobilePhone);
-        addTop(card, smsPhoneInput, 6);
 
         if (loginMode == LoginMode.SMS) {
-            smsSendButton = ghostButton("发送验证码");
+            LinearLayout phoneRow = new LinearLayout(activity);
+            phoneRow.setGravity(Gravity.CENTER_VERTICAL);
+            phoneRow.addView(smsPhoneInput, new LinearLayout.LayoutParams(
+                    0, dp(roundLayout ? 38 : 42), 1f));
+            smsSendButton = compactActionButton("发送验证码");
             smsSendButton.setOnClickListener(view -> {
                 UiComponents.press(view);
                 sendSmsCode();
             });
-            addTop(card, smsSendButton, 8);
+            LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(
+                    dp(roundLayout ? 104 : 112), dp(roundLayout ? 38 : 42));
+            sendParams.leftMargin = dp(6);
+            phoneRow.addView(smsSendButton, sendParams);
+            addTop(card, phoneRow, 11);
 
-            addTop(card, body("短信验证码", tokens.text), 13);
-            smsCodeInput = input("4-8 位验证码",
+            smsCodeInput = input("短信验证码",
                     InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-            addTop(card, smsCodeInput, 6);
+            addTop(card, smsCodeInput, 7);
             smsSubmitButton = primaryButton("登录并连接");
             smsSubmitButton.setOnClickListener(view -> {
                 UiComponents.press(view);
                 submitSmsCode();
             });
-            addTop(card, smsSubmitButton, 8);
-            smsStatus = body("验证码由小黑盒发送，发送操作不会自动重试", tokens.muted);
+            addTop(card, smsSubmitButton, 9);
+            smsStatus = body("验证码由小黑盒发送", tokens.muted);
         } else {
-            addTop(card, body("密码", tokens.text), 13);
+            addTop(card, smsPhoneInput, 11);
             passwordInput = input("小黑盒登录密码",
                     InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-            addTop(card, passwordInput, 6);
+            addTop(card, passwordInput, 7);
             passwordSubmitButton = primaryButton("登录并连接");
             passwordSubmitButton.setOnClickListener(view -> {
                 UiComponents.press(view);
                 loginWithPassword();
             });
-            addTop(card, passwordSubmitButton, 8);
-            smsStatus = body("密码只用于本次登录，不会保存在 Lite 或签到服务中", tokens.muted);
+            addTop(card, passwordSubmitButton, 9);
+            smsStatus = body("密码仅用于本次登录", tokens.muted);
         }
         smsStatus.setLineSpacing(0f, 1.14f);
-        addTop(card, smsStatus, 10);
+        addTop(card, smsStatus, 8);
         page.addView(card);
-
-        Button back = ghostButton("返回签到状态");
-        back.setOnClickListener(view -> finishMobileLogin());
-        addTop(page, back, 9);
         root.addView(scroll, match());
         setMobileLoginControls(!smsRequestInFlight);
         if (loginMode == LoginMode.SMS && !smsSessionId.isEmpty()) updateSmsCountdown();
@@ -937,57 +982,53 @@ final class CheckinCenterPage {
         LinearLayout page = column(tokens.background);
         applyPageInsets(page, true);
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
+        page.addView(settingsUi.topCard("连接签到服务"));
 
         LinearLayout card = card();
-        card.addView(heading("连接签到服务"));
-        TextView description = body(
+        card.addView(statusHeader(R.drawable.il_qr,
                 serviceAccountMode == ServiceAccountMode.LOGIN
-                        ? "登录签到服务账号并连接此设备。这里不是小黑盒手机号登录。"
-                        : "创建签到服务账号并连接此设备，全程无需打开浏览器。",
-                tokens.muted);
-        description.setLineSpacing(0f, 1.16f);
-        addTop(card, description, 7);
-        addTop(card, body("配对码  " + pairing.start.userCode, tokens.muted), 9);
+                        ? "登录签到服务" : "注册签到服务",
+                "配对码  " + pairing.start.userCode, tokens.text));
         pairingCountdown = body("", tokens.muted);
-        addTop(card, pairingCountdown, 3);
+        addTop(card, pairingCountdown, 8);
 
         if (pairing.start.registrationOpen) {
             LinearLayout modes = new LinearLayout(activity);
+            modes.setPadding(dp(3), dp(3), dp(3), dp(3));
+            Compat.setBackground(modes, UiComponents.round(
+                    activity, tokens.panelElevated, 10, scale));
             String loginLabel = roundLayout ? "登录" : "已有账号";
             String registerLabel = roundLayout ? "注册" : "注册账号";
-            Button loginMode = serviceAccountMode == ServiceAccountMode.LOGIN
-                    ? primaryButton(loginLabel) : ghostButton(loginLabel);
-            Button registerMode = serviceAccountMode == ServiceAccountMode.REGISTER
-                    ? primaryButton(registerLabel) : ghostButton(registerLabel);
+            Button loginMode = segmentButton(loginLabel,
+                    serviceAccountMode == ServiceAccountMode.LOGIN);
+            Button registerMode = segmentButton(registerLabel,
+                    serviceAccountMode == ServiceAccountMode.REGISTER);
             loginMode.setOnClickListener(view -> switchServiceAccountMode(
                     ServiceAccountMode.LOGIN));
             registerMode.setOnClickListener(view -> switchServiceAccountMode(
                     ServiceAccountMode.REGISTER));
-            LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, dp(38), 1f);
-            left.rightMargin = dp(4);
+            LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, dp(34), 1f);
+            left.rightMargin = dp(2);
             modes.addView(loginMode, left);
-            LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, dp(38), 1f);
-            right.leftMargin = dp(4);
+            LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, dp(34), 1f);
+            right.leftMargin = dp(2);
             modes.addView(registerMode, right);
-            addTop(card, modes, 12);
+            addTop(card, modes, 10);
         } else {
             serviceAccountMode = ServiceAccountMode.LOGIN;
         }
 
-        addTop(card, body("签到服务账号", tokens.text), 14);
-        serviceUsernameInput = input("账号", InputType.TYPE_CLASS_TEXT);
+        serviceUsernameInput = input("签到服务账号", InputType.TYPE_CLASS_TEXT);
         serviceUsernameInput.setText(serviceUsername);
-        addTop(card, serviceUsernameInput, 6);
-        addTop(card, body("密码", tokens.text), 13);
+        addTop(card, serviceUsernameInput, 10);
         servicePasswordInput = input("密码",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        addTop(card, servicePasswordInput, 6);
+        addTop(card, servicePasswordInput, 7);
 
         if (serviceAccountMode == ServiceAccountMode.REGISTER) {
-            addTop(card, body("确认密码", tokens.text), 13);
             serviceConfirmPasswordInput = input("再次输入密码",
                     InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-            addTop(card, serviceConfirmPasswordInput, 6);
+            addTop(card, serviceConfirmPasswordInput, 7);
             TextView passwordRule = body(
                     "至少 12 位，并包含大小写字母、数字、符号中的三类", tokens.muted);
             passwordRule.setLineSpacing(0f, 1.12f);
@@ -1004,39 +1045,33 @@ final class CheckinCenterPage {
             submitServiceAccount();
         });
         addTop(card, pairingApproveButton, 10);
-        pairingStatus = body("账号密码只用于本次请求，不会保存在 Lite 中", tokens.muted);
+        pairingStatus = body("账号密码不会保存在 Lite 中", tokens.muted);
         pairingStatus.setLineSpacing(0f, 1.14f);
-        addTop(card, pairingStatus, 9);
+        addTop(card, pairingStatus, 8);
         page.addView(card);
-
-        Button cancel = ghostButton("取消");
-        cancel.setOnClickListener(view -> cancelPairing());
-        addTop(page, cancel, 9);
         root.addView(scroll, match());
         updatePairingCountdown();
         updateRegistrationEmailCountdown();
     }
 
     private void addRegistrationEmailFields(LinearLayout card) {
-        TextView notice = body("注册需要验证邮箱，验证码 10 分钟内有效", tokens.muted);
+        TextView notice = body("邮箱验证 · 验证码 10 分钟内有效", tokens.muted);
         notice.setLineSpacing(0f, 1.12f);
         addTop(card, notice, 11);
-        addTop(card, body("邮箱", tokens.text), 13);
-        serviceEmailInput = input("用于接收验证码",
+        serviceEmailInput = input("邮箱地址",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         serviceEmailInput.setText(serviceEmail);
-        addTop(card, serviceEmailInput, 6);
-        registrationEmailSendButton = ghostButton("发送邮箱验证码");
+        addTop(card, serviceEmailInput, 7);
+        registrationEmailSendButton = compactActionButton("发送邮箱验证码");
         registrationEmailSendButton.setOnClickListener(view -> {
             UiComponents.press(view);
             sendRegistrationEmail();
         });
         addTop(card, registrationEmailSendButton, 7);
-        addTop(card, body("邮箱验证码", tokens.text), 13);
-        serviceEmailCodeInput = input("6 位验证码",
+        serviceEmailCodeInput = input("邮箱验证码",
                 InputType.TYPE_CLASS_NUMBER);
         serviceEmailCodeInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(6)});
-        addTop(card, serviceEmailCodeInput, 6);
+        addTop(card, serviceEmailCodeInput, 7);
     }
 
     private void switchServiceAccountMode(ServiceAccountMode mode) {
@@ -1315,7 +1350,8 @@ final class CheckinCenterPage {
         view.setMinHeight(0);
         view.setMinimumHeight(0);
         view.setPadding(dp(11), 0, dp(11), 0);
-        Compat.setBackground(view, UiComponents.outlinedTextField(activity, tokens, scale));
+        Compat.setBackground(view, UiComponents.round(
+                activity, tokens.panelElevated, 9, scale));
         view.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(roundLayout ? 40 : 42)));
         return view;
     }
@@ -1412,6 +1448,95 @@ final class CheckinCenterPage {
         smsStatus = null;
     }
 
+    private LinearLayout statusHeader(int iconRes, String title, String subtitle,
+                                      int titleColor) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView icon = iconTile(iconRes);
+        int iconSize = dp(roundLayout ? 38 : 42);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(iconSize, iconSize);
+        iconParams.rightMargin = dp(10);
+        row.addView(icon, iconParams);
+
+        LinearLayout copy = column(Color.TRANSPARENT);
+        TextView titleView = label(title, roundLayout ? 15f : 16f, titleColor);
+        titleView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        titleView.setMaxLines(2);
+        copy.addView(titleView);
+        TextView subtitleView = body(subtitle, tokens.muted);
+        subtitleView.setMaxLines(2);
+        subtitleView.setPadding(0, dp(2), 0, 0);
+        copy.addView(subtitleView);
+        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1f));
+        return row;
+    }
+
+    private ImageView iconTile(int iconRes) {
+        ImageView icon = new ImageView(activity);
+        icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        icon.setPadding(dp(9), dp(9), dp(9), dp(9));
+        Drawable drawable = Compat.tintedDrawable(activity, iconRes, tokens.text);
+        if (drawable != null) icon.setImageDrawable(drawable);
+        Compat.setBackground(icon, UiComponents.monoChip(activity, tokens, scale));
+        return icon;
+    }
+
+    private LinearLayout scheduleMetric(CheckinCenterClient.Task task) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout copy = column(Color.TRANSPARENT);
+        copy.addView(label("下次签到", 10.5f, tokens.muted));
+        String window = windowLabel(task);
+        TextView detail = body(window.isEmpty() ? taskEnabledLabel(task) : window, tokens.muted);
+        detail.setPadding(0, dp(2), 0, 0);
+        copy.addView(detail);
+        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        TextView time = label(scheduleLabel(task), roundLayout ? 20f : 22f, tokens.text);
+        time.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        time.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        time.setSingleLine(true);
+        row.addView(time, new LinearLayout.LayoutParams(-2, -2));
+        return row;
+    }
+
+    private LinearLayout offsetSettingRow(CheckinCenterClient.Task task) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(roundLayout ? 10 : 12), dp(7),
+                dp(roundLayout ? 10 : 12), dp(7));
+        row.setMinimumHeight(dp(60));
+
+        ImageView icon = iconTile(R.drawable.il_scroll);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(38), dp(38));
+        iconParams.rightMargin = dp(10);
+        row.addView(icon, iconParams);
+
+        TextView title = label("随机偏移", 15f, tokens.text);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        row.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        taskOffsetMinusButton = compactButton("-");
+        taskOffsetMinusButton.setContentDescription("减少随机偏移");
+        taskOffsetMinusButton.setEnabled(!taskSettingsInFlight && task.offsetMinutes > 0);
+        taskOffsetMinusButton.setOnClickListener(view -> saveTaskSettings(task.enabled,
+                normalizedScheduleTime(task), Math.max(0, task.offsetMinutes - 30)));
+        row.addView(taskOffsetMinusButton, new LinearLayout.LayoutParams(dp(32), dp(32)));
+
+        TextView value = body(offsetLabel(task.offsetMinutes), tokens.text);
+        value.setGravity(Gravity.CENTER);
+        value.setSingleLine(true);
+        row.addView(value, new LinearLayout.LayoutParams(dp(roundLayout ? 58 : 66), dp(32)));
+
+        taskOffsetPlusButton = compactButton("+");
+        taskOffsetPlusButton.setContentDescription("增加随机偏移");
+        taskOffsetPlusButton.setEnabled(!taskSettingsInFlight && task.offsetMinutes < 720);
+        taskOffsetPlusButton.setOnClickListener(view -> saveTaskSettings(task.enabled,
+                normalizedScheduleTime(task), Math.min(720, task.offsetMinutes + 30)));
+        row.addView(taskOffsetPlusButton, new LinearLayout.LayoutParams(dp(32), dp(32)));
+        return row;
+    }
+
     private LinearLayout infoRow(String label, String value) {
         LinearLayout row = new LinearLayout(activity);
         row.setOrientation(roundLayout ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
@@ -1464,18 +1589,6 @@ final class CheckinCenterPage {
         return layout;
     }
 
-    private TextView heading(String value) {
-        TextView view = label(value, roundLayout ? 17f : 18f, tokens.text);
-        view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        return view;
-    }
-
-    private TextView sectionTitle(String value) {
-        TextView view = label(value, 15f, tokens.text);
-        view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        return view;
-    }
-
     private TextView body(String value, int color) {
         return label(value, 12f, color);
     }
@@ -1501,30 +1614,45 @@ final class CheckinCenterPage {
         return button;
     }
 
-    private LinearLayout settingRow(String label, String value) {
-        LinearLayout row = new LinearLayout(activity);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(11), 0, dp(11), 0);
-        row.setMinimumHeight(dp(42));
-        Compat.setBackground(row, UiComponents.ghostButton(activity, tokens, scale));
-        row.addView(body(label, tokens.text), new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView current = body(value, tokens.muted);
-        current.setGravity(Gravity.END);
-        current.setSingleLine(true);
-        row.addView(current, new LinearLayout.LayoutParams(-2, -2));
-        row.setContentDescription(label + "，当前" + value);
-        return row;
+    private Button segmentButton(String value, boolean selected) {
+        Button button = baseButton(value);
+        button.setTextColor(selected ? tokens.text : tokens.muted);
+        Compat.setBackground(button, UiComponents.round(activity,
+                selected ? tokens.pressedSurface() : Color.TRANSPARENT, 8, scale));
+        return button;
+    }
+
+    private Button compactActionButton(String value) {
+        Button button = baseButton(value);
+        button.setTextSize(11f * session.textScale() / 100.0f);
+        button.setTextColor(tokens.text);
+        button.setPadding(dp(7), 0, dp(7), 0);
+        Compat.setBackground(button, UiComponents.round(
+                activity, tokens.pressedSurface(), 9, scale));
+        return button;
+    }
+
+    private Button quietButton(String value) {
+        Button button = baseButton(value);
+        button.setTextColor(tokens.muted);
+        Compat.setBackground(button, UiComponents.round(
+                activity, Color.TRANSPARENT, 10, scale));
+        button.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(36)));
+        return button;
     }
 
     private Button compactButton(String value) {
-        Button button = ghostButton(value);
+        Button button = baseButton(value);
+        button.setTextColor(tokens.text);
+        Compat.setBackground(button, UiComponents.round(
+                activity, tokens.panelElevated, 9, scale));
         button.setTextSize(16f * session.textScale() / 100.0f);
         button.setPadding(0, 0, 0, 0);
         return button;
     }
 
     private Button baseButton(String value) {
-        Button button = new Button(activity);
+        Button button = UiComponents.button(activity);
         button.setText(value);
         button.setTextSize(12f * session.textScale() / 100.0f);
         button.setAllCaps(false);
@@ -1575,6 +1703,22 @@ final class CheckinCenterPage {
     private String taskEnabledLabel(CheckinCenterClient.Task task) {
         if (task.platformBlocked || task.signBlocked) return "已暂停";
         return task.enabled && task.sign ? "已启用" : "未启用";
+    }
+
+
+    private String membershipLabel(CheckinBilling.Membership membership) {
+        if (membership.admin) return "管理员永久可用";
+        if ("free".equals(membership.mode)) return "免费开放";
+        if (membership.required) return "已到期，点击续费";
+        return membership.expiresAt.isEmpty()
+                ? "会员有效" : "有效至 " + shortDate(membership.expiresAt);
+    }
+
+    private String shortDate(String value) {
+        if (value.length() >= 16 && value.charAt(10) == 'T') {
+            return value.substring(0, 10) + " " + value.substring(11, 16);
+        }
+        return value;
     }
 
     private String offsetLabel(int minutes) {
@@ -1649,6 +1793,10 @@ final class CheckinCenterPage {
 
     public void close() {
         closed = true;
+        if (paymentPage != null) {
+            paymentPage.close();
+            paymentPage = null;
+        }
         clearCaptchaRequest();
         mobilePhone = "";
         handler.removeCallbacksAndMessages(null);

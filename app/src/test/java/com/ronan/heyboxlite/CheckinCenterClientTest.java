@@ -262,4 +262,47 @@ public class CheckinCenterClientTest {
         assertEquals("手机号或密码错误，登录失败", password.getMessage());
         assertEquals("签到时间或随机偏移无效", settings.getMessage());
     }
+
+    @Test
+    public void billingStatusAndOrderResponsesParseCompactly() throws Exception {
+        JSONObject status = new JSONObject()
+                .put("billing_mode", "paid")
+                .put("subscription_required", false)
+                .put("entitled", true)
+                .put("is_admin", false)
+                .put("expires_at", "2026-09-13T04:00:00.000Z")
+                .put("checkout_available", true)
+                .put("plan", new JSONObject()
+                        .put("name", "小黑盒自动签到会员")
+                        .put("amount_cents", 500)
+                        .put("currency", "CNY")
+                        .put("duration_days", 30));
+        CheckinBilling.Membership membership = CheckinBilling.parseMembership(status);
+        assertEquals("paid", membership.mode);
+        assertEquals(500, membership.plan.amountCents);
+        assertTrue(membership.checkoutAvailable);
+
+        CheckinBilling.Order order = CheckinBilling.parseOrder(new JSONObject()
+                .put("order_id", "HBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+                .put("provider", "monitor_wechat")
+                .put("amount_cents", 500)
+                .put("payable_amount_cents", 500)
+                .put("status", "pending")
+                .put("qr_ready", true)
+                .put("manual_review", true)
+                .put("expires_at", "2026-08-14T01:00:00.000Z"));
+        assertTrue(order.pending());
+        assertTrue(order.manualReview);
+        assertTrue(CheckinBilling.validPaymentReference("42000000000000000000"));
+        assertFalse(CheckinBilling.validPaymentReference("short"));
+    }
+
+    @Test
+    public void subscriptionErrorsAreRecognized() {
+        CheckinCenterClient.ApiError error = CheckinCenterClient.statusError(
+                CheckinCenterClient.Operation.RUN_NOW, 402,
+                "{\"code\":\"subscription_required\"}");
+        assertTrue(error.subscriptionRequired());
+        assertEquals("小黑盒签到会员已到期，请先续费", error.getMessage());
+    }
 }

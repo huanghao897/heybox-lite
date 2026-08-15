@@ -158,6 +158,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         }
         this.session = new SessionStore(this);
         Motions.setLevel(this.session.motionLevel());
+        this.pageTransitions.setCompactMotion(usesWatchLayout());
         this.localCache = new LocalCache(this);
         this.cacheMaintenance = new CacheMaintenance(this, this.localCache, this.handler);
         boolean pendingCrashReport = !CrashReporter.pendingCrashReport(this).isEmpty();
@@ -441,16 +442,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                     @Override
                     public LinearLayout openPage(String key, String title) {
                         return MainActivity.this.settingsPage(key, title);
-                    }
-
-                    @Override
-                    public void showDialog(String title, String message,
-                                           String positiveText, Runnable positiveAction,
-                                           String negativeText, Runnable negativeAction,
-                                           String neutralText, Runnable neutralAction) {
-                        MainActivity.this.showLiteDialog(title, message, positiveText,
-                                positiveAction, negativeText, negativeAction,
-                                neutralText, neutralAction);
                     }
 
                     @Override
@@ -1074,6 +1065,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private int[] screenInsets() {
+        if (RoundLayoutMetrics.isRectangularWatchDisplay(this)) {
+            return new int[]{0, 0, 0, 0};
+        }
         DisplayMetrics metrics = screenMetrics();
         int horizontalPercent = Math.max(0, Math.min(30,
                 this.session.screenPaddingHPercent()));
@@ -1099,13 +1093,11 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private boolean usesRoundLayout() {
-        return this.session != null
-                && (this.session.roundScreen() || isSystemRoundScreen());
+        return this.session != null && this.session.usesRoundLayout();
     }
 
-    private boolean isSystemRoundScreen() {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                && getResources().getConfiguration().isScreenRound();
+    private boolean usesWatchLayout() {
+        return this.session != null && RoundLayoutMetrics.isWatchDisplay(this);
     }
 
     private int pageHorizontalPadding() {
@@ -1630,6 +1622,11 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     @Override
+    public boolean compactShellMotion() {
+        return usesWatchLayout();
+    }
+
+    @Override
     public void navigateAfterShellSwipe(boolean topLevel, int direction,
                                         String targetKey, Runnable settled) {
         ImageView guard = topLevel ? null
@@ -1995,7 +1992,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if (!authCode.isEmpty()) {
             this.currentAuthCode = authCode;
         }
-        DetailPager pager = new DetailPager(this, this::dp, new DetailPager.Listener() {
+        DetailPager pager = new DetailPager(this, this::dp, usesWatchLayout(),
+                new DetailPager.Listener() {
             @Override
             public boolean canSwipeBack() {
                 return MainActivity.this.canDetailSwipeBack();
@@ -2010,7 +2008,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             public void onReturn() {
                 MainActivity.this.returnFromDetailGesture();
             }
-        });
+                });
         pager.setBackgroundColor(this.BG);
         this.detailPager = pager;
         ScrollView articleScroll = new ScrollView(this);
@@ -2269,21 +2267,25 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             showProfile();
         });
         this.title.setText("小黑盒签到");
-        this.action.setVisibility(0);
-        setIcon(this.action, R.drawable.ic_refresh, this.TEXT, 19);
-        this.action.setOnClickListener(view -> {
-            if (this.checkinCenterPage != null) this.checkinCenterPage.refresh();
-        });
+        this.action.setVisibility(4);
+        this.action.setOnClickListener(null);
         if (this.checkinCenterPage == null) {
             this.checkinCenterPage = new CheckinCenterPage(this, this.session,
                     this.checkinCenterCoordinator, this.themeTokens,
                     new CheckinCenterPage.Host() {
                         @Override
+                        public void closePage() {
+                            MainActivity.this.pendingBackTransition = true;
+                            MainActivity.this.showProfile();
+                        }
+
+                        @Override
                         public void openCaptcha(String verificationUri) {
                             try {
                                 MainActivity.this.startActivityForResult(
                                         CheckinCaptchaActivity.intent(
-                                                MainActivity.this, verificationUri),
+                                                MainActivity.this, verificationUri,
+                                                MainActivity.this.usesRoundLayout()),
                                         REQUEST_CHECKIN_CAPTCHA);
                             } catch (RuntimeException error) {
                                 if (MainActivity.this.checkinCenterPage != null) {
@@ -2820,6 +2822,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             this.content.addView(next, match());
             return;
         }
+        this.pageTransitions.setCompactMotion(usesWatchLayout());
         this.pageTransitions.run(this.content, next, !back, push);
     }
 

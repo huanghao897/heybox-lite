@@ -157,6 +157,45 @@ final class CheckinCenterCoordinator {
         revokeAttempt(token, callback, 0);
     }
 
+    void createBillingOrder(CheckinCenterClient.Callback<CheckinBilling.Order> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.BILLING_CREATE, "尚未连接签到服务");
+            return;
+        }
+        client.createBillingOrder(token, authorizationAware(callback));
+    }
+
+    void getBillingOrder(String orderId,
+                         CheckinCenterClient.Callback<CheckinBilling.Order> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.BILLING_STATUS, "尚未连接签到服务");
+            return;
+        }
+        client.getBillingOrder(token, orderId, authorizationAware(callback));
+    }
+
+    void loadBillingQr(String orderId, CheckinCenterClient.Callback<byte[]> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.BILLING_QR, "尚未连接签到服务");
+            return;
+        }
+        client.loadBillingQr(token, orderId, authorizationAware(callback));
+    }
+
+    void submitBillingClaim(String orderId, String paymentReference,
+                            CheckinCenterClient.Callback<CheckinBilling.Review> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.BILLING_CLAIM, "尚未连接签到服务");
+            return;
+        }
+        client.submitBillingClaim(token, orderId, paymentReference,
+                authorizationAware(callback));
+    }
+
     private void statusAttempt(String token,
                                CheckinCenterClient.Callback<CheckinCenterClient.Status> callback,
                                int retries) {
