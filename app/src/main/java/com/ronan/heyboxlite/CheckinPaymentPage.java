@@ -47,10 +47,15 @@ final class CheckinPaymentPage {
     private Button createButton;
     private Button claimButton;
     private boolean requestInFlight;
+    private boolean qrRequestInFlight;
+    private int qrRequestSerial;
     private boolean visible;
     private boolean closed;
     private boolean membershipChanged;
+    private Bitmap qrBitmap;
+    private String qrOrderId = "";
     private final Runnable pollTask = this::pollOrder;
+    private final Runnable qrRetryTask = this::loadQr;
 
     CheckinPaymentPage(Activity activity, SessionStore session,
                        CheckinCenterCoordinator coordinator, ThemeTokens tokens,
@@ -97,6 +102,7 @@ final class CheckinPaymentPage {
 
     void onResume() {
         visible = true;
+        if (order != null && order.pending() && !hasQrBitmap()) loadQr();
         if (order != null && order.pending() && (order.review == null || order.review.pending())) {
             schedulePoll(POLL_DELAY_MS);
         }
@@ -105,17 +111,21 @@ final class CheckinPaymentPage {
     void onPause() {
         visible = false;
         stopPolling();
+        stopQrRetry();
     }
 
     void close() {
         closed = true;
         visible = false;
         stopPolling();
+        stopQrRetry();
         if (qrImage != null) qrImage.setImageDrawable(null);
+        clearQrBitmap();
         handler.removeCallbacksAndMessages(null);
     }
 
     private void render() {
+        cancelQrRequest();
         page.removeAllViews();
         orderState = null;
         amount = null;
@@ -164,6 +174,7 @@ final class CheckinPaymentPage {
         qrParams.gravity = Gravity.CENTER_HORIZONTAL;
         qrParams.topMargin = dp(9);
         payment.addView(qrImage, qrParams);
+        if (hasQrBitmap()) qrImage.setImageBitmap(qrBitmap);
         addTop(payment, body("使用" + providerLabel(order) + "扫描", tokens.muted), 7);
 
         if (order.manualReview) addManualClaim(payment);
@@ -173,11 +184,18 @@ final class CheckinPaymentPage {
         regenerate.setEnabled(!requestInFlight && !order.pending());
         regenerate.setOnClickListener(view -> {
             UiComponents.press(view);
+            clearQrBitmap();
             order = null;
             render();
         });
         addTop(page, regenerate, 9);
-        if (order.pending() && order.qrReady) loadQr();
+        if (order.pending() && order.qrReady) {
+            if (hasQrBitmap()) {
+                if (!order.manualReview) schedulePoll(POLL_DELAY_MS);
+            } else {
+                loadQr();
+            }
+        }
     }
 
     private void addManualClaim(LinearLayout parent) {
@@ -209,7 +227,7 @@ final class CheckinPaymentPage {
             public void onSuccess(CheckinBilling.Order value) {
                 if (closed) return;
                 requestInFlight = false;
-                order = value;
+                setOrder(value);
                 render();
             }
 
@@ -224,25 +242,39 @@ final class CheckinPaymentPage {
     }
 
     private void loadQr() {
-        if (order == null || !order.pending() || !order.qrReady || qrImage == null) return;
-        coordinator.loadBillingQr(order.id, new CheckinCenterClient.Callback<byte[]>() {
+        if (qrRequestInFlight || order == null || !order.pending()
+                || !order.qrReady || qrImage == null) return;
+        stopQrRetry();
+        final String orderId = order.id;
+        final ImageView target = qrImage;
+        final int requestSerial = ++qrRequestSerial;
+        qrRequestInFlight = true;
+        coordinator.loadBillingQr(orderId, new CheckinCenterClient.Callback<byte[]>() {
             @Override
             public void onSuccess(byte[] value) {
-                if (closed || qrImage == null) return;
-                Bitmap bitmap = BitmapFactory.decodeByteArray(value, 0, value.length);
+                if (requestSerial != qrRequestSerial) return;
+                qrRequestInFlight = false;
+                if (closed || target != qrImage || order == null
+                        || !orderId.equals(order.id) || !order.pending()) return;
+                Bitmap bitmap = decodeQr(value);
                 if (bitmap == null) {
                     showOrderState("付款码无法显示", tokens.text);
+                    scheduleQrRetry();
                     return;
                 }
-                qrImage.setImageBitmap(bitmap);
+                replaceQrBitmap(orderId, bitmap);
+                target.setImageBitmap(qrBitmap);
                 if (order.manualReview) return;
                 schedulePoll(POLL_DELAY_MS);
             }
 
             @Override
             public void onError(CheckinCenterClient.ApiError error) {
+                if (requestSerial != qrRequestSerial) return;
+                qrRequestInFlight = false;
                 if (closed) return;
                 showOrderState(error.getMessage(), tokens.text);
+                if (!error.authorizationInvalid()) scheduleQrRetry();
             }
         });
     }
@@ -254,7 +286,7 @@ final class CheckinPaymentPage {
                     @Override
                     public void onSuccess(CheckinBilling.Order value) {
                         if (closed) return;
-                        order = value;
+                        setOrder(value);
                         if ("paid".equals(value.status)) {
                             membershipChanged = true;
                             showOrderState("支付成功，会员已生效", tokens.text);
@@ -322,8 +354,64 @@ final class CheckinPaymentPage {
         if (visible && order != null && order.pending()) handler.postDelayed(pollTask, delay);
     }
 
+    private void scheduleQrRetry() {
+        stopQrRetry();
+        if (!closed && visible && order != null && order.pending()
+                && order.qrReady && qrImage != null) {
+            handler.postDelayed(qrRetryTask, POLL_DELAY_MS);
+        }
+    }
+
     private void stopPolling() {
         handler.removeCallbacks(pollTask);
+    }
+
+    private void stopQrRetry() {
+        handler.removeCallbacks(qrRetryTask);
+    }
+
+    private void cancelQrRequest() {
+        qrRequestSerial++;
+        qrRequestInFlight = false;
+        stopQrRetry();
+    }
+
+    private void setOrder(CheckinBilling.Order value) {
+        if (value == null) return;
+        if (order == null || !order.id.equals(value.id)) clearQrBitmap();
+        order = value;
+    }
+
+    private boolean hasQrBitmap() {
+        return order != null && order.id.equals(qrOrderId)
+                && qrBitmap != null && !qrBitmap.isRecycled();
+    }
+
+    private void replaceQrBitmap(String orderId, Bitmap value) {
+        clearQrBitmap();
+        qrOrderId = orderId;
+        qrBitmap = value;
+    }
+
+    private void clearQrBitmap() {
+        cancelQrRequest();
+        if (qrBitmap != null && !qrBitmap.isRecycled()) qrBitmap.recycle();
+        qrBitmap = null;
+        qrOrderId = "";
+    }
+
+    private Bitmap decodeQr(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) return null;
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+        int largestSide = Math.max(bounds.outWidth, bounds.outHeight);
+        int sample = 1;
+        while (largestSide / sample > 1024) sample *= 2;
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = sample;
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
     }
 
     private String membershipLabel() {

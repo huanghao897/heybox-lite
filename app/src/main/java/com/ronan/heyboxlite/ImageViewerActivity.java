@@ -67,6 +67,7 @@ public final class ImageViewerActivity extends Activity {
     private boolean roundDisplay;
     private boolean pageTransitionStarted;
     private boolean pullingImage;
+    private int animationSerial;
     private SessionStore session;
     private static String pendingPreviewUrl;
     private static WeakReference<Bitmap> pendingPreviewBitmap;
@@ -120,8 +121,8 @@ public final class ImageViewerActivity extends Activity {
                     updatePull(pageIndex, dx, dy, progress);
                 }
 
-                @Override public void onPullEnd(boolean dismiss, float direction) {
-                    finishPull(pageIndex, dismiss, direction);
+                @Override public void onPullEnd(boolean dismiss) {
+                    finishPull(pageIndex, dismiss);
                 }
             });
             page.addView(view, new FrameLayout.LayoutParams(-1, -1));
@@ -287,9 +288,9 @@ public final class ImageViewerActivity extends Activity {
         page.animate().scaleX(1.0f).scaleY(1.0f)
                 .translationX(0.0f).translationY(0.0f)
                 .setDuration(duration)
-                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
-                .withEndAction(() -> Motions.reset(page))
-                .start();
+                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
+        attachAnimationEndAction(page, duration, () -> Motions.reset(page));
+        page.animate().start();
     }
 
     private void updatePull(int index, float dx, float dy, float progress) {
@@ -309,20 +310,20 @@ public final class ImageViewerActivity extends Activity {
         setChromeAlpha(1.0f - Math.min(0.75f, progress * 0.75f));
     }
 
-    private void finishPull(int index, boolean dismiss, float direction) {
+    private void finishPull(int index, boolean dismiss) {
         if (destroyed || index != current) return;
         pullingImage = false;
         FrameLayout page = imagePages[index];
         if (dismiss) {
             closing = true;
             long duration = Motions.off() ? 0L : (Motions.full() ? 220L : 180L);
-            page.animate().translationY(direction * Math.max(1, root.getHeight()))
+            page.animate().translationY(Math.max(1, root.getHeight()))
                     .translationX(page.getTranslationX() * 1.25f)
                     .scaleX(0.84f).scaleY(0.84f).alpha(0.0f)
                     .setDuration(duration)
-                    .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
-                    .withEndAction(this::finishViewer)
-                    .start();
+                    .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
+            attachAnimationEndAction(page, duration, this::finishViewer);
+            page.animate().start();
             backdrop.animate().alpha(0.0f).setDuration(duration).start();
             setChromeAlpha(0.0f);
             return;
@@ -330,9 +331,10 @@ public final class ImageViewerActivity extends Activity {
         page.animate().translationX(0.0f).translationY(0.0f)
                 .scaleX(1.0f).scaleY(1.0f).alpha(1.0f)
                 .setDuration(Motions.off() ? 0L : 190L)
-                .setInterpolator(MotionSpec.EASE_OUT)
-                .withEndAction(() -> Motions.reset(page))
-                .start();
+                .setInterpolator(MotionSpec.EASE_OUT);
+        attachAnimationEndAction(page, Motions.off() ? 0L : 190L,
+                () -> Motions.reset(page));
+        page.animate().start();
         backdrop.animate().alpha(1.0f).setDuration(Motions.off() ? 0L : 190L).start();
         setChromeAlpha(1.0f);
     }
@@ -717,10 +719,27 @@ public final class ImageViewerActivity extends Activity {
         page.animate().scaleX(scale).scaleY(scale).translationX(translationX)
                 .translationY(translationY).alpha(0.0f)
                 .setDuration(duration)
-                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
-                .withEndAction(this::finishViewer)
-                .start();
+                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
+        attachAnimationEndAction(page, duration, this::finishViewer);
+        page.animate().start();
         backdrop.animate().alpha(0.0f).setDuration(duration).start();
+    }
+
+    private void attachAnimationEndAction(View view, long duration, Runnable action) {
+        final int serial = ++animationSerial;
+        Runnable guarded = () -> {
+            if (serial == animationSerial) action.run();
+        };
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            attachAnimationEndActionApi16(view, guarded);
+        } else {
+            view.postDelayed(guarded, duration);
+        }
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.JELLY_BEAN)
+    private void attachAnimationEndActionApi16(View view, Runnable action) {
+        view.animate().withEndAction(action);
     }
 
     private void finishViewer() {
@@ -735,6 +754,7 @@ public final class ImageViewerActivity extends Activity {
 
     @Override protected void onDestroy() {
         destroyed = true;
+        animationSerial++;
         if (root != null) root.animate().cancel();
         if (backdrop != null) backdrop.animate().cancel();
         if (pager != null) {
@@ -751,7 +771,10 @@ public final class ImageViewerActivity extends Activity {
         }
         if (images != null) {
             for (ZoomImageView view : images) {
-                if (view != null) ImageLoader.cancel(view);
+                if (view != null) {
+                    view.cancelMotion();
+                    ImageLoader.cancel(view);
+                }
             }
         }
         super.onDestroy();

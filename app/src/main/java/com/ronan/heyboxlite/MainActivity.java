@@ -1001,7 +1001,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 });
         LinearLayout linearLayoutVertical = vertical(this.BG);
         this.shellRoot = linearLayoutVertical;
-        applyScreenInsets(linearLayoutVertical);
         LinearLayout bar = new LinearLayout(this);
         this.shellBar = bar;
         bar.setGravity(16);
@@ -1054,28 +1053,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             showTopLevel(1);
         });
         setContentView(linearLayoutVertical);
-    }
-
-    private void applyScreenInsets(View view) {
-        if (view == null || this.session == null) {
-            return;
-        }
-        int[] insets = screenInsets();
-        view.setPadding(insets[0], insets[1], insets[2], insets[3]);
-    }
-
-    private int[] screenInsets() {
-        if (RoundLayoutMetrics.isRectangularWatchDisplay(this)) {
-            return new int[]{0, 0, 0, 0};
-        }
-        DisplayMetrics metrics = screenMetrics();
-        int horizontalPercent = Math.max(0, Math.min(30,
-                this.session.screenPaddingHPercent()));
-        int verticalPercent = Math.max(0, Math.min(30,
-                this.session.screenPaddingVPercent()));
-        int horizontal = (metrics.widthPixels * horizontalPercent) / 100;
-        int vertical = (metrics.heightPixels * verticalPercent) / 100;
-        return new int[]{horizontal, vertical, horizontal, vertical};
     }
 
     private DisplayMetrics screenMetrics() {
@@ -1140,8 +1117,12 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private void applyPalette() {
-        this.PRIMARY = parseThemeColor(this.session.primaryColor(), Color.rgb(36, 121, 184));
-        this.SECONDARY = parseThemeColor(this.session.secondaryColor(), Color.rgb(94, 158, 255));
+        int defaultPrimary = this.session.darkMode()
+                ? Color.WHITE : Color.rgb(20, 21, 23);
+        int defaultSecondary = this.session.darkMode()
+                ? Color.rgb(196, 198, 201) : Color.rgb(87, 91, 96);
+        this.PRIMARY = parseThemeColor(this.session.primaryColor(), defaultPrimary);
+        this.SECONDARY = parseThemeColor(this.session.secondaryColor(), defaultSecondary);
         this.themeTokens = ThemeTokens.of(this.session.darkMode(), this.PRIMARY, this.SECONDARY);
         this.BG = this.themeTokens.background;
         this.PANEL = this.themeTokens.panel;

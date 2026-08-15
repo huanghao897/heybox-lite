@@ -47,8 +47,6 @@ final class SessionStore {
     private static final String TEXT_SCALE = "text_scale";
     private static final String PAGE_PADDING = "page_padding";
     private static final String ROUND_SCREEN = "round_screen";
-    private static final String SCREEN_PADDING_H_PERCENT = "screen_padding_h_percent";
-    private static final String SCREEN_PADDING_V_PERCENT = "screen_padding_v_percent";
     private static final String DARK_MODE = "dark_mode";
     private static final String ORIGINAL_IMAGES = "original_images";
     private static final String ACCENT_COLOR = "accent_color";
@@ -248,9 +246,8 @@ final class SessionStore {
     }
 
     boolean usesRoundLayout() {
-        if (RoundLayoutMetrics.isRoundDisplay(context)) return true;
-        return prefs.getBoolean(ROUND_SCREEN, false)
-                && !RoundLayoutMetrics.isWatchDisplay(context);
+        return RoundLayoutMetrics.isRoundDisplay(context)
+                || prefs.getBoolean(ROUND_SCREEN, false);
     }
 
     int pagePadding() {
@@ -267,22 +264,6 @@ final class SessionStore {
 
     void setRoundScreen(boolean value) {
         prefs.edit().putBoolean(ROUND_SCREEN, value).apply();
-    }
-
-    int screenPaddingHPercent() {
-        return prefs.getInt(SCREEN_PADDING_H_PERCENT, 0);
-    }
-
-    void setScreenPaddingHPercent(int value) {
-        prefs.edit().putInt(SCREEN_PADDING_H_PERCENT, clampPercent(value)).apply();
-    }
-
-    int screenPaddingVPercent() {
-        return prefs.getInt(SCREEN_PADDING_V_PERCENT, 0);
-    }
-
-    void setScreenPaddingVPercent(int value) {
-        prefs.edit().putInt(SCREEN_PADDING_V_PERCENT, clampPercent(value)).apply();
     }
 
     boolean darkMode() {
@@ -667,10 +648,8 @@ final class SessionStore {
                 .putInt(TEXT_SCALE, 100)
                 .putInt(PAGE_PADDING, 8)
                 .putBoolean(ROUND_SCREEN, false)
-                .putInt(SCREEN_PADDING_H_PERCENT, 0)
-                .putInt(SCREEN_PADDING_V_PERCENT, 0)
-                .putString(PRIMARY_COLOR, "#2479B8")
-                .putString(SECONDARY_COLOR, "#73B8E6")
+                .remove(PRIMARY_COLOR)
+                .remove(SECONDARY_COLOR)
                 .remove(ACCENT_COLOR)
                 .putInt(BODY_TEXT_SCALE, 100)
                 .putInt(BODY_LETTER_SPACING, 0)
@@ -1394,7 +1373,4 @@ final class SessionStore {
         return false;
     }
 
-    private static int clampPercent(int value) {
-        return Math.max(0, Math.min(30, value));
-    }
 }

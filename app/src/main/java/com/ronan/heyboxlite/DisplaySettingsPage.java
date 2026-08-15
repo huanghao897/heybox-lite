@@ -32,7 +32,7 @@ final class DisplaySettingsPage {
     }
 
     private static final String[] THEME_NAMES = {
-            "默认蓝", "红色", "粉色", "紫色", "绿色", "青色",
+            "蓝色", "红色", "粉色", "紫色", "绿色", "青色",
             "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"
     };
     private static final int[][] THEME_COLORS = {
@@ -89,8 +89,8 @@ final class DisplaySettingsPage {
 
         this.settingsUi.addSection(page, screenAdaptationLabel());
         panel = this.settingsUi.list();
-        if (RoundLayoutMetrics.isRectangularWatchDisplay(this.activity)) {
-            this.settingsUi.addInfoEntry(panel, "屏幕形状", null, "方屏",
+        if (isSystemRoundScreen()) {
+            this.settingsUi.addInfoEntry(panel, "屏幕形状", null, "圆屏（自动适配）",
                     R.drawable.il_round_screen);
         } else {
             addTop(panel, this.settingsUi.toggle("圆屏适配", "", null,
@@ -98,14 +98,6 @@ final class DisplaySettingsPage {
                         this.session.setRoundScreen(value);
                         refresh("display_settings");
                     }), 0);
-            this.settingsUi.addRangeEntry(panel, "横向安全区", "%",
-                    R.drawable.il_round_screen, 0, 30, 1,
-                    this.session.screenPaddingHPercent(), this.session::setScreenPaddingHPercent,
-                    () -> refresh("display_settings"));
-            this.settingsUi.addRangeEntry(panel, "纵向安全区", "%",
-                    R.drawable.il_round_screen, 0, 30, 1,
-                    this.session.screenPaddingVPercent(), this.session::setScreenPaddingVPercent,
-                    () -> refresh("display_settings"));
         }
         page.addView(panel);
 
@@ -279,6 +271,10 @@ final class DisplaySettingsPage {
     }
 
     private String currentThemeCaption() {
+        if (this.session.primaryColor().isEmpty()
+                && this.session.secondaryColor().isEmpty()) {
+            return "当前 · 黑灰";
+        }
         for (int i = 0; i < THEME_NAMES.length; i++) {
             if (currentPrimary() == THEME_COLORS[i][0]
                     && currentSecondary() == THEME_COLORS[i][1]) {
@@ -302,13 +298,13 @@ final class DisplaySettingsPage {
         String saved = this.session.secondaryColor();
         if (saved.isEmpty()) {
             return this.session.darkMode()
-                    ? Color.rgb(150, 190, 220) : Color.rgb(35, 125, 178);
+                    ? Color.rgb(196, 198, 201) : Color.rgb(87, 91, 96);
         }
         try {
             return Color.parseColor(saved);
         } catch (IllegalArgumentException ignored) {
             return this.session.darkMode()
-                    ? Color.rgb(150, 190, 220) : Color.rgb(35, 125, 178);
+                    ? Color.rgb(196, 198, 201) : Color.rgb(87, 91, 96);
         }
     }
 

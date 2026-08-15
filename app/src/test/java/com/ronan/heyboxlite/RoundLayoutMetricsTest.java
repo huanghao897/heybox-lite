@@ -1,8 +1,6 @@
 package com.ronan.heyboxlite;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -38,12 +36,4 @@ public class RoundLayoutMetricsTest {
                 -1, RoundLayoutMetrics.PAGE_HORIZONTAL_RATIO, 0));
     }
 
-    @Test
-    public void squareAndFourByThreeWatchDisplaysUseWatchProfile() {
-        assertTrue(RoundLayoutMetrics.isRoundAspectRatio(466, 466));
-        assertTrue(RoundLayoutMetrics.isWatchAspectRatio(466, 466, 2.0f));
-        assertTrue(RoundLayoutMetrics.isWatchAspectRatio(480, 640, 2.0f));
-        assertFalse(RoundLayoutMetrics.isRoundAspectRatio(480, 640));
-        assertFalse(RoundLayoutMetrics.isWatchAspectRatio(480, 800, 2.0f));
-    }
 }

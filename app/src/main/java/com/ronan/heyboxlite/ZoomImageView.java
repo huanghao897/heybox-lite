@@ -17,7 +17,7 @@ final class ZoomImageView extends ImageView {
     interface GestureListener {
         void onPull(float dx, float dy, float progress);
 
-        void onPullEnd(boolean dismiss, float direction);
+        void onPullEnd(boolean dismiss);
     }
 
     private static final float MIN_DOUBLE_TAP_ZOOM = 2.35f;
@@ -60,6 +60,9 @@ final class ZoomImageView extends ImageView {
         scaleDetector = new ScaleGestureDetector(context,
                 new ScaleGestureDetector.SimpleOnScaleGestureListener() {
                     @Override public boolean onScaleBegin(ScaleGestureDetector detector) {
+                        if (pulling && gestureListener != null) {
+                            gestureListener.onPullEnd(false);
+                        }
                         pulling = false;
                         moved = true;
                         cancelMatrixAnimation();
@@ -115,6 +118,14 @@ final class ZoomImageView extends ImageView {
     void setRoundDisplay(boolean value) {
         roundDisplay = value;
         if (getDrawable() != null) post(this::fitImage);
+    }
+
+    void cancelMotion() {
+        cancelMatrixAnimation();
+        pulling = false;
+        secondTap = false;
+        moved = false;
+        lastTapAt = 0L;
     }
 
     boolean isSecondTapCandidate(float x, float y, long eventTime) {
@@ -203,7 +214,7 @@ final class ZoomImageView extends ImageView {
                 return true;
             case MotionEvent.ACTION_CANCEL:
                 if (pulling && gestureListener != null) {
-                    gestureListener.onPullEnd(false, 0.0f);
+                    gestureListener.onPullEnd(false);
                 }
                 pulling = false;
                 secondTap = false;
@@ -247,7 +258,7 @@ final class ZoomImageView extends ImageView {
         float velocity = dy * 1000.0f / elapsed;
         boolean dismiss = dy > getHeight() * 0.18f || velocity > 720.0f;
         if (gestureListener != null) {
-            gestureListener.onPullEnd(dismiss, 1.0f);
+            gestureListener.onPullEnd(dismiss);
         }
         pulling = false;
     }

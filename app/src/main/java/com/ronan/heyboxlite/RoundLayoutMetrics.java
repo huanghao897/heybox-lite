@@ -2,14 +2,10 @@ package com.ronan.heyboxlite;
 
 import android.content.Context;
 import android.os.Build;
-import android.util.DisplayMetrics;
 
 import java.util.Locale;
 
 final class RoundLayoutMetrics {
-    private static final float ROUND_ASPECT_RATIO = 1.06f;
-    private static final float WATCH_ASPECT_RATIO = 1.40f;
-
     static final float PAGE_HORIZONTAL_RATIO = 0.105f;
     static final float HEADER_HORIZONTAL_RATIO = 0.13f;
     static final float SEARCH_HORIZONTAL_RATIO = 0.075f;
@@ -29,9 +25,7 @@ final class RoundLayoutMetrics {
         String compactModel = model.replace(" ", "");
         if (model.contains("watch x2") || compactModel.contains("watchx2")
                 || compactModel.contains("owatchx2")) return true;
-        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
-        return model.contains("watch")
-                && isRoundAspectRatio(metrics.widthPixels, metrics.heightPixels);
+        return false;
     }
 
     static boolean isWatchDisplay(Context context) {
@@ -48,23 +42,7 @@ final class RoundLayoutMetrics {
         }
         String model = Build.MODEL == null ? "" : Build.MODEL.toLowerCase(Locale.US);
         if (model.contains("watch")) return true;
-        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
-        return isWatchAspectRatio(metrics.widthPixels, metrics.heightPixels, metrics.density);
-    }
-
-    static boolean isRoundAspectRatio(int widthPx, int heightPx) {
-        int shortSide = Math.min(widthPx, heightPx);
-        int longSide = Math.max(widthPx, heightPx);
-        return shortSide > 0 && longSide / (float) shortSide <= ROUND_ASPECT_RATIO;
-    }
-
-    static boolean isWatchAspectRatio(int widthPx, int heightPx, float density) {
-        int shortSide = Math.min(widthPx, heightPx);
-        int longSide = Math.max(widthPx, heightPx);
-        if (shortSide <= 0 || longSide <= 0) return false;
-        float shortDp = shortSide / Math.max(1.0f, density);
-        return shortSide <= 600 && shortDp <= 320.0f
-                && longSide / (float) shortSide <= WATCH_ASPECT_RATIO;
+        return false;
     }
 
     static boolean isRectangularWatchDisplay(Context context) {
