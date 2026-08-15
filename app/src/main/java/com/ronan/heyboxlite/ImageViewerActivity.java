@@ -211,6 +211,7 @@ public final class ImageViewerActivity extends Activity {
         original.setVisibility(session.originalImages() ? View.VISIBLE : View.GONE);
 
         setContentView(root);
+        if (roundDisplay) root.post(this::positionRoundChrome);
         prepareEnterAnimation();
         bindPage(current, true);
         preloadNeighbors(current);
@@ -239,7 +240,7 @@ public final class ImageViewerActivity extends Activity {
             long duration = Motions.full() ? 240L : 205L;
             backdrop.animate().alpha(1.0f).setDuration(duration).start();
             root.postDelayed(() -> {
-                if (!destroyed && !isFinishing()) setChromeAlpha(1.0f);
+                if (!destroyed && !isFinishing() && !pullingImage) setChromeAlpha(1.0f);
             }, Math.min(80L, duration / 3L));
         });
     }
@@ -297,6 +298,7 @@ public final class ImageViewerActivity extends Activity {
         if (!pullingImage) {
             pullingImage = true;
             page.animate().cancel();
+            backdrop.animate().cancel();
         }
         float scale = 1.0f - Math.min(0.16f, progress * 0.20f);
         page.setTranslationX(dx);
@@ -762,6 +764,53 @@ public final class ImageViewerActivity extends Activity {
 
     private int chromeInset() {
         return dp(roundDisplay ? 36 : 16);
+    }
+
+    private void positionRoundChrome() {
+        if (destroyed || root == null || root.getWidth() == 0 || root.getHeight() == 0) return;
+        int edge = Math.max(dp(10), Math.round(Math.min(root.getWidth(), root.getHeight()) * 0.06f));
+        int iconSize = dp(44);
+
+        if (closeButton != null) {
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) closeButton.getLayoutParams();
+            params.width = iconSize;
+            params.height = iconSize;
+            params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            params.leftMargin = 0;
+            params.rightMargin = 0;
+            params.topMargin = edge;
+            params.bottomMargin = 0;
+            closeButton.setLayoutParams(params);
+        }
+        if (counter != null) {
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) counter.getLayoutParams();
+            params.gravity = Gravity.CENTER_VERTICAL | Gravity.END;
+            params.leftMargin = 0;
+            params.rightMargin = edge;
+            params.topMargin = 0;
+            params.bottomMargin = 0;
+            counter.setLayoutParams(params);
+        }
+        if (download != null) {
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) download.getLayoutParams();
+            params.width = iconSize;
+            params.height = iconSize;
+            params.gravity = Gravity.CENTER_VERTICAL | Gravity.START;
+            params.leftMargin = edge;
+            params.rightMargin = 0;
+            params.topMargin = 0;
+            params.bottomMargin = 0;
+            download.setLayoutParams(params);
+        }
+        if (original != null) {
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) original.getLayoutParams();
+            params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+            params.leftMargin = 0;
+            params.rightMargin = 0;
+            params.topMargin = 0;
+            params.bottomMargin = edge;
+            original.setLayoutParams(params);
+        }
     }
 
     private int roundImageInset() {
