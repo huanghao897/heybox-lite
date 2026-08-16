@@ -14,6 +14,7 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
 
 final class ZoomImageView extends ImageView {
+    private static final int INVALID_POINTER_ID = -1;
     private static final long PHONE_DOUBLE_TAP_TIMEOUT_MS = 340L;
     private static final long WATCH_DOUBLE_TAP_TIMEOUT_MS = 480L;
     private final Matrix matrix = new Matrix();
@@ -44,6 +45,13 @@ final class ZoomImageView extends ImageView {
     private ValueAnimator matrixAnimator;
     private int tapZoomLevel;
     private float animationStartScale;
+    private int activePointerId = INVALID_POINTER_ID;
+    private boolean multiTouchGesture;
+    private final Runnable pendingFitTap = () -> {
+        if (tapZoomLevel >= 2 && lastTapAt > 0L && !multiTouchGesture) {
+            animateFitImage();
+        }
+    };
 
     ZoomImageView(Context context) {
         super(context);
@@ -61,6 +69,9 @@ final class ZoomImageView extends ImageView {
                         }
                         pulling = false;
                         moved = true;
+                        multiTouchGesture = true;
+                        cancelPendingSingleTap();
+                        lastTapAt = 0L;
                         cancelMatrixAnimation();
                         return true;
                     }
@@ -84,6 +95,8 @@ final class ZoomImageView extends ImageView {
 
     void fitImage() {
         cancelMatrixAnimation();
+        cancelPendingSingleTap();
+        lastTapAt = 0L;
         Drawable drawable = getDrawable();
         if (drawable == null || getWidth() == 0 || getHeight() == 0) return;
         float inset = roundDisplay
@@ -119,8 +132,11 @@ final class ZoomImageView extends ImageView {
 
     void cancelMotion() {
         cancelMatrixAnimation();
+        cancelPendingSingleTap();
         pulling = false;
         secondTap = false;
+        multiTouchGesture = false;
+        activePointerId = INVALID_POINTER_ID;
         moved = false;
         lastTapAt = 0L;
     }
@@ -160,6 +176,11 @@ final class ZoomImageView extends ImageView {
             case MotionEvent.ACTION_DOWN:
                 if (gestureListener != null) gestureListener.onInteractionStart();
                 cancelMatrixAnimation();
+                boolean isSecondTap = isSecondTap(
+                        event.getX(), event.getY(), event.getEventTime());
+                cancelPendingSingleTap();
+                if (!isSecondTap) lastTapAt = 0L;
+                activePointerId = event.getPointerId(0);
                 lastX = event.getX();
                 lastY = event.getY();
                 downX = lastX;
@@ -168,23 +189,47 @@ final class ZoomImageView extends ImageView {
                 downRawY = event.getRawY();
                 moved = false;
                 pulling = false;
-                secondTap = isSecondTap(event.getX(), event.getY(), event.getEventTime());
+                secondTap = isSecondTap;
+                multiTouchGesture = false;
+                return true;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                if (pulling && gestureListener != null) {
+                    gestureListener.onPullEnd(false);
+                }
+                pulling = false;
+                moved = true;
+                secondTap = false;
+                multiTouchGesture = true;
+                cancelPendingSingleTap();
+                lastTapAt = 0L;
+                requestParentTouch(true);
+                updateLastPointerPosition(event);
                 return true;
             case MotionEvent.ACTION_MOVE:
-                if (scaleDetector.isInProgress()) return true;
+                int pointerIndex = activePointerIndex(event);
+                float currentX = event.getX(pointerIndex);
+                float currentY = event.getY(pointerIndex);
+                if (event.getPointerCount() > 1 || scaleDetector.isInProgress()) {
+                    multiTouchGesture = true;
+                    moved = true;
+                    lastX = currentX;
+                    lastY = currentY;
+                    return true;
+                }
                 float dx = event.getRawX() - downRawX;
                 float dy = event.getRawY() - downRawY;
                 if (secondTap) {
                     if (Math.abs(dx) <= doubleTapSlop && Math.abs(dy) <= doubleTapSlop) {
-                        lastX = event.getX();
-                        lastY = event.getY();
+                        lastX = currentX;
+                        lastY = currentY;
                         return true;
                     }
                     secondTap = false;
+                    cancelPendingSingleTap();
                     lastTapAt = 0L;
                 }
                 if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) moved = true;
-                if (!pulling && !secondTap && scale <= 1.01f
+                if (!pulling && !secondTap && !multiTouchGesture && scale <= 1.01f
                         && Math.abs(dy) > pullTouchThreshold
                         && Math.abs(dy) > Math.abs(dx) * 1.18f) {
                     pulling = true;
@@ -203,16 +248,33 @@ final class ZoomImageView extends ImageView {
                 }
                 if (scale > 1f) {
                     cancelMatrixAnimation();
-                    matrix.postTranslate(event.getX() - lastX, event.getY() - lastY);
+                    matrix.postTranslate(currentX - lastX, currentY - lastY);
                     correctBounds();
                     setImageMatrix(matrix);
                 }
-                lastX = event.getX();
-                lastY = event.getY();
+                lastX = currentX;
+                lastY = currentY;
+                return true;
+            case MotionEvent.ACTION_POINTER_UP:
+                multiTouchGesture = true;
+                moved = true;
+                secondTap = false;
+                cancelPendingSingleTap();
+                lastTapAt = 0L;
+                selectRemainingPointer(event);
                 return true;
             case MotionEvent.ACTION_UP:
+                requestParentTouch(false);
+                activePointerId = INVALID_POINTER_ID;
                 if (pulling) {
                     finishPull(event);
+                    return true;
+                }
+                if (multiTouchGesture) {
+                    multiTouchGesture = false;
+                    secondTap = false;
+                    correctBounds();
+                    setImageMatrix(matrix);
                     return true;
                 }
                 if (secondTap) {
@@ -232,11 +294,15 @@ final class ZoomImageView extends ImageView {
                 }
                 return true;
             case MotionEvent.ACTION_CANCEL:
+                requestParentTouch(false);
                 if (pulling && gestureListener != null) {
                     gestureListener.onPullEnd(false);
                 }
                 pulling = false;
                 secondTap = false;
+                multiTouchGesture = false;
+                activePointerId = INVALID_POINTER_ID;
+                cancelPendingSingleTap();
                 lastTapAt = 0L;
                 correctBounds();
                 setImageMatrix(matrix);
@@ -248,11 +314,6 @@ final class ZoomImageView extends ImageView {
 
     private void handleSingleTap(float x, float y, long eventTime) {
         performClick();
-        if (tapZoomLevel >= 2) {
-            animateFitImage();
-            lastTapAt = 0L;
-            return;
-        }
         if (!isOnImage(x, y) && blankClickListener != null) {
             blankClickListener.run();
             lastTapAt = 0L;
@@ -261,6 +322,9 @@ final class ZoomImageView extends ImageView {
         lastTapAt = eventTime > 0L ? eventTime : SystemClock.uptimeMillis();
         lastTapX = x;
         lastTapY = y;
+        if (tapZoomLevel >= 2) {
+            postDelayed(pendingFitTap, doubleTapTimeout + 16L);
+        }
     }
 
     private boolean isSecondTap(float x, float y, long eventTime) {
@@ -283,7 +347,7 @@ final class ZoomImageView extends ImageView {
 
     private void toggleDoubleTap(float x, float y) {
         float widthZoom = widthFillZoom();
-        tapZoomLevel = ImageZoomPolicy.nextLevel(tapZoomLevel, scale);
+        tapZoomLevel = ImageZoomPolicy.nextLevel(tapZoomLevel);
         if (tapZoomLevel == 0) {
             animateFitImage();
             return;
@@ -313,6 +377,9 @@ final class ZoomImageView extends ImageView {
     }
 
     private void animateFitImage() {
+        cancelPendingSingleTap();
+        lastTapAt = 0L;
+        secondTap = false;
         Matrix targetMatrix = fitMatrix();
         if (targetMatrix == null) {
             fitImage();
@@ -366,6 +433,49 @@ final class ZoomImageView extends ImageView {
             matrixAnimator.cancel();
             matrixAnimator = null;
         }
+    }
+
+    private void cancelPendingSingleTap() {
+        removeCallbacks(pendingFitTap);
+    }
+
+    private int activePointerIndex(MotionEvent event) {
+        int index = event.findPointerIndex(activePointerId);
+        return index >= 0 ? index : 0;
+    }
+
+    private void updateLastPointerPosition(MotionEvent event) {
+        int index = activePointerIndex(event);
+        lastX = event.getX(index);
+        lastY = event.getY(index);
+    }
+
+    private void selectRemainingPointer(MotionEvent event) {
+        int liftedIndex = event.getActionIndex();
+        int liftedId = event.getPointerId(liftedIndex);
+        if (liftedId != activePointerId) {
+            updateLastPointerPosition(event);
+            return;
+        }
+        for (int i = 0; i < event.getPointerCount(); i++) {
+            if (i == liftedIndex) continue;
+            activePointerId = event.getPointerId(i);
+            lastX = event.getX(i);
+            lastY = event.getY(i);
+            return;
+        }
+        activePointerId = INVALID_POINTER_ID;
+    }
+
+    private void requestParentTouch(boolean disallow) {
+        if (getParent() != null) {
+            getParent().requestDisallowInterceptTouchEvent(disallow);
+        }
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        cancelMotion();
+        super.onDetachedFromWindow();
     }
 
     private void correctBounds() {

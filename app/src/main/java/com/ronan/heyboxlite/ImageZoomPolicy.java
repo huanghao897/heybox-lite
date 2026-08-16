@@ -6,10 +6,10 @@ final class ImageZoomPolicy {
 
     private ImageZoomPolicy() {}
 
-    static int nextLevel(int currentLevel, float currentScale) {
-        if (currentLevel <= 0 || currentScale <= 1.05f) return 1;
+    static int nextLevel(int currentLevel) {
         if (currentLevel == 1) return 2;
-        return 0;
+        if (currentLevel == 2) return 0;
+        return 1;
     }
 
     static float targetScale(int level, float widthFillZoom) {

@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
@@ -2437,8 +2438,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
 
     /** 帖子多图：把整组图和当前索引交给查看器，放大后可左右滑动切换。 */
     private void openImage(ImageView source, String[] urls, int index) {
-        int[] location = new int[2];
-        source.getLocationOnScreen(location);
         String current = urls.length > 0 ? urls[Math.max(0, Math.min(urls.length - 1, index))] : "";
         Drawable drawable = source.getDrawable();
         Bitmap preview = null;
@@ -2452,10 +2451,11 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             intent.putExtra("image_urls", urls);
             intent.putExtra("image_index", index);
         }
-        intent.putExtra("origin_x", location[0] + (source.getWidth() / 2));
-        intent.putExtra("origin_y", location[1] + (source.getHeight() / 2));
-        intent.putExtra("origin_width", source.getWidth());
-        intent.putExtra("origin_height", source.getHeight());
+        Rect sourceBounds = ImageTransitionSource.visibleBoundsOnScreen(source);
+        intent.putExtra("origin_x", sourceBounds.centerX());
+        intent.putExtra("origin_y", sourceBounds.centerY());
+        intent.putExtra("origin_width", sourceBounds.width());
+        intent.putExtra("origin_height", sourceBounds.height());
         startActivity(intent);
         overridePendingTransition(0, 0);
     }
