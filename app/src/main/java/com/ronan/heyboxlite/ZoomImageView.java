@@ -14,12 +14,6 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
 
 final class ZoomImageView extends ImageView {
-    interface GestureListener {
-        void onPull(float dx, float dy, float progress);
-
-        void onPullEnd(boolean dismiss);
-    }
-
     private static final long PHONE_DOUBLE_TAP_TIMEOUT_MS = 340L;
     private static final long WATCH_DOUBLE_TAP_TIMEOUT_MS = 480L;
     private final Matrix matrix = new Matrix();
@@ -28,6 +22,7 @@ final class ZoomImageView extends ImageView {
     private final float[] animValues = new float[9];
     private final ScaleGestureDetector scaleDetector;
     private final int touchSlop;
+    private final float pullTouchThreshold;
     private final long doubleTapTimeout;
     private final float doubleTapSlop;
     private float scale = 1f;
@@ -35,6 +30,8 @@ final class ZoomImageView extends ImageView {
     private float lastY;
     private float downX;
     private float downY;
+    private float downRawX;
+    private float downRawY;
     private long lastTapAt;
     private float lastTapX;
     private float lastTapY;
@@ -43,7 +40,7 @@ final class ZoomImageView extends ImageView {
     private boolean secondTap;
     private boolean roundDisplay;
     private Runnable blankClickListener;
-    private GestureListener gestureListener;
+    private ImagePullListener gestureListener;
     private ValueAnimator matrixAnimator;
     private int tapZoomLevel;
     private float animationStartScale;
@@ -52,6 +49,7 @@ final class ZoomImageView extends ImageView {
         super(context);
         setScaleType(ScaleType.MATRIX);
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        pullTouchThreshold = touchSlop * ImageDismissPolicy.TOUCH_SLOP_MULTIPLIER;
         doubleTapTimeout = RoundLayoutMetrics.isWatchDisplay(context)
                 ? WATCH_DOUBLE_TAP_TIMEOUT_MS : PHONE_DOUBLE_TAP_TIMEOUT_MS;
         doubleTapSlop = Math.max(dp(24), touchSlop * 3.0f);
@@ -110,7 +108,7 @@ final class ZoomImageView extends ImageView {
         blankClickListener = listener;
     }
 
-    void setGestureListener(GestureListener listener) {
+    void setGestureListener(ImagePullListener listener) {
         gestureListener = listener;
     }
 
@@ -160,19 +158,22 @@ final class ZoomImageView extends ImageView {
         scaleDetector.onTouchEvent(event);
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                if (gestureListener != null) gestureListener.onInteractionStart();
                 cancelMatrixAnimation();
                 lastX = event.getX();
                 lastY = event.getY();
                 downX = lastX;
                 downY = lastY;
+                downRawX = event.getRawX();
+                downRawY = event.getRawY();
                 moved = false;
                 pulling = false;
                 secondTap = isSecondTap(event.getX(), event.getY(), event.getEventTime());
                 return true;
             case MotionEvent.ACTION_MOVE:
                 if (scaleDetector.isInProgress()) return true;
-                float dx = event.getX() - downX;
-                float dy = event.getY() - downY;
+                float dx = event.getRawX() - downRawX;
+                float dy = event.getRawY() - downRawY;
                 if (secondTap) {
                     if (Math.abs(dx) <= doubleTapSlop && Math.abs(dy) <= doubleTapSlop) {
                         lastX = event.getX();
@@ -184,19 +185,19 @@ final class ZoomImageView extends ImageView {
                 }
                 if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) moved = true;
                 if (!pulling && !secondTap && scale <= 1.01f
-                        && dy > touchSlop
-                        && dy > Math.abs(dx) * 1.18f) {
+                        && Math.abs(dy) > pullTouchThreshold
+                        && Math.abs(dy) > Math.abs(dx) * 1.18f) {
                     pulling = true;
                     if (getParent() != null) {
                         getParent().requestDisallowInterceptTouchEvent(true);
                     }
                 }
                 if (pulling) {
-                    float pullDistance = Math.max(0.0f, dy);
-                    float progress = Math.min(1.0f,
-                            pullDistance / Math.max(1.0f, getHeight()));
+                    float pullDistance = ImageDismissPolicy.effectiveDistance(
+                            dy, pullTouchThreshold);
+                    float progress = ImageDismissPolicy.progress(pullDistance, getHeight());
                     if (gestureListener != null) {
-                        gestureListener.onPull(dx * 0.22f, pullDistance, progress);
+                        gestureListener.onPull(dx * 0.5f, pullDistance, progress);
                     }
                     return true;
                 }
@@ -271,10 +272,9 @@ final class ZoomImageView extends ImageView {
     }
 
     private void finishPull(MotionEvent event) {
-        float dy = event.getY() - downY;
-        long elapsed = Math.max(1L, event.getEventTime() - event.getDownTime());
-        float velocity = dy * 1000.0f / elapsed;
-        boolean dismiss = dy > getHeight() * 0.18f || velocity > 720.0f;
+        float dy = ImageDismissPolicy.effectiveDistance(
+                event.getRawY() - downRawY, pullTouchThreshold);
+        boolean dismiss = ImageDismissPolicy.shouldDismiss(dy, getHeight());
         if (gestureListener != null) {
             gestureListener.onPullEnd(dismiss);
         }

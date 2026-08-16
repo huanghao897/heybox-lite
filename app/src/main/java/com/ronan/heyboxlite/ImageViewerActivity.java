@@ -24,7 +24,6 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -54,7 +53,7 @@ public final class ImageViewerActivity extends Activity {
     private boolean[] longCandidates;
     private boolean[] longLoading;
     private int[] longRequestIds;
-    private ScrollView[] longViews;
+    private DismissibleImageScrollView[] longViews;
     private long[] sizes;
     private String[] urls;
     private int current;
@@ -68,8 +67,6 @@ public final class ImageViewerActivity extends Activity {
     private boolean pageTransitionStarted;
     private boolean pullingImage;
     private int animationSerial;
-    private ImageView transitionImage;
-    private int transitionImageIndex = -1;
     private WeakReference<ImageView> sourcePreview;
     private int sourcePreviewVisibility = View.VISIBLE;
     private boolean sourcePreviewHidden;
@@ -104,7 +101,7 @@ public final class ImageViewerActivity extends Activity {
         longCandidates = new boolean[count];
         longLoading = new boolean[count];
         longRequestIds = new int[count];
-        longViews = new ScrollView[count];
+        longViews = new DismissibleImageScrollView[count];
         sizes = new long[count];
         for (int i = 0; i < count; i++) sizes[i] = -1L;
 
@@ -123,15 +120,7 @@ public final class ImageViewerActivity extends Activity {
             view.setRoundDisplay(roundDisplay);
             view.setOnBlankClickListener(this::closeViewer);
             final int pageIndex = i;
-            view.setGestureListener(new ZoomImageView.GestureListener() {
-                @Override public void onPull(float dx, float dy, float progress) {
-                    updatePull(pageIndex, dx, dy, progress);
-                }
-
-                @Override public void onPullEnd(boolean dismiss) {
-                    finishPull(pageIndex, dismiss);
-                }
-            });
+            view.setGestureListener(createPullListener(pageIndex));
             page.addView(view, new FrameLayout.LayoutParams(-1, -1));
             LoadingSpinnerView spinner = new LoadingSpinnerView(this);
             spinner.setColor(Color.argb(210, 235, 238, 241));
@@ -263,8 +252,8 @@ public final class ImageViewerActivity extends Activity {
             return;
         }
         pageTransitionStarted = true;
-        FrameLayout page = imagePages[index];
-        Motions.reset(page);
+        ZoomImageView image = images[index];
+        resetImageTransform(image);
         if (Motions.off()) {
             backdrop.setAlpha(1.0f);
             setChromeAlpha(1.0f);
@@ -273,26 +262,16 @@ public final class ImageViewerActivity extends Activity {
         android.graphics.RectF target = imageRectInRoot(index);
         android.graphics.RectF origin = originRectInRoot();
         if (!validRect(target) || !validRect(origin)) return;
-        ImageView layer = createTransitionImage(index, target);
-        if (layer == null) return;
 
         hideSourcePreview();
-        images[index].setAlpha(0.0f);
-        layer.setPivotX(0.0f);
-        layer.setPivotY(0.0f);
-        layer.setScaleX(origin.width() / target.width());
-        layer.setScaleY(origin.height() / target.height());
-        layer.setTranslationX(origin.left - target.left);
-        layer.setTranslationY(origin.top - target.top);
-        layer.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        applyImageTransform(image, imageTransform(image, target, origin));
         long duration = Motions.full() ? 240L : 205L;
-        layer.animate().scaleX(1.0f).scaleY(1.0f)
+        image.animate().scaleX(1.0f).scaleY(1.0f)
                 .translationX(0.0f).translationY(0.0f)
                 .setDuration(duration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
-        attachAnimationEndAction(layer, duration,
-                () -> completeTransitionImage(index));
-        layer.animate().start();
+        attachAnimationEndAction(image, duration, () -> resetImageTransform(image));
+        image.animate().start();
     }
 
     private void claimSourcePreview() {
@@ -346,89 +325,124 @@ public final class ImageViewerActivity extends Activity {
         return rect != null && rect.width() > 1.0f && rect.height() > 1.0f;
     }
 
-    private ImageView createTransitionImage(int index, android.graphics.RectF rect) {
-        if (!validRect(rect) || images[index].getDrawable() == null) return null;
-        cancelTransitionImage();
-        ImageView layer = new ImageView(this);
-        layer.setScaleType(ImageView.ScaleType.FIT_XY);
-        Drawable source = images[index].getDrawable();
-        Drawable.ConstantState state = source.getConstantState();
-        layer.setImageDrawable(state == null ? source : state.newDrawable(getResources()));
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                Math.max(1, Math.round(rect.width())),
-                Math.max(1, Math.round(rect.height())));
-        params.leftMargin = Math.round(rect.left);
-        params.topMargin = Math.round(rect.top);
-        int pagerIndex = root.indexOfChild(pager);
-        root.addView(layer, Math.min(root.getChildCount(), pagerIndex + 1), params);
-        this.transitionImage = layer;
-        this.transitionImageIndex = index;
-        return layer;
-    }
-
-    private void completeTransitionImage(int index) {
-        ImageView layer = this.transitionImage;
-        this.transitionImage = null;
-        this.transitionImageIndex = -1;
-        if (layer != null) {
-            layer.setLayerType(View.LAYER_TYPE_NONE, null);
-            root.removeView(layer);
-            layer.setImageDrawable(null);
-        }
-        if (index >= 0 && index < images.length) images[index].setAlpha(1.0f);
-    }
-
-    private void cancelTransitionImage() {
+    private void cancelViewerAnimationCallbacks() {
         this.animationSerial++;
-        ImageView layer = this.transitionImage;
-        int index = this.transitionImageIndex;
-        this.transitionImage = null;
-        this.transitionImageIndex = -1;
-        if (layer != null) {
-            layer.animate().cancel();
-            layer.setLayerType(View.LAYER_TYPE_NONE, null);
-            if (root != null) root.removeView(layer);
-            layer.setImageDrawable(null);
-        }
-        if (images != null && index >= 0 && index < images.length) {
-            images[index].setAlpha(1.0f);
-        }
     }
 
     private void cancelViewerAnimations(int index, boolean restore) {
-        cancelTransitionImage();
+        cancelViewerAnimationCallbacks();
         FrameLayout page = imagePages[index];
         page.animate().cancel();
-        images[index].cancelZoomAnimation();
+        ZoomImageView image = images[index];
+        image.animate().cancel();
+        image.cancelZoomAnimation();
+        DismissibleImageScrollView longView = longViews[index];
+        if (longView != null) longView.animate().cancel();
         backdrop.animate().cancel();
         if (!restore) return;
         Motions.reset(page);
+        resetImageTransform(image);
+        if (longView != null) resetImageTransform(longView);
         backdrop.setAlpha(1.0f);
         setChromeAlpha(1.0f);
     }
 
+    private ImagePullListener createPullListener(final int index) {
+        return new ImagePullListener() {
+            @Override public void onInteractionStart() {
+                beginImageInteraction(index);
+            }
+
+            @Override public void onPull(float dx, float dy, float progress) {
+                updatePull(index, dx, dy, progress);
+            }
+
+            @Override public void onPullEnd(boolean dismiss) {
+                finishPull(index, dismiss);
+            }
+        };
+    }
+
+    private void beginImageInteraction(int index) {
+        if (destroyed || closing || index != current) return;
+        pullingImage = false;
+        cancelViewerAnimations(index, true);
+    }
+
+    private View activeImageView(int index) {
+        DismissibleImageScrollView longView = longViews[index];
+        return longView != null && longView.getVisibility() == View.VISIBLE
+                ? longView : images[index];
+    }
+
+    private ImageTransform imageTransform(View view, android.graphics.RectF from,
+                                          android.graphics.RectF to) {
+        int[] viewLocation = new int[2];
+        int[] rootLocation = new int[2];
+        view.getLocationOnScreen(viewLocation);
+        root.getLocationOnScreen(rootLocation);
+        float viewLeft = viewLocation[0] - rootLocation[0];
+        float viewTop = viewLocation[1] - rootLocation[1];
+        float scaleX = to.width() / from.width();
+        float scaleY = to.height() / from.height();
+        float translationX = to.left - viewLeft - ((from.left - viewLeft) * scaleX);
+        float translationY = to.top - viewTop - ((from.top - viewTop) * scaleY);
+        return new ImageTransform(scaleX, scaleY, translationX, translationY);
+    }
+
+    private void applyImageTransform(View view, ImageTransform transform) {
+        view.setPivotX(0.0f);
+        view.setPivotY(0.0f);
+        view.setScaleX(transform.scaleX);
+        view.setScaleY(transform.scaleY);
+        view.setTranslationX(transform.translationX);
+        view.setTranslationY(transform.translationY);
+        view.setAlpha(1.0f);
+    }
+
+    private void resetImageTransform(View view) {
+        Motions.reset(view);
+        view.setPivotX(view.getWidth() / 2.0f);
+        view.setPivotY(view.getHeight() / 2.0f);
+    }
+
+    private static final class ImageTransform {
+        final float scaleX;
+        final float scaleY;
+        final float translationX;
+        final float translationY;
+
+        ImageTransform(float scaleX, float scaleY, float translationX,
+                       float translationY) {
+            this.scaleX = scaleX;
+            this.scaleY = scaleY;
+            this.translationX = translationX;
+            this.translationY = translationY;
+        }
+    }
+
     private void updatePull(int index, float dx, float dy, float progress) {
         if (destroyed || closing || index != current) return;
-        FrameLayout page = imagePages[index];
+        View image = activeImageView(index);
         if (!pullingImage) {
             pullingImage = true;
             cancelViewerAnimations(index, true);
             hideSourcePreview();
         }
-        float scale = 1.0f - Math.min(0.16f, progress * 0.20f);
-        page.setTranslationX(dx);
-        page.setTranslationY(dy);
-        page.setScaleX(scale);
-        page.setScaleY(scale);
-        page.setAlpha(1.0f);
-        backdrop.setAlpha(1.0f - Math.min(0.82f, progress * 0.82f));
-        setChromeAlpha(1.0f - Math.min(0.75f, progress * 0.75f));
+        float scale = ImageDismissPolicy.scale(progress);
+        image.setTranslationX(dx);
+        image.setTranslationY(dy);
+        image.setScaleX(scale);
+        image.setScaleY(scale);
+        image.setAlpha(1.0f);
+        backdrop.setAlpha(1.0f - progress);
+        setChromeAlpha(1.0f - progress);
     }
 
     private void finishPull(int index, boolean dismiss) {
         if (destroyed || index != current) return;
         pullingImage = false;
-        FrameLayout page = imagePages[index];
+        View image = activeImageView(index);
         if (dismiss) {
             closing = true;
             images[index].cancelZoomAnimation();
@@ -436,35 +450,31 @@ public final class ImageViewerActivity extends Activity {
                 finishViewer();
                 return;
             }
-            long duration = Motions.full() ? 220L : 180L;
-            page.animate().translationY(Math.max(1, root.getHeight()))
-                    .translationX(page.getTranslationX() * 1.25f)
-                    .scaleX(0.88f).scaleY(0.88f).alpha(1.0f)
+            float direction = image.getTranslationY() < 0.0f ? -1.0f : 1.0f;
+            long duration = Motions.full() ? 210L : 170L;
+            image.animate().translationY(direction * Math.max(1, root.getHeight()))
+                    .translationX(image.getTranslationX() * 1.15f)
                     .setDuration(duration)
                     .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
-            attachAnimationEndAction(page, duration, () -> {
-                finishViewer();
-            });
-            page.animate().start();
+            attachAnimationEndAction(image, duration, this::finishViewer);
+            image.animate().start();
             backdrop.animate().alpha(0.0f).setDuration(duration).start();
             setChromeAlpha(0.0f);
             return;
         }
         if (Motions.off()) {
-            Motions.reset(page);
+            resetImageTransform(image);
             backdrop.setAlpha(1.0f);
             setChromeAlpha(1.0f);
             return;
         }
-        long duration = 190L;
-        page.animate().translationX(0.0f).translationY(0.0f)
+        long duration = 200L;
+        image.animate().translationX(0.0f).translationY(0.0f)
                 .scaleX(1.0f).scaleY(1.0f).alpha(1.0f)
                 .setDuration(duration)
                 .setInterpolator(MotionSpec.EASE_OUT);
-        attachAnimationEndAction(page, duration, () -> {
-            Motions.reset(page);
-        });
-        page.animate().start();
+        attachAnimationEndAction(image, duration, () -> resetImageTransform(image));
+        image.animate().start();
         backdrop.animate().alpha(1.0f).setDuration(duration).start();
         setChromeAlpha(1.0f);
     }
@@ -480,8 +490,10 @@ public final class ImageViewerActivity extends Activity {
     private void onPageSelected(int index) {
         if (index == current) return;
         int previous = current;
-        cancelTransitionImage();
+        cancelViewerAnimationCallbacks();
         Motions.reset(imagePages[previous]);
+        resetImageTransform(images[previous]);
+        if (longViews[previous] != null) resetImageTransform(longViews[previous]);
         cancelLongLoad(previous);
         current = index;
         bindPage(index, false);
@@ -585,9 +597,10 @@ public final class ImageViewerActivity extends Activity {
                     @Override
                     public void onStart(int width, int height, int tileCount) {
                         if (cancelled()) return;
-                        ScrollView scroll = new ScrollView(ImageViewerActivity.this);
+                        DismissibleImageScrollView scroll =
+                                new DismissibleImageScrollView(ImageViewerActivity.this);
                         scroll.setFillViewport(false);
-                        scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+                        scroll.setPullListener(createPullListener(index));
                         int inset = roundImageInset();
                         if (inset > 0) {
                             scroll.setPadding(inset, inset, inset, inset);
@@ -595,7 +608,7 @@ public final class ImageViewerActivity extends Activity {
                         }
                         LinearLayout tiles = new LinearLayout(ImageViewerActivity.this);
                         tiles.setOrientation(LinearLayout.VERTICAL);
-                        scroll.addView(tiles, new ScrollView.LayoutParams(
+                        scroll.addView(tiles, new DismissibleImageScrollView.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.WRAP_CONTENT));
                         scroll.setVisibility(View.INVISIBLE);
@@ -608,7 +621,7 @@ public final class ImageViewerActivity extends Activity {
 
                     @Override
                     public void onTile(int tileIndex, Bitmap bitmap) {
-                        ScrollView scroll = longViews[index];
+                        DismissibleImageScrollView scroll = longViews[index];
                         if (cancelled() || scroll == null || bitmap == null) {
                             recycle(bitmap);
                             return;
@@ -650,7 +663,7 @@ public final class ImageViewerActivity extends Activity {
     private void releaseLongPage(int index) {
         if (index < 0 || index >= longViews.length) return;
         cancelLongLoad(index);
-        ScrollView scroll = longViews[index];
+        DismissibleImageScrollView scroll = longViews[index];
         longViews[index] = null;
         if (scroll != null) {
             View child = scroll.getChildAt(0);
@@ -813,7 +826,6 @@ public final class ImageViewerActivity extends Activity {
     private void closeViewer() {
         if (closing) return;
         closing = true;
-        FrameLayout page = imagePages[current];
         cancelViewerAnimations(current, true);
         hideSourcePreview();
         setChromeAlpha(0.0f);
@@ -825,14 +837,12 @@ public final class ImageViewerActivity extends Activity {
         long duration = Motions.full() ? 220L : 180L;
         if (startSharedExit(duration)) return;
 
-        page.animate().scaleX(0.88f).scaleY(0.88f).translationX(0.0f)
-                .translationY(Math.max(1, root.getHeight())).alpha(1.0f)
+        View visual = activeImageView(current);
+        visual.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.0f)
                 .setDuration(duration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
-        attachAnimationEndAction(page, duration, () -> {
-            finishViewer();
-        });
-        page.animate().start();
+        attachAnimationEndAction(visual, duration, this::finishViewer);
+        visual.animate().start();
         backdrop.animate().alpha(0.0f).setDuration(duration).start();
     }
 
@@ -846,21 +856,18 @@ public final class ImageViewerActivity extends Activity {
         android.graphics.RectF from = imageRectInRoot(current);
         android.graphics.RectF target = originRectInRoot();
         if (!validRect(from) || !validRect(target)) return false;
-        ImageView layer = createTransitionImage(current, from);
-        if (layer == null) return false;
 
-        images[current].setAlpha(0.0f);
-        layer.setPivotX(0.0f);
-        layer.setPivotY(0.0f);
-        layer.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        layer.animate().scaleX(target.width() / from.width())
-                .scaleY(target.height() / from.height())
-                .translationX(target.left - from.left)
-                .translationY(target.top - from.top).alpha(1.0f)
+        ZoomImageView image = images[current];
+        ImageTransform transform = imageTransform(image, from, target);
+        image.setPivotX(0.0f);
+        image.setPivotY(0.0f);
+        image.animate().scaleX(transform.scaleX).scaleY(transform.scaleY)
+                .translationX(transform.translationX)
+                .translationY(transform.translationY).alpha(1.0f)
                 .setDuration(duration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
-        attachAnimationEndAction(layer, duration, this::finishViewer);
-        layer.animate().start();
+        attachAnimationEndAction(image, duration, this::finishViewer);
+        image.animate().start();
         backdrop.animate().alpha(0.0f).setDuration(duration).start();
         return true;
     }
@@ -895,7 +902,7 @@ public final class ImageViewerActivity extends Activity {
 
     @Override protected void onDestroy() {
         destroyed = true;
-        cancelTransitionImage();
+        cancelViewerAnimationCallbacks();
         restoreSourcePreview();
         if (root != null) root.animate().cancel();
         if (backdrop != null) backdrop.animate().cancel();
@@ -909,11 +916,17 @@ public final class ImageViewerActivity extends Activity {
             }
         }
         if (longViews != null) {
+            for (DismissibleImageScrollView view : longViews) {
+                if (view != null) view.animate().cancel();
+            }
+        }
+        if (longViews != null) {
             for (int i = 0; i < longViews.length; i++) releaseLongPage(i);
         }
         if (images != null) {
             for (ZoomImageView view : images) {
                 if (view != null) {
+                    view.animate().cancel();
                     view.cancelMotion();
                     ImageLoader.cancel(view);
                 }
