@@ -68,13 +68,20 @@ public final class ImageViewerActivity extends Activity {
     private boolean pageTransitionStarted;
     private boolean pullingImage;
     private int animationSerial;
+    private ImageView transitionImage;
+    private int transitionImageIndex = -1;
+    private WeakReference<ImageView> sourcePreview;
+    private int sourcePreviewVisibility = View.VISIBLE;
+    private boolean sourcePreviewHidden;
     private SessionStore session;
     private static String pendingPreviewUrl;
     private static WeakReference<Bitmap> pendingPreviewBitmap;
+    private static WeakReference<ImageView> pendingSourcePreview;
 
-    static void preparePreview(String sourceUrl, Bitmap bitmap) {
+    static void preparePreview(String sourceUrl, Bitmap bitmap, ImageView source) {
         pendingPreviewUrl = sourceUrl;
         pendingPreviewBitmap = new WeakReference<>(bitmap);
+        pendingSourcePreview = new WeakReference<>(source);
     }
 
     @Override protected void onCreate(Bundle state) {
@@ -212,6 +219,7 @@ public final class ImageViewerActivity extends Activity {
         original.setVisibility(session.originalImages() ? View.VISIBLE : View.GONE);
 
         setContentView(root);
+        claimSourcePreview();
         if (roundDisplay) root.post(this::positionRoundChrome);
         prepareEnterAnimation();
         bindPage(current, true);
@@ -256,41 +264,147 @@ public final class ImageViewerActivity extends Activity {
         }
         pageTransitionStarted = true;
         FrameLayout page = imagePages[index];
+        Motions.reset(page);
         if (Motions.off()) {
-            Motions.reset(page);
+            backdrop.setAlpha(1.0f);
+            setChromeAlpha(1.0f);
             return;
         }
-        ZoomImageView image = images[index];
-        android.graphics.RectF imageRect = new android.graphics.RectF();
-        image.imageDisplayRect(imageRect);
-        int[] rootLocation = new int[2];
-        root.getLocationOnScreen(rootLocation);
-        float originX = getIntent().getIntExtra(EXTRA_ORIGIN_X, root.getWidth() / 2)
-                - rootLocation[0];
-        float originY = getIntent().getIntExtra(EXTRA_ORIGIN_Y, root.getHeight() / 2)
-                - rootLocation[1];
-        float originWidth = getIntent().getIntExtra(EXTRA_ORIGIN_WIDTH, 0);
-        float originHeight = getIntent().getIntExtra(EXTRA_ORIGIN_HEIGHT, 0);
-        float scale = 0.94f;
-        if (imageRect.width() > 0.0f && imageRect.height() > 0.0f
-                && originWidth > 0.0f && originHeight > 0.0f) {
-            scale = Math.max(0.08f, Math.min(0.96f,
-                    Math.min(originWidth / imageRect.width(),
-                            originHeight / imageRect.height())));
-        }
-        page.setPivotX(page.getWidth() / 2.0f);
-        page.setPivotY(page.getHeight() / 2.0f);
-        page.setScaleX(scale);
-        page.setScaleY(scale);
-        page.setTranslationX(originX - page.getWidth() / 2.0f);
-        page.setTranslationY(originY - page.getHeight() / 2.0f);
+        android.graphics.RectF target = imageRectInRoot(index);
+        android.graphics.RectF origin = originRectInRoot();
+        if (!validRect(target) || !validRect(origin)) return;
+        ImageView layer = createTransitionImage(index, target);
+        if (layer == null) return;
+
+        hideSourcePreview();
+        images[index].setAlpha(0.0f);
+        layer.setPivotX(0.0f);
+        layer.setPivotY(0.0f);
+        layer.setScaleX(origin.width() / target.width());
+        layer.setScaleY(origin.height() / target.height());
+        layer.setTranslationX(origin.left - target.left);
+        layer.setTranslationY(origin.top - target.top);
+        layer.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         long duration = Motions.full() ? 240L : 205L;
-        page.animate().scaleX(1.0f).scaleY(1.0f)
+        layer.animate().scaleX(1.0f).scaleY(1.0f)
                 .translationX(0.0f).translationY(0.0f)
                 .setDuration(duration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
-        attachAnimationEndAction(page, duration, () -> Motions.reset(page));
-        page.animate().start();
+        attachAnimationEndAction(layer, duration,
+                () -> completeTransitionImage(index));
+        layer.animate().start();
+    }
+
+    private void claimSourcePreview() {
+        this.sourcePreview = pendingSourcePreview;
+        pendingSourcePreview = null;
+    }
+
+    private void hideSourcePreview() {
+        if (this.sourcePreviewHidden || this.sourcePreview == null) return;
+        ImageView source = this.sourcePreview.get();
+        if (source == null) return;
+        this.sourcePreviewVisibility = source.getVisibility();
+        source.setVisibility(View.INVISIBLE);
+        this.sourcePreviewHidden = true;
+    }
+
+    private void restoreSourcePreview() {
+        if (!this.sourcePreviewHidden || this.sourcePreview == null) return;
+        ImageView source = this.sourcePreview.get();
+        if (source != null && source.getVisibility() == View.INVISIBLE) {
+            source.setVisibility(this.sourcePreviewVisibility);
+        }
+        this.sourcePreviewHidden = false;
+    }
+
+    private android.graphics.RectF imageRectInRoot(int index) {
+        android.graphics.RectF rect = new android.graphics.RectF();
+        images[index].imageDisplayRect(rect);
+        int[] imageLocation = new int[2];
+        int[] rootLocation = new int[2];
+        images[index].getLocationOnScreen(imageLocation);
+        root.getLocationOnScreen(rootLocation);
+        rect.offset(imageLocation[0] - rootLocation[0],
+                imageLocation[1] - rootLocation[1]);
+        return rect;
+    }
+
+    private android.graphics.RectF originRectInRoot() {
+        int width = getIntent().getIntExtra(EXTRA_ORIGIN_WIDTH, 0);
+        int height = getIntent().getIntExtra(EXTRA_ORIGIN_HEIGHT, 0);
+        int[] rootLocation = new int[2];
+        root.getLocationOnScreen(rootLocation);
+        float centerX = getIntent().getIntExtra(EXTRA_ORIGIN_X, 0) - rootLocation[0];
+        float centerY = getIntent().getIntExtra(EXTRA_ORIGIN_Y, 0) - rootLocation[1];
+        return new android.graphics.RectF(centerX - width / 2.0f,
+                centerY - height / 2.0f, centerX + width / 2.0f,
+                centerY + height / 2.0f);
+    }
+
+    private boolean validRect(android.graphics.RectF rect) {
+        return rect != null && rect.width() > 1.0f && rect.height() > 1.0f;
+    }
+
+    private ImageView createTransitionImage(int index, android.graphics.RectF rect) {
+        if (!validRect(rect) || images[index].getDrawable() == null) return null;
+        cancelTransitionImage();
+        ImageView layer = new ImageView(this);
+        layer.setScaleType(ImageView.ScaleType.FIT_XY);
+        Drawable source = images[index].getDrawable();
+        Drawable.ConstantState state = source.getConstantState();
+        layer.setImageDrawable(state == null ? source : state.newDrawable(getResources()));
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                Math.max(1, Math.round(rect.width())),
+                Math.max(1, Math.round(rect.height())));
+        params.leftMargin = Math.round(rect.left);
+        params.topMargin = Math.round(rect.top);
+        int pagerIndex = root.indexOfChild(pager);
+        root.addView(layer, Math.min(root.getChildCount(), pagerIndex + 1), params);
+        this.transitionImage = layer;
+        this.transitionImageIndex = index;
+        return layer;
+    }
+
+    private void completeTransitionImage(int index) {
+        ImageView layer = this.transitionImage;
+        this.transitionImage = null;
+        this.transitionImageIndex = -1;
+        if (layer != null) {
+            layer.setLayerType(View.LAYER_TYPE_NONE, null);
+            root.removeView(layer);
+            layer.setImageDrawable(null);
+        }
+        if (index >= 0 && index < images.length) images[index].setAlpha(1.0f);
+    }
+
+    private void cancelTransitionImage() {
+        this.animationSerial++;
+        ImageView layer = this.transitionImage;
+        int index = this.transitionImageIndex;
+        this.transitionImage = null;
+        this.transitionImageIndex = -1;
+        if (layer != null) {
+            layer.animate().cancel();
+            layer.setLayerType(View.LAYER_TYPE_NONE, null);
+            if (root != null) root.removeView(layer);
+            layer.setImageDrawable(null);
+        }
+        if (images != null && index >= 0 && index < images.length) {
+            images[index].setAlpha(1.0f);
+        }
+    }
+
+    private void cancelViewerAnimations(int index, boolean restore) {
+        cancelTransitionImage();
+        FrameLayout page = imagePages[index];
+        page.animate().cancel();
+        images[index].cancelZoomAnimation();
+        backdrop.animate().cancel();
+        if (!restore) return;
+        Motions.reset(page);
+        backdrop.setAlpha(1.0f);
+        setChromeAlpha(1.0f);
     }
 
     private void updatePull(int index, float dx, float dy, float progress) {
@@ -298,14 +412,15 @@ public final class ImageViewerActivity extends Activity {
         FrameLayout page = imagePages[index];
         if (!pullingImage) {
             pullingImage = true;
-            page.animate().cancel();
-            backdrop.animate().cancel();
+            cancelViewerAnimations(index, true);
+            hideSourcePreview();
         }
         float scale = 1.0f - Math.min(0.16f, progress * 0.20f);
         page.setTranslationX(dx);
         page.setTranslationY(dy);
         page.setScaleX(scale);
         page.setScaleY(scale);
+        page.setAlpha(1.0f);
         backdrop.setAlpha(1.0f - Math.min(0.82f, progress * 0.82f));
         setChromeAlpha(1.0f - Math.min(0.75f, progress * 0.75f));
     }
@@ -316,26 +431,41 @@ public final class ImageViewerActivity extends Activity {
         FrameLayout page = imagePages[index];
         if (dismiss) {
             closing = true;
-            long duration = Motions.off() ? 0L : (Motions.full() ? 220L : 180L);
+            images[index].cancelZoomAnimation();
+            if (Motions.off()) {
+                finishViewer();
+                return;
+            }
+            long duration = Motions.full() ? 220L : 180L;
             page.animate().translationY(Math.max(1, root.getHeight()))
                     .translationX(page.getTranslationX() * 1.25f)
-                    .scaleX(0.84f).scaleY(0.84f).alpha(0.0f)
+                    .scaleX(0.88f).scaleY(0.88f).alpha(1.0f)
                     .setDuration(duration)
                     .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
-            attachAnimationEndAction(page, duration, this::finishViewer);
+            attachAnimationEndAction(page, duration, () -> {
+                finishViewer();
+            });
             page.animate().start();
             backdrop.animate().alpha(0.0f).setDuration(duration).start();
             setChromeAlpha(0.0f);
             return;
         }
+        if (Motions.off()) {
+            Motions.reset(page);
+            backdrop.setAlpha(1.0f);
+            setChromeAlpha(1.0f);
+            return;
+        }
+        long duration = 190L;
         page.animate().translationX(0.0f).translationY(0.0f)
                 .scaleX(1.0f).scaleY(1.0f).alpha(1.0f)
-                .setDuration(Motions.off() ? 0L : 190L)
+                .setDuration(duration)
                 .setInterpolator(MotionSpec.EASE_OUT);
-        attachAnimationEndAction(page, Motions.off() ? 0L : 190L,
-                () -> Motions.reset(page));
+        attachAnimationEndAction(page, duration, () -> {
+            Motions.reset(page);
+        });
         page.animate().start();
-        backdrop.animate().alpha(1.0f).setDuration(Motions.off() ? 0L : 190L).start();
+        backdrop.animate().alpha(1.0f).setDuration(duration).start();
         setChromeAlpha(1.0f);
     }
 
@@ -350,6 +480,8 @@ public final class ImageViewerActivity extends Activity {
     private void onPageSelected(int index) {
         if (index == current) return;
         int previous = current;
+        cancelTransitionImage();
+        Motions.reset(imagePages[previous]);
         cancelLongLoad(previous);
         current = index;
         bindPage(index, false);
@@ -682,47 +814,55 @@ public final class ImageViewerActivity extends Activity {
         if (closing) return;
         closing = true;
         FrameLayout page = imagePages[current];
-        page.animate().cancel();
-        backdrop.animate().cancel();
+        cancelViewerAnimations(current, true);
+        hideSourcePreview();
         setChromeAlpha(0.0f);
         if (Motions.off()) {
             finishViewer();
             return;
         }
 
-        float scale = 0.94f;
-        float translationX = 0.0f;
-        float translationY = 0.0f;
-        int requestedIndex = Math.max(0, Math.min(urls.length - 1,
-                getIntent().getIntExtra(EXTRA_INDEX, 0)));
-        if (current == requestedIndex && !images[current].isZoomed()) {
-            android.graphics.RectF imageRect = new android.graphics.RectF();
-            images[current].imageDisplayRect(imageRect);
-            int[] rootLocation = new int[2];
-            root.getLocationOnScreen(rootLocation);
-            float originWidth = getIntent().getIntExtra(EXTRA_ORIGIN_WIDTH, 0);
-            float originHeight = getIntent().getIntExtra(EXTRA_ORIGIN_HEIGHT, 0);
-            if (imageRect.width() > 0.0f && imageRect.height() > 0.0f
-                    && originWidth > 0.0f && originHeight > 0.0f) {
-                scale = Math.max(0.08f, Math.min(0.96f,
-                        Math.min(originWidth / imageRect.width(),
-                                originHeight / imageRect.height())));
-                float originX = getIntent().getIntExtra(
-                        EXTRA_ORIGIN_X, root.getWidth() / 2) - rootLocation[0];
-                float originY = getIntent().getIntExtra(
-                        EXTRA_ORIGIN_Y, root.getHeight() / 2) - rootLocation[1];
-                translationX = originX - page.getWidth() / 2.0f;
-                translationY = originY - page.getHeight() / 2.0f;
-            }
-        }
         long duration = Motions.full() ? 220L : 180L;
-        page.animate().scaleX(scale).scaleY(scale).translationX(translationX)
-                .translationY(translationY).alpha(0.0f)
+        if (startSharedExit(duration)) return;
+
+        page.animate().scaleX(0.88f).scaleY(0.88f).translationX(0.0f)
+                .translationY(Math.max(1, root.getHeight())).alpha(1.0f)
                 .setDuration(duration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
-        attachAnimationEndAction(page, duration, this::finishViewer);
+        attachAnimationEndAction(page, duration, () -> {
+            finishViewer();
+        });
         page.animate().start();
         backdrop.animate().alpha(0.0f).setDuration(duration).start();
+    }
+
+    private boolean startSharedExit(long duration) {
+        int requestedIndex = Math.max(0, Math.min(urls.length - 1,
+                getIntent().getIntExtra(EXTRA_INDEX, 0)));
+        if (current != requestedIndex || images[current].isZoomed()
+                || longViews[current] != null) {
+            return false;
+        }
+        android.graphics.RectF from = imageRectInRoot(current);
+        android.graphics.RectF target = originRectInRoot();
+        if (!validRect(from) || !validRect(target)) return false;
+        ImageView layer = createTransitionImage(current, from);
+        if (layer == null) return false;
+
+        images[current].setAlpha(0.0f);
+        layer.setPivotX(0.0f);
+        layer.setPivotY(0.0f);
+        layer.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        layer.animate().scaleX(target.width() / from.width())
+                .scaleY(target.height() / from.height())
+                .translationX(target.left - from.left)
+                .translationY(target.top - from.top).alpha(1.0f)
+                .setDuration(duration)
+                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
+        attachAnimationEndAction(layer, duration, this::finishViewer);
+        layer.animate().start();
+        backdrop.animate().alpha(0.0f).setDuration(duration).start();
+        return true;
     }
 
     private void attachAnimationEndAction(View view, long duration, Runnable action) {
@@ -744,6 +884,7 @@ public final class ImageViewerActivity extends Activity {
 
     private void finishViewer() {
         if (destroyed || isFinishing()) return;
+        restoreSourcePreview();
         finish();
         overridePendingTransition(0, 0);
     }
@@ -754,7 +895,8 @@ public final class ImageViewerActivity extends Activity {
 
     @Override protected void onDestroy() {
         destroyed = true;
-        animationSerial++;
+        cancelTransitionImage();
+        restoreSourcePreview();
         if (root != null) root.animate().cancel();
         if (backdrop != null) backdrop.animate().cancel();
         if (pager != null) {

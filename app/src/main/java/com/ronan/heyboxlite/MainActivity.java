@@ -30,6 +30,7 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -118,10 +119,14 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final PageTransitionController pageTransitions = new PageTransitionController();
     private final CrownScrollController crownScrollController = new CrownScrollController();
+    private final CrownScrollDispatcher crownScrollDispatcher =
+            new CrownScrollDispatcher(this::findCrownScrollTarget, this::performCrownFeedback);
+    private long lastCrownFeedbackAt;
     private SearchBarController searchBars;
     private SearchPage searchPage;
     private boolean pendingBackTransition;
     private boolean pendingLateralPush;
+    private boolean immediatePageReplacement;
     private final Map<String, Bitmap> screenSnapshots = new HashMap<>();
     private final Map<String, Bitmap> fullScreenSnapshots = new HashMap<>();
     private final Map<String, View> retainedPages = new HashMap<>();
@@ -290,10 +295,11 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             if (axis == 0.0f) return super.dispatchGenericMotionEvent(event);
             if (this.session == null || !this.session.crownScrollEnabled()) {
                 this.crownScrollController.reset();
+                this.crownScrollDispatcher.cancel();
                 return true;
             }
             int distance = this.crownScrollController.distance(
-                    axis, dp(44), this.session.crownScrollSpeed());
+                    axis, dp(28), this.session.crownScrollSpeed());
             if (distance == 0) return true;
             if (scrollWithCrown(distance)) return true;
         }
@@ -301,14 +307,16 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private boolean scrollWithCrown(int distance) {
-        if (distance == 0) return false;
-        int direction = distance > 0 ? 1 : -1;
+        return this.crownScrollDispatcher.enqueue(distance);
+    }
+
+    private View findCrownScrollTarget(int direction) {
         View target;
         if ("detail".equals(this.screen)) {
             target = this.detailPager != null && this.detailPager.showingComments()
                     ? this.detailCommentScroll : this.detailScroll;
         } else if ("feed".equals(this.screen)) {
-            target = this.feedPage.listView();
+            target = this.feedPage == null ? null : this.feedPage.listView();
         } else if ("search".equals(this.screen)) {
             target = this.searchPage == null ? null : this.searchPage.listView();
         } else {
@@ -317,15 +325,22 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if (target == null || !target.canScrollVertically(direction)) {
             target = findScrollableView(this.content, direction);
         }
-        if (target instanceof ScrollView) {
-            target.scrollBy(0, distance);
-            return true;
+        return target;
+    }
+
+    private void performCrownFeedback() {
+        if (this.session == null || !this.session.crownHapticsEnabled()) return;
+        long now = SystemClock.uptimeMillis();
+        if (now - this.lastCrownFeedbackAt < 36L) return;
+        this.lastCrownFeedbackAt = now;
+        int effect;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            effect = HapticFeedbackConstants.CLOCK_TICK;
+        } else {
+            effect = HapticFeedbackConstants.KEYBOARD_TAP;
         }
-        if (target instanceof AbsListView) {
-            Compat.scrollListBy((AbsListView) target, distance);
-            return true;
-        }
-        return false;
+        View target = this.content == null ? getWindow().getDecorView() : this.content;
+        target.performHapticFeedback(effect);
     }
 
     private View findScrollableView(View view, int direction) {
@@ -408,6 +423,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                     public void rebuildDisplayShell(String destination) {
                         MainActivity.this.applyPalette();
                         Compat.colorSystemBars(MainActivity.this.getWindow(), MainActivity.this.BG);
+                        MainActivity.this.immediatePageReplacement = true;
                         MainActivity.this.buildShell();
                         if ("display_preview".equals(destination)) {
                             MainActivity.this.showDisplayPreview();
@@ -2366,7 +2382,12 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         scroll.addView(page);
         page.addView(settingsTopCard(pageTitle));
         this.retainedPages.put(key, scroll);
-        if (this.shellAnimating) {
+        if (this.immediatePageReplacement) {
+            this.immediatePageReplacement = false;
+            this.content.removeAllViews();
+            this.content.addView(scroll, match());
+            Motions.reset(scroll);
+        } else if (this.shellAnimating) {
             transitionTo(scroll);
         } else {
             this.handler.post(() -> {
@@ -2420,9 +2441,11 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         source.getLocationOnScreen(location);
         String current = urls.length > 0 ? urls[Math.max(0, Math.min(urls.length - 1, index))] : "";
         Drawable drawable = source.getDrawable();
+        Bitmap preview = null;
         if (drawable instanceof BitmapDrawable) {
-            ImageViewerActivity.preparePreview(current, ((BitmapDrawable) drawable).getBitmap());
+            preview = ((BitmapDrawable) drawable).getBitmap();
         }
+        ImageViewerActivity.preparePreview(current, preview, source);
         Intent intent = new Intent(this, (Class<?>) ImageViewerActivity.class);
         intent.putExtra("image_url", current);
         if (urls.length > 1) {
@@ -2716,6 +2739,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     @Override
     protected void onPause() {
         this.activityResumed = false;
+        this.crownScrollDispatcher.cancel();
         if (this.checkinCenterPage != null) this.checkinCenterPage.onPause();
         if (this.qrLoginPage != null) this.qrLoginPage.pause();
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
@@ -2753,6 +2777,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
 
     @Override
     protected void onDestroy() {
+        this.crownScrollDispatcher.cancel();
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
         if (this.checkinCenterPage != null) {
             this.checkinCenterPage.close();
@@ -2789,6 +2814,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
 
     /** 页面切换统一入口：真实双 View 转场；方向由 pendingBackTransition 决定，消费后复位。 */
     private void transitionTo(View next) {
+        this.crownScrollDispatcher.cancel();
         if (!"detail".equals(this.screen) && this.readingTimeTracker != null) {
             this.readingTimeTracker.pause();
         }

@@ -59,6 +59,7 @@ final class SessionStore {
     private static final String BODY_BOLD = "body_bold";
     private static final String CROWN_SCROLL_ENABLED = "crown_scroll_enabled";
     private static final String CROWN_SCROLL_SPEED = "crown_scroll_speed";
+    private static final String CROWN_HAPTICS_ENABLED = "crown_haptics_enabled";
     private static final String AUTO_UPDATE_CHECK = "auto_update_check";
     private static final String SPLASH_ENABLED = "splash_enabled";
     private static final String SPLASH_TEXT = "splash_text";
@@ -358,6 +359,14 @@ final class SessionStore {
     void setCrownScrollSpeed(int value) {
         prefs.edit().putInt(CROWN_SCROLL_SPEED,
                 CrownScrollController.clampSpeed(value)).apply();
+    }
+
+    boolean crownHapticsEnabled() {
+        return prefs.getBoolean(CROWN_HAPTICS_ENABLED, true);
+    }
+
+    void setCrownHapticsEnabled(boolean value) {
+        prefs.edit().putBoolean(CROWN_HAPTICS_ENABLED, value).apply();
     }
 
     boolean autoUpdateCheck() {

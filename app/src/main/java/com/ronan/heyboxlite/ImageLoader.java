@@ -32,7 +32,6 @@ import java.nio.charset.Charset;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -348,23 +347,20 @@ final class ImageLoader {
         File[] files = dir == null ? null : dir.listFiles();
         if (files == null) return;
         long cutoff = System.currentTimeMillis() - Math.max(0L, maxAgeMs);
-        List<File> kept = new ArrayList<>();
+        List<FileSnapshot> kept = new ArrayList<>();
         long total = 0L;
-        for (File file : files) {
-            if (!file.isFile()) continue;
-            if (maxAgeMs > 0L && file.lastModified() < cutoff) {
-                file.delete();
+        for (FileSnapshot snapshot : FileSnapshot.captureFiles(files)) {
+            if (maxAgeMs > 0L && snapshot.lastModified < cutoff) {
+                snapshot.file.delete();
                 continue;
             }
-            kept.add(file);
-            total += file.length();
+            kept.add(snapshot);
+            total += snapshot.length;
         }
-        Collections.sort(kept,
-                (left, right) -> Long.compare(left.lastModified(), right.lastModified()));
-        for (File file : kept) {
+        FileSnapshot.sortOldestFirst(kept);
+        for (FileSnapshot snapshot : kept) {
             if (total <= MAX_OFFLINE_BYTES) break;
-            long length = file.length();
-            if (file.delete()) total -= length;
+            if (snapshot.file.delete()) total -= snapshot.length;
         }
     }
 

@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.os.Handler;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 final class CacheMaintenance {
     private static final long OFFLINE_MAX_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
@@ -11,6 +13,9 @@ final class CacheMaintenance {
     private final Activity activity;
     private final LocalCache localCache;
     private final Handler mainHandler;
+    private final Object pruneLock = new Object();
+    private final List<Runnable> pruneCallbacks = new ArrayList<>();
+    private boolean pruneRunning;
 
     CacheMaintenance(Activity activity, LocalCache localCache, Handler mainHandler) {
         this.activity = activity;
@@ -19,15 +24,33 @@ final class CacheMaintenance {
     }
 
     void pruneOffline(Runnable complete) {
+        synchronized (this.pruneLock) {
+            if (complete != null) this.pruneCallbacks.add(complete);
+            if (this.pruneRunning) return;
+            this.pruneRunning = true;
+        }
         new Thread(() -> {
-            this.localCache.pruneExpired(OFFLINE_MAX_AGE_MS);
-            ImageLoader.pruneOffline(this.activity, OFFLINE_MAX_AGE_MS);
-            if (complete != null) {
-                this.mainHandler.post(() -> {
-                    if (!this.activity.isFinishing()) complete.run();
-                });
+            try {
+                this.localCache.pruneExpired(OFFLINE_MAX_AGE_MS);
+                ImageLoader.pruneOffline(this.activity, OFFLINE_MAX_AGE_MS);
+            } finally {
+                finishPrune();
             }
         }, "heybox-offline-cleanup").start();
+    }
+
+    private void finishPrune() {
+        List<Runnable> callbacks;
+        synchronized (this.pruneLock) {
+            this.pruneRunning = false;
+            callbacks = new ArrayList<>(this.pruneCallbacks);
+            this.pruneCallbacks.clear();
+        }
+        if (callbacks.isEmpty()) return;
+        this.mainHandler.post(() -> {
+            if (this.activity.isFinishing()) return;
+            for (Runnable callback : callbacks) callback.run();
+        });
     }
 
     long cacheBytes() {

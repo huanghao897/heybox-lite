@@ -1,9 +1,9 @@
 package com.ronan.heyboxlite;
 
 final class CrownScrollController {
-    static final int MIN_SPEED_PERCENT = 50;
+    static final int MIN_SPEED_PERCENT = 25;
     static final int MAX_SPEED_PERCENT = 200;
-    static final int DEFAULT_SPEED_PERCENT = 100;
+    static final int DEFAULT_SPEED_PERCENT = 80;
 
     private float remainder;
     private int lastDirection;
@@ -34,5 +34,20 @@ final class CrownScrollController {
 
     static int clampSpeed(int value) {
         return Math.max(MIN_SPEED_PERCENT, Math.min(MAX_SPEED_PERCENT, value));
+    }
+
+    static int coalesce(int current, int addition) {
+        long result = (long) current + addition;
+        if (result > Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        if (result < Integer.MIN_VALUE) return Integer.MIN_VALUE;
+        return (int) result;
+    }
+
+    static boolean isStableListWindow(int adapterCount, int listCount,
+                                      int firstVisible, int childCount) {
+        return adapterCount > 0 && adapterCount == listCount
+                && childCount > 0 && firstVisible >= 0
+                && firstVisible < adapterCount
+                && firstVisible + childCount <= adapterCount;
     }
 }

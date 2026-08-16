@@ -196,7 +196,8 @@ final class DisplaySettingsPage {
     private void showThemePicker() {
         LinearLayout box = this.settingsUi.dialogPanel("颜色主题");
         LinearLayout grid = vertical(0);
-        int columns = this.roundLayout ? 3 : 4;
+        int columns = 4;
+        int rowHeight = this.roundLayout ? 52 : 58;
         int[] selected = {-1};
         AlertDialog[] holder = new AlertDialog[1];
         for (int start = 0; start < THEME_NAMES.length; start += columns) {
@@ -208,16 +209,27 @@ final class DisplaySettingsPage {
                 if (i < THEME_NAMES.length) {
                     int index = i;
                     View swatch = themeSwatch(index);
-                    swatch.setOnClickListener(view -> {
+                    cell.setContentDescription(THEME_NAMES[index]);
+                    cell.setOnClickListener(view -> {
+                        if (selected[0] >= 0) return;
                         selected[0] = index;
-                        holder[0].dismiss();
+                        UiComponents.press(cell);
+                        cell.postDelayed(() -> {
+                            AlertDialog dialog = holder[0];
+                            if (dialog == null || !dialog.isShowing()) return;
+                            box.animate().cancel();
+                            Motions.reset(box);
+                            dialog.dismiss();
+                        }, Motions.off() ? 0L : 80L);
                     });
                     cell.addView(swatch, new LinearLayout.LayoutParams(dp(36), dp(36)));
                     TextView name = text(THEME_NAMES[i], 9.0f, this.tokens.muted);
                     name.setGravity(Gravity.CENTER);
-                    cell.addView(name, new LinearLayout.LayoutParams(-1, dp(22)));
+                    cell.addView(name, new LinearLayout.LayoutParams(
+                            -1, dp(this.roundLayout ? 16 : 22)));
                 }
-                row.addView(cell, new LinearLayout.LayoutParams(0, dp(58), 1.0f));
+                row.addView(cell, new LinearLayout.LayoutParams(
+                        0, dp(rowHeight), 1.0f));
             }
             addTop(grid, row, start == 0 ? 2 : 3);
         }
@@ -227,11 +239,15 @@ final class DisplaySettingsPage {
         dialog.setCanceledOnTouchOutside(true);
         dialog.setOnDismissListener(value -> {
             if (selected[0] < 0 || this.activity.isFinishing()) return;
-            this.session.setTheme(Format.colorHex(THEME_COLORS[selected[0]][0]),
-                    Format.colorHex(THEME_COLORS[selected[0]][1]));
+            int primary = THEME_COLORS[selected[0]][0];
+            int secondary = THEME_COLORS[selected[0]][1];
+            if (currentPrimary() == primary && currentSecondary() == secondary) return;
+            this.host.cancelAllMotion();
+            this.session.setTheme(Format.colorHex(primary), Format.colorHex(secondary));
             refresh("display_settings");
         });
         this.settingsUi.present(dialog, box);
+        if (dialog.getWindow() != null) dialog.getWindow().setWindowAnimations(0);
     }
 
     private View themeSwatch(int index) {

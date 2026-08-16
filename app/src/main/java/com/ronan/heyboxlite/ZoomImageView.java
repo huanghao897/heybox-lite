@@ -20,8 +20,6 @@ final class ZoomImageView extends ImageView {
         void onPullEnd(boolean dismiss);
     }
 
-    private static final float MIN_DOUBLE_TAP_ZOOM = 2.35f;
-    private static final float MAX_ZOOM = 12f;
     private static final long PHONE_DOUBLE_TAP_TIMEOUT_MS = 340L;
     private static final long WATCH_DOUBLE_TAP_TIMEOUT_MS = 480L;
     private final Matrix matrix = new Matrix();
@@ -72,7 +70,8 @@ final class ZoomImageView extends ImageView {
                     @Override public boolean onScale(ScaleGestureDetector detector) {
                         cancelMatrixAnimation();
                         float factor = detector.getScaleFactor();
-                        float next = Math.max(1f, Math.min(MAX_ZOOM, scale * factor));
+                        float next = Math.max(1f, Math.min(
+                                ImageZoomPolicy.MAX_ZOOM, scale * factor));
                         factor = next / scale;
                         scale = next;
                         tapZoomLevel = 0;
@@ -128,6 +127,10 @@ final class ZoomImageView extends ImageView {
         lastTapAt = 0L;
     }
 
+    void cancelZoomAnimation() {
+        cancelMatrixAnimation();
+    }
+
     boolean isSecondTapCandidate(float x, float y, long eventTime) {
         return isSecondTap(x, y, eventTime);
     }
@@ -165,15 +168,20 @@ final class ZoomImageView extends ImageView {
                 moved = false;
                 pulling = false;
                 secondTap = isSecondTap(event.getX(), event.getY(), event.getEventTime());
-                if (secondTap) {
-                    toggleDoubleTap(event.getX(), event.getY());
-                    lastTapAt = 0L;
-                }
                 return true;
             case MotionEvent.ACTION_MOVE:
                 if (scaleDetector.isInProgress()) return true;
                 float dx = event.getX() - downX;
                 float dy = event.getY() - downY;
+                if (secondTap) {
+                    if (Math.abs(dx) <= doubleTapSlop && Math.abs(dy) <= doubleTapSlop) {
+                        lastX = event.getX();
+                        lastY = event.getY();
+                        return true;
+                    }
+                    secondTap = false;
+                    lastTapAt = 0L;
+                }
                 if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) moved = true;
                 if (!pulling && !secondTap && scale <= 1.01f
                         && dy > touchSlop
@@ -204,6 +212,16 @@ final class ZoomImageView extends ImageView {
             case MotionEvent.ACTION_UP:
                 if (pulling) {
                     finishPull(event);
+                    return true;
+                }
+                if (secondTap) {
+                    boolean withinTapArea = Math.abs(event.getX() - downX) <= doubleTapSlop
+                            && Math.abs(event.getY() - downY) <= doubleTapSlop;
+                    secondTap = false;
+                    lastTapAt = 0L;
+                    if (withinTapArea) {
+                        toggleDoubleTap(event.getX(), event.getY());
+                    }
                     return true;
                 }
                 correctBounds();
@@ -265,19 +283,16 @@ final class ZoomImageView extends ImageView {
 
     private void toggleDoubleTap(float x, float y) {
         float widthZoom = widthFillZoom();
-        if (tapZoomLevel <= 0 || scale <= 1.05f) {
-            tapZoomLevel = 1;
-            animateZoomTo(Math.max(MIN_DOUBLE_TAP_ZOOM, widthZoom), x, y);
-        } else if (tapZoomLevel == 1) {
-            tapZoomLevel = 2;
-            animateZoomTo(Math.max(4.0f, Math.min(MAX_ZOOM, widthZoom * 1.55f)), x, y);
-        } else {
+        tapZoomLevel = ImageZoomPolicy.nextLevel(tapZoomLevel, scale);
+        if (tapZoomLevel == 0) {
             animateFitImage();
+            return;
         }
+        animateZoomTo(ImageZoomPolicy.targetScale(tapZoomLevel, widthZoom), x, y);
     }
 
     private void animateZoomTo(float target, float x, float y) {
-        target = Math.max(1f, Math.min(MAX_ZOOM, target));
+        target = Math.max(1f, Math.min(ImageZoomPolicy.MAX_ZOOM, target));
         Matrix targetMatrix = new Matrix(matrix);
         float factor = target / Math.max(0.001f, scale);
         targetMatrix.postScale(factor, factor, x, y);
@@ -287,12 +302,14 @@ final class ZoomImageView extends ImageView {
 
     private float widthFillZoom() {
         Drawable drawable = getDrawable();
-        if (drawable == null || getWidth() == 0 || getHeight() == 0) return MIN_DOUBLE_TAP_ZOOM;
+        if (drawable == null || getWidth() == 0 || getHeight() == 0) {
+            return ImageZoomPolicy.MIN_DOUBLE_TAP_ZOOM;
+        }
         float sx = contentWidth() / (float) drawable.getIntrinsicWidth();
         float sy = contentHeight() / (float) drawable.getIntrinsicHeight();
         float fit = Math.min(sx, sy);
-        if (fit <= 0f) return MIN_DOUBLE_TAP_ZOOM;
-        return Math.min(MAX_ZOOM, sx / fit);
+        if (fit <= 0f) return ImageZoomPolicy.MIN_DOUBLE_TAP_ZOOM;
+        return Math.min(ImageZoomPolicy.MAX_ZOOM, sx / fit);
     }
 
     private void animateFitImage() {

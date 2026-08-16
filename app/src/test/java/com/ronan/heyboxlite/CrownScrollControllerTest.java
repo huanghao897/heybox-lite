@@ -17,7 +17,7 @@ public class CrownScrollControllerTest {
 
     @Test
     public void clampsSpeedToSupportedRange() {
-        assertEquals(50, CrownScrollController.clampSpeed(1));
+        assertEquals(25, CrownScrollController.clampSpeed(1));
         assertEquals(125, CrownScrollController.clampSpeed(125));
         assertEquals(200, CrownScrollController.clampSpeed(500));
     }
@@ -41,5 +41,22 @@ public class CrownScrollControllerTest {
         controller.distance(0.01f, 44, 100);
 
         assertEquals(22, controller.distance(-0.5f, 44, 100));
+    }
+
+    @Test
+    public void coalescesEventsWithoutIntegerOverflow() {
+        assertEquals(75, CrownScrollController.coalesce(40, 35));
+        assertEquals(Integer.MAX_VALUE,
+                CrownScrollController.coalesce(Integer.MAX_VALUE, 1));
+        assertEquals(Integer.MIN_VALUE,
+                CrownScrollController.coalesce(Integer.MIN_VALUE, -1));
+    }
+
+    @Test
+    public void acceptsOnlyConsistentVisibleListWindows() {
+        assertTrue(CrownScrollController.isStableListWindow(20, 20, 4, 6));
+        assertTrue(!CrownScrollController.isStableListWindow(20, 19, 4, 6));
+        assertTrue(!CrownScrollController.isStableListWindow(20, 20, 18, 3));
+        assertTrue(!CrownScrollController.isStableListWindow(0, 0, 0, 0));
     }
 }

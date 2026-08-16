@@ -15,9 +15,6 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -581,16 +578,10 @@ final class LocalCache {
     private void prune(File dir, int keep) {
         File[] files = dir.listFiles();
         if (files == null || files.length <= keep) return;
-        List<File> sorted = new ArrayList<>(Arrays.asList(files));
-        Collections.sort(sorted, new Comparator<File>() {
-            @Override public int compare(File left, File right) {
-                long diff = left.lastModified() - right.lastModified();
-                if (diff == 0L) return 0;
-                return diff < 0L ? -1 : 1;
-            }
-        });
+        List<FileSnapshot> sorted = FileSnapshot.captureAll(files);
+        FileSnapshot.sortOldestFirst(sorted);
         for (int i = 0; i < sorted.size() - keep; i++) {
-            sorted.get(i).delete();
+            sorted.get(i).file.delete();
         }
     }
 

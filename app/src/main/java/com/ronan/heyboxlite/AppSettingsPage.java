@@ -73,6 +73,8 @@ final class AppSettingsPage {
                 CrownScrollController.MIN_SPEED_PERCENT,
                 CrownScrollController.MAX_SPEED_PERCENT, 5,
                 this.session.crownScrollSpeed(), this.session::setCrownScrollSpeed, null);
+        addTop(panel, toggle("表冠触感", this.session.crownHapticsEnabled(),
+                this.session::setCrownHapticsEnabled), 0);
         addTop(panel, toggle("右滑返回上一级", this.session.shellBackSwipe(),
                 this.session::setShellBackSwipe), 0);
         addTop(panel, toggle("退出确认", this.session.confirmExitOnBack(),
