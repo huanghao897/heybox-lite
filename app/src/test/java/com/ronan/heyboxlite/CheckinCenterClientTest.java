@@ -264,23 +264,29 @@ public class CheckinCenterClientTest {
     }
 
     @Test
-    public void billingStatusAndOrderResponsesParseCompactly() throws Exception {
+    public void sponsorshipStatusAndOrderResponsesParseCompactly() throws Exception {
         JSONObject status = new JSONObject()
-                .put("billing_mode", "paid")
+                .put("billing_mode", "free")
                 .put("subscription_required", false)
                 .put("entitled", true)
                 .put("is_admin", false)
-                .put("expires_at", "2026-09-13T04:00:00.000Z")
+                .put("expires_at", JSONObject.NULL)
+                .put("voluntary_sponsorship", true)
                 .put("checkout_available", true)
                 .put("plan", new JSONObject()
-                        .put("name", "小黑盒自动签到会员")
+                        .put("name", "服务器自愿赞助")
                         .put("amount_cents", 500)
                         .put("currency", "CNY")
-                        .put("duration_days", 30));
+                        .put("duration_days", 0)
+                        .put("variable_amount", true)
+                        .put("minimum_amount_cents", 1)
+                        .put("maximum_amount_cents", 100_000_000));
         CheckinBilling.Membership membership = CheckinBilling.parseMembership(status);
-        assertEquals("paid", membership.mode);
+        assertEquals("free", membership.mode);
         assertEquals(500, membership.plan.amountCents);
         assertTrue(membership.checkoutAvailable);
+        assertTrue(membership.voluntarySponsorship);
+        assertTrue(membership.plan.variableAmount);
 
         CheckinBilling.Order order = CheckinBilling.parseOrder(new JSONObject()
                 .put("order_id", "HBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
@@ -298,11 +304,10 @@ public class CheckinCenterClientTest {
     }
 
     @Test
-    public void subscriptionErrorsAreRecognized() {
+    public void obsoleteSubscriptionErrorsDoNotRequestPayment() {
         CheckinCenterClient.ApiError error = CheckinCenterClient.statusError(
                 CheckinCenterClient.Operation.RUN_NOW, 402,
                 "{\"code\":\"subscription_required\"}");
-        assertTrue(error.subscriptionRequired());
-        assertEquals("小黑盒签到会员已到期，请先续费", error.getMessage());
+        assertEquals("签到服务状态异常，请稍后重试", error.getMessage());
     }
 }

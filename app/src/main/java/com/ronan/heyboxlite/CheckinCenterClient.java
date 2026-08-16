@@ -123,9 +123,6 @@ final class CheckinCenterClient {
             return "captcha_required".equals(diagnosticCode) && !captchaUri.isEmpty();
         }
 
-        boolean subscriptionRequired() {
-            return "subscription_required".equals(diagnosticCode) || statusCode == 402;
-        }
     }
 
     static final class PairingStart {
@@ -651,10 +648,23 @@ final class CheckinCenterClient {
                  }));
     }
 
-    void createBillingOrder(String deviceToken, Callback<CheckinBilling.Order> callback) {
+    void createBillingOrder(String deviceToken, int amountCents,
+                            Callback<CheckinBilling.Order> callback) {
+        if (!SponsorshipAmount.validCents(amountCents)) {
+            deliverError(callback, new ApiError(Operation.BILLING_CREATE, 422,
+                    "赞助金额无效"));
+            return;
+        }
+        JSONObject body = new JSONObject();
+        try {
+            body.put("amount_cents", amountCents);
+        } catch (JSONException impossible) {
+            deliverError(callback, protocolError(Operation.BILLING_CREATE));
+            return;
+        }
         billingToken(deviceToken, Operation.BILLING_CREATE, callback,
                 token -> submit(callback, () -> request(Operation.BILLING_CREATE, "POST",
-                        "/billing/orders", token, null, CheckinBilling::parseOrder)));
+                        "/billing/orders", token, body, CheckinBilling::parseOrder)));
     }
 
     void getBillingOrder(String deviceToken, String orderId,
@@ -1062,7 +1072,7 @@ final class CheckinCenterClient {
                         : "签到服务连接已失效，请重新连接";
                 break;
             case 402:
-                message = "小黑盒签到会员已到期，请先续费";
+                message = "签到服务状态异常，请稍后重试";
                 break;
             case 403:
                 message = operation == Operation.PAIR_REGISTER
@@ -1082,7 +1092,7 @@ final class CheckinCenterClient {
                 } else if (operation == Operation.BILLING_STATUS
                         || operation == Operation.BILLING_QR
                         || operation == Operation.BILLING_CLAIM) {
-                    message = "支付订单不存在";
+                    message = "赞助记录不存在";
                 } else {
                     message = "签到任务尚未配置";
                 }
@@ -1099,6 +1109,8 @@ final class CheckinCenterClient {
                     message = "registration_account_used".equals(diagnosticCode)
                             ? "签到服务账号或邮箱已被注册"
                             : "该签到服务账号已存在，或配对状态已变化";
+                } else if (operation == Operation.BILLING_CREATE) {
+                    message = "赞助码暂不可用，请稍后重试";
                 } else {
                     message = "当前操作与服务器状态冲突，请稍后重试";
                 }
@@ -1108,7 +1120,7 @@ final class CheckinCenterClient {
                     message = "短信验证码已过期，请重新发送";
                 } else if (operation == Operation.BILLING_QR
                         || operation == Operation.BILLING_STATUS) {
-                    message = "支付订单已过期，请重新生成";
+                    message = "赞助码已过期，请重新生成";
                 } else {
                     message = "配对已过期，请重新连接";
                 }
@@ -1135,6 +1147,8 @@ final class CheckinCenterClient {
                     message = "签到时间或随机偏移无效";
                 } else if (operation == Operation.BILLING_CLAIM) {
                     message = "支付订单号格式不正确";
+                } else if (operation == Operation.BILLING_CREATE) {
+                    message = "赞助金额无效";
                 } else {
                     message = "签到服务请求无效";
                 }
@@ -1194,8 +1208,6 @@ final class CheckinCenterClient {
     static String serverErrorCode(String response) {
         try {
             String error = new JSONObject(response).optString("error", "");
-            String code = new JSONObject(response).optString("code", "");
-            if ("subscription_required".equals(code)) return code;
             if ("captcha_required".equals(error)) return "captcha_required";
             if ("registration email code is invalid".equals(error)) {
                 return "registration_email_code_invalid";

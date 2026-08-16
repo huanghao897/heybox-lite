@@ -123,6 +123,7 @@ final class CheckinCenterPage {
     private boolean taskSettingsInFlight;
     private CheckinPaymentPage paymentPage;
     private boolean closed;
+    private boolean contentPresented;
 
     CheckinCenterPage(Activity activity, SessionStore session,
                       CheckinCenterCoordinator coordinator, ThemeTokens tokens, Host host) {
@@ -142,7 +143,7 @@ final class CheckinCenterPage {
         this.root.setBackgroundColor(tokens.background);
         this.state = coordinator.paired() ? State.SYNCING : State.UNPAIRED;
         render();
-        if (coordinator.paired()) refresh();
+        if (coordinator.paired()) loadStatus();
     }
 
     View view() {
@@ -599,6 +600,7 @@ final class CheckinCenterPage {
 
     private void render() {
         if (closed) return;
+        Motions.resetTree(root);
         root.removeAllViews();
         pairingCountdown = null;
         if (state == State.PAIRING && pairing != null) {
@@ -610,7 +612,7 @@ final class CheckinCenterPage {
             return;
         }
         if (state == State.BILLING && paymentPage != null) {
-            root.addView(paymentPage.view(), match());
+            present(paymentPage.view());
             return;
         }
         ScrollView scroll = new ScrollView(activity);
@@ -630,7 +632,7 @@ final class CheckinCenterPage {
         } else {
             renderConnected(page);
         }
-        root.addView(scroll, match());
+        present(scroll);
     }
 
     private void renderUnpaired(LinearLayout page) {
@@ -658,7 +660,8 @@ final class CheckinCenterPage {
                 : state == State.ERROR ? "可重新加载状态，或撤销此设备"
                 : "正在处理签到任务";
         card.addView(statusHeader(R.drawable.il_refresh, title, message,
-                state == State.ERROR ? tokens.muted : tokens.text));
+                state == State.ERROR ? tokens.muted : tokens.text,
+                state == State.SYNCING));
         page.addView(card);
         if (state == State.ERROR) addRecoveryActions(page);
     }
@@ -672,7 +675,7 @@ final class CheckinCenterPage {
                 ? tokens.text : tokens.muted;
         statusCard.addView(statusHeader(R.drawable.il_calendar, stateLabel,
                 accountConnected ? accountLabel(status.account) : "尚未连接小黑盒账号",
-                stateColor));
+                stateColor, state == State.RUNNING));
         if (!accountConnected) {
             addTop(statusCard, body("自动签到需要单独使用手机号登录小黑盒。",
                     tokens.muted), 11);
@@ -687,16 +690,7 @@ final class CheckinCenterPage {
             CheckinBilling.Membership membership = status.membership;
             settingsUi.addSection(page, "服务");
             LinearLayout service = settingsUi.list();
-            if (membership != null) {
-                if (!membership.admin && "paid".equals(membership.mode)) {
-                    settingsUi.addEntry(service, "会员权益", null,
-                            membershipLabel(membership), R.drawable.il_qr,
-                            () -> openBilling(membership));
-                } else {
-                    settingsUi.addInfoEntry(service, "会员权益", null,
-                            membershipLabel(membership), R.drawable.il_qr);
-                }
-            }
+            addSponsorshipEntry(service, membership);
             settingsUi.addEntry(service, "撤销此设备", null, null,
                     R.drawable.ic_logout, this::requestRevoke);
             page.addView(service);
@@ -718,16 +712,7 @@ final class CheckinCenterPage {
                 scheduleLabel(status.task) + " · " + offsetLabel(status.task.offsetMinutes),
                 R.drawable.il_settings, this::openTaskSettings);
         CheckinBilling.Membership membership = status.membership;
-        if (membership != null) {
-            if (!membership.admin && "paid".equals(membership.mode)) {
-                settingsUi.addEntry(management, "会员权益", null,
-                        membershipLabel(membership), R.drawable.il_qr,
-                        () -> openBilling(membership));
-            } else {
-                settingsUi.addInfoEntry(management, "会员权益", null,
-                        membershipLabel(membership), R.drawable.il_qr);
-            }
-        }
+        addSponsorshipEntry(management, membership);
         settingsUi.addEntry(management, "更换账号", null, "手机号登录",
                 R.drawable.il_person, this::openMobileLogin);
         page.addView(management);
@@ -791,21 +776,31 @@ final class CheckinCenterPage {
         render();
     }
 
-    private void openBilling(CheckinBilling.Membership membership) {
-        if (membership == null || membership.admin || !"paid".equals(membership.mode)
+    private void addSponsorshipEntry(LinearLayout list,
+                                     CheckinBilling.Membership membership) {
+        if (membership == null || !membership.voluntarySponsorship) return;
+        if (membership.checkoutAvailable) {
+            settingsUi.addEntry(list, "赞助", null, "自愿支持",
+                    R.drawable.il_qr, () -> openSponsorship(membership));
+        } else {
+            settingsUi.addInfoEntry(list, "赞助", null, "暂不可用", R.drawable.il_qr);
+        }
+    }
+
+    private void openSponsorship(CheckinBilling.Membership membership) {
+        if (membership == null || !membership.checkoutAvailable
                 || state == State.RUNNING) return;
         if (paymentPage != null) paymentPage.close();
         paymentPage = new CheckinPaymentPage(activity, session, coordinator, tokens,
                 roundLayout, membership, new CheckinPaymentPage.Host() {
                     @Override
-                    public void closePayment(boolean membershipChanged) {
+                    public void closeSponsorship() {
                         if (paymentPage != null) {
                             paymentPage.close();
                             paymentPage = null;
                         }
-                        state = membershipChanged ? State.SYNCING : State.CONNECTED;
+                        state = State.CONNECTED;
                         render();
-                        if (membershipChanged) loadStatus();
                     }
 
                     @Override
@@ -971,7 +966,7 @@ final class CheckinCenterPage {
         smsStatus.setLineSpacing(0f, 1.14f);
         addTop(card, smsStatus, 8);
         page.addView(card);
-        root.addView(scroll, match());
+        present(scroll);
         setMobileLoginControls(!smsRequestInFlight);
         if (loginMode == LoginMode.SMS && !smsSessionId.isEmpty()) updateSmsCountdown();
     }
@@ -1049,7 +1044,7 @@ final class CheckinCenterPage {
         pairingStatus.setLineSpacing(0f, 1.14f);
         addTop(card, pairingStatus, 8);
         page.addView(card);
-        root.addView(scroll, match());
+        present(scroll);
         updatePairingCountdown();
         updateRegistrationEmailCountdown();
     }
@@ -1450,9 +1445,14 @@ final class CheckinCenterPage {
 
     private LinearLayout statusHeader(int iconRes, String title, String subtitle,
                                       int titleColor) {
+        return statusHeader(iconRes, title, subtitle, titleColor, false);
+    }
+
+    private LinearLayout statusHeader(int iconRes, String title, String subtitle,
+                                      int titleColor, boolean showProgress) {
         LinearLayout row = new LinearLayout(activity);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        ImageView icon = iconTile(iconRes);
+        View icon = showProgress && !Motions.off() ? progressTile() : iconTile(iconRes);
         int iconSize = dp(roundLayout ? 38 : 42);
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(iconSize, iconSize);
         iconParams.rightMargin = dp(10);
@@ -1471,6 +1471,16 @@ final class CheckinCenterPage {
         return row;
     }
 
+    private View progressTile() {
+        FrameLayout tile = new FrameLayout(activity);
+        Compat.setBackground(tile, UiComponents.monoChip(activity, tokens, scale));
+        LoadingSpinnerView spinner = new LoadingSpinnerView(activity);
+        spinner.setColor(tokens.text);
+        int size = dp(roundLayout ? 19 : 21);
+        tile.addView(spinner, new FrameLayout.LayoutParams(size, size, Gravity.CENTER));
+        return tile;
+    }
+
     private ImageView iconTile(int iconRes) {
         ImageView icon = new ImageView(activity);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
@@ -1479,6 +1489,12 @@ final class CheckinCenterPage {
         if (drawable != null) icon.setImageDrawable(drawable);
         Compat.setBackground(icon, UiComponents.monoChip(activity, tokens, scale));
         return icon;
+    }
+
+    private void present(View view) {
+        root.addView(view, match());
+        if (contentPresented) Motions.enter(view, dp(roundLayout ? 6 : 10));
+        contentPresented = true;
     }
 
     private LinearLayout scheduleMetric(CheckinCenterClient.Task task) {
@@ -1704,23 +1720,6 @@ final class CheckinCenterPage {
         if (task.platformBlocked || task.signBlocked) return "已暂停";
         return task.enabled && task.sign ? "已启用" : "未启用";
     }
-
-
-    private String membershipLabel(CheckinBilling.Membership membership) {
-        if (membership.admin) return "管理员永久可用";
-        if ("free".equals(membership.mode)) return "免费开放";
-        if (membership.required) return "已到期，点击续费";
-        return membership.expiresAt.isEmpty()
-                ? "会员有效" : "有效至 " + shortDate(membership.expiresAt);
-    }
-
-    private String shortDate(String value) {
-        if (value.length() >= 16 && value.charAt(10) == 'T') {
-            return value.substring(0, 10) + " " + value.substring(11, 16);
-        }
-        return value;
-    }
-
     private String offsetLabel(int minutes) {
         int value = Math.max(0, minutes);
         return value == 0 ? "无" : value + " 分钟";

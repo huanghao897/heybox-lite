@@ -12,16 +12,15 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.util.Locale;
-
 final class CheckinPaymentPage {
     interface Host {
-        void closePayment(boolean membershipChanged);
+        void closeSponsorship();
         void showMessage(String message);
     }
 
@@ -41,8 +40,9 @@ final class CheckinPaymentPage {
     private CheckinBilling.Membership membership;
     private CheckinBilling.Order order;
     private TextView orderState;
-    private TextView amount;
     private ImageView qrImage;
+    private LoadingSpinnerView qrSpinner;
+    private EditText sponsorshipAmount;
     private EditText paymentReference;
     private Button createButton;
     private Button claimButton;
@@ -51,7 +51,7 @@ final class CheckinPaymentPage {
     private int qrRequestSerial;
     private boolean visible;
     private boolean closed;
-    private boolean membershipChanged;
+    private boolean firstRender = true;
     private Bitmap qrBitmap;
     private String qrOrderId = "";
     private final Runnable pollTask = this::pollOrder;
@@ -85,7 +85,7 @@ final class CheckinPaymentPage {
     }
 
     private void navigateBack() {
-        if (!handleBack()) host.closePayment(false);
+        if (!handleBack()) host.closeSponsorship();
     }
 
     void updateMembership(CheckinBilling.Membership value) {
@@ -96,7 +96,7 @@ final class CheckinPaymentPage {
     boolean handleBack() {
         if (closed) return false;
         stopPolling();
-        host.closePayment(membershipChanged);
+        host.closeSponsorship();
         return true;
     }
 
@@ -126,39 +126,57 @@ final class CheckinPaymentPage {
 
     private void render() {
         cancelQrRequest();
+        Motions.resetTree(page);
         page.removeAllViews();
         orderState = null;
-        amount = null;
         qrImage = null;
+        qrSpinner = null;
+        sponsorshipAmount = null;
         paymentReference = null;
         createButton = null;
         claimButton = null;
 
         page.setPadding(pageInset(), dp(8), pageInset(), dp(18));
-        page.addView(settingsUi.topCard(order == null ? "签到会员" : "付款"));
+        page.addView(settingsUi.topCard("赞助"));
 
         LinearLayout summary = card();
-        summary.addView(statusHeader(R.drawable.il_calendar, membershipLabel(),
-                "自动签到与定时执行", tokens.text));
-        addTop(summary, infoRow("方案", planLabel()), 11);
+        summary.addView(statusHeader(R.drawable.il_qr, "自愿赞助",
+                "签到功能永久免费", tokens.text));
+        addTop(summary, infoRow("用途", "服务器运行与维护"), 11);
+        TextView notice = body("赞助不会解锁功能，也不会影响签到计划。", tokens.muted);
+        notice.setLineSpacing(0f, 1.12f);
+        addTop(summary, notice, 8);
+        if (order == null && membership.plan.variableAmount) {
+            sponsorshipAmount = input("赞助金额（元）", 10);
+            sponsorshipAmount.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                    | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            sponsorshipAmount.setText(SponsorshipAmount.formatYuan(
+                    membership.plan.amountCents));
+            sponsorshipAmount.setSelection(sponsorshipAmount.length());
+            addTop(summary, sponsorshipAmount, 9);
+        } else if (order == null) {
+            addTop(summary, infoRow("金额", "¥" + SponsorshipAmount.formatYuan(
+                    membership.plan.amountCents)), 9);
+        }
         page.addView(summary);
 
         if (order == null) {
             addTop(page, body(membership.checkoutAvailable
-                    ? "扫码完成后自动更新会员状态"
-                    : "当前没有可用支付渠道", tokens.muted), 9);
-            createButton = primaryButton("显示付款码");
+                    ? "完全自愿，不赞助也可以使用全部签到功能"
+                    : "当前没有可用赞助码", tokens.muted), 9);
+            createButton = primaryButton("显示赞助码");
             createButton.setEnabled(membership.checkoutAvailable && !requestInFlight);
             createButton.setOnClickListener(view -> {
                 UiComponents.press(view);
                 createOrder();
             });
             addTop(page, createButton, 10);
+            animateRender(summary);
             return;
         }
 
         LinearLayout payment = card();
-        amount = label(amountValue(order), roundLayout ? 25f : 28f, tokens.text);
+        TextView amount = label(amountValue(order), roundLayout ? 25f : 28f, tokens.text);
         amount.setGravity(Gravity.CENTER);
         amount.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         payment.addView(amount, new LinearLayout.LayoutParams(-1, -2));
@@ -166,24 +184,41 @@ final class CheckinPaymentPage {
         orderState.setGravity(Gravity.CENTER);
         addTop(payment, orderState, 4);
 
+        FrameLayout qrFrame = new FrameLayout(activity);
+        qrFrame.setBackgroundColor(Color.WHITE);
         qrImage = new ImageView(activity);
         qrImage.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        qrImage.setBackgroundColor(Color.WHITE);
         qrImage.setPadding(dp(7), dp(7), dp(7), dp(7));
+        qrFrame.addView(qrImage, new FrameLayout.LayoutParams(-1, -1));
+        qrSpinner = new LoadingSpinnerView(activity);
+        qrSpinner.setColor(Color.rgb(48, 50, 54));
+        int spinnerSize = dp(24);
+        qrFrame.addView(qrSpinner,
+                new FrameLayout.LayoutParams(spinnerSize, spinnerSize, Gravity.CENTER));
         LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(qrSize(), qrSize());
         qrParams.gravity = Gravity.CENTER_HORIZONTAL;
         qrParams.topMargin = dp(9);
-        payment.addView(qrImage, qrParams);
-        if (hasQrBitmap()) qrImage.setImageBitmap(qrBitmap);
-        addTop(payment, body("使用" + providerLabel(order) + "扫描", tokens.muted), 7);
+        payment.addView(qrFrame, qrParams);
+        if (hasQrBitmap()) {
+            qrImage.setImageBitmap(qrBitmap);
+            qrSpinner.setVisibility(View.GONE);
+        } else if (Motions.off()) {
+            qrSpinner.setVisibility(View.GONE);
+        }
+        addTop(payment, body("使用" + providerLabel(order) + "扫描赞助码", tokens.muted), 7);
 
         if (order.manualReview) addManualClaim(payment);
         page.addView(payment);
 
-        Button regenerate = quietButton("重新生成付款码");
+        Button regenerate = quietButton("paid".equals(order.status)
+                ? "完成" : "重新生成赞助码");
         regenerate.setEnabled(!requestInFlight && !order.pending());
         regenerate.setOnClickListener(view -> {
             UiComponents.press(view);
+            if ("paid".equals(order.status)) {
+                host.closeSponsorship();
+                return;
+            }
             clearQrBitmap();
             order = null;
             render();
@@ -196,11 +231,12 @@ final class CheckinPaymentPage {
                 loadQr();
             }
         }
+        animateRender(payment);
     }
 
     private void addManualClaim(LinearLayout parent) {
         TextView hint = body(order.review == null
-                ? "支付后填写账单中的支付订单号，管理员核对后开通会员。"
+                ? "赞助后填写账单中的支付订单号，管理员核对到账后记录赞助。"
                 : reviewLabel(order.review), tokens.muted);
         hint.setLineSpacing(0f, 1.12f);
         addTop(parent, hint, 9);
@@ -209,7 +245,7 @@ final class CheckinPaymentPage {
         if (!order.pending() && !"expired".equals(order.status)) return;
         paymentReference = input("支付订单号", 80);
         addTop(parent, paymentReference, 7);
-        claimButton = ghostButton("提交付款审核");
+        claimButton = ghostButton("提交赞助记录");
         claimButton.setEnabled(!requestInFlight);
         claimButton.setOnClickListener(view -> {
             UiComponents.press(view);
@@ -220,9 +256,25 @@ final class CheckinPaymentPage {
 
     private void createOrder() {
         if (requestInFlight || closed) return;
+        int amountCents = membership.plan.variableAmount
+                ? SponsorshipAmount.parseCents(sponsorshipAmount == null
+                        ? "" : sponsorshipAmount.getText().toString(),
+                        membership.plan.minimumAmountCents,
+                        membership.plan.maximumAmountCents)
+                : membership.plan.amountCents;
+        if (!SponsorshipAmount.validCents(amountCents)
+                || amountCents < membership.plan.minimumAmountCents
+                || amountCents > membership.plan.maximumAmountCents) {
+            host.showMessage("请输入有效的赞助金额");
+            return;
+        }
         requestInFlight = true;
-        render();
-        coordinator.createBillingOrder(new CheckinCenterClient.Callback<CheckinBilling.Order>() {
+        if (createButton != null) {
+            createButton.setEnabled(false);
+            createButton.setText("正在生成");
+        }
+        coordinator.createBillingOrder(amountCents,
+                new CheckinCenterClient.Callback<CheckinBilling.Order>() {
             @Override
             public void onSuccess(CheckinBilling.Order value) {
                 if (closed) return;
@@ -249,6 +301,7 @@ final class CheckinPaymentPage {
         final ImageView target = qrImage;
         final int requestSerial = ++qrRequestSerial;
         qrRequestInFlight = true;
+        if (qrSpinner != null && !Motions.off()) qrSpinner.setVisibility(View.VISIBLE);
         coordinator.loadBillingQr(orderId, new CheckinCenterClient.Callback<byte[]>() {
             @Override
             public void onSuccess(byte[] value) {
@@ -258,12 +311,15 @@ final class CheckinPaymentPage {
                         || !orderId.equals(order.id) || !order.pending()) return;
                 Bitmap bitmap = decodeQr(value);
                 if (bitmap == null) {
-                    showOrderState("付款码无法显示", tokens.text);
+                    if (qrSpinner != null) qrSpinner.setVisibility(View.GONE);
+                    showOrderState("赞助码无法显示", tokens.text);
                     scheduleQrRetry();
                     return;
                 }
                 replaceQrBitmap(orderId, bitmap);
                 target.setImageBitmap(qrBitmap);
+                if (qrSpinner != null) qrSpinner.setVisibility(View.GONE);
+                Motions.dialogIn(target);
                 if (order.manualReview) return;
                 schedulePoll(POLL_DELAY_MS);
             }
@@ -273,6 +329,7 @@ final class CheckinPaymentPage {
                 if (requestSerial != qrRequestSerial) return;
                 qrRequestInFlight = false;
                 if (closed) return;
+                if (qrSpinner != null) qrSpinner.setVisibility(View.GONE);
                 showOrderState(error.getMessage(), tokens.text);
                 if (!error.authorizationInvalid()) scheduleQrRetry();
             }
@@ -288,9 +345,7 @@ final class CheckinPaymentPage {
                         if (closed) return;
                         setOrder(value);
                         if ("paid".equals(value.status)) {
-                            membershipChanged = true;
-                            showOrderState("支付成功，会员已生效", tokens.text);
-                            handler.postDelayed(() -> host.closePayment(true), 700L);
+                            render();
                             return;
                         }
                         render();
@@ -313,7 +368,7 @@ final class CheckinPaymentPage {
         if (requestInFlight || order == null || paymentReference == null) return;
         String reference = paymentReference.getText().toString().trim();
         if (!CheckinBilling.validPaymentReference(reference)) {
-            host.showMessage("请输入支付订单号");
+            host.showMessage("请输入有效的支付订单号");
             return;
         }
         requestInFlight = true;
@@ -346,6 +401,7 @@ final class CheckinPaymentPage {
         if (orderState != null) {
             orderState.setText(value);
             orderState.setTextColor(color);
+            Motions.selected(orderState);
         }
     }
 
@@ -400,6 +456,12 @@ final class CheckinPaymentPage {
         qrOrderId = "";
     }
 
+    private void animateRender(View content) {
+        boolean animate = !firstRender;
+        firstRender = false;
+        if (animate) Motions.enter(content, dp(roundLayout ? 5 : 8));
+    }
+
     private Bitmap decodeQr(byte[] bytes) {
         if (bytes == null || bytes.length == 0) return null;
         BitmapFactory.Options bounds = new BitmapFactory.Options();
@@ -414,29 +476,16 @@ final class CheckinPaymentPage {
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
     }
 
-    private String membershipLabel() {
-        if (membership.admin) return "管理员永久可用";
-        if ("free".equals(membership.mode)) return "当前免费开放";
-        if (membership.required) return "会员已到期";
-        return membership.expiresAt.isEmpty() ? "会员有效" : "有效至 " + dateLabel(membership.expiresAt);
-    }
-
-    private String planLabel() {
-        if (membership.plan.amountCents <= 0) return membership.plan.name;
-        return membership.plan.name + "  ¥" + String.format(Locale.US, "%.2f",
-                membership.plan.amountCents / 100.0f) + " / " + membership.plan.durationDays + "天";
-    }
-
     private String amountValue(CheckinBilling.Order value) {
-        return "¥" + String.format(Locale.US, "%.2f", value.payableAmountCents / 100.0f);
+        return "¥" + SponsorshipAmount.formatYuan(value.payableAmountCents);
     }
 
     private String orderStateLabel(CheckinBilling.Order value) {
-        if ("paid".equals(value.status)) return "支付成功";
-        if ("expired".equals(value.status)) return "订单已过期，请重新生成";
-        if ("failed".equals(value.status)) return "订单创建失败";
-        if (value.review != null && value.review.pending()) return "付款申请待审核";
-        return "等待付款";
+        if ("paid".equals(value.status)) return "赞助已确认，感谢支持";
+        if ("expired".equals(value.status)) return "赞助码已过期，请重新生成";
+        if ("failed".equals(value.status)) return "赞助记录创建失败";
+        if (value.review != null && value.review.pending()) return "赞助记录待审核";
+        return "等待赞助";
     }
 
     private String providerLabel(CheckinBilling.Order value) {
@@ -448,17 +497,10 @@ final class CheckinPaymentPage {
     }
 
     private String reviewLabel(CheckinBilling.Review value) {
-        if ("approved".equals(value.status)) return "审核通过，会员已生效";
+        if ("approved".equals(value.status)) return "审核通过，感谢支持";
         if ("rejected".equals(value.status)) return value.reason.isEmpty()
-                ? "审核未通过，请重新付款" : "审核未通过：" + value.reason;
-        return "付款申请待审核";
-    }
-
-    private String dateLabel(String value) {
-        if (value.length() >= 16 && value.charAt(10) == 'T') {
-            return value.substring(0, 10) + " " + value.substring(11, 16);
-        }
-        return value;
+                ? "审核未通过，请检查赞助记录" : "审核未通过：" + value.reason;
+        return "赞助记录待审核";
     }
 
     private LinearLayout infoRow(String name, String value) {

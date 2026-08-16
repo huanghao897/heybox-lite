@@ -12,21 +12,25 @@ final class CheckinBilling {
         final boolean admin;
         final String expiresAt;
         final boolean checkoutAvailable;
+        final boolean voluntarySponsorship;
         final Plan plan;
 
         Membership(String mode, boolean required, boolean entitled, boolean admin,
-                   String expiresAt, boolean checkoutAvailable, Plan plan) {
+                   String expiresAt, boolean checkoutAvailable,
+                   boolean voluntarySponsorship, Plan plan) {
             this.mode = mode;
             this.required = required;
             this.entitled = entitled;
             this.admin = admin;
             this.expiresAt = expiresAt;
             this.checkoutAvailable = checkoutAvailable;
+            this.voluntarySponsorship = voluntarySponsorship;
             this.plan = plan;
         }
 
         static Membership freeDefault() {
-            return new Membership("free", false, true, false, "", false, Plan.empty());
+            return new Membership("free", false, true, false, "", false,
+                    true, Plan.empty());
         }
     }
 
@@ -35,16 +39,24 @@ final class CheckinBilling {
         final int amountCents;
         final String currency;
         final int durationDays;
+        final boolean variableAmount;
+        final int minimumAmountCents;
+        final int maximumAmountCents;
 
-        Plan(String name, int amountCents, String currency, int durationDays) {
+        Plan(String name, int amountCents, String currency, int durationDays,
+             boolean variableAmount, int minimumAmountCents, int maximumAmountCents) {
             this.name = name;
             this.amountCents = amountCents;
             this.currency = currency;
             this.durationDays = durationDays;
+            this.variableAmount = variableAmount;
+            this.minimumAmountCents = minimumAmountCents;
+            this.maximumAmountCents = maximumAmountCents;
         }
 
         static Plan empty() {
-            return new Plan("小黑盒自动签到会员", 0, "CNY", 30);
+            return new Plan("服务器自愿赞助", 500, "CNY", 0,
+                    true, 1, 100_000_000);
         }
     }
 
@@ -100,28 +112,34 @@ final class CheckinBilling {
 
     static Membership parseMembership(JSONObject value) {
         JSONObject plan = value.optJSONObject("plan");
+        String mode = value.optString("billing_mode", "free");
         Plan parsedPlan = plan == null ? Plan.empty() : new Plan(
-                plan.optString("name", "小黑盒自动签到会员"),
-                boundedInt(plan.optInt("amount_cents", 0)),
+                plan.optString("name", "服务器自愿赞助"),
+                boundedAmount(plan.optInt("amount_cents", 500), 500),
                 plan.optString("currency", "CNY"),
-                boundedInt(plan.optInt("duration_days", 30)));
+                boundedInt(plan.optInt("duration_days", 0)),
+                plan.optBoolean("variable_amount", true),
+                boundedAmount(plan.optInt("minimum_amount_cents", 1), 1),
+                boundedAmount(plan.optInt("maximum_amount_cents", 100_000_000),
+                        100_000_000));
         return new Membership(
-                value.optString("billing_mode", "free"),
+                mode,
                 value.optBoolean("subscription_required", false),
                 value.optBoolean("entitled", true),
                 value.optBoolean("is_admin", false),
                 nullable(value, "expires_at"),
                 value.optBoolean("checkout_available", false),
+                value.optBoolean("voluntary_sponsorship", "free".equals(mode)),
                 parsedPlan);
     }
 
     static Order parseOrder(JSONObject value) throws CheckinCenterClient.ApiError {
         String id = value.optString("order_id", "");
         if (!validOrderId(id)) throw new CheckinCenterClient.ApiError(
-                CheckinCenterClient.Operation.BILLING_STATUS, 0, "订单响应异常");
+                CheckinCenterClient.Operation.BILLING_STATUS, 0, "赞助记录响应异常");
         return new Order(id, value.optString("provider", ""),
-                boundedInt(value.optInt("amount_cents", 0)),
-                boundedInt(value.optInt("payable_amount_cents", 0)),
+                boundedAmount(value.optInt("amount_cents", 0), 0),
+                boundedAmount(value.optInt("payable_amount_cents", 0), 0),
                 value.optString("currency", "CNY"), value.optString("status", ""),
                 value.optBoolean("qr_ready", false), value.optBoolean("manual_review", false),
                 value.optString("expires_at", ""), parseReview(value.optJSONObject("review")));
@@ -130,7 +148,7 @@ final class CheckinBilling {
     static Review parseClaim(JSONObject value) throws CheckinCenterClient.ApiError {
         Review review = parseReview(value.optJSONObject("review"));
         if (review == null) throw new CheckinCenterClient.ApiError(
-                CheckinCenterClient.Operation.BILLING_CLAIM, 0, "支付审核响应异常");
+                CheckinCenterClient.Operation.BILLING_CLAIM, 0, "赞助审核响应异常");
         return review;
     }
 
@@ -155,5 +173,9 @@ final class CheckinBilling {
 
     private static int boundedInt(int value) {
         return value >= 0 && value <= 1_000_000 ? value : 0;
+    }
+
+    private static int boundedAmount(int value, int fallback) {
+        return value >= 0 && value <= 100_000_000 ? value : fallback;
     }
 }

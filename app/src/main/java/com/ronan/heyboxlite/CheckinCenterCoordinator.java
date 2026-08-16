@@ -157,13 +157,14 @@ final class CheckinCenterCoordinator {
         revokeAttempt(token, callback, 0);
     }
 
-    void createBillingOrder(CheckinCenterClient.Callback<CheckinBilling.Order> callback) {
+    void createBillingOrder(int amountCents,
+                            CheckinCenterClient.Callback<CheckinBilling.Order> callback) {
         String token = store.deviceToken();
         if (token.isEmpty()) {
             fail(callback, CheckinCenterClient.Operation.BILLING_CREATE, "尚未连接签到服务");
             return;
         }
-        client.createBillingOrder(token, authorizationAware(callback));
+        client.createBillingOrder(token, amountCents, authorizationAware(callback));
     }
 
     void getBillingOrder(String orderId,
