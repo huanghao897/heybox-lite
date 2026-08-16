@@ -1045,7 +1045,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         linearLayoutVertical.addView(body, new LinearLayout.LayoutParams(-1, 0, 1.0f));
         this.content = new BackSwipeFrameLayout(this, this);
         body.addView(this.content, match());
-        DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
+        DisplayMetrics displayMetrics = screenMetrics();
         this.bottomDockDimensions = ResponsiveDock.fromScreen(
                 displayMetrics.widthPixels, displayMetrics.heightPixels,
                 usesRoundLayout());

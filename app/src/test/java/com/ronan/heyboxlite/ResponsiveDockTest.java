@@ -17,6 +17,20 @@ public class ResponsiveDockTest {
         assertEquals(134, large.width);
         assertTrue(small.height < medium.height);
         assertTrue(medium.height < large.height);
+        assertTrue(small.iconSize < medium.iconSize);
+        assertTrue(medium.iconSize < large.iconSize);
+    }
+
+    @Test
+    public void keepsScalingOnCompactScreens() {
+        ResponsiveDock.Dimensions compact = ResponsiveDock.fromScreen(180, 240);
+        ResponsiveDock.Dimensions small = ResponsiveDock.fromScreen(240, 320);
+        ResponsiveDock.Dimensions medium = ResponsiveDock.fromScreen(360, 480);
+
+        assertTrue(compact.width < small.width);
+        assertTrue(small.width < medium.width);
+        assertTrue(compact.height < small.height);
+        assertTrue(small.height < medium.height);
     }
 
     @Test
@@ -34,14 +48,20 @@ public class ResponsiveDockTest {
     }
 
     @Test
-    public void roundLayoutRaisesAndCompactsDock() {
+    public void roundLayoutStaysNearBottomWithoutCrossingCircle() {
         ResponsiveDock.Dimensions rectangular =
                 ResponsiveDock.fromScreen(360, 480, false);
         ResponsiveDock.Dimensions round =
                 ResponsiveDock.fromScreen(360, 360, true);
 
         assertTrue(round.width < rectangular.width);
-        assertTrue(round.height > rectangular.height);
+        assertTrue(round.height <= rectangular.height);
         assertTrue(round.marginBottom > rectangular.marginBottom);
+        assertTrue(round.marginBottom <= Math.round(360 * 0.025f));
+
+        double radius = 360.0 / 2.0;
+        double cornerX = round.width / 2.0;
+        double cornerY = radius - round.marginBottom;
+        assertTrue((cornerX * cornerX) + (cornerY * cornerY) <= radius * radius);
     }
 }
