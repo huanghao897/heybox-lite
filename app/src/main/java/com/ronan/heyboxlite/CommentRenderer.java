@@ -77,21 +77,7 @@ final class CommentRenderer {
 
     int addComments(LinearLayout page, JSONArray groups, boolean latest) {
         if (groups == null) return 0;
-        List<JSONObject> threads = new ArrayList<>();
-        for (int i = 0; i < groups.length(); i++) {
-            JSONObject group = groups.optJSONObject(i);
-            if (group != null) threads.add(group);
-        }
-        Collections.sort(threads, (left, right) -> {
-            int pinned = Boolean.compare(CommentData.isPinnedThread(right),
-                    CommentData.isPinnedThread(left));
-            if (pinned != 0) return pinned;
-            return latest
-                    ? Long.compare(CommentData.threadTime(right),
-                    CommentData.threadTime(left))
-                    : Integer.compare(CommentData.threadLikes(right),
-                    CommentData.threadLikes(left));
-        });
+        List<JSONObject> threads = CommentOrder.sorted(groups, latest);
         int count = 0;
         for (JSONObject group : threads) {
             JSONArray comments = group.optJSONArray("comment");

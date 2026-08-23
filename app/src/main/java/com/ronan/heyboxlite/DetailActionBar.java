@@ -53,7 +53,8 @@ final class DetailActionBar {
         this.host = host;
     }
 
-    void add(LinearLayout article, FeedItem item, JSONObject link) {
+    void add(LinearLayout article, FeedItem item, JSONObject link,
+             List<RichContent.Block> contentBlocks) {
         LinearLayout row = new LinearLayout(this.activity);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
@@ -76,7 +77,8 @@ final class DetailActionBar {
 
         TextView watchLater = actionLabel("", R.drawable.ic_history);
         updateWatchLater(watchLater, this.localCache.isWatchLater(item.id), false);
-        watchLater.setOnClickListener(view -> toggleWatchLater(item, watchLater));
+        watchLater.setOnClickListener(view ->
+                toggleWatchLater(item, watchLater, contentBlocks));
         addItem(row, watchLater);
 
         CommentRenderer.LikeControl comment = countAction(
@@ -91,7 +93,7 @@ final class DetailActionBar {
     }
 
     void refreshOffline(FeedItem item, JSONObject body) {
-        cacheOffline(item, body, null);
+        cacheOffline(item, contentBlocks(item, body), null);
     }
 
     private void addItem(LinearLayout row, View item) {
@@ -129,7 +131,8 @@ final class DetailActionBar {
         return view;
     }
 
-    private void toggleWatchLater(FeedItem item, TextView button) {
+    private void toggleWatchLater(FeedItem item, TextView button,
+                                  List<RichContent.Block> contentBlocks) {
         if (item == null || item.id.isEmpty()) return;
         if (this.localCache.isWatchLater(item.id)) {
             this.localCache.removeWatchLater(item.id);
@@ -142,12 +145,13 @@ final class DetailActionBar {
         JSONObject body = this.host.currentDetailBody();
         if (body == null) body = this.localCache.detail(item.id);
         if (body == null) {
-            List<String> images = imageUrls(item, null);
+            List<String> images = imageUrls(item, contentBlocks);
             this.localCache.updateWatchLater(item, images);
             ImageLoader.prefetchOffline(this.activity, images, 260, bytes ->
                     finishWatchLater(item, button));
         } else {
-            cacheOffline(item, body, () -> finishWatchLater(item, button));
+            cacheOffline(item, contentBlocks(item, body),
+                    () -> finishWatchLater(item, button));
         }
         this.host.showToast("已加入稍后看");
     }
@@ -177,8 +181,9 @@ final class DetailActionBar {
         }
     }
 
-    private void cacheOffline(FeedItem item, JSONObject body, Runnable complete) {
-        List<String> images = imageUrls(item, body);
+    private void cacheOffline(FeedItem item, List<RichContent.Block> contentBlocks,
+                              Runnable complete) {
+        List<String> images = imageUrls(item, contentBlocks);
         this.localCache.updateWatchLater(item, images);
         if (!TextUtils.isEmpty(item.image)) {
             ImageLoader.prefetchOffline(this.activity,
@@ -190,18 +195,23 @@ final class DetailActionBar {
                 });
     }
 
-    private List<String> imageUrls(FeedItem item, JSONObject body) {
+    private List<String> imageUrls(FeedItem item, List<RichContent.Block> contentBlocks) {
         Set<String> values = new HashSet<>();
         if (!TextUtils.isEmpty(item.image)) values.add(item.image);
         Collections.addAll(values, item.images);
-        JSONObject result = body == null ? null : body.optJSONObject("result");
-        JSONObject link = result == null ? null : result.optJSONObject("link");
-        JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
-        for (RichContent.Block block : RichContent.parse(link, fallbackImages)) {
+        if (contentBlocks == null) return new ArrayList<>(values);
+        for (RichContent.Block block : contentBlocks) {
             if (block.image && !TextUtils.isEmpty(block.value)) values.add(block.value);
             if (values.size() >= 48) break;
         }
         return new ArrayList<>(values);
+    }
+
+    private List<RichContent.Block> contentBlocks(FeedItem item, JSONObject body) {
+        JSONObject result = body == null ? null : body.optJSONObject("result");
+        JSONObject link = result == null ? null : result.optJSONObject("link");
+        JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
+        return this.contentRenderer.resolve(link, item.description, fallbackImages).blocks;
     }
 
     private android.graphics.drawable.GradientDrawable outlinedSurface(int color) {

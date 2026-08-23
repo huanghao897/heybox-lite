@@ -133,13 +133,15 @@ final class DetailPageAssembler {
 
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
         JSONArray comments = result == null ? null : result.optJSONArray("comments");
+        DetailContentParser.Result content = contentRenderer.resolve(
+                link, fallback.description, fallbackImages);
         String diagnostics = DetailDiagnostics.build(screen, linkId, session.playGif(),
-                body, fallback, link, fallbackImages, comments);
+                body, fallback, link, fallbackImages, comments, content.blocks);
         cache.log("detail diagnostics captured link=" + fallback.id
                 + " title=" + DetailDiagnostics.compactText(heading, 48));
-        contentRenderer.add(article, link, fallback.description, fallbackImages);
+        contentRenderer.add(article, content);
         if (!fallback.article) headerRenderer.addTopics(article, link, fallback.topicName);
-        actionBar.add(article, fallback, link);
+        actionBar.add(article, fallback, link, content.blocks);
         page.addView(article);
         LinearLayout articleComments = commentsSection.placeholder(page, comments);
 

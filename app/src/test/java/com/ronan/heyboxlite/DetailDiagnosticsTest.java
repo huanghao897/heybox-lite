@@ -34,11 +34,13 @@ public class DetailDiagnosticsTest {
         String result = DetailDiagnostics.build(
                 "detail", "post-1", true,
                 new JSONObject().put("result", new JSONObject()),
-                FeedItem.from(link), link, null, comments);
+                FeedItem.from(link), link, null, comments,
+                RichContent.parse(link, null));
 
         assertTrue(result.contains("detail screen: detail"));
         assertTrue(result.contains("currentLinkId: post-1"));
         assertTrue(result.contains("fallbackTitle: 测试标题"));
+        assertTrue(result.contains("parsed blocks:"));
         assertTrue(result.contains("[0] id=comment-1"));
         assertTrue(result.contains("parsed=[cube_惊讶]评论文字"));
         assertTrue(result.contains("animated=true"));

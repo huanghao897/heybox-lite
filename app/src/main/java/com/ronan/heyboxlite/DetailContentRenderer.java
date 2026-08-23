@@ -28,6 +28,7 @@ final class DetailContentRenderer {
     private final float uiScale;
     private final float textScale;
     private final ImageOpener imageOpener;
+    private final DetailContentParser parser = new DetailContentParser();
 
     DetailContentRenderer(Activity activity, SessionStore session,
                           ThemeTokens tokens, boolean roundLayout,
@@ -41,26 +42,13 @@ final class DetailContentRenderer {
         this.imageOpener = imageOpener;
     }
 
-    void add(LinearLayout parent, JSONObject link, String fallback,
-             JSONArray fallbackImages) {
-        List<RichContent.Block> blocks = link == null
-                ? RichContent.parse(fallback, fallbackImages)
-                : RichContent.parse(link, fallbackImages);
-        if (!RichContent.hasReadableText(blocks)
-                && fallback != null && !fallback.isEmpty()) {
-            List<RichContent.Block> fallbackBlocks =
-                    RichContent.parse(fallback, (JSONArray) null);
-            if (RichContent.hasReadableText(fallbackBlocks)) {
-                fallbackBlocks.addAll(blocks);
-                blocks = fallbackBlocks;
-            } else if (blocks.isEmpty()) {
-                blocks = RichContent.parse(fallback, fallbackImages);
-            }
-        }
-        boolean article = link != null
-                && (Json.truthy(link, "use_concept_type")
-                || Json.truthy(link, "is_article"));
-        addBlocks(parent, blocks, !article);
+    DetailContentParser.Result resolve(JSONObject link, String fallback,
+                                       JSONArray fallbackImages) {
+        return this.parser.resolve(link, fallback, fallbackImages);
+    }
+
+    void add(LinearLayout parent, DetailContentParser.Result content) {
+        addBlocks(parent, content.blocks, content.useImagePager);
     }
 
     int imageTargetPx() {
@@ -208,81 +196,9 @@ final class DetailContentRenderer {
     }
 
     private void addImagePager(LinearLayout parent, List<String> urls) {
-        int screenWidth = this.activity.getResources()
-                .getDisplayMetrics().widthPixels;
-        int pagerHeight = this.roundLayout
-                ? Math.min(dp(150), Math.round(screenWidth * 0.58f))
-                : Math.min(dp(270), Math.round(screenWidth * 0.85f));
-        FrameLayout wrap = new FrameLayout(this.activity);
-        Compat.setBackground(wrap, UiComponents.round(this.activity,
-                placeholderColor(), 7, this.uiScale));
-        Compat.clipToOutline(wrap);
-
-        TextView counter = text("1/" + urls.size(), 10.0f, Color.WHITE);
-        LinearLayout dots = new LinearLayout(this.activity);
-        ImagePagerCore core = new ImagePagerCore(this.activity, this::dp, page -> {
-            counter.setText((page + 1) + "/" + urls.size());
-            for (int i = 0; i < dots.getChildCount(); i++) {
-                dots.getChildAt(i).setAlpha(i == page ? 1.0f : 0.4f);
-            }
-        });
-        String[] allUrls = urls.toArray(new String[0]);
-        for (int pageIndex = 0; pageIndex < urls.size(); pageIndex++) {
-            int position = pageIndex;
-            String url = urls.get(pageIndex);
-            FrameLayout page = new FrameLayout(this.activity);
-            ImageView image = new ImageView(this.activity);
-            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            image.setAdjustViewBounds(false);
-            page.addView(image, match());
-            image.setOnClickListener(view ->
-                    this.imageOpener.open(image, allUrls, position));
-            ImageLoader.intoMeasuredRevealStable(image, url,
-                    imageTargetPx(), (success, bitmap) -> {
-                        if (!success && image.getDrawable() == null) {
-                            TextView failed = text("图片加载失败",
-                                    11.0f, this.tokens.muted);
-                            failed.setGravity(Gravity.CENTER);
-                            page.addView(failed, match());
-                        }
-                    });
-            core.addView(page);
-        }
-        wrap.addView(core, match());
-
-        counter.setGravity(Gravity.CENTER);
-        counter.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        counter.setPadding(dp(7), dp(2), dp(7), dp(2));
-        Compat.setBackground(counter, UiComponents.round(
-                this.activity, 0x8C000000, 9, this.uiScale));
-        FrameLayout.LayoutParams counterParams =
-                new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT);
-        counterParams.topMargin = dp(7);
-        counterParams.rightMargin = dp(7);
-        wrap.addView(counter, counterParams);
-
-        dots.setGravity(Gravity.CENTER);
-        for (int i = 0; i < urls.size(); i++) {
-            View dot = new View(this.activity);
-            Compat.setBackground(dot, UiComponents.round(
-                    this.activity, Color.WHITE, 3, this.uiScale));
-            dot.setAlpha(i == 0 ? 1.0f : 0.4f);
-            LinearLayout.LayoutParams dotParams =
-                    new LinearLayout.LayoutParams(dp(5), dp(5));
-            dotParams.leftMargin = dp(2);
-            dotParams.rightMargin = dp(2);
-            dots.addView(dot, dotParams);
-        }
-        FrameLayout.LayoutParams dotsParams =
-                new FrameLayout.LayoutParams(-2, -2,
-                        Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        dotsParams.bottomMargin = dp(7);
-        wrap.addView(dots, dotsParams);
-
-        LinearLayout.LayoutParams params =
-                new LinearLayout.LayoutParams(-1, pagerHeight);
-        params.topMargin = dp(10);
-        parent.addView(wrap, params);
+        new DetailImageGallery(this.activity, this.session, this.tokens,
+                this.roundLayout, imageTargetPx(), this.imageOpener::open)
+                .addTo(parent, urls);
     }
 
     private View imageBlock(String url, int targetPx, int heightDp) {

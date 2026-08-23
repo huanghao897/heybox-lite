@@ -14,7 +14,8 @@ final class DetailDiagnostics {
 
     static String build(String screen, String currentLinkId, boolean playGif,
                         JSONObject body, FeedItem fallback, JSONObject link,
-                        JSONArray fallbackImages, JSONArray comments) {
+                        JSONArray fallbackImages, JSONArray comments,
+                        List<RichContent.Block> contentBlocks) {
         StringBuilder out = new StringBuilder();
         out.append("detail screen: ").append(screen == null ? "" : screen).append('\n');
         out.append("currentLinkId: ")
@@ -27,7 +28,7 @@ final class DetailDiagnostics {
         out.append("fallbackArticle: ").append(fallback != null && fallback.article).append('\n');
         out.append("playGif: ").append(playGif).append('\n');
         appendBodyKeys(out, body);
-        appendLink(out, link, fallbackImages);
+        appendLink(out, link, fallbackImages, contentBlocks);
         appendComments(out, comments);
         return out.toString();
     }
@@ -55,7 +56,8 @@ final class DetailDiagnostics {
     }
 
     private static void appendLink(StringBuilder out, JSONObject link,
-                                   JSONArray fallbackImages) {
+                                   JSONArray fallbackImages,
+                                   List<RichContent.Block> contentBlocks) {
         if (link == null) {
             out.append("link: null\n");
             return;
@@ -72,7 +74,29 @@ final class DetailDiagnostics {
         out.append("has imgs: ").append(link.has("imgs"))
                 .append(" count=").append(images == null ? 0 : images.length())
                 .append('\n');
-        out.append(RichContent.diagnostics(link, fallbackImages));
+        appendParsedContent(out, contentBlocks);
+    }
+
+    private static void appendParsedContent(StringBuilder out,
+                                            List<RichContent.Block> blocks) {
+        int textCount = 0;
+        int imageCount = 0;
+        int readableLength = 0;
+        if (blocks != null) {
+            for (RichContent.Block block : blocks) {
+                if (block.image) {
+                    imageCount++;
+                } else {
+                    textCount++;
+                    readableLength += compactText(block.value, Integer.MAX_VALUE).length();
+                }
+            }
+        }
+        out.append("parsed blocks: ").append(blocks == null ? 0 : blocks.size())
+                .append(" text=").append(textCount)
+                .append(" images=").append(imageCount)
+                .append(" readable=").append(readableLength)
+                .append('\n');
     }
 
     private static void appendComments(StringBuilder out, JSONArray groups) {

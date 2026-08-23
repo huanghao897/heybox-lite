@@ -51,7 +51,9 @@ final class ImagePagerCore extends ViewGroup {
         for (int i = 0; i < getChildCount(); i++) {
             getChildAt(i).layout(i * width, 0, (i + 1) * width, height);
         }
-        scrollTo(this.page * width, 0);
+        if (!this.dragging && this.settleAnimator == null) {
+            scrollTo(this.page * width, 0);
+        }
     }
 
     @Override

@@ -9,8 +9,13 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.List;
+import java.util.WeakHashMap;
 
 final class DetailCommentsSection {
+    private static final int COMMENT_BATCH_SIZE = 8;
     interface Host {
         boolean isCurrent(DetailPager pager);
     }
@@ -21,6 +26,8 @@ final class DetailCommentsSection {
     private final CommentRenderer renderer;
     private final Handler handler;
     private final Host host;
+    private final WeakHashMap<LinearLayout, Integer> renderGenerations = new WeakHashMap<>();
+    private int nextRenderGeneration;
 
     DetailCommentsSection(Activity activity, SessionStore session, ThemeTokens tokens,
                           CommentRenderer renderer, Handler handler, Host host) {
@@ -48,18 +55,18 @@ final class DetailCommentsSection {
             if (!this.host.isCurrent(pager) || container.getParent() == null
                     || this.activity.isFinishing()) return;
             container.removeAllViews();
-            addContent(container, comments);
-            if (restoreScroll > 0) {
+            addContent(container, comments, () -> {
+                if (restoreScroll <= 0) return;
                 scroll.post(() -> {
                     if (this.host.isCurrent(pager) && !this.activity.isFinishing()) {
                         scroll.scrollTo(0, restoreScroll);
                     }
                 });
-            }
+            });
         }, delayMs);
     }
 
-    private void addContent(LinearLayout page, JSONArray comments) {
+    private void addContent(LinearLayout page, JSONArray comments, Runnable rendered) {
         LinearLayout surface = vertical();
         surface.setPadding(0, dp(8), 0, dp(12));
         LinearLayout heading = new LinearLayout(this.activity);
@@ -76,25 +83,50 @@ final class DetailCommentsSection {
         LinearLayout list = vertical();
         surface.addView(list);
         boolean[] latest = {false};
-        render(list, comments, false);
+        render(list, comments, false, rendered);
         sort.setOnClickListener(view -> {
             latest[0] = !latest[0];
             sort.setText(latest[0] ? "最新" : "热门");
             setSortIcon(sort);
             UiComponents.press(sort);
-            render(list, comments, latest[0]);
+            render(list, comments, latest[0], null);
         });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.topMargin = dp(10);
         page.addView(surface, params);
     }
 
-    private void render(LinearLayout list, JSONArray comments, boolean latest) {
+    private void render(LinearLayout list, JSONArray comments, boolean latest,
+                        Runnable complete) {
+        int generation = ++this.nextRenderGeneration;
+        this.renderGenerations.put(list, generation);
         list.removeAllViews();
-        if (this.renderer.addComments(list, comments, latest) > 0) return;
+        List<JSONObject> ordered = CommentOrder.sorted(comments, latest);
+        if (!ordered.isEmpty()) {
+            appendBatch(list, ordered, latest, 0, generation, complete);
+            return;
+        }
         TextView empty = text("暂无评论", 13.0f, this.tokens.muted);
         empty.setPadding(dp(4), dp(8), dp(4), dp(12));
         list.addView(empty);
+        if (complete != null) complete.run();
+    }
+
+    private void appendBatch(LinearLayout list, List<JSONObject> ordered, boolean latest,
+                             int start, int generation, Runnable complete) {
+        Integer current = this.renderGenerations.get(list);
+        if (current == null || current != generation || list.getParent() == null
+                || this.activity.isFinishing()) return;
+        int end = Math.min(ordered.size(), start + COMMENT_BATCH_SIZE);
+        JSONArray batch = new JSONArray();
+        for (int index = start; index < end; index++) batch.put(ordered.get(index));
+        this.renderer.addComments(list, batch, latest);
+        if (end < ordered.size()) {
+            this.handler.post(() -> appendBatch(
+                    list, ordered, latest, end, generation, complete));
+        } else if (complete != null) {
+            complete.run();
+        }
     }
 
     private void setSortIcon(TextView view) {
