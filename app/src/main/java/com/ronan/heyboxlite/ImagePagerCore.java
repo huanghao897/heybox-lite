@@ -13,9 +13,15 @@ final class ImagePagerCore extends ViewGroup {
         void onPage(int page);
     }
 
+    interface GestureGuard {
+        boolean preserveSecondTap(float x, float y, long eventTime);
+        boolean pagingBlocked();
+    }
+
     private final int touchSlop;
     private final Dp dp;
     private final PagerListener listener;
+    private final GestureGuard gestureGuard;
     private float startX;
     private float startY;
     private long startTime;
@@ -23,13 +29,24 @@ final class ImagePagerCore extends ViewGroup {
     private int page;
     private boolean dragging;
     private boolean ignoring;
+    private boolean preservingSecondTap;
     private ValueAnimator settleAnimator;
 
     ImagePagerCore(Context context, Dp dp, PagerListener listener) {
+        this(context, dp, listener, null);
+    }
+
+    ImagePagerCore(Context context, Dp dp, PagerListener listener,
+                   GestureGuard gestureGuard) {
         super(context);
         this.dp = dp;
         this.listener = listener;
+        this.gestureGuard = gestureGuard;
         this.touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+    }
+
+    void setPage(int page) {
+        this.page = Math.max(0, page);
     }
 
     @Override
@@ -70,6 +87,9 @@ final class ImagePagerCore extends ViewGroup {
                 this.startScrollX = getScrollX();
                 this.dragging = false;
                 this.ignoring = false;
+                this.preservingSecondTap = this.gestureGuard != null
+                        && this.gestureGuard.preserveSecondTap(
+                        event.getX(), event.getY(), event.getEventTime());
                 // 先声明占用，判定为垂直手势后再交还给正文滚动
                 getParent().requestDisallowInterceptTouchEvent(true);
                 break;
@@ -83,6 +103,13 @@ final class ImagePagerCore extends ViewGroup {
                 if (this.ignoring) {
                     break;
                 }
+                if (this.preservingSecondTap || event.getPointerCount() > 1
+                        || (this.gestureGuard != null
+                        && this.gestureGuard.pagingBlocked())) {
+                    this.ignoring = true;
+                    getParent().requestDisallowInterceptTouchEvent(false);
+                    break;
+                }
                 float dx = event.getX() - this.startX;
                 float dy = event.getY() - this.startY;
                 if (!this.dragging) {
@@ -91,6 +118,9 @@ final class ImagePagerCore extends ViewGroup {
                         getParent().requestDisallowInterceptTouchEvent(false);
                     } else if (Math.abs(dx) > this.touchSlop && Math.abs(dx) > Math.abs(dy)) {
                         this.dragging = true;
+                        this.startX = event.getX();
+                        this.startTime = event.getEventTime();
+                        this.startScrollX = getScrollX();
                         getParent().requestDisallowInterceptTouchEvent(true);
                     }
                 }
@@ -175,7 +205,7 @@ final class ImagePagerCore extends ViewGroup {
         this.settleAnimator.start();
     }
 
-    private void cancelSettle() {
+    void cancelSettle() {
         if (this.settleAnimator != null) {
             this.settleAnimator.cancel();
             this.settleAnimator = null;

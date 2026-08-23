@@ -1,10 +1,8 @@
 package com.ronan.heyboxlite;
 
 import android.Manifest;
-import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.DownloadManager;
-import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -16,11 +14,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewConfiguration;
 import android.view.ViewGroup;
-import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -41,10 +36,11 @@ public final class ImageViewerActivity extends Activity {
     static final String EXTRA_ORIGIN_Y = "origin_y";
     static final String EXTRA_ORIGIN_WIDTH = "origin_width";
     static final String EXTRA_ORIGIN_HEIGHT = "origin_height";
+    static final String EXTRA_PREVIEW_ID = "preview_id";
 
     private FrameLayout root;
     private View backdrop;
-    private GalleryPager pager;
+    private ImagePagerCore pager;
     private FrameLayout[] imagePages;
     private ZoomImageView[] images;
     private LoadingSpinnerView[] spinners;
@@ -68,17 +64,13 @@ public final class ImageViewerActivity extends Activity {
     private boolean pullingImage;
     private int animationSerial;
     private WeakReference<ImageView> sourcePreview;
+    private String preparedPreviewUrl = "";
+    private WeakReference<Bitmap> preparedPreviewBitmap;
     private int sourcePreviewVisibility = View.VISIBLE;
     private boolean sourcePreviewHidden;
     private SessionStore session;
-    private static String pendingPreviewUrl;
-    private static WeakReference<Bitmap> pendingPreviewBitmap;
-    private static WeakReference<ImageView> pendingSourcePreview;
-
-    static void preparePreview(String sourceUrl, Bitmap bitmap, ImageView source) {
-        pendingPreviewUrl = sourceUrl;
-        pendingPreviewBitmap = new WeakReference<>(bitmap);
-        pendingSourcePreview = new WeakReference<>(source);
+    static long preparePreview(String sourceUrl, Bitmap bitmap, ImageView source) {
+        return ImagePreviewStore.prepare(sourceUrl, bitmap, source);
     }
 
     @Override protected void onCreate(Bundle state) {
@@ -89,6 +81,7 @@ public final class ImageViewerActivity extends Activity {
         session = new SessionStore(this);
         Motions.setLevel(session.motionLevel());
         roundDisplay = session.usesRoundLayout();
+        claimPreview();
 
         urls = resolveUrls();
         current = Math.max(0, Math.min(urls.length - 1, getIntent().getIntExtra(EXTRA_INDEX, 0)));
@@ -113,7 +106,16 @@ public final class ImageViewerActivity extends Activity {
         backdrop.setAlpha(Motions.off() ? 1.0f : 0.0f);
         root.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
 
-        pager = new GalleryPager(this);
+        pager = new ImagePagerCore(this, this::dp, this::onPageSelected,
+                new ImagePagerCore.GestureGuard() {
+                    @Override public boolean preserveSecondTap(float x, float y, long time) {
+                        return images[current].isSecondTapCandidate(x, y, time);
+                    }
+
+                    @Override public boolean pagingBlocked() {
+                        return images[current].isZoomed();
+                    }
+                });
         for (int i = 0; i < count; i++) {
             FrameLayout page = new FrameLayout(this);
             ZoomImageView view = new ZoomImageView(this);
@@ -208,7 +210,6 @@ public final class ImageViewerActivity extends Activity {
         original.setVisibility(session.originalImages() ? View.VISIBLE : View.GONE);
 
         setContentView(root);
-        claimSourcePreview();
         if (roundDisplay) root.post(this::positionRoundChrome);
         prepareEnterAnimation(hasPreparedPreview(current));
         bindPage(current, true);
@@ -285,17 +286,22 @@ public final class ImageViewerActivity extends Activity {
         image.animate().start();
     }
 
-    private void claimSourcePreview() {
-        this.sourcePreview = pendingSourcePreview;
-        pendingSourcePreview = null;
+    private void claimPreview() {
+        ImagePreviewStore.Preview preview = ImagePreviewStore.claim(
+                getIntent().getLongExtra(EXTRA_PREVIEW_ID, 0L));
+        if (preview == null) return;
+        this.preparedPreviewUrl = preview.url;
+        this.preparedPreviewBitmap = preview.bitmap;
+        this.sourcePreview = preview.source;
     }
 
     private boolean hasPreparedPreview(int index) {
         if (index < 0 || index >= urls.length || urls[index] == null
-                || pendingPreviewBitmap == null || !urls[index].equals(pendingPreviewUrl)) {
+                || this.preparedPreviewBitmap == null
+                || !urls[index].equals(this.preparedPreviewUrl)) {
             return false;
         }
-        Bitmap bitmap = pendingPreviewBitmap.get();
+        Bitmap bitmap = this.preparedPreviewBitmap.get();
         return bitmap != null && !bitmap.isRecycled();
     }
 
@@ -576,11 +582,12 @@ public final class ImageViewerActivity extends Activity {
 
     private boolean showPreparedPreview(int index) {
         Bitmap bitmap = null;
-        if (urls[index] != null && urls[index].equals(pendingPreviewUrl)) {
-            bitmap = pendingPreviewBitmap == null ? null : pendingPreviewBitmap.get();
+        if (urls[index] != null && urls[index].equals(this.preparedPreviewUrl)) {
+            bitmap = this.preparedPreviewBitmap == null
+                    ? null : this.preparedPreviewBitmap.get();
         }
-        pendingPreviewUrl = null;
-        pendingPreviewBitmap = null;
+        this.preparedPreviewUrl = "";
+        this.preparedPreviewBitmap = null;
         if (bitmap == null || bitmap.isRecycled()) {
             return false;
         }
@@ -1070,170 +1077,4 @@ public final class ImageViewerActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    /** 横滑图集：一屏一张，未放大时水平拖动翻页，放大时手势交给缩放/平移。 */
-    private final class GalleryPager extends ViewGroup {
-        private final int touchSlop;
-        private float startX;
-        private float startY;
-        private long startTime;
-        private int startScrollX;
-        private int page;
-        private boolean dragging;
-        private boolean ignoring;
-        private boolean preservingSecondTap;
-        private ValueAnimator settleAnimator;
-
-        GalleryPager(Context context) {
-            super(context);
-            this.touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
-        }
-
-        void setPage(int value) {
-            this.page = value;
-        }
-
-        @Override
-        protected void onMeasure(int widthSpec, int heightSpec) {
-            int width = MeasureSpec.getSize(widthSpec);
-            int height = MeasureSpec.getSize(heightSpec);
-            setMeasuredDimension(width, height);
-            int childWidth = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY);
-            int childHeight = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY);
-            for (int i = 0; i < getChildCount(); i++) {
-                getChildAt(i).measure(childWidth, childHeight);
-            }
-        }
-
-        @Override
-        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-            int width = right - left;
-            int height = bottom - top;
-            for (int i = 0; i < getChildCount(); i++) {
-                getChildAt(i).layout(i * width, 0, (i + 1) * width, height);
-            }
-            if (!this.dragging && this.settleAnimator == null) {
-                scrollTo(this.page * width, 0);
-            }
-        }
-
-        @Override
-        public boolean onInterceptTouchEvent(MotionEvent event) {
-            if (getChildCount() < 2) return false;
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    cancelSettle();
-                    this.startX = event.getX();
-                    this.startY = event.getY();
-                    this.startTime = event.getEventTime();
-                    this.startScrollX = getScrollX();
-                    this.dragging = false;
-                    this.ignoring = false;
-                    this.preservingSecondTap = images[current].isSecondTapCandidate(
-                            event.getX(), event.getY(), event.getEventTime());
-                    break;
-                case MotionEvent.ACTION_MOVE:
-                    if (this.ignoring || this.dragging) break;
-                    if (this.preservingSecondTap) {
-                        this.ignoring = true;
-                        break;
-                    }
-                    if (event.getPointerCount() > 1
-                            || images[current].isZoomed()) {
-                        this.ignoring = true;
-                        break;
-                    }
-                    float dx = event.getX() - this.startX;
-                    float dy = event.getY() - this.startY;
-                    if (Math.abs(dx) > this.touchSlop && Math.abs(dx) > Math.abs(dy) * 1.1f) {
-                        this.dragging = true;
-                        this.startX = event.getX();
-                        this.startScrollX = getScrollX();
-                    } else if (Math.abs(dy) > this.touchSlop && Math.abs(dy) > Math.abs(dx)) {
-                        this.ignoring = true;
-                    }
-                    break;
-            }
-            return this.dragging;
-        }
-
-        @Override
-        public boolean onTouchEvent(MotionEvent event) {
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    cancelSettle();
-                    this.startX = event.getX();
-                    this.startY = event.getY();
-                    this.startTime = event.getEventTime();
-                    this.startScrollX = getScrollX();
-                    break;
-                case MotionEvent.ACTION_MOVE:
-                    if (this.dragging) dragTo(event.getX() - this.startX);
-                    break;
-                case MotionEvent.ACTION_UP:
-                    if (this.dragging) {
-                        finishDrag(event);
-                        performClick();
-                    }
-                    this.dragging = false;
-                    break;
-                case MotionEvent.ACTION_CANCEL:
-                    if (this.dragging) settleTo(this.page, true);
-                    this.dragging = false;
-                    break;
-            }
-            return true;
-        }
-
-        @Override
-        public boolean performClick() {
-            return super.performClick();
-        }
-
-        private void dragTo(float dx) {
-            int width = Math.max(1, getWidth());
-            int max = Math.max(0, (getChildCount() - 1) * width);
-            int next = Math.max(0, Math.min(max, this.startScrollX - Math.round(dx)));
-            scrollTo(next, 0);
-        }
-
-        private void finishDrag(MotionEvent event) {
-            int width = Math.max(1, getWidth());
-            float dx = event.getX() - this.startX;
-            long duration = Math.max(1L, event.getEventTime() - this.startTime);
-            float velocity = (dx * 1000.0f) / duration;
-            int target = Math.round(getScrollX() / (float) width);
-            if (Math.abs(velocity) > dp(320)) {
-                target = velocity < 0.0f ? this.page + 1 : this.page - 1;
-            }
-            settleTo(Math.max(0, Math.min(getChildCount() - 1, target)), true);
-        }
-
-        private void settleTo(int next, boolean animate) {
-            cancelSettle();
-            if (next != this.page) {
-                this.page = next;
-                onPageSelected(next);
-            }
-            int destination = next * Math.max(1, getWidth());
-            if (!animate || Math.abs(destination - getScrollX()) < dp(2)) {
-                scrollTo(destination, 0);
-                return;
-            }
-            int fromX = getScrollX();
-            int duration = Math.max(150, Math.min(280, Math.abs(destination - fromX) / 3));
-            this.settleAnimator = ValueAnimator.ofInt(fromX, destination);
-            this.settleAnimator.setDuration(duration);
-            this.settleAnimator.setInterpolator(new DecelerateInterpolator());
-            this.settleAnimator.addUpdateListener(animation ->
-                    scrollTo((Integer) animation.getAnimatedValue(), 0));
-            this.settleAnimator.start();
-        }
-
-        private void cancelSettle() {
-            if (this.settleAnimator != null) {
-                this.settleAnimator.cancel();
-                this.settleAnimator = null;
-            }
-        }
-    }
 }

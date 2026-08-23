@@ -11,9 +11,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.graphics.Rect;
 import android.graphics.Typeface;
-import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -1650,28 +1648,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         openImage(source, new String[]{url}, 0);
     }
 
-    /** 帖子多图：把整组图和当前索引交给查看器，放大后可左右滑动切换。 */
     private void openImage(ImageView source, String[] urls, int index) {
-        String current = urls.length > 0 ? urls[Math.max(0, Math.min(urls.length - 1, index))] : "";
-        Drawable drawable = source.getDrawable();
-        Bitmap preview = null;
-        if (drawable instanceof BitmapDrawable) {
-            preview = ((BitmapDrawable) drawable).getBitmap();
-        }
-        ImageViewerActivity.preparePreview(current, preview, source);
-        Intent intent = new Intent(this, (Class<?>) ImageViewerActivity.class);
-        intent.putExtra("image_url", current);
-        if (urls.length > 1) {
-            intent.putExtra("image_urls", urls);
-            intent.putExtra("image_index", index);
-        }
-        Rect sourceBounds = ImageTransitionSource.visibleBoundsOnScreen(source);
-        intent.putExtra("origin_x", sourceBounds.centerX());
-        intent.putExtra("origin_y", sourceBounds.centerY());
-        intent.putExtra("origin_width", sourceBounds.width());
-        intent.putExtra("origin_height", sourceBounds.height());
-        startActivity(intent);
-        overridePendingTransition(0, 0);
+        ImageViewerLauncher.open(this, source, urls, index);
     }
 
     private void openUrl(String url) {
