@@ -8,12 +8,16 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
+import android.util.Log;
 
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.util.HashSet;
 import java.util.Set;
 
 final class OfficialAppVerifier {
+    private static final String TAG = "OfficialAppVerifier";
+
     private OfficialAppVerifier() {}
 
     static boolean isOfficialPackageTrusted(Context context) {
@@ -28,7 +32,9 @@ final class OfficialAppVerifier {
             return provider != null
                     && OfficialContext.PACKAGE_NAME.equals(provider.packageName)
                     && packageSignatureMatches(context, provider.packageName);
-        } catch (Throwable ignored) {
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Official provider verification failed: "
+                    + error.getClass().getSimpleName());
             return false;
         }
     }
@@ -43,7 +49,11 @@ final class OfficialAppVerifier {
                 if (!expected.contains(digest(signature))) return false;
             }
             return true;
-        } catch (Throwable ignored) {
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return false;
+        } catch (GeneralSecurityException | RuntimeException error) {
+            Log.w(TAG, "Official package verification failed: "
+                    + error.getClass().getSimpleName());
             return false;
         }
     }
@@ -75,14 +85,15 @@ final class OfficialAppVerifier {
         return info.signatures;
     }
 
-    private static Set<String> digestSet(Signature[] signatures) throws Exception {
+    private static Set<String> digestSet(Signature[] signatures)
+            throws GeneralSecurityException {
         Set<String> values = new HashSet<>();
         if (signatures == null) return values;
         for (Signature signature : signatures) values.add(digest(signature));
         return values;
     }
 
-    private static String digest(Signature signature) throws Exception {
+    private static String digest(Signature signature) throws GeneralSecurityException {
         byte[] value = MessageDigest.getInstance("SHA-256")
                 .digest(signature.toByteArray());
         StringBuilder out = new StringBuilder(value.length * 2);

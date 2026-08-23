@@ -47,6 +47,7 @@ final class OfficialNativeSigner {
         if (context == null || SystemClock.elapsedRealtime() < retryAtElapsed) return out;
         try {
             Context app = context.getApplicationContext();
+            configureRequestAppInfo(requestParams, logger);
             Context officialBase = officialBaseContext(app, logger);
             configureOfficialAppInfo(officialBase, logger);
             Context officialContext = new OfficialContext(officialBase);
@@ -142,6 +143,28 @@ final class OfficialNativeSigner {
         } catch (Throwable error) {
             log(logger, "official native signer app info fallback: "
                     + error.getClass().getSimpleName());
+        }
+    }
+
+    private static void configureRequestAppInfo(Map<String, String> requestParams,
+                                                Logger logger) {
+        if (requestParams == null) return;
+        String version = requestParams.get("version");
+        int build = positiveInt(requestParams.get("build"));
+        if ((version == null || version.trim().isEmpty()) && build <= 0) return;
+        OfficialContext.configureAppInfo(version, build);
+        log(logger, "official native signer request profile version="
+                + OfficialContext.officialVersionName()
+                + " build=" + OfficialContext.officialBuildCode());
+    }
+
+    private static int positiveInt(String value) {
+        if (value == null || value.trim().isEmpty()) return -1;
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            return parsed > 0 ? parsed : -1;
+        } catch (NumberFormatException ignored) {
+            return -1;
         }
     }
 

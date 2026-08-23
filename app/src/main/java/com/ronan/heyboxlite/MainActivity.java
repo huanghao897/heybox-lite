@@ -451,7 +451,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                         MainActivity.this.screen = "announcement_board";
                         MainActivity.this.setBottomNavVisible(false);
                         MainActivity.this.leading.setVisibility(View.INVISIBLE);
-                        MainActivity.this.title.setText("公告");
+                        MainActivity.this.title.setText(R.string.title_announcement);
                         MainActivity.this.action.setVisibility(View.INVISIBLE);
                         MainActivity.this.retainedPages.put("announcement_board", page);
                         MainActivity.this.transitionTo(page);
@@ -516,7 +516,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             }
             @Override public void prepareProfile() {
                 activate("profile");
-                title.setText("我的");
+                title.setText(R.string.title_profile);
                 action.setVisibility(View.INVISIBLE);
             }
             @Override public void prepareLogin() {
@@ -525,11 +525,11 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 setBottomNavVisible(false);
                 leading.setVisibility(View.INVISIBLE);
                 action.setVisibility(View.INVISIBLE);
-                title.setText("扫码登录");
+                title.setText(R.string.title_qr_login);
             }
             @Override public void prepareFeed() {
                 activate("feed");
-                title.setText("社区");
+                title.setText(R.string.title_feed);
                 action.setText("");
                 setIcon(action, R.drawable.ic_refresh, TEXT, 19);
                 action.setVisibility(View.INVISIBLE);
@@ -726,9 +726,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         body.addView(this.content, match());
         this.bottomNavigation = new BottomNavigationController(this, this.session,
                 this.themeTokens, usesRoundLayout(), body, this::runWithPressFeedback);
-        this.bottomNavigation.addItem("社区", "feed", R.drawable.ic_nav_home,
+        this.bottomNavigation.addItem(getString(R.string.title_feed), "feed", R.drawable.ic_nav_home,
                 this::onFeedNavClick);
-        this.bottomNavigation.addItem("我的", "profile", R.drawable.ic_nav_profile, () -> {
+        this.bottomNavigation.addItem(getString(R.string.title_profile), "profile", R.drawable.ic_nav_profile, () -> {
             showTopLevel(1);
         });
         setContentView(linearLayoutVertical);
@@ -963,7 +963,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         }
         if ("feed".equals(key)) {
             activate("feed");
-            this.title.setText("社区");
+            this.title.setText(R.string.title_feed);
             this.action.setVisibility(4);
             this.feedPage.restoreScroll();
             return;
@@ -972,7 +972,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             this.userSpaceReturnScreen = "feed";
             activate("profile");
             if (this.profilePage != null) this.profilePage.updateReadingSummary();
-            this.title.setText("我的");
+            this.title.setText(R.string.title_profile);
             this.action.setVisibility(0);
             setIcon(this.action, R.drawable.il_refresh, this.TEXT, 19);
             this.action.setOnClickListener(view -> {
@@ -984,7 +984,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if ("reading_stats".equals(key)) {
             this.screen = key;
             setBottomNavVisible(false, false);
-            this.title.setText("阅读时长");
+            this.title.setText(R.string.title_reading_time);
             this.leading.setVisibility(0);
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
@@ -996,7 +996,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if ("reading_center".equals(key)) {
             this.screen = key;
             setBottomNavVisible(false, false);
-            this.title.setText("阅读中心");
+            this.title.setText(R.string.title_reading_center);
             this.leading.setVisibility(0);
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
@@ -1010,37 +1010,37 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.leading.setVisibility(0);
         this.action.setVisibility(4);
         if ("settings_home".equals(key)) {
-            this.title.setText("设置");
+            this.title.setText(R.string.title_settings);
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showProfile();
             });
         } else if ("display_settings".equals(key)) {
-            this.title.setText("显示");
+            this.title.setText(R.string.title_display);
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showSettingsHome();
             });
         } else if ("display_preview".equals(key)) {
-            this.title.setText("界面预览");
+            this.title.setText(R.string.title_ui_preview);
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showDisplaySettings();
             });
         } else if ("startup_settings".equals(key)) {
-            this.title.setText("启动与更新");
+            this.title.setText(R.string.title_startup_update);
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showSettingsHome();
             });
         } else if ("app_settings".equals(key)) {
-            this.title.setText("内容与缓存");
+            this.title.setText(R.string.title_content_cache);
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showSettingsHome();
             });
         } else if ("about".equals(key)) {
-            this.title.setText("关于");
+            this.title.setText(R.string.title_about);
             this.leading.setOnClickListener(view -> {
                 this.pendingBackTransition = true;
                 showSettingsHome();
@@ -1186,14 +1186,14 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             this.pendingBackTransition = true;
             showReadingCenter();
         });
-        this.title.setText("阅读时长");
+        this.title.setText(R.string.title_reading_time);
         this.action.setVisibility(4);
 
         ReadingStatsPage page = new ReadingStatsPage(this, this.themeTokens,
                 usesRoundLayout(), this.session.uiScale() / 100.0f,
                 this.session.textScale() / 100.0f);
         ScrollView scroll = page.build(this.readingTimeTracker.stats(),
-                settingsTopCard("阅读时长"), pageHorizontalPadding(), subpageTopPadding());
+                settingsTopCard(getString(R.string.title_reading_time)), pageHorizontalPadding(), subpageTopPadding());
         this.retainedPages.put("reading_stats", scroll);
         transitionTo(scroll);
     }
@@ -1206,7 +1206,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         ensureEmojiCatalog(() -> {
         });
         activate("search");
-        this.title.setText("搜索");
+        this.title.setText(R.string.title_search);
         setBottomNavVisible(false);
         this.leading.setVisibility(0);
         this.leading.setOnClickListener(view -> {
@@ -1219,7 +1219,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         int searchHorizontal = roundLayout
                 ? roundHorizontalInset(RoundLayoutMetrics.SEARCH_HORIZONTAL_RATIO, 6)
                 : horizontalPadding;
-        View page = this.searchPage.create(restoreResults, settingsTopCard("搜索"),
+        View page = this.searchPage.create(restoreResults,
+                settingsTopCard(getString(R.string.title_search)),
                 this.themeTokens, roundLayout, horizontalPadding,
                 subpageTopPadding(), searchHorizontal);
         transitionTo(page);
@@ -1261,7 +1262,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.leading.setOnClickListener(view -> {
             returnFromDetailSmooth();
         });
-        this.title.setText("正文");
+        this.title.setText(R.string.title_post_body);
         this.action.setVisibility(4);
         transitionTo(detailLoadingPage());
         this.detailLoader.load(item);
@@ -1372,7 +1373,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         Compat.setBackground(back, UiComponents.round(this, this.themeTokens.dockSurface(),
                 18, this.session.uiScale() / 100.0f));
         if (Build.VERSION.SDK_INT >= 21) back.setElevation(dp(6));
-        back.setContentDescription("返回");
+        back.setContentDescription(getString(R.string.action_back));
         back.setOnClickListener(view ->
                 runWithPressFeedback(back, this::returnFromDetailSmooth));
         return back;
@@ -1391,7 +1392,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if (!"detail".equals(this.screen) || this.title == null || this.detailPager == null) {
             return;
         }
-        this.title.setText(this.detailPager.showingComments() ? "评论" : "正文");
+        this.title.setText(this.detailPager.showingComments()
+                ? R.string.title_comments : R.string.title_post_body);
     }
 
     private LinearLayout detailArticleSurface() {
@@ -1403,7 +1405,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
 
     private void showUserSpace(String userId, String fallbackName, String fallbackAvatar) {
         if (TextUtils.isEmpty(userId)) {
-            toast("没有获取到用户 ID");
+            toast(getString(R.string.message_missing_user_id));
             return;
         }
         if ("detail".equals(this.screen)) {
@@ -1414,7 +1416,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             this.userSpaceReturnScreen = this.screen;
         }
         activate("user_space");
-        this.title.setText("个人主页");
+        this.title.setText(R.string.title_user_space);
         this.action.setVisibility(4);
         this.leading.setOnClickListener(view -> {
             returnFromUserSpace();
@@ -1444,7 +1446,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             this.pendingBackTransition = true;
             showProfile();
         });
-        this.title.setText("设置");
+        this.title.setText(R.string.title_settings);
         this.action.setVisibility(4);
         View settingsHome = buildSettingsHomeContent();
         this.retainedPages.put("settings_home", settingsHome);
@@ -1457,16 +1459,16 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         int horizontal = pageHorizontalPadding();
         page.setPadding(horizontal, subpageTopPadding(), horizontal, dp(14));
         scroll.addView(page);
-        page.addView(settingsTopCard("设置"));
+        page.addView(settingsTopCard(getString(R.string.title_settings)));
         LinearLayout panel = this.settingsUi.list();
-        this.settingsUi.addEntry(panel, "显示", null,
+        this.settingsUi.addEntry(panel, getString(R.string.title_display), null,
                 this.session.darkMode() ? "深色" : "浅色",
                 R.drawable.il_palette, this::showDisplaySettings);
-        this.settingsUi.addEntry(panel, "启动与更新", null, null,
+        this.settingsUi.addEntry(panel, getString(R.string.title_startup_update), null, null,
                 R.drawable.il_refresh, this::showStartupSettings);
-        this.settingsUi.addEntry(panel, "内容与缓存", null, null,
+        this.settingsUi.addEntry(panel, getString(R.string.title_content_cache), null, null,
                 R.drawable.il_globe, this::showAppSettings);
-        this.settingsUi.addEntry(panel, "关于", null, appVersion(),
+        this.settingsUi.addEntry(panel, getString(R.string.title_about), null, appVersion(),
                 R.drawable.il_info, this::showAbout);
         page.addView(panel);
         return scroll;
@@ -1481,7 +1483,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             this.pendingBackTransition = true;
             showProfile();
         });
-        this.title.setText("小黑盒签到");
+        this.title.setText(R.string.title_checkin);
         this.action.setVisibility(4);
         this.action.setOnClickListener(null);
         if (this.checkinCenterPage == null) {
@@ -1546,7 +1548,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             this.pendingBackTransition = true;
             showProfile();
         });
-        this.title.setText("阅读中心");
+        this.title.setText(R.string.title_reading_center);
         this.action.setVisibility(4);
         this.content.removeAllViews();
         this.pendingBackTransition = false;
@@ -1716,7 +1718,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                                     long now = System.currentTimeMillis();
                                     if (now - this.lastExitBackAt > 2000L) {
                                         this.lastExitBackAt = now;
-                                        toast("再按一次退出");
+                                        toast(getString(R.string.message_press_back_again));
                                         return;
                                     }
                                 }
@@ -1925,7 +1927,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private void configureDetailReturnChrome() {
         if ("feed".equals(this.screen)) {
             activate("feed");
-            this.title.setText("社区");
+            this.title.setText(R.string.title_feed);
             this.action.setVisibility(4);
             return;
         }
@@ -1934,7 +1936,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.leading.setVisibility(0);
         this.leading.setOnClickListener(v -> onBackPressed());
         this.action.setVisibility(4);
-        if ("user_space".equals(this.screen)) this.title.setText("个人主页");
+        if ("user_space".equals(this.screen)) {
+            this.title.setText(R.string.title_user_space);
+        }
     }
 
     private void saveCurrentDetailProgress() {

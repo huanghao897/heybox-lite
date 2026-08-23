@@ -1,3 +1,24 @@
 <resources>
     <string name="app_name">heybox Lite</string>
+    <string name="title_announcement">公告</string>
+    <string name="title_feed">社区</string>
+    <string name="title_profile">我的</string>
+    <string name="title_qr_login">扫码登录</string>
+    <string name="title_reading_time">阅读时长</string>
+    <string name="title_reading_center">阅读中心</string>
+    <string name="title_settings">设置</string>
+    <string name="title_display">显示</string>
+    <string name="title_ui_preview">界面预览</string>
+    <string name="title_startup_update">启动与更新</string>
+    <string name="title_content_cache">内容与缓存</string>
+    <string name="title_about">关于</string>
+    <string name="title_search">搜索</string>
+    <string name="title_post_body">正文</string>
+    <string name="title_comments">评论</string>
+    <string name="title_user_space">个人主页</string>
+    <string name="title_checkin">小黑盒签到</string>
+    <string name="action_back">返回</string>
+    <string name="action_retry">重新检查</string>
+    <string name="message_missing_user_id">没有获取到用户 ID</string>
+    <string name="message_press_back_again">再按一次退出</string>
 </resources>

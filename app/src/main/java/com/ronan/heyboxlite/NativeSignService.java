@@ -110,7 +110,10 @@ public final class NativeSignService extends Service {
         result.setData(output);
         try {
             if (msg.replyTo != null) msg.replyTo.send(result);
-        } catch (RemoteException ignored) {
+        } catch (RemoteException error) {
+            LocalCache.appendNativeSignLog(this,
+                    "native service result delivery failed error="
+                            + error.getClass().getSimpleName());
         }
     }
 

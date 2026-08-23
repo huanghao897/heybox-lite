@@ -136,7 +136,7 @@ final class NativeSecuritySigner {
                 recordFailure("native returned empty key", logger);
                 return out;
             }
-            out.putAll(baseOfficialParams(userId, time));
+            out.putAll(baseOfficialParams(userId, time, logger));
             out.put(SecureStrings.time(), time);
             out.put(SecureStrings.nonce(), nonce);
             out.put(SecureStrings.hkey(), key);
@@ -174,11 +174,12 @@ final class NativeSecuritySigner {
         return out;
     }
 
-    private static Map<String, String> baseOfficialParams(String userId, String time) {
+    private static Map<String, String> baseOfficialParams(String userId, String time,
+                                                          Logger logger) {
         Map<String, String> out = new LinkedHashMap<>();
         String id = userId == null || userId.isEmpty() ? "-1" : userId;
         out.put(SecureStrings.heyboxId(), id);
-        out.put("imei", androidId());
+        out.put("imei", androidId(logger));
         out.put("device_info", deviceModel());
         out.put("os_type", "Android");
         out.put("x_os_type", "Android");
@@ -291,10 +292,12 @@ final class NativeSecuritySigner {
         return Build.MODEL == null ? "" : Build.MODEL.trim();
     }
 
-    private static String androidId() {
+    private static String androidId(Logger logger) {
         try {
             return com.max.xiaoheihe.utils.f.Y();
-        } catch (Throwable ignored) {
+        } catch (Throwable error) {
+            log(logger, "native signer device id unavailable: "
+                    + error.getClass().getSimpleName());
             return "";
         }
     }
