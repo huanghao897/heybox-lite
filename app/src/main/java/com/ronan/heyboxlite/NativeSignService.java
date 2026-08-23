@@ -4,6 +4,7 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
@@ -32,25 +33,36 @@ public final class NativeSignService extends Service {
     static final String EXTRA_NATIVE_URL = "native_url";
     static final String EXTRA_HKEY_ALIAS = "native_security_value";
 
-    private final Messenger messenger = new Messenger(new Handler(Looper.getMainLooper()) {
-        @Override public void handleMessage(Message msg) {
-            if (msg.what == MSG_SIGN) {
-                handleSign(msg);
-                return;
-            }
-            super.handleMessage(msg);
-        }
-    });
+    private HandlerThread signingThread;
+    private Messenger messenger;
 
     @Override public void onCreate() {
         super.onCreate();
         CrashReporter.install(this);
         NativeLibraryLoader.init(this);
+        signingThread = new HandlerThread("heybox-native-sign");
+        signingThread.start();
+        messenger = new Messenger(new Handler(signingThread.getLooper()) {
+            @Override public void handleMessage(Message msg) {
+                if (msg.what == MSG_SIGN) {
+                    handleSign(msg);
+                    return;
+                }
+                super.handleMessage(msg);
+            }
+        });
         LocalCache.appendNativeSignLog(this, "native service created");
     }
 
     @Override public IBinder onBind(Intent intent) {
         return messenger.getBinder();
+    }
+
+    @Override public void onDestroy() {
+        if (signingThread != null) signingThread.quitSafely();
+        signingThread = null;
+        messenger = null;
+        super.onDestroy();
     }
 
     private void handleSign(Message msg) {

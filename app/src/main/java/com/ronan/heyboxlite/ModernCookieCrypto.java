@@ -22,9 +22,25 @@ final class ModernCookieCrypto {
 
     private ModernCookieCrypto() {}
 
+    static final class InvalidPayloadException extends GeneralSecurityException {
+        InvalidPayloadException(String message) {
+            super(message);
+        }
+
+        InvalidPayloadException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    static final class KeyUnavailableException extends GeneralSecurityException {
+        KeyUnavailableException(String message) {
+            super(message);
+        }
+    }
+
     static String encrypt(String value) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, key());
+        cipher.init(Cipher.ENCRYPT_MODE, key(true));
         byte[] encrypted = cipher.doFinal(value.getBytes("UTF-8"));
         byte[] iv = cipher.getIV();
         byte[] packed = new byte[1 + iv.length + encrypted.length];
@@ -36,13 +52,13 @@ final class ModernCookieCrypto {
 
     static String decrypt(String value) throws Exception {
         if (value == null || value.trim().isEmpty()) {
-            throw new GeneralSecurityException("Encrypted value is empty");
+            throw new InvalidPayloadException("Encrypted value is empty");
         }
         final byte[] packed;
         try {
             packed = Base64.decode(value, Base64.NO_WRAP);
         } catch (IllegalArgumentException error) {
-            throw new GeneralSecurityException("Encrypted value is not valid Base64", error);
+            throw new InvalidPayloadException("Encrypted value is not valid Base64", error);
         }
         validatePacked(packed);
         int ivLength = packed[0] & 0xff;
@@ -51,29 +67,30 @@ final class ModernCookieCrypto {
         System.arraycopy(packed, 1, iv, 0, ivLength);
         System.arraycopy(packed, 1 + ivLength, encrypted, 0, encrypted.length);
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, iv));
+        cipher.init(Cipher.DECRYPT_MODE, key(false), new GCMParameterSpec(128, iv));
         return new String(cipher.doFinal(encrypted), "UTF-8");
     }
 
     static void validatePacked(byte[] packed) throws GeneralSecurityException {
         if (packed == null || packed.length < 1 + MIN_IV_BYTES + GCM_TAG_BYTES) {
-            throw new GeneralSecurityException("Encrypted value is truncated");
+            throw new InvalidPayloadException("Encrypted value is truncated");
         }
         int ivLength = packed[0] & 0xff;
         if (ivLength < MIN_IV_BYTES || ivLength > MAX_IV_BYTES) {
-            throw new GeneralSecurityException("Encrypted value has an invalid IV length");
+            throw new InvalidPayloadException("Encrypted value has an invalid IV length");
         }
         if (packed.length < 1 + ivLength + GCM_TAG_BYTES) {
-            throw new GeneralSecurityException("Encrypted value has no authentication tag");
+            throw new InvalidPayloadException("Encrypted value has no authentication tag");
         }
     }
 
-    private static SecretKey key() throws Exception {
+    private static SecretKey key(boolean create) throws Exception {
         KeyStore store = KeyStore.getInstance("AndroidKeyStore");
         store.load(null);
         String alias = SecureStrings.keyAlias();
         java.security.Key existing = store.getKey(alias, null);
         if (existing instanceof SecretKey) return (SecretKey) existing;
+        if (!create) throw new KeyUnavailableException("Cookie encryption key is unavailable");
         KeyGenerator generator = KeyGenerator.getInstance(
                 KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
         generator.init(new KeyGenParameterSpec.Builder(alias,

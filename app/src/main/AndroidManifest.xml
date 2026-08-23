@@ -9,7 +9,6 @@
 
     <queries>
         <package android:name="com.max.xiaoheihe" />
-        <provider android:authorities="com.max.xiaoheihe.statusprovider" />
     </queries>
 
     <application

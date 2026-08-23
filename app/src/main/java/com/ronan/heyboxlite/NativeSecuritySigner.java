@@ -2,6 +2,7 @@ package com.ronan.heyboxlite;
 
 import android.content.Context;
 import android.os.Build;
+import android.os.SystemClock;
 import android.util.Base64;
 
 import com.graphice.shaderar.ShaderManager;
@@ -23,13 +24,14 @@ final class NativeSecuritySigner {
     private static final String BLEND_MODE =
             "MFANEHAMGACOBHIEMIHIJLKJPMMHJMMLABCNGBPPENCENPOM";
     private static boolean initialized;
-    private static boolean unavailable;
+    private static int failureCount;
+    private static long retryAtElapsed;
     private static String unavailableReason = "";
 
     private NativeSecuritySigner() {}
 
     static boolean canTry() {
-        return !unavailable;
+        return SystemClock.elapsedRealtime() >= retryAtElapsed;
     }
 
     static Map<String, String> sign(Context context, SessionStore session,
@@ -65,7 +67,7 @@ final class NativeSecuritySigner {
                                     Map<String, String> requestParams,
                                     boolean forceFallback, Logger logger) {
         Map<String, String> out = new LinkedHashMap<>();
-        if (unavailable) return out;
+        if (!canTry()) return out;
         try {
             Context app = context.getApplicationContext();
             Map<String, String> official = forceFallback ? new LinkedHashMap<>()
@@ -77,6 +79,7 @@ final class NativeSecuritySigner {
             if (hasUsableOfficialParams(official)) {
                 log(logger, "native signer using official native params keys="
                         + official.keySet());
+                clearFailure();
                 return official;
             }
             if (!official.isEmpty()) {
@@ -102,7 +105,7 @@ final class NativeSecuritySigner {
             log(logger, "native signer stage get nonce begin");
             String nonce = ShaderManager.getIdxOffset(nativeContext, chunk, time, userId);
             if (nonce == null || nonce.isEmpty()) {
-                markUnavailable("native returned empty nonce", logger);
+                recordFailure("native returned empty nonce", logger);
                 return out;
             }
 
@@ -130,7 +133,7 @@ final class NativeSecuritySigner {
             log(logger, "native signer key empty=" + (key == null || key.isEmpty())
                     + " len=" + (key == null ? 0 : key.length()));
             if (key == null || key.isEmpty()) {
-                markUnavailable("native returned empty key", logger);
+                recordFailure("native returned empty key", logger);
                 return out;
             }
             out.putAll(baseOfficialParams(userId, time));
@@ -157,13 +160,15 @@ final class NativeSecuritySigner {
                 }
                 log(logger, "native signer filled official params with fallback hkey keys="
                         + merged.keySet());
+                clearFailure();
                 return merged;
             }
             log(logger, "native signer ok path=" + path
                     + " keys=" + out.keySet()
                     + " rnd=" + out.containsKey(SecureStrings.rndParam()));
+            clearFailure();
         } catch (Throwable error) {
-            markUnavailable(error.getClass().getSimpleName() + ": "
+            recordFailure(error.getClass().getSimpleName() + ": "
                     + safe(error.getMessage()), logger);
         }
         return out;
@@ -208,7 +213,7 @@ final class NativeSecuritySigner {
     }
 
     static boolean loadRndConfig(Context context, JSONObject body, Logger logger) {
-        if (body == null || unavailable) return false;
+        if (body == null) return false;
         JSONObject result = body.optJSONObject("result");
         if (result == null) return false;
         return loadRndConfig(context, result.optString("code"),
@@ -217,7 +222,7 @@ final class NativeSecuritySigner {
 
     static boolean loadRndConfig(Context context, String code, int version, Logger logger) {
         String clean = code == null ? "" : code.trim();
-        if (clean.isEmpty() || version < 0 || unavailable) return false;
+        if (clean.isEmpty() || version < 0) return false;
         try {
             if (context != null) ShaderManager.load(context.getApplicationContext());
             byte[] decoded = Base64.decode(clean, Base64.DEFAULT);
@@ -328,10 +333,18 @@ final class NativeSecuritySigner {
         return "opaque";
     }
 
-    private static void markUnavailable(String reason, Logger logger) {
-        unavailable = true;
+    private static void recordFailure(String reason, Logger logger) {
+        failureCount = Math.min(8, failureCount + 1);
+        long delay = Math.min(5 * 60_000L, 2_000L << Math.min(7, failureCount - 1));
+        retryAtElapsed = SystemClock.elapsedRealtime() + delay;
         unavailableReason = reason == null ? "" : reason;
-        log(logger, "native signer unavailable: " + unavailableReason);
+        log(logger, "native signer retry in " + delay + "ms: " + unavailableReason);
+    }
+
+    private static void clearFailure() {
+        failureCount = 0;
+        retryAtElapsed = 0L;
+        unavailableReason = "";
     }
 
     private static void log(Logger logger, String message) {

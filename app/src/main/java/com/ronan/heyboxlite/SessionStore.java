@@ -5,11 +5,10 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
-import android.database.Cursor;
-import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import android.util.Base64;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -100,11 +99,12 @@ final class SessionStore {
 
     private final Context context;
     private final SharedPreferences prefs;
+    private volatile String cachedEncryptedCookie;
+    private volatile String cachedCookie;
 
     SessionStore(Context context) {
         this.context = context.getApplicationContext();
         prefs = context.getSharedPreferences(SecureStrings.preferencesName(), Context.MODE_PRIVATE);
-        migratePlainCookieIfNeeded();
         if (prefs.getString(SecureStrings.deviceId(), "").isEmpty()) {
             String androidId = Settings.Secure.getString(
                     context.getContentResolver(), Settings.Secure.ANDROID_ID);
@@ -124,7 +124,14 @@ final class SessionStore {
 
     String getCookie() {
         String encrypted = prefs.getString(SecureStrings.encryptedCookieKey(), "");
+        if (encrypted.isEmpty()) {
+            migratePlainCookieIfNeeded();
+            encrypted = prefs.getString(SecureStrings.encryptedCookieKey(), "");
+        }
         if (!encrypted.isEmpty()) {
+            if (encrypted.equals(cachedEncryptedCookie) && cachedCookie != null) {
+                return cachedCookie;
+            }
             String cookie = decrypt(encrypted);
             if (!cookie.isEmpty() && encrypted.startsWith(LEGACY_PREFIX)
                     && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -132,6 +139,9 @@ final class SessionStore {
             }
             String normalized = normalizeCookie(cookie);
             if (!normalized.equals(cookie)) saveCookie(normalized);
+            cachedEncryptedCookie = prefs.getString(
+                    SecureStrings.encryptedCookieKey(), encrypted);
+            cachedCookie = normalized;
             return normalized;
         }
         return "";
@@ -765,55 +775,29 @@ final class SessionStore {
     }
 
     String officialMobileCookie(boolean addClientKey) {
-        Map<String, String> values = cookieMap(getCookie());
-        List<String> parts = new ArrayList<>();
-        String pkey = officialPkey(values);
-        appendCookiePart(parts, officialPkeyKey(), pkey);
-        if (addClientKey) appendCookiePart(parts, SecureStrings.xPkey(), pkey);
-        appendCookiePart(parts, SecureStrings.xXhhTokenId(),
-                values.get(SecureStrings.xXhhTokenId()));
-        appendRestCookies(parts, values);
-        if (addClientKey) {
-            String id = firstCookieValue(values, SecureStrings.xHeyboxId(),
-                    SecureStrings.userHeyboxId(), SecureStrings.heyboxId(),
-                    SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
-            appendCookiePart(parts, SecureStrings.xHeyboxId(), id);
-        }
-        StringBuilder cookie = new StringBuilder();
-        for (String part : parts) {
-            if (part == null || part.isEmpty()) continue;
-            if (cookie.length() > 0) cookie.append(';');
-            cookie.append(part);
-        }
-        return cookie.toString();
+        return buildOfficialCookie(addClientKey, true, false);
     }
 
     String officialRequestCookie(boolean includeClientKeys) {
-        Map<String, String> values = cookieMap(getCookie());
-        List<String> parts = new ArrayList<>();
-        String pkey = officialPkey(values);
-        appendCookiePart(parts, officialPkeyKey(), pkey);
-        if (includeClientKeys) appendCookiePart(parts, SecureStrings.xPkey(), pkey);
-        appendCookiePart(parts, SecureStrings.xXhhTokenId(),
-                values.get(SecureStrings.xXhhTokenId()));
-        appendRawCookiePart(parts, getCookie());
-        if (includeClientKeys) {
-            String id = firstCookieValue(values, SecureStrings.xHeyboxId(),
-                    SecureStrings.userHeyboxId(), SecureStrings.heyboxId(),
-                    SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
-            appendCookiePart(parts, SecureStrings.xHeyboxId(), id);
-        }
-        return joinCookieParts(parts);
+        return buildOfficialCookie(includeClientKeys, false, true);
     }
 
     String officialMinimalCookie(boolean includeClientKeys) {
-        Map<String, String> values = cookieMap(getCookie());
+        return buildOfficialCookie(includeClientKeys, false, false);
+    }
+
+    private String buildOfficialCookie(boolean includeClientKeys,
+                                       boolean includeRest, boolean includeRaw) {
+        String raw = getCookie();
+        Map<String, String> values = cookieMap(raw);
         List<String> parts = new ArrayList<>();
         String pkey = officialPkey(values);
         appendCookiePart(parts, officialPkeyKey(), pkey);
         if (includeClientKeys) appendCookiePart(parts, SecureStrings.xPkey(), pkey);
         appendCookiePart(parts, SecureStrings.xXhhTokenId(),
                 values.get(SecureStrings.xXhhTokenId()));
+        if (includeRest) appendRestCookies(parts, values);
+        if (includeRaw) appendRawCookiePart(parts, raw);
         if (includeClientKeys) {
             String id = firstCookieValue(values, SecureStrings.xHeyboxId(),
                     SecureStrings.userHeyboxId(), SecureStrings.heyboxId(),
@@ -851,144 +835,9 @@ final class SessionStore {
         return firstCookieValue(values, SecureStrings.xXhhTokenId());
     }
 
-    boolean hasOfficialProviderAuth() {
-        return prefs.getBoolean(OFFICIAL_PROVIDER_AUTH_IMPORTED, false);
-    }
-
-    String importOfficialProviderAuthForLog() {
-        Cursor cursor = null;
-        try {
-            String usedUri = "";
-            for (String uri : officialProviderUris()) {
-                if (cursor != null) {
-                    cursor.close();
-                    cursor = null;
-                }
-                try {
-                    Uri providerUri = Uri.parse(uri);
-                    if (!OfficialAppVerifier.isProviderTrusted(context, providerUri)) {
-                        continue;
-                    }
-                    cursor = context.getContentResolver().query(
-                            providerUri, null, null, null, null);
-                    if (cursor == null) continue;
-                    if (!cursor.moveToFirst()) continue;
-                    usedUri = uri;
-                    break;
-                } catch (Throwable ignored) {
-                    if (cursor != null) {
-                        cursor.close();
-                        cursor = null;
-                    }
-                }
-            }
-            if (cursor == null) {
-                setOfficialProviderAuthImported(false);
-                return "provider=null";
-            }
-            if (usedUri.isEmpty()) {
-                setOfficialProviderAuthImported(false);
-                return "provider=empty";
-            }
-            String id = cursorValue(cursor, SecureStrings.heyboxId());
-            String pkey = cursorValue(cursor, officialPkeyKey());
-            String deviceId = cursorValue(cursor, SecureStrings.deviceId());
-            String token = cursorValue(cursor, SecureStrings.xXhhTokenId());
-            if (id.isEmpty() && pkey.isEmpty() && token.isEmpty()) {
-                setOfficialProviderAuthImported(false);
-                return "provider=empty-auth uri=" + providerUriName(usedUri)
-                        + " columns=" + cursorColumnsForLog(cursor);
-            }
-            Map<String, String> values = cookieMap(getCookie());
-            if (!pkey.isEmpty()) {
-                values.put(SecureStrings.userPkey(), pkey);
-                values.put(SecureStrings.xPkey(), pkey);
-            }
-            if (!token.isEmpty()) values.put(SecureStrings.xXhhTokenId(), token);
-            if (!id.isEmpty()) {
-                values.put(SecureStrings.heyboxId(), id);
-                values.put(SecureStrings.userHeyboxId(), id);
-                values.put(SecureStrings.xHeyboxId(), id);
-            }
-            normalizeAuthCookies(values);
-            saveCookie(joinCookies(values));
-            SharedPreferences.Editor editor = prefs.edit();
-            if (!id.isEmpty()) editor.putString(SecureStrings.userId(), id);
-            if (!deviceId.isEmpty()) editor.putString(SecureStrings.deviceId(), deviceId);
-            editor.putBoolean(OFFICIAL_PROVIDER_AUTH_IMPORTED, true);
-            editor.apply();
-            return "provider=ok uri=" + providerUriName(usedUri)
-                    + " idLen=" + id.length()
-                    + " pkeyLen=" + pkey.length()
-                    + " tokenLen=" + token.length()
-                    + " deviceLen=" + deviceId.length();
-        } catch (Throwable error) {
-            setOfficialProviderAuthImported(false);
-            return "provider=error " + error.getClass().getSimpleName();
-        } finally {
-            if (cursor != null) cursor.close();
-        }
-    }
-
-    private static String[] officialProviderUris() {
-        return new String[] {
-                "content://com.max.xiaoheihe.statusprovider/login",
-                "content://com.max.xiaoheihe.statusprovider/login/",
-                "content://com.max.xiaoheihe.statusprovider",
-                "content://com.max.xiaoheihe.statusprovider/",
-                "content://com.max.xiaoheihe.statusprovider.login"
-        };
-    }
-
-    private static String providerUriName(String uri) {
-        if (uri == null) return "";
-        int index = uri.indexOf("statusprovider");
-        if (index < 0) return "custom";
-        String tail = uri.substring(index + "statusprovider".length());
-        if (tail.isEmpty()) return "root";
-        return tail.replace('/', '_').replace(':', '_');
-    }
-
-    private static String cursorColumnsForLog(Cursor cursor) {
-        if (cursor == null) return "none";
-        try {
-            String[] names = cursor.getColumnNames();
-            if (names == null || names.length == 0) return "none";
-            StringBuilder out = new StringBuilder();
-            for (String name : names) {
-                if (name == null || name.trim().isEmpty()) continue;
-                if (out.length() > 0) out.append(',');
-                out.append(name.trim());
-                if (out.length() > 180) {
-                    out.append("...");
-                    break;
-                }
-            }
-            return out.length() == 0 ? "none" : out.toString();
-        } catch (Throwable ignored) {
-            return "unavailable";
-        }
-    }
-
-    private void setOfficialProviderAuthImported(boolean imported) {
-        prefs.edit().putBoolean(OFFICIAL_PROVIDER_AUTH_IMPORTED, imported).apply();
-    }
-
     private String officialPkey(Map<String, String> values) {
         return firstCookieValue(values, officialPkeyKey(),
                 SecureStrings.userPkey(), SecureStrings.xPkey());
-    }
-
-    private static String cursorValue(Cursor cursor, String column) {
-        if (cursor == null || column == null || column.isEmpty()) return "";
-        try {
-            int index = cursor.getColumnIndex(column);
-            if (index < 0) return "";
-            String value = cursor.getString(index);
-            return value == null ? "" : value.trim();
-        } catch (Throwable ignored) {
-            return "";
-        }
     }
 
     private String androidDeviceIdentifier() {
@@ -1261,10 +1110,12 @@ final class SessionStore {
             prefs.edit().putString(SecureStrings.encryptedCookieKey(),
                     encrypted)
                     .remove(SecureStrings.cookieKey()).apply();
+            cachedEncryptedCookie = encrypted;
+            cachedCookie = cookie;
             persistUserIdFromCookie(cookie);
-        } catch (Exception ignored) {
-            prefs.edit().remove(SecureStrings.cookieKey())
-                    .remove(SecureStrings.encryptedCookieKey()).apply();
+        } catch (Exception error) {
+            Log.w("SessionStore", "Unable to encrypt session cookie", error);
+            prefs.edit().remove(SecureStrings.cookieKey()).apply();
         }
     }
 
@@ -1275,8 +1126,20 @@ final class SessionStore {
                 return ModernCookieCrypto.decrypt(value);
             }
             return "";
-        } catch (Exception ignored) {
+        } catch (ModernCookieCrypto.InvalidPayloadException error) {
             prefs.edit().remove(SecureStrings.encryptedCookieKey()).apply();
+            cachedEncryptedCookie = null;
+            cachedCookie = null;
+            Log.w("SessionStore", "Discarded malformed encrypted session", error);
+            return "";
+        } catch (ModernCookieCrypto.KeyUnavailableException error) {
+            Log.w("SessionStore", "Cookie key is temporarily unavailable", error);
+            return "";
+        } catch (Exception error) {
+            if (value.startsWith(LEGACY_PREFIX)) {
+                prefs.edit().remove(SecureStrings.encryptedCookieKey()).apply();
+            }
+            Log.w("SessionStore", "Unable to decrypt session cookie", error);
             return "";
         }
     }
@@ -1352,6 +1215,8 @@ final class SessionStore {
             if (removesOnLogout(key)) editor.remove(key);
         }
         editor.apply();
+        cachedEncryptedCookie = null;
+        cachedCookie = null;
     }
 
     static boolean removesOnLogout(String key) {

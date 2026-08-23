@@ -34,9 +34,6 @@ final class LocalCache {
     private static final String WATCH_LATER_FILE = "watch-later.json";
     private static final String RECENT_ITEMS = "recent-items";
     private static final String SCROLL_PREFIX = "scroll_";
-    private static final String OFFICIAL_NATIVE_DISABLED_CODE = "official_native_disabled_code";
-    private static final String OFFICIAL_NATIVE_DISABLED_REASON = "official_native_disabled_reason";
-    private static final int OFFICIAL_NATIVE_ATTEMPT_REVISION = 34;
     private static final int MAX_DETAIL_FILES = 80;
     private static final int MAX_OFFLINE_COMMENTS = 10;
     private static final int MAX_LOG_BYTES = 96 * 1024;
@@ -465,36 +462,6 @@ final class LocalCache {
             barrier.get(2, TimeUnit.SECONDS);
         } catch (Exception ignored) {
         }
-    }
-
-    static boolean isOfficialNativeDisabled(Context context) {
-        if (context == null) return false;
-        SharedPreferences prefs = context.getApplicationContext()
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        return prefs.getInt(OFFICIAL_NATIVE_DISABLED_CODE, -1) == officialNativeAttemptCode();
-    }
-
-    static String officialNativeDisabledReason(Context context) {
-        if (context == null) return "";
-        SharedPreferences prefs = context.getApplicationContext()
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        return prefs.getString(OFFICIAL_NATIVE_DISABLED_REASON, "");
-    }
-
-    static void disableOfficialNative(Context context, String reason) {
-        if (context == null) return;
-        context.getApplicationContext()
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putInt(OFFICIAL_NATIVE_DISABLED_CODE, officialNativeAttemptCode())
-                .putString(OFFICIAL_NATIVE_DISABLED_REASON, reason == null ? "" : reason)
-                .apply();
-        appendNativeSignLog(context, "official native disabled for this version: "
-                + (reason == null ? "" : reason));
-    }
-
-    private static int officialNativeAttemptCode() {
-        return BuildConfig.VERSION_CODE * 100 + OFFICIAL_NATIVE_ATTEMPT_REVISION;
     }
 
     String sessionId() {

@@ -2,6 +2,7 @@ package com.ronan.heyboxlite;
 
 import android.content.Context;
 import android.content.pm.PackageInfo;
+import android.os.SystemClock;
 
 import com.graphice.shaderar.ShaderManager;
 import com.max.xiaoheihe.utils.NDKTools;
@@ -21,7 +22,8 @@ final class OfficialNativeSigner {
     }
 
     private static boolean initialized;
-    private static boolean unavailable;
+    private static int failureCount;
+    private static long retryAtElapsed;
     private static String unavailableReason = "";
     private static final String BLEND_MODE =
             "MFANEHAMGACOBHIEMIHIJLKJPMMHJMMLABCNGBPPENCENPOM";
@@ -42,14 +44,9 @@ final class OfficialNativeSigner {
                                     String xhhToken, String path,
                                     Map<String, String> requestParams, Logger logger) {
         Map<String, String> out = new LinkedHashMap<>();
-        if (unavailable || context == null) return out;
+        if (context == null || SystemClock.elapsedRealtime() < retryAtElapsed) return out;
         try {
             Context app = context.getApplicationContext();
-            if (LocalCache.isOfficialNativeDisabled(app)) {
-                log(logger, "official native signer skipped disabled reason="
-                        + LocalCache.officialNativeDisabledReason(app));
-                return out;
-            }
             Context officialBase = officialBaseContext(app, logger);
             configureOfficialAppInfo(officialBase, logger);
             Context officialContext = new OfficialContext(officialBase);
@@ -98,9 +95,10 @@ final class OfficialNativeSigner {
                     + len(out.get(SecureStrings.hkey()))
                     + " nonce=" + len(out.get(SecureStrings.nonce()))
                     + " time=" + len(out.get(SecureStrings.time())));
+            if (!out.isEmpty()) clearFailure();
         } catch (Throwable error) {
             log(logger, "official native signer throwable=" + stack(error));
-            markUnavailable(error.getClass().getSimpleName() + ": "
+            recordFailure(error.getClass().getSimpleName() + ": "
                     + safe(error.getMessage()), logger);
         }
         return out;
@@ -258,10 +256,19 @@ final class OfficialNativeSigner {
         return path;
     }
 
-    private static void markUnavailable(String reason, Logger logger) {
-        unavailable = true;
+    private static void recordFailure(String reason, Logger logger) {
+        failureCount = Math.min(8, failureCount + 1);
+        long delay = Math.min(5 * 60_000L, 2_000L << Math.min(7, failureCount - 1));
+        retryAtElapsed = SystemClock.elapsedRealtime() + delay;
         unavailableReason = reason == null ? "" : reason;
-        log(logger, "official native signer unavailable: " + unavailableReason);
+        log(logger, "official native signer retry in " + delay + "ms: "
+                + unavailableReason);
+    }
+
+    private static void clearFailure() {
+        failureCount = 0;
+        retryAtElapsed = 0L;
+        unavailableReason = "";
     }
 
     private static void log(Logger logger, String message) {

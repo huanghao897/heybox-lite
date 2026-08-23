@@ -169,7 +169,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.pageTransitions.setCompactMotion(usesWatchLayout());
         this.localCache = new LocalCache(this);
         this.cacheMaintenance = new CacheMaintenance(this, this.localCache, this.handler);
-        boolean pendingCrashReport = !CrashReporter.pendingCrashReport(this).isEmpty();
+        boolean pendingCrashReport = CrashReporter.hasPendingCrashReport(this);
         this.checkinCenterCoordinator = new CheckinCenterCoordinator(this, this.localCache);
         this.checkinCenterCoordinator.setAuthorizationListener(paired -> {
             if (this.profilePage != null) this.profilePage.invalidate();

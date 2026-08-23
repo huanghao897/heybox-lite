@@ -21,6 +21,7 @@ final class CrashReporter {
     private static final int MAX_BYTES = 96 * 1024;
     private static final String PREFERENCES = "heybox_crash_reporter";
     private static final String HANDLED_FINGERPRINT = "handled_fingerprint";
+    private static final String PENDING = "pending";
     private static boolean installed;
 
     private CrashReporter() {}
@@ -62,6 +63,16 @@ final class CrashReporter {
         return fingerprint(report).equals(handled) ? "" : report;
     }
 
+    static boolean hasPendingCrashReport(Context context) {
+        if (context == null) return false;
+        Context app = context.getApplicationContext();
+        android.content.SharedPreferences preferences = app.getSharedPreferences(
+                PREFERENCES, Context.MODE_PRIVATE);
+        if (preferences.contains(PENDING)) return preferences.getBoolean(PENDING, false);
+        File file = new File(diagnosticsDir(app), "crash-latest.log");
+        return file.isFile() && file.length() > 0L;
+    }
+
     static String latestCrashReport(Context context) {
         if (context == null) return "";
         return read(new File(diagnosticsDir(context.getApplicationContext()), "crash-latest.log"));
@@ -74,6 +85,7 @@ final class CrashReporter {
                 .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 .edit()
                 .putString(HANDLED_FINGERPRINT, fingerprint(report))
+                .putBoolean(PENDING, false)
                 .commit();
     }
 
@@ -95,6 +107,8 @@ final class CrashReporter {
                         + "error: " + (error == null ? "" : error.getClass().getName()) + "\n\n"
                         + stack;
                 write(latest, trim(DiagnosticSanitizer.redact(text)));
+                context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                        .edit().putBoolean(PENDING, true).commit();
             } catch (Throwable ignored) {
                 // Last-resort crash logging must never make the crash path worse.
             }

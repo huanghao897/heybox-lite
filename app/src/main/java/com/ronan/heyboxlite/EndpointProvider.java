@@ -1,40 +1,26 @@
 package com.ronan.heyboxlite;
 
 final class EndpointProvider {
-    private static final int KEY = 83;
-
     private EndpointProvider() {}
 
-    static String feeds() { return path(124,49,49,32,124,50,35,35,124,53,54,54,55,32); }
-    static String linkTreeV2() { return path(124,49,49,32,124,50,35,35,124,63,58,61,56,124,39,33,54,54,124,37,97); }
-    static String qrUrl() { return path(124,50,48,48,60,38,61,39,124,52,54,39,12,34,33,48,60,55,54,12,38,33,63,124); }
-    static String qrState() { return path(124,50,48,48,60,38,61,39,124,34,33,12,32,39,50,39,54,124); }
-    static String subComments() { return path(124,49,49,32,124,50,35,35,124,48,60,62,62,54,61,39,124,32,38,49,124,48,60,62,62,54,61,39,32); }
-    static String profileUserLinks() { return path(124,49,49,32,124,50,35,35,124,35,33,60,53,58,63,54,124,38,32,54,33,124,63,58,61,56,124,63,58,32,39); }
-    static String history() { return path(124,49,49,32,124,50,35,35,124,35,33,60,53,58,63,54,124,59,58,32,39,60,33,42,124,37,58,32,58,39); }
-    static String favoriteTabs() { return path(124,49,49,32,124,50,35,35,124,35,33,60,53,58,63,54,124,53,50,37,124,39,50,49,12,63,58,32,39); }
-    static String favoriteLinks() { return path(124,49,49,32,124,50,35,35,124,35,33,60,53,58,63,54,124,53,50,37,124,53,60,63,55,54,33,124,37,97,124,63,58,61,56,32); }
-    static String emojis() { return path(124,49,49,32,124,50,35,35,124,50,35,58,124,54,62,60,57,58,32,124,63,58,32,39); }
-    static String search() { return path(124,49,49,32,124,50,35,35,124,50,35,58,124,52,54,61,54,33,50,63,124,32,54,50,33,48,59,124,37,98); }
-    static String awardLink() { return path(124,49,49,32,124,50,35,35,124,35,33,60,53,58,63,54,124,50,36,50,33,55,124,63,58,61,56); }
-    static String favourLink() { return path(124,49,49,32,124,50,35,35,124,63,58,61,56,124,53,50,37,60,38,33); }
-    static String followUser() { return path(124,49,49,32,124,50,35,35,124,35,33,60,53,58,63,54,124,53,60,63,63,60,36,124,38,32,54,33); }
-    static String unfollowUser() { return path(124,49,49,32,124,50,35,35,124,35,33,60,53,58,63,54,124,53,60,63,63,60,36,124,38,32,54,33,124,48,50,61,48,54,63); }
-    static String supportComment() { return path(124,49,49,32,124,50,35,35,124,48,60,62,62,54,61,39,124,32,38,35,35,60,33,39); }
-    static String createComment() { return path(124,49,49,32,124,50,35,35,124,48,60,62,62,54,61,39,124,48,33,54,50,39,54); }
-    static String boxDataCallback() { return path(124,33,48,124,49,60,43,12,55,50,39,50,124,48,50,63,63,49,50,48,56); }
+    static String feeds() { return "/bbs/app/feeds"; }
+    static String linkTreeV2() { return "/bbs/app/link/tree/v2"; }
+    static String qrUrl() { return "/account/get_qrcode_url/"; }
+    static String qrState() { return "/account/qr_state/"; }
+    static String subComments() { return "/bbs/app/comment/sub/comments"; }
+    static String profileUserLinks() { return "/bbs/app/profile/user/link/list"; }
+    static String history() { return "/bbs/app/profile/history/visit"; }
+    static String favoriteTabs() { return "/bbs/app/profile/fav/tab_list"; }
+    static String favoriteLinks() { return "/bbs/app/profile/fav/folder/v2/links"; }
+    static String emojis() { return "/bbs/app/api/emojis/list"; }
+    static String search() { return "/bbs/app/api/general/search/v1"; }
+    static String awardLink() { return "/bbs/app/profile/award/link"; }
+    static String favourLink() { return "/bbs/app/link/favour"; }
+    static String followUser() { return "/bbs/app/profile/follow/user"; }
+    static String unfollowUser() { return "/bbs/app/profile/follow/user/cancel"; }
+    static String supportComment() { return "/bbs/app/comment/support"; }
+    static String createComment() { return "/bbs/app/comment/create"; }
+    static String boxDataCallback() { return "/rc/box_data/callback"; }
 
-    static String baseUrl() {
-        int[] values = {104,116,116,112,115,58,47,47,97,112,105,46,120,105,97,111,
-                104,101,105,104,101,46,99,110};
-        StringBuilder result = new StringBuilder(values.length);
-        for (int value : values) result.append((char) value);
-        return result.toString();
-    }
-
-    private static String path(int... values) {
-        char[] result = new char[values.length];
-        for (int i = 0; i < values.length; i++) result[i] = (char) (values[i] ^ KEY);
-        return new String(result);
-    }
+    static String baseUrl() { return BuildConfig.HEYBOX_API_BASE_URL; }
 }

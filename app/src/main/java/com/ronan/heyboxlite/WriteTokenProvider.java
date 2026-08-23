@@ -3,12 +3,15 @@ package com.ronan.heyboxlite;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.JsPromptResult;
+import android.webkit.CookieManager;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -17,6 +20,7 @@ import android.webkit.WebViewClient;
 import org.json.JSONObject;
 
 import java.io.UnsupportedEncodingException;
+import java.io.ByteArrayInputStream;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -33,6 +37,8 @@ final class WriteTokenProvider {
 
     private static final int TIMEOUT_MS = 25000;
     private static final String TOKEN_BASE_URL = "https://www.xiaoheihe.cn/";
+    private static final String SDK_URL =
+            "https://static.portal101.cn/dist/web/v3.0.0/fp.min.js";
 
     private final Activity activity;
     private final SessionStore session;
@@ -92,14 +98,25 @@ final class WriteTokenProvider {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(false);
+        settings.setGeolocationEnabled(false);
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(false);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
         }
         webView.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                return !isTrustedPromptUrl(url);
+                return !TOKEN_BASE_URL.equals(url);
             }
+
+            @Override public WebResourceResponse shouldInterceptRequest(
+                    WebView view, String url) {
+                return trustedResource(url) ? null : blockedResource();
+            }
+
         });
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -134,7 +151,7 @@ final class WriteTokenProvider {
                 + "send('device',s&&s.getDeviceId?s.getDeviceId():'');}catch(e){fail(e);}}];"
                 + "window.SMSdk={};"
                 + "var sc=document.createElement('script');"
-                + "sc.src='https://static.portal101.cn/dist/web/v3.0.0/fp.min.js?t='+Math.floor(Date.now()/21600000);"
+                + "sc.src='" + SDK_URL + "';"
                 + "sc.onerror=function(){fail('SMSdk 加载失败');};"
                 + "document.head.appendChild(sc);"
                 + "setTimeout(function(){fail('SMSdk 超时');},8000);"
@@ -152,6 +169,23 @@ final class WriteTokenProvider {
 
     private boolean isTrustedPromptUrl(String url) {
         return TOKEN_BASE_URL.equals(url);
+    }
+
+    private static boolean trustedResource(String value) {
+        try {
+            Uri uri = Uri.parse(value);
+            if (!"https".equalsIgnoreCase(uri.getScheme())) return false;
+            String host = uri.getHost();
+            return "www.xiaoheihe.cn".equalsIgnoreCase(host)
+                    || "static.portal101.cn".equalsIgnoreCase(host);
+        } catch (RuntimeException error) {
+            return false;
+        }
+    }
+
+    private static WebResourceResponse blockedResource() {
+        return new WebResourceResponse("text/plain", "UTF-8",
+                new ByteArrayInputStream(new byte[0]));
     }
 
     private void handleDeviceId(String value) {

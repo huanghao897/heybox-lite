@@ -15,7 +15,6 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -168,6 +167,7 @@ final class ApiClient {
         closed = true;
         main.removeCallbacksAndMessages(null);
         executor.shutdownNow();
+        NativeSignBridge.close(session.appContext());
     }
 
     private void request(String method, String path, Map<String, String> extra,
