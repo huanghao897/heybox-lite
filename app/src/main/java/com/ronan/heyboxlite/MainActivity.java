@@ -177,6 +177,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             }
         });
         this.readingTimeTracker = new ReadingTimeTracker(this);
+        OfficialEmojiFallback.load(this);
         ImageLoader.init(this);
         ImageLoader.setLogger(this.localCache::log);
         if (this.session.autoOfflineCleanup()) {
