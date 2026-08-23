@@ -112,7 +112,7 @@ final class FeedItem {
                 json.optBoolean("is_award", json.optBoolean("liked",
                         json.optBoolean("is_liked", json.optInt("has_award") == 1))),
                 pinned(json),
-                following(json, user),
+                FollowStatus.follows(json, user),
                 hsrc(json),
                 detailImages
         );
@@ -217,41 +217,6 @@ final class FeedItem {
                 json.optBoolean("is_sticky", json.optInt("sticky") == 1)))
                 || json.optInt("is_top", 0) == 1
                 || json.optInt("is_sticky", 0) == 1;
-    }
-
-    private static boolean following(JSONObject json, JSONObject user) {
-        int status = followStatus(json);
-        if (status < 0) status = followStatus(user);
-        return status == 1 || status == 3;
-    }
-
-    private static int followStatus(JSONObject source) {
-        if (source == null) return -1;
-        String[] keys = {"follow_status", "follow_state", "follow_state_v2",
-                "is_follow", "is_following", "followed"};
-        for (String key : keys) {
-            if (!source.has(key)) continue;
-            Object value = source.opt(key);
-            if (value instanceof Boolean) return (Boolean) value ? 1 : 0;
-            if (value instanceof Number) return ((Number) value).intValue();
-            String text = String.valueOf(value).trim();
-            if ("true".equalsIgnoreCase(text)
-                    || "followed".equalsIgnoreCase(text)
-                    || "following".equalsIgnoreCase(text)) {
-                return 1;
-            }
-            if ("mutual".equalsIgnoreCase(text)) return 3;
-            if ("false".equalsIgnoreCase(text)
-                    || "none".equalsIgnoreCase(text)
-                    || "unfollowed".equalsIgnoreCase(text)) {
-                return 0;
-            }
-            try {
-                return Integer.parseInt(text);
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return -1;
     }
 
     private static String userId(JSONObject json) {

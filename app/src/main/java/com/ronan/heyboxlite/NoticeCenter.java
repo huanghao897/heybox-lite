@@ -85,6 +85,7 @@ final class NoticeCenter {
                     @Override
                     public void onError(String message) {
                         localCache.log("update check failed: " + safeError(message));
+                        notifyLaunchServiceFailure();
                     }
                 });
     }
@@ -106,6 +107,7 @@ final class NoticeCenter {
             @Override
             public void onError(String message) {
                 localCache.log("announcement check failed: " + safeError(message));
+                notifyLaunchServiceFailure();
             }
         });
     }
@@ -115,6 +117,13 @@ final class NoticeCenter {
         String value = message.replaceAll("https?://[^\\s]+", "[url]")
                 .replaceAll("[\\r\\n]+", " ").trim();
         return value.length() > 180 ? value.substring(0, 180) : value;
+    }
+
+    private void notifyLaunchServiceFailure() {
+        if (!this.activity.isFinishing()
+                && DailyNoticeThrottle.claim(this.activity, "launch-service-failure")) {
+            this.host.showToast("更新与公告暂时无法连接，可稍后在设置中重试");
+        }
     }
 
     void showUpdate(UpdateChecker.Result result) {

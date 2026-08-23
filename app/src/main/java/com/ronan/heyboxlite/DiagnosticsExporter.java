@@ -1,10 +1,12 @@
 package com.ronan.heyboxlite;
 
 import android.annotation.TargetApi;
+import android.Manifest;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -18,6 +20,14 @@ final class DiagnosticsExporter {
     private static final String DIRECTORY = "heyboxlite";
 
     private DiagnosticsExporter() {}
+
+    static boolean needsLegacyWritePermission(Activity activity) {
+        return activity != null
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && Build.VERSION.SDK_INT <= Build.VERSION_CODES.P
+                && activity.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED;
+    }
 
     static boolean share(Activity activity, File file) {
         if (activity == null || file == null) return false;

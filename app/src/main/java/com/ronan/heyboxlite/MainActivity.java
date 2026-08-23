@@ -1973,6 +1973,15 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (this.diagnosticsController != null) {
+            this.diagnosticsController.onRequestPermissionsResult(requestCode, grantResults);
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         this.activityResumed = true;

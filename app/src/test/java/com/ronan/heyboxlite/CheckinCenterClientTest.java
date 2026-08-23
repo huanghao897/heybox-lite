@@ -299,6 +299,16 @@ public class CheckinCenterClientTest {
                 .put("expires_at", "2026-08-14T01:00:00.000Z"));
         assertTrue(order.pending());
         assertTrue(order.manualReview);
+        CheckinBilling.Order unchanged = new CheckinBilling.Order(
+                order.id, order.provider, order.amountCents, order.payableAmountCents,
+                order.currency, order.status, order.qrReady, order.manualReview,
+                order.expiresAt, order.review);
+        CheckinBilling.Order paid = new CheckinBilling.Order(
+                order.id, order.provider, order.amountCents, order.payableAmountCents,
+                order.currency, "paid", order.qrReady, order.manualReview,
+                order.expiresAt, order.review);
+        assertTrue(order.sameUiState(unchanged));
+        assertFalse(order.sameUiState(paid));
         assertTrue(CheckinBilling.validPaymentReference("42000000000000000000"));
         assertFalse(CheckinBilling.validPaymentReference("short"));
     }

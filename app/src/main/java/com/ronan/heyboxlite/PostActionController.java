@@ -404,32 +404,7 @@ final class PostActionController {
     }
 
     private int followStatus(JSONObject link, JSONObject user) {
-        int linkStatus = followStatusValue(link);
-        return linkStatus >= 0 ? linkStatus : followStatusValue(user);
-    }
-
-    private int followStatusValue(JSONObject source) {
-        if (source == null) return -1;
-        String[] keys = {"follow_status", "follow_state", "follow_state_v2",
-                "is_follow", "is_following", "followed"};
-        for (String key : keys) {
-            if (!source.has(key)) continue;
-            Object value = source.opt(key);
-            if (value instanceof Boolean) return (Boolean) value ? 1 : 0;
-            if (value instanceof Number) return ((Number) value).intValue();
-            String text = String.valueOf(value).trim();
-            if (text.isEmpty()) continue;
-            if ("true".equalsIgnoreCase(text) || "followed".equalsIgnoreCase(text)
-                    || "following".equalsIgnoreCase(text)) return 1;
-            if ("mutual".equalsIgnoreCase(text)) return 3;
-            if ("false".equalsIgnoreCase(text) || "none".equalsIgnoreCase(text)
-                    || "unfollowed".equalsIgnoreCase(text)) return 0;
-            try {
-                return Integer.parseInt(text);
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return -1;
+        return FollowStatus.resolve(link, user);
     }
 
     private int nextFollowStatus(int beforeStatus, boolean following) {

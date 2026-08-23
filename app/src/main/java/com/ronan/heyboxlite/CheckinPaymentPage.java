@@ -343,12 +343,9 @@ final class CheckinPaymentPage {
                     @Override
                     public void onSuccess(CheckinBilling.Order value) {
                         if (closed) return;
+                        boolean changed = order == null || !order.sameUiState(value);
                         setOrder(value);
-                        if ("paid".equals(value.status)) {
-                            render();
-                            return;
-                        }
-                        render();
+                        if (changed) render();
                         if (order.pending() && (order.review == null || order.review.pending())) {
                             schedulePoll(POLL_DELAY_MS);
                         }

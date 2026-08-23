@@ -28,6 +28,7 @@ final class EmojiRenderer {
                     return value == null ? 0 : Math.max(1, value.getByteCount() / 1024);
                 }
             };
+    private static final LruCache<String, SpannableString> SPANS = new LruCache<>(96);
     private static final Set<String> LOADING = new HashSet<>();
     private static final Map<String, List<Waiter>> WAITERS = new HashMap<>();
     private static final Map<TextView, Decorator> DECORATORS = new WeakHashMap<>();
@@ -41,6 +42,7 @@ final class EmojiRenderer {
 
     static void clear() {
         BITMAPS.evictAll();
+        SPANS.evictAll();
         LOADING.clear();
         WAITERS.clear();
     }
@@ -74,9 +76,20 @@ final class EmojiRenderer {
     }
 
     private static void render(TextView view, String source, boolean darkMode) {
+        String spanKey = (darkMode ? "d:" : "l:")
+                + Float.floatToIntBits(view.getTextSize()) + ":" + source;
+        Decorator decorator = DECORATORS.get(view);
+        SpannableString cached = decorator == null ? SPANS.get(spanKey) : null;
+        if (cached != null) {
+            view.setText(new SpannableString(cached));
+            return;
+        }
         SpannableString styled = new SpannableString(source);
         Matcher matcher = TOKEN.matcher(source);
+        boolean hasToken = false;
+        boolean unresolved = false;
         while (matcher.find()) {
+            hasToken = true;
             String code = EmojiStore.longestResolvableCode(matcher.group(), darkMode);
             String url = EmojiStore.url(code, darkMode);
             if (url.isEmpty()) continue;
@@ -95,6 +108,7 @@ final class EmojiRenderer {
                         Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
                 continue;
             }
+            unresolved = true;
             waitFor(cacheKey, view, source, darkMode);
             if (LOADING.add(cacheKey)) {
                 ImageLoader.loadOriginal(url, 96, loaded -> {
@@ -104,13 +118,13 @@ final class EmojiRenderer {
                 });
             }
         }
-        Decorator decorator = DECORATORS.get(view);
         if (decorator != null) {
             try {
                 decorator.apply(styled);
             } catch (RuntimeException ignored) {
             }
         }
+        if (decorator == null && hasToken && !unresolved) SPANS.put(spanKey, styled);
         view.setText(styled);
     }
 

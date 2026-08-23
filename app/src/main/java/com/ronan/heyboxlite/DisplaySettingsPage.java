@@ -31,19 +31,6 @@ final class DisplaySettingsPage {
         void showToast(String message);
     }
 
-    private static final String[] THEME_NAMES = {
-            "蓝色", "红色", "粉色", "紫色", "绿色", "青色",
-            "橙色", "黄色", "灰色", "深蓝", "黑金", "薄荷绿"
-    };
-    private static final int[][] THEME_COLORS = {
-            {-14386760, -9193242}, {-3982790, -1083529},
-            {-2597743, -1006399}, {-9022795, -4744481},
-            {-14185897, -9320552}, {-15299695, -9713717},
-            {-2921692, -1007516}, {-3958250, -995480},
-            {-7894890, -5327686}, {-15253642, -10646588},
-            {-15263977, -3102658}, {-13530253, -7808833}
-    };
-
     private final Activity activity;
     private final SessionStore session;
     private final SettingsUi settingsUi;
@@ -200,16 +187,16 @@ final class DisplaySettingsPage {
         int rowHeight = this.roundLayout ? 52 : 58;
         int[] selected = {-1};
         AlertDialog[] holder = new AlertDialog[1];
-        for (int start = 0; start < THEME_NAMES.length; start += columns) {
+        for (int start = 0; start < ThemePalette.count(); start += columns) {
             LinearLayout row = new LinearLayout(this.activity);
             row.setGravity(Gravity.CENTER);
             for (int i = start; i < start + columns; i++) {
                 LinearLayout cell = vertical(0);
                 cell.setGravity(Gravity.CENTER);
-                if (i < THEME_NAMES.length) {
+                if (i < ThemePalette.count()) {
                     int index = i;
                     View swatch = themeSwatch(index);
-                    cell.setContentDescription(THEME_NAMES[index]);
+                    cell.setContentDescription(ThemePalette.name(index));
                     cell.setOnClickListener(view -> {
                         if (selected[0] >= 0) return;
                         selected[0] = index;
@@ -223,7 +210,7 @@ final class DisplaySettingsPage {
                         }, Motions.off() ? 0L : 80L);
                     });
                     cell.addView(swatch, new LinearLayout.LayoutParams(dp(36), dp(36)));
-                    TextView name = text(THEME_NAMES[i], 9.0f, this.tokens.muted);
+                    TextView name = text(ThemePalette.name(i), 9.0f, this.tokens.muted);
                     name.setGravity(Gravity.CENTER);
                     cell.addView(name, new LinearLayout.LayoutParams(
                             -1, dp(this.roundLayout ? 16 : 22)));
@@ -239,8 +226,8 @@ final class DisplaySettingsPage {
         dialog.setCanceledOnTouchOutside(true);
         dialog.setOnDismissListener(value -> {
             if (selected[0] < 0 || this.activity.isFinishing()) return;
-            int primary = THEME_COLORS[selected[0]][0];
-            int secondary = THEME_COLORS[selected[0]][1];
+            int primary = ThemePalette.primary(selected[0]);
+            int secondary = ThemePalette.secondary(selected[0]);
             if (currentPrimary() == primary && currentSecondary() == secondary) return;
             this.host.cancelAllMotion();
             this.session.setTheme(Format.colorHex(primary), Format.colorHex(secondary));
@@ -251,8 +238,8 @@ final class DisplaySettingsPage {
     }
 
     private View themeSwatch(int index) {
-        int primary = THEME_COLORS[index][0];
-        int secondary = THEME_COLORS[index][1];
+        int primary = ThemePalette.primary(index);
+        int secondary = ThemePalette.secondary(index);
         boolean selected = currentPrimary() == primary && currentSecondary() == secondary;
         View swatch = new View(this.activity) {
             private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -282,46 +269,23 @@ final class DisplaySettingsPage {
                 canvas.drawText("✓", cx, cy + dp(4), this.paint);
             }
         };
-        swatch.setContentDescription(THEME_NAMES[index]);
+        swatch.setContentDescription(ThemePalette.name(index));
         return swatch;
     }
 
     private String currentThemeCaption() {
-        if (this.session.primaryColor().isEmpty()
-                && this.session.secondaryColor().isEmpty()) {
-            return "当前 · 黑灰";
-        }
-        for (int i = 0; i < THEME_NAMES.length; i++) {
-            if (currentPrimary() == THEME_COLORS[i][0]
-                    && currentSecondary() == THEME_COLORS[i][1]) {
-                return "当前 · " + THEME_NAMES[i];
-            }
-        }
+        if (ThemePalette.isDefault(this.session)) return "当前 · 黑灰";
+        int index = ThemePalette.indexOf(currentPrimary(), currentSecondary());
+        if (index >= 0) return "当前 · " + ThemePalette.name(index);
         return "当前 · 自定义配色";
     }
 
     private int currentPrimary() {
-        String saved = this.session.primaryColor();
-        if (saved.isEmpty()) return this.session.darkMode() ? Color.WHITE : Color.BLACK;
-        try {
-            return Color.parseColor(saved);
-        } catch (IllegalArgumentException ignored) {
-            return this.session.darkMode() ? Color.WHITE : Color.BLACK;
-        }
+        return ThemePalette.currentPrimary(this.session);
     }
 
     private int currentSecondary() {
-        String saved = this.session.secondaryColor();
-        if (saved.isEmpty()) {
-            return this.session.darkMode()
-                    ? Color.rgb(196, 198, 201) : Color.rgb(87, 91, 96);
-        }
-        try {
-            return Color.parseColor(saved);
-        } catch (IllegalArgumentException ignored) {
-            return this.session.darkMode()
-                    ? Color.rgb(196, 198, 201) : Color.rgb(87, 91, 96);
-        }
+        return ThemePalette.currentSecondary(this.session);
     }
 
     private void setMotionLevel(int level) {

@@ -76,6 +76,16 @@ final class CheckinBilling {
         boolean pending() {
             return "pending".equals(status);
         }
+
+    }
+
+    private static boolean sameReview(Review left, Review right) {
+        if (left == right) return true;
+        return left != null && right != null
+                && left.claimId.equals(right.claimId)
+                && left.paymentReference.equals(right.paymentReference)
+                && left.status.equals(right.status)
+                && left.reason.equals(right.reason);
     }
 
     static final class Order {
@@ -107,6 +117,19 @@ final class CheckinBilling {
 
         boolean pending() {
             return "pending".equals(status);
+        }
+
+        boolean sameUiState(Order other) {
+            return other != null && id.equals(other.id)
+                    && provider.equals(other.provider)
+                    && amountCents == other.amountCents
+                    && payableAmountCents == other.payableAmountCents
+                    && currency.equals(other.currency)
+                    && status.equals(other.status)
+                    && qrReady == other.qrReady
+                    && manualReview == other.manualReview
+                    && expiresAt.equals(other.expiresAt)
+                    && sameReview(review, other.review);
         }
     }
 

@@ -14,11 +14,11 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 final class FeedAdapter extends BaseAdapter {
@@ -60,6 +60,8 @@ final class FeedAdapter extends BaseAdapter {
     private final int avatarTargetPx;
     private final int coverTargetPx;
     private final Set<String> animatedItems = new HashSet<>();
+    private final Map<Integer, Drawable> statIcons = new HashMap<>();
+    private final Map<FeedItem, PlainCopy> plainCopyCache = new IdentityHashMap<>();
     private int initialAnimationCount;
 
     FeedAdapter(Context context, List<FeedItem> items, boolean noImage,
@@ -255,13 +257,15 @@ final class FeedAdapter extends BaseAdapter {
         }
 
         FeedItem item = getItem(position);
+        holder.item = item;
         Motions.reset(reusable);
         String animationKey = item.id.isEmpty() ? "position:" + position : item.id;
         if (initialAnimationCount < 6 && animatedItems.add(animationKey)) {
             Motions.listEnter(reusable, initialAnimationCount++, dp(6));
         }
-        String title = RichContent.plainText(item.title);
-        String description = RichContent.plainText(item.description);
+        PlainCopy plainCopy = plainCopy(item);
+        String title = plainCopy.title;
+        String description = plainCopy.description;
         EmojiRenderer.set(holder.title, title.isEmpty() ? "无标题内容" : title, darkMode);
         EmojiRenderer.set(holder.description, description, darkMode);
         holder.description.setVisibility(description.isEmpty() ? View.GONE : View.VISIBLE);
@@ -306,7 +310,11 @@ final class FeedAdapter extends BaseAdapter {
             else {
                 UiComponents.press(holder.likes);
                 likeListener.onLike(item);
-                notifyDataSetChanged();
+                if (holder.item == item) {
+                    updateStatView(holder.likes, item.likes, item.liked, item.liked
+                            ? R.drawable.official_comment_like_filled
+                            : R.drawable.official_comment_like_line);
+                }
             }
         });
         holder.follow.setOnClickListener(view -> {
@@ -320,10 +328,20 @@ final class FeedAdapter extends BaseAdapter {
             followListener.onFollow(item, next, success -> {
                 if (!success) item.following = before;
                 item.followPending = false;
-                notifyDataSetChanged();
+                if (holder.item == item) updateFollowView(holder.follow, item);
             });
         });
         return reusable;
+    }
+
+    private PlainCopy plainCopy(FeedItem item) {
+        PlainCopy cached = plainCopyCache.get(item);
+        if (cached != null) return cached;
+        PlainCopy value = new PlainCopy(
+                RichContent.plainText(item.title),
+                RichContent.plainText(item.description));
+        plainCopyCache.put(item, value);
+        return value;
     }
 
     private void updateFollowView(TextView view, FeedItem item) {
@@ -342,6 +360,16 @@ final class FeedAdapter extends BaseAdapter {
         Compat.setBackground(view, background);
     }
 
+    private static final class PlainCopy {
+        final String title;
+        final String description;
+
+        PlainCopy(String title, String description) {
+            this.title = title;
+            this.description = description;
+        }
+    }
+
     private TextView stat(int icon) {
         TextView view = label(10, mutedColor);
         view.setGravity(Gravity.CENTER_VERTICAL);
@@ -358,38 +386,11 @@ final class FeedAdapter extends BaseAdapter {
     }
 
     private String feedMeta(FeedItem item) {
-        return relativeTime(item.createdAt);
-    }
-
-    private String relativeTime(long seconds) {
-        if (seconds <= 0L) return "";
-        long millis = seconds > 100000000000L ? seconds : seconds * 1000L;
-        long diff = Math.max(0L, System.currentTimeMillis() - millis);
-        long minute = 60L * 1000L;
-        long hour = 60L * minute;
-        long day = 24L * hour;
-        if (diff < minute) return "刚刚";
-        if (diff < hour) return Math.max(1L, diff / minute) + "分钟前";
-        if (diff < day) return Math.max(1L, diff / hour) + "小时前";
-        return new SimpleDateFormat("MM-dd", Locale.getDefault()).format(new Date(millis));
+        return item.createdAt <= 0L ? "" : Format.relativeTime(item.createdAt);
     }
 
     private String formatCount(int value) {
-        int count = Math.max(0, value);
-        if (count >= 10000) {
-            return compactDecimal(count / 10000f) + "万";
-        }
-        if (count >= 1000) {
-            return compactDecimal(count / 1000f) + "K";
-        }
-        return String.valueOf(count);
-    }
-
-    private String compactDecimal(float value) {
-        if (value >= 100f || Math.abs(value - Math.round(value)) < 0.05f) {
-            return String.valueOf(Math.round(value));
-        }
-        return String.format(Locale.US, "%.1f", value);
+        return Format.commentLikeCount(Math.max(0, value));
     }
 
     private int coverPlaceholderColor() {
@@ -397,9 +398,16 @@ final class FeedAdapter extends BaseAdapter {
     }
 
     private void setStatIcon(TextView view, int icon, int color, int size) {
-        Drawable drawable = Compat.tintedDrawable(context, icon, color);
+        int key = ((icon * 31) + color) * 31 + size;
+        Drawable drawable = this.statIcons.get(key);
+        if (drawable == null) {
+            drawable = Compat.tintedDrawable(context, icon, color);
+            if (drawable != null) {
+                drawable.setBounds(0, 0, dp(size), dp(size));
+                this.statIcons.put(key, drawable);
+            }
+        }
         if (drawable != null) {
-            drawable.setBounds(0, 0, dp(size), dp(size));
             view.setCompoundDrawables(drawable, null, null, null);
             view.setCompoundDrawablePadding(dp(2));
         }
@@ -443,6 +451,7 @@ final class FeedAdapter extends BaseAdapter {
         final TextView likes;
         final TextView comments;
         final ImageView cover;
+        FeedItem item;
 
         Holder(LinearLayout card, LinearLayout copy, ImageView avatar, TextView badge,
                TextView follow, TextView topic,

@@ -12,6 +12,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class DiagnosticsController {
+    static final int REQUEST_WRITE_LOG = 9135;
     interface Host {
         RuntimeState runtimeState();
 
@@ -49,6 +50,8 @@ final class DiagnosticsController {
     private final Host host;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private boolean uploadInFlight;
+    private String pendingFileName;
+    private String pendingDiagnostics;
 
     DiagnosticsController(Activity activity, SessionStore session,
                           LocalCache localCache, LiteDialogPresenter dialogs,
@@ -174,6 +177,30 @@ final class DiagnosticsController {
     }
 
     private void save(String fileName, String diagnostics) {
+        if (DiagnosticsExporter.needsLegacyWritePermission(this.activity)) {
+            this.pendingFileName = fileName;
+            this.pendingDiagnostics = diagnostics;
+            this.activity.requestPermissions(new String[]{
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_WRITE_LOG);
+            return;
+        }
+        saveGranted(fileName, diagnostics);
+    }
+
+    boolean onRequestPermissionsResult(int requestCode, int[] grantResults) {
+        if (requestCode != REQUEST_WRITE_LOG) return false;
+        String fileName = this.pendingFileName;
+        String diagnostics = this.pendingDiagnostics;
+        this.pendingFileName = null;
+        this.pendingDiagnostics = null;
+        boolean granted = grantResults != null && grantResults.length > 0
+                && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        if (granted && fileName != null) saveGranted(fileName, diagnostics);
+        else this.host.showToast("没有存储权限，无法保存到 Download");
+        return true;
+    }
+
+    private void saveGranted(String fileName, String diagnostics) {
         this.executor.execute(() -> {
             String path = DiagnosticsExporter.save(this.activity, fileName, diagnostics);
             this.activity.runOnUiThread(() -> {
@@ -185,6 +212,8 @@ final class DiagnosticsController {
     }
 
     void close() {
+        this.pendingFileName = null;
+        this.pendingDiagnostics = null;
         this.executor.shutdownNow();
     }
 

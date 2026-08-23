@@ -11,6 +11,19 @@ import java.util.Locale;
  * 不依赖 Activity/视图，集中放置便于复用与单测。
  */
 final class Format {
+    private static final ThreadLocal<SimpleDateFormat> MONTH_DAY =
+            new ThreadLocal<SimpleDateFormat>() {
+                @Override protected SimpleDateFormat initialValue() {
+                    return new SimpleDateFormat("MM-dd", Locale.getDefault());
+                }
+            };
+    private static final ThreadLocal<SimpleDateFormat> MONTH_DAY_TIME =
+            new ThreadLocal<SimpleDateFormat>() {
+                @Override protected SimpleDateFormat initialValue() {
+                    return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault());
+                }
+            };
+
     private Format() {}
 
     static String colorHex(int color) {
@@ -46,7 +59,7 @@ final class Format {
 
     static String offlineTime(long millis) {
         if (millis <= 0L) return "未知";
-        return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(new Date(millis));
+        return MONTH_DAY_TIME.get().format(new Date(millis));
     }
 
     static String commentLikeCount(int count) {
@@ -66,8 +79,7 @@ final class Format {
         if (diff < minute) return "刚刚";
         if (diff < hour) return Math.max(1L, diff / minute) + "分钟前";
         if (diff < day) return Math.max(1L, diff / hour) + "小时前";
-        return new SimpleDateFormat("MM-dd", Locale.getDefault())
-                .format(new Date(millis));
+        return MONTH_DAY.get().format(new Date(millis));
     }
 
     static String announcementPreview(String value) {
@@ -87,7 +99,7 @@ final class Format {
             long timestamp = Long.parseLong(clean);
             if (timestamp <= 0) return "";
             if (timestamp < 100_000_000_000L) timestamp *= 1000L;
-            return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(new Date(timestamp));
+            return MONTH_DAY_TIME.get().format(new Date(timestamp));
         } catch (NumberFormatException ignored) {
             return "";
         }
