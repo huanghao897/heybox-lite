@@ -34,8 +34,10 @@ final class CrashReporter {
             Thread.UncaughtExceptionHandler previous =
                     Thread.getDefaultUncaughtExceptionHandler();
             Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
-                writeCrash(app, thread, error);
-                openRecoveryScreen(app);
+                if (!isRuntimeShutdown(error)) {
+                    writeCrash(app, thread, error);
+                    openRecoveryScreen(app);
+                }
                 if (previous != null) {
                     previous.uncaughtException(thread, error);
                 } else {
@@ -44,6 +46,11 @@ final class CrashReporter {
                 }
             });
         }
+    }
+
+    static boolean isRuntimeShutdown(Throwable error) {
+        return error instanceof InternalError
+                && "Thread starting during runtime shutdown".equals(error.getMessage());
     }
 
     static String pendingCrashReport(Context context) {

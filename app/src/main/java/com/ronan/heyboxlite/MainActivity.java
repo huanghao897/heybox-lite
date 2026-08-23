@@ -112,9 +112,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private LocalCache localCache;
     private CacheMaintenance cacheMaintenance;
     private FeedItem currentDetailItem;
-    private FeedItem userSpaceReturnItem;
     private String userSpaceReturnScreen = "feed";
-    private String pendingDetailReturn = "";
+    private final ContentNavigationHistory<DetailNavigationState> detailHistory =
+            new ContentNavigationHistory<>();
     private int detailRequestToken;
     private long lastExitBackAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -299,16 +299,18 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 this.crownScrollDispatcher.cancel();
                 return true;
             }
-            int distance = this.crownScrollController.distance(
-                    axis, dp(28), this.session.crownScrollSpeed());
+            int baseStep = dp(28);
+            int speed = this.session.crownScrollSpeed();
+            int distance = this.crownScrollController.distance(axis, baseStep, speed);
             if (distance == 0) return true;
-            if (scrollWithCrown(distance)) return true;
+            if (scrollWithCrown(distance,
+                    this.crownScrollController.frameLimit(baseStep, speed))) return true;
         }
         return super.dispatchGenericMotionEvent(event);
     }
 
-    private boolean scrollWithCrown(int distance) {
-        return this.crownScrollDispatcher.enqueue(distance);
+    private boolean scrollWithCrown(int distance, int frameLimit) {
+        return this.crownScrollDispatcher.enqueue(distance, frameLimit);
     }
 
     private View findCrownScrollTarget(int direction) {
@@ -1288,6 +1290,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private void showTopLevel(int index) {
+        if ("user_space".equals(this.screen) && !this.detailHistory.isEmpty()) {
+            discardDetailHistory();
+        }
         if ("feed".equals(this.screen) && index != 0) {
             this.feedPage.saveScroll();
         }
@@ -1316,7 +1321,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private String backTargetScreenKey() {
         if ("detail".equals(this.screen)) return this.detailReturn;
         if ("user_space".equals(this.screen)) {
-            return this.userSpaceReturnItem == null ? this.userSpaceReturnScreen : "detail";
+            return this.detailHistory.isEmpty() ? this.userSpaceReturnScreen : "detail";
         }
         if ("saved".equals(this.screen)) return this.savedContentController.returnScreen();
         return ScreenRoutes.staticParentOrDefault(this.screen, "feed");
@@ -1420,7 +1425,10 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private View realShellPreview(String key) {
-        View target = "feed".equals(key) ? this.feedPage.cachedView()
+        DetailNavigationState previousDetail = "detail".equals(key)
+                ? this.detailHistory.peek() : null;
+        View target = previousDetail != null ? previousDetail.root
+                : "feed".equals(key) ? this.feedPage.cachedView()
                 : "profile".equals(key) && this.profilePage != null
                         ? this.profilePage.cachedPage()
                 : this.retainedPages.get(key);
@@ -1439,7 +1447,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             return;
         }
         if ("profile".equals(key)) {
-            this.userSpaceReturnItem = null;
             this.userSpaceReturnScreen = "feed";
             activate("profile");
             if (this.profilePage != null) this.profilePage.updateReadingSummary();
@@ -1640,6 +1647,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
 
     @Override
     public void adoptShellPreview(String targetKey) {
+        if ("detail".equals(targetKey) && restorePreviousDetail(true)) return;
         configureAdoptedShellScreen(targetKey);
     }
 
@@ -1726,8 +1734,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         captureShellSnapshot(this.screen, sourceChild);
         captureFullScreenSnapshot(this.screen);
         if (!"detail".equals(this.screen)) {
-            this.detailReturn = this.pendingDetailReturn.isEmpty() ? this.screen : this.pendingDetailReturn;
-            this.pendingDetailReturn = "";
+            this.detailReturn = this.screen;
             this.detailReturnTitle = this.title == null ? "" : this.title.getText().toString();
             this.detailReturnView = shouldKeepDetailReturnView(this.screen) && sourceChild != null
                     ? sourceChild : null;
@@ -2190,10 +2197,10 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             return;
         }
         if ("detail".equals(this.screen)) {
-            this.userSpaceReturnItem = this.currentDetailItem;
-            this.userSpaceReturnScreen = this.detailReturn;
+            DetailNavigationState state = suspendCurrentDetail();
+            if (state == null) return;
+            this.detailHistory.push(state);
         } else {
-            this.userSpaceReturnItem = null;
             this.userSpaceReturnScreen = this.screen;
         }
         activate("user_space");
@@ -2600,19 +2607,93 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private void returnFromUserSpace() {
-        FeedItem item = this.userSpaceReturnItem;
+        if (restorePreviousDetail(false)) return;
         String returnScreen = this.userSpaceReturnScreen;
-        this.userSpaceReturnItem = null;
         this.userSpaceReturnScreen = "feed";
-        if (item != null) {
-            this.pendingDetailReturn = TextUtils.isEmpty(returnScreen) ? "feed" : returnScreen;
-            showDetail(item);
-        } else if ("profile".equals(returnScreen)) {
+        if ("profile".equals(returnScreen)) {
             showProfile();
         } else if ("reading_center".equals(returnScreen)) {
             showReadingCenter();
         } else {
             showFeed();
+        }
+    }
+
+    private DetailNavigationState suspendCurrentDetail() {
+        this.pageTransitions.finishNow();
+        saveCurrentDetailProgress();
+        View root = this.content == null || this.content.getChildCount() == 0
+                ? null : this.content.getChildAt(this.content.getChildCount() - 1);
+        if (root == null || this.detailPager == null || this.currentDetailItem == null) {
+            return null;
+        }
+        this.detailPager.cancelMotion();
+        this.detailRequestToken++;
+        DetailNavigationState state = new DetailNavigationState(
+                root, this.detailPager, this.detailScroll, this.detailCommentScroll,
+                this.currentDetailItem, this.detailReturn, this.detailReturnView,
+                this.detailReturnTitle, this.currentLinkId, this.currentLinkHsrc,
+                this.currentAuthCode, this.lastDetailDiagnostics,
+                this.currentDetailBody, this.pendingDetailBody,
+                this.detailHasRendered, this.detailLoadStartedAt);
+        this.detailPager = null;
+        this.detailScroll = null;
+        this.detailCommentScroll = null;
+        this.detailReturnView = null;
+        this.currentDetailBody = null;
+        this.pendingDetailBody = null;
+        this.detailHasRendered = false;
+        if (this.readingTimeTracker != null) {
+            this.readingTimeTracker.pause();
+            updateReadingTimeEntry();
+        }
+        return state;
+    }
+
+    private boolean restorePreviousDetail(boolean alreadyAttached) {
+        DetailNavigationState state = this.detailHistory.pop();
+        if (state == null) return false;
+        this.detailRequestToken++;
+        this.currentDetailItem = state.item;
+        this.detailReturn = state.returnScreen;
+        this.detailReturnView = state.returnView;
+        this.detailReturnTitle = state.returnTitle;
+        this.currentLinkId = state.linkId;
+        this.currentLinkHsrc = state.linkHsrc;
+        this.currentAuthCode = state.authCode;
+        this.lastDetailDiagnostics = state.diagnostics;
+        this.currentDetailBody = state.body;
+        this.pendingDetailBody = state.pendingBody;
+        this.detailHasRendered = state.rendered;
+        this.detailLoadStartedAt = state.loadStartedAt;
+        this.detailPager = state.pager;
+        this.detailScroll = state.articleScroll;
+        this.detailCommentScroll = state.commentScroll;
+        this.screen = "detail";
+        if (this.shellBar != null) this.shellBar.setVisibility(View.GONE);
+        setBottomNavVisible(false, false);
+        this.leading.setVisibility(View.VISIBLE);
+        this.leading.setOnClickListener(view -> returnFromDetailSmooth());
+        this.action.setVisibility(View.INVISIBLE);
+        updateDetailPagerTitle();
+        Motions.resetTree(state.root);
+        if (!alreadyAttached) {
+            if (state.root.getParent() instanceof ViewGroup) {
+                ((ViewGroup) state.root.getParent()).removeView(state.root);
+            }
+            this.pendingBackTransition = true;
+            transitionTo(state.root);
+        }
+        if (this.activityResumed && this.readingTimeTracker != null) {
+            this.readingTimeTracker.start(state.item.article, state.item.id);
+        }
+        return true;
+    }
+
+    private void discardDetailHistory() {
+        for (DetailNavigationState state : this.detailHistory.drain()) {
+            state.pager.cancelMotion();
+            state.pager.takeReturnView();
         }
     }
 
@@ -2790,6 +2871,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         saveCurrentDetailProgress();
         stopQrPolling();
         this.pageTransitions.cancelNow();
+        discardDetailHistory();
         if (this.feedPage != null) this.feedPage.close();
         if (this.detailPager != null) this.detailPager.cancelMotion();
         if (this.content instanceof BackSwipeFrameLayout) {

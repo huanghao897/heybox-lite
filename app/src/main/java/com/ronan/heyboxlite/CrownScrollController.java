@@ -1,7 +1,7 @@
 package com.ronan.heyboxlite;
 
 final class CrownScrollController {
-    static final int MIN_SPEED_PERCENT = 25;
+    static final int MIN_SPEED_PERCENT = 5;
     static final int MAX_SPEED_PERCENT = 200;
     static final int DEFAULT_SPEED_PERCENT = 80;
 
@@ -20,11 +20,17 @@ final class CrownScrollController {
         }
         lastDirection = direction;
 
-        float scaled = remainder - axis * baseStepPixels
-                * clampSpeed(speedPercent) / 100.0f;
+        float normalizedAxis = Math.max(-1.0f, Math.min(1.0f, axis));
+        float scaled = remainder - normalizedAxis * baseStepPixels
+                * responseFactor(speedPercent);
         int pixels = Math.round(scaled);
         remainder = scaled - pixels;
         return pixels;
+    }
+
+    int frameLimit(int baseStepPixels, int speedPercent) {
+        if (baseStepPixels <= 0) return 1;
+        return Math.max(1, Math.round(baseStepPixels * responseFactor(speedPercent)));
     }
 
     void reset() {
@@ -36,11 +42,10 @@ final class CrownScrollController {
         return Math.max(MIN_SPEED_PERCENT, Math.min(MAX_SPEED_PERCENT, value));
     }
 
-    static int coalesce(int current, int addition) {
+    static int coalesceBounded(int current, int addition, int limit) {
+        int bound = Math.max(1, limit);
         long result = (long) current + addition;
-        if (result > Integer.MAX_VALUE) return Integer.MAX_VALUE;
-        if (result < Integer.MIN_VALUE) return Integer.MIN_VALUE;
-        return (int) result;
+        return (int) Math.max(-bound, Math.min(bound, result));
     }
 
     static boolean isStableListWindow(int adapterCount, int listCount,
@@ -49,5 +54,10 @@ final class CrownScrollController {
                 && childCount > 0 && firstVisible >= 0
                 && firstVisible < adapterCount
                 && firstVisible + childCount <= adapterCount;
+    }
+
+    private static float responseFactor(int speedPercent) {
+        float ratio = clampSpeed(speedPercent) / 100.0f;
+        return ratio <= 1.0f ? ratio * ratio : ratio;
     }
 }

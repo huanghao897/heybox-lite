@@ -10,14 +10,14 @@ public class CrownScrollControllerTest {
     public void scalesDistanceWithConfiguredSpeed() {
         CrownScrollController controller = new CrownScrollController();
 
-        assertEquals(-22, controller.distance(1.0f, 44, 50));
+        assertEquals(-11, controller.distance(1.0f, 44, 50));
         assertEquals(-44, controller.distance(1.0f, 44, 100));
         assertEquals(-88, controller.distance(1.0f, 44, 200));
     }
 
     @Test
     public void clampsSpeedToSupportedRange() {
-        assertEquals(25, CrownScrollController.clampSpeed(1));
+        assertEquals(5, CrownScrollController.clampSpeed(1));
         assertEquals(125, CrownScrollController.clampSpeed(125));
         assertEquals(200, CrownScrollController.clampSpeed(500));
     }
@@ -44,12 +44,31 @@ public class CrownScrollControllerTest {
     }
 
     @Test
-    public void coalescesEventsWithoutIntegerOverflow() {
-        assertEquals(75, CrownScrollController.coalesce(40, 35));
-        assertEquals(Integer.MAX_VALUE,
-                CrownScrollController.coalesce(Integer.MAX_VALUE, 1));
-        assertEquals(Integer.MIN_VALUE,
-                CrownScrollController.coalesce(Integer.MIN_VALUE, -1));
+    public void boundsRepeatedEventsToOneFrameStep() {
+        assertEquals(40, CrownScrollController.coalesceBounded(30, 35, 40));
+        assertEquals(-40, CrownScrollController.coalesceBounded(-30, -35, 40));
+        assertEquals(5, CrownScrollController.coalesceBounded(30, -25, 40));
+    }
+
+    @Test
+    public void capsUnusuallyLargeHardwareAxisValues() {
+        CrownScrollController controller = new CrownScrollController();
+
+        assertEquals(-44, controller.distance(8.0f, 44, 100));
+        assertEquals(44, controller.frameLimit(44, 100));
+    }
+
+    @Test
+    public void lowestSpeedProducesFineMovement() {
+        CrownScrollController controller = new CrownScrollController();
+        int total = 0;
+
+        for (int i = 0; i < 20; i++) {
+            total += controller.distance(1.0f, 84, 5);
+        }
+
+        assertEquals(-4, total);
+        assertEquals(1, controller.frameLimit(84, 5));
     }
 
     @Test

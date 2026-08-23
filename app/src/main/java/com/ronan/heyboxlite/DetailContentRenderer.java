@@ -58,8 +58,8 @@ final class DetailContentRenderer {
             }
         }
         boolean article = link != null
-                && (link.optInt("use_concept_type", -1) == 0
-                || link.optBoolean("is_article", false));
+                && (Json.truthy(link, "use_concept_type")
+                || Json.truthy(link, "is_article"));
         addBlocks(parent, blocks, !article);
     }
 

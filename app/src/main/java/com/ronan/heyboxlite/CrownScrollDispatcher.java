@@ -16,6 +16,7 @@ final class CrownScrollDispatcher {
     private final Runnable applyPending = this::applyPending;
     private View pendingTarget;
     private int pendingDistance;
+    private int pendingLimit;
     private boolean posted;
 
     CrownScrollDispatcher(TargetProvider targetProvider, Runnable feedback) {
@@ -23,7 +24,7 @@ final class CrownScrollDispatcher {
         this.feedback = feedback;
     }
 
-    boolean enqueue(int distance) {
+    boolean enqueue(int distance, int frameLimit) {
         if (distance == 0) return false;
         int direction = distance > 0 ? 1 : -1;
         View target = this.targetProvider.resolve(direction);
@@ -31,8 +32,9 @@ final class CrownScrollDispatcher {
 
         if (this.pendingTarget != null && this.pendingTarget != target) cancel();
         this.pendingTarget = target;
-        this.pendingDistance = CrownScrollController.coalesce(
-                this.pendingDistance, distance);
+        this.pendingLimit = Math.max(1, frameLimit);
+        this.pendingDistance = CrownScrollController.coalesceBounded(
+                this.pendingDistance, distance, this.pendingLimit);
         if (!this.posted) {
             this.posted = true;
             postOnNextFrame(target, this.applyPending);
@@ -46,6 +48,7 @@ final class CrownScrollDispatcher {
         }
         this.pendingTarget = null;
         this.pendingDistance = 0;
+        this.pendingLimit = 0;
         this.posted = false;
     }
 
@@ -54,6 +57,7 @@ final class CrownScrollDispatcher {
         int distance = this.pendingDistance;
         this.pendingTarget = null;
         this.pendingDistance = 0;
+        this.pendingLimit = 0;
         this.posted = false;
         if (target == null || distance == 0 || target.getParent() == null
                 || target.getVisibility() != View.VISIBLE || target.isLayoutRequested()) {

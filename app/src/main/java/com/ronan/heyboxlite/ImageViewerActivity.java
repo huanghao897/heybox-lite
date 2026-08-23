@@ -210,7 +210,7 @@ public final class ImageViewerActivity extends Activity {
         setContentView(root);
         claimSourcePreview();
         if (roundDisplay) root.post(this::positionRoundChrome);
-        prepareEnterAnimation();
+        prepareEnterAnimation(hasPreparedPreview(current));
         bindPage(current, true);
         preloadNeighbors(current);
     }
@@ -222,7 +222,7 @@ public final class ImageViewerActivity extends Activity {
         return new String[]{single == null ? "" : single};
     }
 
-    private void prepareEnterAnimation() {
+    private void prepareEnterAnimation(boolean sharedPreviewReady) {
         backdrop.animate().cancel();
         pager.animate().cancel();
         pageTransitionStarted = false;
@@ -232,11 +232,13 @@ public final class ImageViewerActivity extends Activity {
             setChromeAlpha(1.0f);
             return;
         }
-        backdrop.setAlpha(0.0f);
+        backdrop.setAlpha(sharedPreviewReady ? 0.0f : 1.0f);
         root.post(() -> {
             if (destroyed || isFinishing()) return;
             long duration = Motions.full() ? 240L : 205L;
-            backdrop.animate().alpha(1.0f).setDuration(duration).start();
+            if (sharedPreviewReady) {
+                backdrop.animate().alpha(1.0f).setDuration(duration).start();
+            }
             root.postDelayed(() -> {
                 if (!destroyed && !isFinishing() && !pullingImage) setChromeAlpha(1.0f);
             }, Math.min(80L, duration / 3L));
@@ -251,20 +253,29 @@ public final class ImageViewerActivity extends Activity {
             images[index].post(() -> startPageEnter(index));
             return;
         }
-        pageTransitionStarted = true;
         ZoomImageView image = images[index];
         resetImageTransform(image);
         if (Motions.off()) {
+            pageTransitionStarted = true;
+            image.setVisibility(View.VISIBLE);
             backdrop.setAlpha(1.0f);
             setChromeAlpha(1.0f);
             return;
         }
         android.graphics.RectF target = imageRectInRoot(index);
         android.graphics.RectF origin = originRectInRoot();
-        if (!validRect(target) || !validRect(origin)) return;
+        if (!validRect(target) || !validRect(origin)) {
+            pageTransitionStarted = true;
+            image.setVisibility(View.VISIBLE);
+            backdrop.setAlpha(1.0f);
+            setChromeAlpha(1.0f);
+            return;
+        }
 
+        pageTransitionStarted = true;
         hideSourcePreview();
         applyImageTransform(image, imageTransform(image, target, origin));
+        image.setVisibility(View.VISIBLE);
         long duration = Motions.full() ? 240L : 205L;
         image.animate().scaleX(1.0f).scaleY(1.0f)
                 .translationX(0.0f).translationY(0.0f)
@@ -277,6 +288,15 @@ public final class ImageViewerActivity extends Activity {
     private void claimSourcePreview() {
         this.sourcePreview = pendingSourcePreview;
         pendingSourcePreview = null;
+    }
+
+    private boolean hasPreparedPreview(int index) {
+        if (index < 0 || index >= urls.length || urls[index] == null
+                || pendingPreviewBitmap == null || !urls[index].equals(pendingPreviewUrl)) {
+            return false;
+        }
+        Bitmap bitmap = pendingPreviewBitmap.get();
+        return bitmap != null && !bitmap.isRecycled();
     }
 
     private void hideSourcePreview() {
@@ -542,6 +562,9 @@ public final class ImageViewerActivity extends Activity {
                 }
                 return;
             }
+            if (index == current && !pageTransitionStarted) {
+                view.setVisibility(View.INVISIBLE);
+            }
             view.setImageBitmap(bitmap);
             view.post(() -> {
                 view.fitImage();
@@ -563,6 +586,7 @@ public final class ImageViewerActivity extends Activity {
         }
         loaded[index] = true;
         spinners[index].setVisibility(View.GONE);
+        images[index].setVisibility(View.INVISIBLE);
         images[index].setImageBitmap(bitmap);
         images[index].post(() -> {
             images[index].fitImage();
@@ -640,10 +664,6 @@ public final class ImageViewerActivity extends Activity {
                         ((LinearLayout) child).addView(tile,
                                 new LinearLayout.LayoutParams(
                                         ViewGroup.LayoutParams.MATCH_PARENT, height));
-                        if (tileIndex == 0) {
-                            images[index].setVisibility(View.INVISIBLE);
-                            scroll.setVisibility(View.VISIBLE);
-                        }
                     }
 
                     @Override
@@ -654,10 +674,33 @@ public final class ImageViewerActivity extends Activity {
                             releaseLongPage(index);
                             return;
                         }
+                        showLongPage(index, longViews[index]);
                         originalLoaded[index] = true;
                         if (index == current) refreshOriginalLabel();
                     }
                 });
+    }
+
+    private void showLongPage(int index, DismissibleImageScrollView scroll) {
+        if (destroyed || index != current || scroll == null) return;
+        ZoomImageView preview = images[index];
+        scroll.animate().cancel();
+        preview.animate().cancel();
+        if (Motions.off()) {
+            preview.setVisibility(View.INVISIBLE);
+            scroll.setAlpha(1.0f);
+            scroll.setVisibility(View.VISIBLE);
+            return;
+        }
+        scroll.setAlpha(0.0f);
+        scroll.setVisibility(View.VISIBLE);
+        scroll.animate().alpha(1.0f).setDuration(120L).start();
+        preview.animate().alpha(0.0f).setDuration(120L).start();
+        scroll.postDelayed(() -> {
+            if (destroyed || longViews[index] != scroll) return;
+            preview.setVisibility(View.INVISIBLE);
+            preview.setAlpha(1.0f);
+        }, 125L);
     }
 
     private void releaseLongPage(int index) {
@@ -753,10 +796,8 @@ public final class ImageViewerActivity extends Activity {
             }
             originalLoaded[index] = true;
             view.animate().cancel();
-            view.setAlpha(0.72f);
             view.setImageBitmap(bitmap);
             view.post(view::fitImage);
-            view.animate().alpha(1f).setDuration(130).start();
             updateLongCandidate(index, bitmap);
             if (index == current) refreshOriginalLabel();
         });

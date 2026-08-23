@@ -93,6 +93,30 @@ public class FeedItemTest {
         assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "post")
                 .put("content_type", 102)).article);
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "concept-article")
+                .put("use_concept_type", 1)).article);
+        assertFalse(FeedItem.from(new JSONObject()
+                .put("linkid", "concept-post")
+                .put("use_concept_type", 0)).article);
+    }
+
+    @Test
+    public void readsArticleMetadataFromCurrentNestedFeedShape() throws Exception {
+        FeedItem item = FeedItem.from(new JSONObject()
+                .put("linkid", "nested-article")
+                .put("link_info", new JSONObject().put("is_article", 1)));
+
+        assertTrue(item.article);
+    }
+
+    @Test
+    public void articleTypeSurvivesOfflineSerialization() throws Exception {
+        FeedItem article = FeedItem.from(new JSONObject()
+                .put("linkid", "article")
+                .put("use_concept_type", 1));
+
+        assertTrue(FeedItem.from(article.toJson()).article);
     }
 
     @Test

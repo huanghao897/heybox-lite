@@ -139,7 +139,7 @@ final class FeedItem {
             json.put("comment_num", comments);
             json.put("click", clicks);
             json.put("link_award_num", likes);
-            json.put("use_concept_type", article ? 0 : 1);
+            json.put("use_concept_type", article ? 1 : 0);
             json.put("is_top", pinned);
             json.put("is_liked", liked);
             JSONObject user = new JSONObject();
@@ -172,8 +172,19 @@ final class FeedItem {
                 || "文章".equals(type)) {
             return true;
         }
-        return json.has("use_concept_type")
-                && "0".equals(String.valueOf(json.opt("use_concept_type")));
+        if (json.has("use_concept_type")) {
+            return Json.truthy(json, "use_concept_type");
+        }
+        if (json.optJSONObject("news_content") != null
+                || json.optJSONObject("article_info") != null) {
+            return true;
+        }
+        String[] nestedKeys = {"link", "link_content", "link_info", "basic_info"};
+        for (String key : nestedKeys) {
+            JSONObject nested = json.optJSONObject(key);
+            if (nested != null && isArticle(nested)) return true;
+        }
+        return false;
     }
 
     private static String hsrc(JSONObject json) {
