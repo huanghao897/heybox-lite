@@ -6,8 +6,14 @@ import android.os.Handler;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 final class CacheMaintenance {
+    interface BytesCallback {
+        void onComplete(long bytes);
+    }
+
     private static final long OFFLINE_MAX_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
 
     private final Activity activity;
@@ -15,6 +21,7 @@ final class CacheMaintenance {
     private final Handler mainHandler;
     private final Object pruneLock = new Object();
     private final List<Runnable> pruneCallbacks = new ArrayList<>();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private boolean pruneRunning;
 
     CacheMaintenance(Activity activity, LocalCache localCache, Handler mainHandler) {
@@ -29,14 +36,14 @@ final class CacheMaintenance {
             if (this.pruneRunning) return;
             this.pruneRunning = true;
         }
-        new Thread(() -> {
+        this.executor.execute(() -> {
             try {
                 this.localCache.pruneExpired(OFFLINE_MAX_AGE_MS);
                 ImageLoader.pruneOffline(this.activity, OFFLINE_MAX_AGE_MS);
             } finally {
                 finishPrune();
             }
-        }, "heybox-offline-cleanup").start();
+        });
     }
 
     private void finishPrune() {
@@ -53,16 +60,30 @@ final class CacheMaintenance {
         });
     }
 
-    long cacheBytes() {
-        return temporaryBytes() + (long) ImageLoader.cacheSizeKb() * 1024L;
+    void cacheBytes(BytesCallback callback) {
+        this.executor.execute(() -> post(callback,
+                temporaryBytes() + (long) ImageLoader.cacheSizeKb() * 1024L));
     }
 
-    long clearTemporaryCache() {
-        long before = temporaryBytes() + (long) ImageLoader.cacheSizeKb() * 1024L;
-        deleteChildren(this.activity.getCacheDir());
-        EmojiRenderer.clear();
-        ImageLoader.clear();
-        return before;
+    void clearTemporaryCache(BytesCallback callback) {
+        this.executor.execute(() -> {
+            long before = temporaryBytes() + (long) ImageLoader.cacheSizeKb() * 1024L;
+            deleteChildren(this.activity.getCacheDir());
+            EmojiRenderer.clear();
+            ImageLoader.clear();
+            post(callback, before);
+        });
+    }
+
+    void close() {
+        this.executor.shutdownNow();
+    }
+
+    private void post(BytesCallback callback, long bytes) {
+        if (callback == null) return;
+        this.mainHandler.post(() -> {
+            if (!this.activity.isFinishing()) callback.onComplete(bytes);
+        });
     }
 
     private long temporaryBytes() {

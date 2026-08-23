@@ -22,6 +22,8 @@ android {
         versionName "2.12"
         buildConfigField "String", "RELEASE_CERT_SHA256",
                 "\"7b163883d570408505d820174fb9565471efde8d863508fd390e4f4eb1645eb8\""
+        buildConfigField "String", "UPDATE_CERT_SHA256",
+                "\"${previewReleaseCertSha256}\""
         buildConfigField "String", "UPDATE_API_URL",
                 "\"https://heyboxlite.xyz/api/heybox-lite/update\""
         buildConfigField "String", "UPDATE_FALLBACK_URL",
@@ -121,6 +123,39 @@ tasks.register("verifyTextEncoding") {
 
 tasks.withType(JavaCompile).configureEach {
     dependsOn("verifyTextEncoding")
+}
+
+tasks.register("verifyJavaClassSize") {
+    group = "verification"
+    description = "Prevent new god classes and stop legacy oversized classes from growing."
+
+    doLast {
+        Properties limits = new Properties()
+        File limitsFile = rootProject.file("config/java-size-limits.properties")
+        limitsFile.withInputStream { limits.load(it) }
+        int defaultLimit = Integer.parseInt(limits.getProperty("default", "500"))
+        File sourceRoot = file("src/main/java/com/ronan/heyboxlite")
+        def offenders = []
+        fileTree(sourceRoot).matching { include "**/*.java" }.files.each { source ->
+            String relativePath = file("src/main/java").toPath()
+                    .relativize(source.toPath()).toString().replace('\\', '/')
+            int lineCount = source.readLines("UTF-8").size()
+            int limit = Integer.parseInt(limits.getProperty(relativePath,
+                    String.valueOf(defaultLimit)))
+            if (lineCount > limit) {
+                offenders << "${relativePath}: ${lineCount} lines (limit ${limit})"
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException("Java class size limits exceeded:\n"
+                    + offenders.sort().join("\n")
+                    + "\nExtract a focused component instead of raising the limit.")
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    dependsOn("verifyJavaClassSize")
 }
 
 dependencies {

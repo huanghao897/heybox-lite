@@ -212,7 +212,8 @@ final class ApiClient {
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod(method);
             connection.setUseCaches(false);
-            connection.setInstanceFollowRedirects(true);
+            // Authentication headers must never be forwarded to a redirect target.
+            connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(7000);
             connection.setReadTimeout(12000);
             applyHeaders(connection, profile);

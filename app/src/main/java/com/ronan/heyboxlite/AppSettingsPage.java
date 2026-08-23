@@ -139,15 +139,20 @@ final class AppSettingsPage {
                 this.host::uploadDiagnostics);
         SettingsUi.Entry[] cacheEntry = new SettingsUi.Entry[1];
         cacheEntry[0] = this.settingsUi.addEntry(maintain, "清除缓存", null,
-                Format.cacheMb(this.cacheMaintenance.cacheBytes()),
+                "计算中",
                 R.drawable.il_cleanup, () -> {
-                    long cleared = this.cacheMaintenance.clearTemporaryCache();
-                    if (cacheEntry[0].value != null) {
-                        cacheEntry[0].value.setText(
-                                Format.cacheMb(this.cacheMaintenance.cacheBytes()));
-                    }
-                    this.host.showToast("已清除缓存 " + Format.cacheMb(cleared));
+                    this.cacheMaintenance.clearTemporaryCache(cleared -> {
+                        if (cacheEntry[0].value != null) {
+                            cacheEntry[0].value.setText(Format.cacheMb(0));
+                        }
+                        this.host.showToast("已清除缓存 " + Format.cacheMb(cleared));
+                    });
                 });
+        this.cacheMaintenance.cacheBytes(bytes -> {
+            if (cacheEntry[0].value != null) {
+                cacheEntry[0].value.setText(Format.cacheMb(bytes));
+            }
+        });
         addEntry(maintain, this.session.isLoggedIn() ? "退出登录" : "二维码登录",
                 this.session.isLoggedIn()
                         ? "当前账号 ID " + this.session.userId() : "扫码登录小黑盒账号",

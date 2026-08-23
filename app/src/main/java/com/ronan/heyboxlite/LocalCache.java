@@ -21,6 +21,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 final class LocalCache {
     private static final Charset UTF_8 = Charset.forName("UTF-8");
@@ -37,6 +41,18 @@ final class LocalCache {
     private static final int MAX_OFFLINE_COMMENTS = 10;
     private static final int MAX_LOG_BYTES = 96 * 1024;
     private static final Object SESSION_LOCK = new Object();
+    private static final ExecutorService LOG_EXECUTOR =
+            Executors.newSingleThreadExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "heybox-event-log");
+                thread.setDaemon(true);
+                return thread;
+            });
+    private static final ExecutorService CACHE_EXECUTOR =
+            Executors.newSingleThreadExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "heybox-local-cache");
+                thread.setDaemon(true);
+                return thread;
+            });
     private static String processSessionId;
     private static long processSessionStartedAt;
     private static boolean processSessionLogPrepared;
@@ -87,17 +103,20 @@ final class LocalCache {
             this.sessionId = processSessionId;
             this.sessionStartedAt = processSessionStartedAt;
             if (!processSessionLogPrepared) {
-                resetSessionLogLocked();
                 processSessionLogPrepared = true;
+                LOG_EXECUTOR.execute(this::resetSessionLogLocked);
             }
         }
     }
 
     void saveFeed(List<FeedItem> items) {
-        prefs.edit()
-                .putString(FEED_ITEMS, encodeItems(items))
-                .putLong(FEED_SAVED_AT, System.currentTimeMillis())
-                .apply();
+        List<FeedItem> snapshot = items == null
+                ? new ArrayList<>() : new ArrayList<>(items);
+        long savedAt = System.currentTimeMillis();
+        CACHE_EXECUTOR.execute(() -> prefs.edit()
+                .putString(FEED_ITEMS, encodeItems(snapshot))
+                .putLong(FEED_SAVED_AT, savedAt)
+                .apply());
     }
 
     List<FeedItem> feedItems() {
@@ -144,8 +163,11 @@ final class LocalCache {
         JSONObject cached = copyForOffline(body);
         if (cached == null) return;
         trimOfflineComments(cached);
-        write(file(detailDir, linkId + ".json"), cached.toString());
-        prune(detailDir, MAX_DETAIL_FILES);
+        String value = cached.toString();
+        CACHE_EXECUTOR.execute(() -> {
+            write(file(detailDir, linkId + ".json"), value);
+            prune(detailDir, MAX_DETAIL_FILES);
+        });
     }
 
     JSONObject detail(String linkId) {
@@ -362,18 +384,12 @@ final class LocalCache {
 
     void log(String message) {
         String line = timestamp() + "  " + (message == null ? "" : message) + "\n";
-        synchronized (SESSION_LOCK) {
-            File file = logFile();
-            String previous = read(file);
-            String next = previous + line;
-            if (next.length() > MAX_LOG_BYTES) {
-                next = next.substring(Math.max(0, next.length() - MAX_LOG_BYTES));
-            }
-            write(file, next);
-        }
+        File file = logFile();
+        LOG_EXECUTOR.execute(() -> appendEvent(file, line));
     }
 
     String recentLog() {
+        awaitEventWrites();
         synchronized (SESSION_LOCK) {
             return read(logFile());
         }
@@ -418,6 +434,36 @@ final class LocalCache {
                 next = next.substring(Math.max(0, next.length() - MAX_LOG_BYTES));
             }
             writeStatic(file, next);
+        }
+    }
+
+    private static void appendEvent(File file, String line) {
+        synchronized (SESSION_LOCK) {
+            File parent = file.getParentFile();
+            if (parent != null) parent.mkdirs();
+            try (FileOutputStream output = new FileOutputStream(file, true)) {
+                output.write(line.getBytes(UTF_8));
+            } catch (IOException ignored) {
+                return;
+            }
+            if (file.length() <= MAX_LOG_BYTES + 8 * 1024L) return;
+            String value = readStatic(file);
+            if (value.length() > MAX_LOG_BYTES) {
+                value = value.substring(value.length() - MAX_LOG_BYTES);
+                int firstLine = value.indexOf('\n');
+                if (firstLine >= 0 && firstLine + 1 < value.length()) {
+                    value = value.substring(firstLine + 1);
+                }
+            }
+            writeStatic(file, value);
+        }
+    }
+
+    private static void awaitEventWrites() {
+        try {
+            Future<?> barrier = LOG_EXECUTOR.submit(() -> { });
+            barrier.get(2, TimeUnit.SECONDS);
+        } catch (Exception ignored) {
         }
     }
 

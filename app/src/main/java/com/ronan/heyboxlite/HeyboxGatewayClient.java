@@ -71,7 +71,9 @@ final class HeyboxGatewayClient {
             payload.put("operation", operation);
             payload.put("params", new JSONObject(params == null
                     ? Collections.emptyMap() : params));
-            payload.put("cookie", session == null ? "" : session.getCookie());
+            // The gateway only receives the authentication keys required by official reads.
+            payload.put("cookie", session == null ? ""
+                    : session.officialMinimalCookie(true));
             payload.put("clientVersion", BuildConfig.VERSION_NAME);
             payload.put("clientVersionCode", BuildConfig.VERSION_CODE);
             byte[] bytes = payload.toString().getBytes(UTF_8);

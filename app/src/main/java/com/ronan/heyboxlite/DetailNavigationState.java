@@ -19,16 +19,14 @@ final class DetailNavigationState {
     final String authCode;
     final String diagnostics;
     final JSONObject body;
-    final JSONObject pendingBody;
-    final boolean rendered;
-    final long loadStartedAt;
+    final DetailLoadCoordinator.State loadState;
 
     DetailNavigationState(View root, DetailPager pager,
                           ScrollView articleScroll, ScrollView commentScroll,
                           FeedItem item, String returnScreen, View returnView,
                           String returnTitle, String linkId, String linkHsrc,
                           String authCode, String diagnostics, JSONObject body,
-                          JSONObject pendingBody, boolean rendered, long loadStartedAt) {
+                          DetailLoadCoordinator.State loadState) {
         this.root = root;
         this.pager = pager;
         this.articleScroll = articleScroll;
@@ -42,8 +40,6 @@ final class DetailNavigationState {
         this.authCode = authCode;
         this.diagnostics = diagnostics;
         this.body = body;
-        this.pendingBody = pendingBody;
-        this.rendered = rendered;
-        this.loadStartedAt = loadStartedAt;
+        this.loadState = loadState;
     }
 }

@@ -19,6 +19,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 final class RichContent {
+    private static final int MAX_JSON_DEPTH = 32;
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
     static final class Block {
         static final int TEXT = 0;
         static final int IMAGE = 1;
@@ -217,14 +219,18 @@ final class RichContent {
             String jsonText = decodeJsonTransport(raw).trim();
             if (jsonText.isEmpty()) return result;
             try {
-                addDetailArray(result, new JSONArray(jsonText), articleMode);
+                addDetailArray(result, new JSONArray(jsonText), articleMode, 0);
                 return result;
             } catch (JSONException ignored) {
+            } catch (StackOverflowError error) {
+                return result;
             }
             try {
-                addDetailObject(result, new JSONObject(jsonText), articleMode);
+                addDetailObject(result, new JSONObject(jsonText), articleMode, 0);
                 return result;
             } catch (JSONException ignored) {
+            } catch (StackOverflowError error) {
+                return result;
             }
             if (addStructured(result.blocks, result.imageUrls, jsonText)
                     && !result.blocks.isEmpty()) {
@@ -240,21 +246,22 @@ final class RichContent {
             return result;
         }
         if (value instanceof JSONArray) {
-            addDetailArray(result, (JSONArray) value, articleMode);
+            addDetailArray(result, (JSONArray) value, articleMode, 0);
         } else if (value instanceof JSONObject) {
-            addDetailObject(result, (JSONObject) value, articleMode);
+            addDetailObject(result, (JSONObject) value, articleMode, 0);
         }
         return result;
     }
 
     private static void addDetailArray(ParseResult result, JSONArray array,
-                                       boolean articleMode) {
+                                       boolean articleMode, int depth) {
+        if (depth > MAX_JSON_DEPTH) return;
         for (int i = 0; i < array.length(); i++) {
             Object raw = array.opt(i);
             if (raw instanceof JSONObject) {
-                addDetailObject(result, (JSONObject) raw, articleMode);
+                addDetailObject(result, (JSONObject) raw, articleMode, depth + 1);
             } else if (raw instanceof JSONArray) {
-                addDetailArray(result, (JSONArray) raw, articleMode);
+                addDetailArray(result, (JSONArray) raw, articleMode, depth + 1);
             } else if (raw instanceof String) {
                 addArticleHtml(result.blocks, result.imageUrls, (String) raw);
             }
@@ -262,7 +269,8 @@ final class RichContent {
     }
 
     private static void addDetailObject(ParseResult result, JSONObject item,
-                                        boolean articleMode) {
+                                        boolean articleMode, int depth) {
+        if (depth > MAX_JSON_DEPTH) return;
         String type = item.optString("type").toLowerCase(Locale.ROOT);
         if (isImageType(type) || type.contains("video")) {
             addImage(result.blocks, result.imageUrls, detailImage(item));
@@ -288,15 +296,15 @@ final class RichContent {
         }
         if (hasText && isSelfContainedTextType(type)) return;
         Object insert = item.opt("insert");
-        if (insert != null) addInsert(result.blocks, result.imageUrls, insert);
+        if (insert != null) addInsert(result.blocks, result.imageUrls, insert, depth + 1);
         for (String key : CHILD_KEYS) {
             if (hasText && isMetadataChildKey(key)) continue;
             if (item.opt(key) instanceof String) continue;
             Object child = item.opt(key);
             if (child instanceof JSONObject) {
-                addDetailObject(result, (JSONObject) child, articleMode);
+                addDetailObject(result, (JSONObject) child, articleMode, depth + 1);
             } else if (child instanceof JSONArray) {
-                addDetailArray(result, (JSONArray) child, articleMode);
+                addDetailArray(result, (JSONArray) child, articleMode, depth + 1);
             }
         }
     }
@@ -345,7 +353,9 @@ final class RichContent {
         if (blocks == null) return 0;
         int length = 0;
         for (Block block : blocks) {
-            if (!block.image) length += block.value.replaceAll("\\s+", "").length();
+            if (!block.image) {
+                length += WHITESPACE.matcher(block.value).replaceAll("").length();
+            }
         }
         return length;
     }
@@ -381,6 +391,12 @@ final class RichContent {
 
     private static boolean addStructured(List<Block> blocks, Set<String> imageUrls,
                                          String source) {
+        return addStructured(blocks, imageUrls, source, 0);
+    }
+
+    private static boolean addStructured(List<Block> blocks, Set<String> imageUrls,
+                                         String source, int depth) {
+        if (depth > MAX_JSON_DEPTH) return true;
         String value = source == null ? "" : source.trim();
         if (value.isEmpty()) return true;
         int arrayStart = value.indexOf('[');
@@ -391,21 +407,25 @@ final class RichContent {
             try {
                 JSONArray array = new JSONArray(value.substring(arrayStart, arrayEnd + 1));
                 addReadableFragment(blocks, imageUrls, prefix);
-                addArray(blocks, imageUrls, array);
+                addArray(blocks, imageUrls, array, depth + 1);
                 String suffix = value.substring(arrayEnd + 1).trim();
                 addReadableFragment(blocks, imageUrls, suffix);
                 return true;
             } catch (JSONException ignored) {
+            } catch (StackOverflowError error) {
+                return true;
             }
         }
         if (isLikelyJsonArray(value)) {
             try {
-                addArray(blocks, imageUrls, new JSONArray(value));
+                addArray(blocks, imageUrls, new JSONArray(value), depth + 1);
                 return true;
             } catch (JSONException ignored) {
+            } catch (StackOverflowError error) {
+                return true;
             }
         }
-        return addObjectStream(blocks, imageUrls, value);
+        return addObjectStream(blocks, imageUrls, value, depth + 1);
     }
 
     private static boolean isLikelyJsonArray(String value) {
@@ -423,15 +443,27 @@ final class RichContent {
     }
 
     private static void addArray(List<Block> blocks, Set<String> imageUrls, JSONArray content) {
+        addArray(blocks, imageUrls, content, 0);
+    }
+
+    private static void addArray(List<Block> blocks, Set<String> imageUrls, JSONArray content,
+                                 int depth) {
+        if (depth > MAX_JSON_DEPTH) return;
         for (int i = 0; i < content.length(); i++) {
-            addAny(blocks, imageUrls, content.opt(i));
+            addAny(blocks, imageUrls, content.opt(i), depth + 1);
         }
     }
 
     private static void addObject(List<Block> blocks, Set<String> imageUrls, JSONObject item) {
+        addObject(blocks, imageUrls, item, 0);
+    }
+
+    private static void addObject(List<Block> blocks, Set<String> imageUrls, JSONObject item,
+                                  int depth) {
+        if (depth > MAX_JSON_DEPTH) return;
         Object insert = item.opt("insert");
         if (insert != null) {
-            addInsert(blocks, imageUrls, insert);
+            addInsert(blocks, imageUrls, insert, depth + 1);
         }
 
         String type = item.optString("type").toLowerCase(Locale.ROOT);
@@ -464,7 +496,7 @@ final class RichContent {
         for (String key : CHILD_KEYS) {
             if (hasReadableContent(item) && isMetadataChildKey(key)) continue;
             if ("content".equals(key) && item.opt(key) instanceof String) continue;
-            addAny(blocks, imageUrls, item.opt(key));
+            addAny(blocks, imageUrls, item.opt(key), depth + 1);
         }
     }
 
@@ -485,21 +517,33 @@ final class RichContent {
     }
 
     private static void addAny(List<Block> blocks, Set<String> imageUrls, Object raw) {
+        addAny(blocks, imageUrls, raw, 0);
+    }
+
+    private static void addAny(List<Block> blocks, Set<String> imageUrls, Object raw,
+                               int depth) {
+        if (depth > MAX_JSON_DEPTH) return;
         if (raw == null || raw == JSONObject.NULL) return;
         if (raw instanceof JSONObject) {
-            addObject(blocks, imageUrls, (JSONObject) raw);
+            addObject(blocks, imageUrls, (JSONObject) raw, depth + 1);
         } else if (raw instanceof JSONArray) {
-            addArray(blocks, imageUrls, (JSONArray) raw);
+            addArray(blocks, imageUrls, (JSONArray) raw, depth + 1);
         } else if (raw instanceof String) {
             String value = decodeTransport((String) raw);
             value = normalizeInlineEmojis(value);
-            if (!addStructured(blocks, imageUrls, value)) {
+            if (!addStructured(blocks, imageUrls, value, depth + 1)) {
                 addHtml(blocks, imageUrls, value);
             }
         }
     }
 
     private static void addInsert(List<Block> blocks, Set<String> imageUrls, Object insert) {
+        addInsert(blocks, imageUrls, insert, 0);
+    }
+
+    private static void addInsert(List<Block> blocks, Set<String> imageUrls, Object insert,
+                                  int depth) {
+        if (depth > MAX_JSON_DEPTH) return;
         if (insert instanceof String) {
             addHtml(blocks, imageUrls, (String) insert);
         } else if (insert instanceof JSONObject) {
@@ -508,10 +552,10 @@ final class RichContent {
             if (!image.isEmpty()) {
                 addImage(blocks, imageUrls, image);
             } else {
-                addObject(blocks, imageUrls, object);
+                addObject(blocks, imageUrls, object, depth + 1);
             }
         } else if (insert instanceof JSONArray) {
-            addArray(blocks, imageUrls, (JSONArray) insert);
+            addArray(blocks, imageUrls, (JSONArray) insert, depth + 1);
         }
     }
 
@@ -556,9 +600,14 @@ final class RichContent {
     }
 
     private static String firstImage(JSONObject item) {
+        return firstImage(item, 0);
+    }
+
+    private static String firstImage(JSONObject item, int depth) {
+        if (item == null || depth > MAX_JSON_DEPTH) return "";
         for (String key : IMAGE_KEYS) {
             Object value = item.opt(key);
-            String found = imageValue(value);
+            String found = imageValue(value, depth + 1);
             if (!found.isEmpty()) return found;
         }
         return "";
@@ -572,12 +621,17 @@ final class RichContent {
     }
 
     private static String imageValue(Object value) {
+        return imageValue(value, 0);
+    }
+
+    private static String imageValue(Object value, int depth) {
+        if (depth > MAX_JSON_DEPTH) return "";
         if (value instanceof String) return (String) value;
-        if (value instanceof JSONObject) return firstImage((JSONObject) value);
+        if (value instanceof JSONObject) return firstImage((JSONObject) value, depth + 1);
         if (value instanceof JSONArray) {
             JSONArray array = (JSONArray) value;
             for (int i = 0; i < array.length(); i++) {
-                String found = imageValue(array.opt(i));
+                String found = imageValue(array.opt(i), depth + 1);
                 if (!found.isEmpty()) return found;
             }
         }
@@ -585,7 +639,8 @@ final class RichContent {
     }
 
     private static boolean addObjectStream(List<Block> blocks, Set<String> imageUrls,
-                                           String source) {
+                                           String source, int nestingDepth) {
+        if (nestingDepth > MAX_JSON_DEPTH) return true;
         boolean found = false;
         int imagesBefore = imageCount(blocks);
         int start = -1;
@@ -613,10 +668,12 @@ final class RichContent {
                         JSONObject object = new JSONObject(source.substring(start, i + 1));
                         String fragment = source.substring(lastEnd, start).trim();
                         addReadableFragment(blocks, imageUrls, fragment);
-                        addObject(blocks, imageUrls, object);
+                        addObject(blocks, imageUrls, object, nestingDepth + 1);
                         found = true;
                         lastEnd = i + 1;
                     } catch (JSONException ignored) {
+                    } catch (StackOverflowError error) {
+                        return true;
                     }
                     start = -1;
                 }

@@ -8,6 +8,8 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.TimeZone;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 final class DiagnosticsController {
     interface Host {
@@ -45,6 +47,7 @@ final class DiagnosticsController {
     private final LocalCache localCache;
     private final LiteDialogPresenter dialogs;
     private final Host host;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private boolean uploadInFlight;
 
     DiagnosticsController(Activity activity, SessionStore session,
@@ -64,40 +67,54 @@ final class DiagnosticsController {
         }
         this.uploadInFlight = true;
         this.host.showToast("正在上传日志");
-        DiagnosticsClient.upload(this.session, build(), (uploaded, message) -> {
-            this.uploadInFlight = false;
-            this.host.showToast(message);
-        });
+        RuntimeState state = this.host.runtimeState();
+        this.executor.execute(() -> DiagnosticsClient.upload(
+                this.session, build(state), (uploaded, message) -> {
+                    this.uploadInFlight = false;
+                    if (!this.activity.isFinishing()) this.host.showToast(message);
+                }));
     }
 
     void showPendingCrash() {
-        String crash = CrashReporter.pendingCrashReport(this.activity);
-        if (crash.isEmpty() || this.activity.isFinishing()) return;
-        String report = DiagnosticsClient.crashReport(this.activity, this.session, crash);
-        File file = this.localCache.writeDiagnostics(report);
-        String details = DiagnosticSanitizer.redact(crash);
-        if (details.length() > 1_400) details = details.substring(0, 1_400) + "\n...";
-        CrashReporter.markHandled(this.activity, crash);
-        this.dialogs.show("上次运行出现异常",
-                "应用已经保存故障信息。日志不会自动上传。\n\n" + details,
-                "上传日志", () -> DiagnosticsClient.upload(
-                        this.session, report,
-                        (uploaded, message) -> this.host.showToast(message)),
-                "知道了", null,
-                "保存日志", () -> save(file.getName(), report));
+        this.executor.execute(() -> {
+            String crash = CrashReporter.pendingCrashReport(this.activity);
+            if (crash.isEmpty()) return;
+            String report = DiagnosticsClient.crashReport(this.activity, this.session, crash);
+            File file = this.localCache.writeDiagnostics(report);
+            String redacted = DiagnosticSanitizer.redact(crash);
+            String details = redacted.length() > 1_400
+                    ? redacted.substring(0, 1_400) + "\n..." : redacted;
+            CrashReporter.markHandled(this.activity, crash);
+            this.activity.runOnUiThread(() -> {
+                if (this.activity.isFinishing()) return;
+                this.dialogs.show("上次运行出现异常",
+                        "应用已经保存故障信息。日志不会自动上传。\n\n" + details,
+                        "上传日志", () -> DiagnosticsClient.upload(
+                                this.session, report,
+                                (uploaded, message) -> this.host.showToast(message)),
+                        "知道了", null,
+                        "保存日志", () -> save(file.getName(), report));
+            });
+        });
     }
 
     void export() {
-        String diagnostics = build();
-        File file = this.localCache.writeDiagnostics(diagnostics);
-        this.dialogs.show("导出诊断日志",
-                "可以分享给其他应用，也可以保存到 Download/heyboxlite",
-                "本地", () -> save(file.getName(), diagnostics),
-                "取消", null, "分享", () -> share(file));
+        RuntimeState state = this.host.runtimeState();
+        this.host.showToast("正在生成日志");
+        this.executor.execute(() -> {
+            String diagnostics = build(state);
+            File file = this.localCache.writeDiagnostics(diagnostics);
+            this.activity.runOnUiThread(() -> {
+                if (this.activity.isFinishing()) return;
+                this.dialogs.show("导出诊断日志",
+                        "可以分享给其他应用，也可以保存到 Download/heyboxlite",
+                        "本地", () -> save(file.getName(), diagnostics),
+                        "取消", null, "分享", () -> share(file));
+            });
+        });
     }
 
-    String build() {
-        RuntimeState state = this.host.runtimeState();
+    private String build(RuntimeState state) {
         StringBuilder out = new StringBuilder();
         out.append("heybox Lite diagnostics\n");
         out.append("exportTimeLocal: ").append(time(System.currentTimeMillis())).append('\n');
@@ -157,8 +174,18 @@ final class DiagnosticsController {
     }
 
     private void save(String fileName, String diagnostics) {
-        String path = DiagnosticsExporter.save(this.activity, fileName, diagnostics);
-        this.host.showToast(path == null ? "保存失败" : "已保存到 " + path);
+        this.executor.execute(() -> {
+            String path = DiagnosticsExporter.save(this.activity, fileName, diagnostics);
+            this.activity.runOnUiThread(() -> {
+                if (!this.activity.isFinishing()) {
+                    this.host.showToast(path == null ? "保存失败" : "已保存到 " + path);
+                }
+            });
+        });
+    }
+
+    void close() {
+        this.executor.shutdownNow();
     }
 
     private String time(long millis) {

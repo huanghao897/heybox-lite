@@ -200,4 +200,18 @@ public class CommentDataTest {
         assertEquals("下次发红包给她对象发一份呗还能怎么办[cube_上学-乐]",
                 RichContent.commentText("下次发红包给她对象发一份呗还能怎么办[cube_上学-乐]"));
     }
+
+    @Test
+    public void richContentStopsAtExcessiveJsonDepth() throws Exception {
+        JSONObject root = new JSONObject();
+        JSONObject cursor = root;
+        for (int depth = 0; depth < 80; depth++) {
+            JSONObject child = new JSONObject();
+            cursor.put("children", child);
+            cursor = child;
+        }
+        cursor.put("text", "too deep");
+
+        assertTrue(RichContent.parse(root, null).isEmpty());
+    }
 }

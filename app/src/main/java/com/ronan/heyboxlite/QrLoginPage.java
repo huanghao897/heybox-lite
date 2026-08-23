@@ -6,6 +6,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -15,6 +16,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import org.json.JSONObject;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 final class QrLoginPage {
     interface Host {
@@ -37,6 +41,9 @@ final class QrLoginPage {
     private final ThemeTokens tokens;
     private final boolean roundLayout;
     private final Host host;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService qrExecutor = Executors.newSingleThreadExecutor();
+    private int qrGeneration;
 
     private ImageView qrImage;
     private TextView statusView;
@@ -103,6 +110,12 @@ final class QrLoginPage {
 
     void stop() {
         this.controller.stop();
+        this.qrGeneration++;
+    }
+
+    void close() {
+        stop();
+        this.qrExecutor.shutdownNow();
     }
 
     void pause() {
@@ -120,15 +133,10 @@ final class QrLoginPage {
         this.controller.start(new QrLoginController.Listener() {
             @Override
             public void onQrReady(String url) {
-                try {
-                    int size = Math.round(activity.getResources()
-                            .getDisplayMetrics().widthPixels * 0.5f);
-                    qrImage.setImageBitmap(QrCode.create(url, size));
-                    setStatus("等待扫码", tokens.accent);
-                } catch (com.google.zxing.WriterException | RuntimeException error) {
-                    setStatus("二维码生成失败", tokens.primary);
-                    controller.stop();
-                }
+                int generation = ++qrGeneration;
+                int size = Math.round(activity.getResources()
+                        .getDisplayMetrics().widthPixels * 0.5f);
+                qrExecutor.execute(() -> generateQr(url, size, generation));
             }
 
             @Override
@@ -149,6 +157,26 @@ final class QrLoginPage {
                 setStatus("获取失败：" + message, tokens.primary);
             }
         });
+    }
+
+    private void generateQr(String url, int size, int generation) {
+        try {
+            android.graphics.Bitmap bitmap = QrCode.create(url, size);
+            mainHandler.post(() -> {
+                if (generation != qrGeneration || activity.isFinishing()) {
+                    if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+                    return;
+                }
+                qrImage.setImageBitmap(bitmap);
+                setStatus("等待扫码", tokens.accent);
+            });
+        } catch (com.google.zxing.WriterException | RuntimeException error) {
+            mainHandler.post(() -> {
+                if (generation != qrGeneration || activity.isFinishing()) return;
+                setStatus("二维码生成失败", tokens.primary);
+                controller.stop();
+            });
+        }
     }
 
     private void setStatus(String value, int color) {

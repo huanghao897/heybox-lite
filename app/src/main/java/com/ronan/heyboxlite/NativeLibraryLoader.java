@@ -69,7 +69,10 @@ public final class NativeLibraryLoader {
             System.load(file.getAbsolutePath());
             LOADED.add(name);
             return true;
-        } catch (Throwable ignored) {
+        } catch (Throwable error) {
+            LocalCache.appendNativeSignLog(context.getApplicationContext(),
+                    "native loader installed-lib failed error="
+                            + error.getClass().getSimpleName());
             return false;
         }
     }
@@ -77,7 +80,10 @@ public final class NativeLibraryLoader {
     private static File nativeDir(Context app) {
         try {
             return app.getDir("native_signer", Context.MODE_PRIVATE);
-        } catch (Throwable ignored) {
+        } catch (Throwable error) {
+            LocalCache.appendNativeSignLog(app,
+                    "native loader private-dir failed error="
+                            + error.getClass().getSimpleName());
             File files = app.getFilesDir();
             return new File(files == null ? new File(".") : files, "native_signer");
         }

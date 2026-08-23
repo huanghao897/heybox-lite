@@ -42,17 +42,20 @@ final class NoticeCenter {
 
     private final Activity activity;
     private final SessionStore session;
+    private final LocalCache localCache;
     private final SettingsUi settingsUi;
     private final LiteDialogPresenter dialogs;
     private final ThemeTokens tokens;
     private final boolean roundLayout;
     private final Host host;
 
-    NoticeCenter(Activity activity, SessionStore session, SettingsUi settingsUi,
+    NoticeCenter(Activity activity, SessionStore session, LocalCache localCache,
+                 SettingsUi settingsUi,
                  LiteDialogPresenter dialogs, ThemeTokens tokens,
                  boolean roundLayout, Host host) {
         this.activity = activity;
         this.session = session;
+        this.localCache = localCache;
         this.settingsUi = settingsUi;
         this.dialogs = dialogs;
         this.tokens = tokens;
@@ -81,6 +84,7 @@ final class NoticeCenter {
 
                     @Override
                     public void onError(String message) {
+                        localCache.log("update check failed: " + safeError(message));
                     }
                 });
     }
@@ -101,8 +105,16 @@ final class NoticeCenter {
 
             @Override
             public void onError(String message) {
+                localCache.log("announcement check failed: " + safeError(message));
             }
         });
+    }
+
+    private static String safeError(String message) {
+        if (message == null || message.trim().isEmpty()) return "unknown";
+        String value = message.replaceAll("https?://[^\\s]+", "[url]")
+                .replaceAll("[\\r\\n]+", " ").trim();
+        return value.length() > 180 ? value.substring(0, 180) : value;
     }
 
     void showUpdate(UpdateChecker.Result result) {

@@ -10,7 +10,6 @@ import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
@@ -18,8 +17,6 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -31,12 +28,9 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
-import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.animation.DecelerateInterpolator;
-import android.widget.AbsListView;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -47,20 +41,14 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
-import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 @SuppressLint("WrongConstant")
 public final class MainActivity extends Activity implements BackSwipeFrameLayout.Host {
-    private static final int AXIS_ROTARY_SCROLL = 26;
     private static final int REQUEST_CHECKIN_CAPTCHA = 9134;
-    private static final String MSG_OFFLINE_CACHE = "已显示离线缓存";
     private int BG;
     private int PANEL;
     private int TEXT;
@@ -78,6 +66,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private DetailContentRenderer detailContentRenderer;
     private DetailHeaderRenderer detailHeaderRenderer;
     private DetailActionBar detailActionBar;
+    private DetailLoadCoordinator detailLoader;
+    private DetailPageAssembler detailPageAssembler;
     private DetailCommentsSection detailCommentsSection;
     private UserSpacePage userSpacePage;
     private SavedContentController savedContentController;
@@ -96,11 +86,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private LinearLayout shellRoot;
     private LinearLayout shellBar;
     private FrameLayout content;
-    private LinearLayout bottom;
-    private ResponsiveDock.Dimensions bottomDockDimensions;
-    private boolean bottomVisible;
-    private int bottomNavAnimSerial;
-    private boolean bottomNavShowPending;
+    private BottomNavigationController bottomNavigation;
     private TextView title;
     private TextView leading;
     private TextView action;
@@ -115,21 +101,17 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private String userSpaceReturnScreen = "feed";
     private final ContentNavigationHistory<DetailNavigationState> detailHistory =
             new ContentNavigationHistory<>();
-    private int detailRequestToken;
     private long lastExitBackAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final PageTransitionController pageTransitions = new PageTransitionController();
-    private final CrownScrollController crownScrollController = new CrownScrollController();
-    private final CrownScrollDispatcher crownScrollDispatcher =
-            new CrownScrollDispatcher(this::findCrownScrollTarget, this::performCrownFeedback);
-    private long lastCrownFeedbackAt;
+    private CrownInputHandler crownInput;
     private SearchBarController searchBars;
     private SearchPage searchPage;
     private boolean pendingBackTransition;
     private boolean pendingLateralPush;
     private boolean immediatePageReplacement;
-    private final Map<String, Bitmap> screenSnapshots = new HashMap<>();
-    private final Map<String, Bitmap> fullScreenSnapshots = new HashMap<>();
+    private final TransitionSnapshotStore screenSnapshots = new TransitionSnapshotStore();
+    private final TransitionSnapshotStore fullScreenSnapshots = new TransitionSnapshotStore();
     private final Map<String, View> retainedPages = new HashMap<>();
     private String screen = "feed";
     private String detailReturn = "feed";
@@ -140,9 +122,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private String currentAuthCode = "";
     private String lastDetailDiagnostics = "";
     private JSONObject currentDetailBody;
-    private boolean detailHasRendered;
-    private long detailLoadStartedAt;
-    private JSONObject pendingDetailBody;
     private boolean activityResumed;
     private boolean accountBlockedScreen;
     private TextView accountBlockedMessage;
@@ -163,6 +142,29 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             return;
         }
         this.session = new SessionStore(this);
+        this.crownInput = new CrownInputHandler(this, this.session,
+                new CrownInputHandler.Host() {
+                    @Override public String screen() {
+                        return MainActivity.this.screen;
+                    }
+                    @Override public View detailScrollTarget() {
+                        return MainActivity.this.detailPager != null
+                                && MainActivity.this.detailPager.showingComments()
+                                ? MainActivity.this.detailCommentScroll
+                                : MainActivity.this.detailScroll;
+                    }
+                    @Override public View feedScrollTarget() {
+                        return MainActivity.this.feedPage == null
+                                ? null : MainActivity.this.feedPage.listView();
+                    }
+                    @Override public View searchScrollTarget() {
+                        return MainActivity.this.searchPage == null
+                                ? null : MainActivity.this.searchPage.listView();
+                    }
+                    @Override public View contentRoot() {
+                        return MainActivity.this.content;
+                    }
+                });
         Motions.setLevel(this.session.motionLevel());
         this.pageTransitions.setCompactMotion(usesWatchLayout());
         this.localCache = new LocalCache(this);
@@ -290,75 +292,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
 
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent event) {
-        if (event != null && event.getActionMasked() == MotionEvent.ACTION_SCROLL) {
-            float axis = event.getAxisValue(AXIS_ROTARY_SCROLL);
-            if (axis == 0.0f) axis = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
-            if (axis == 0.0f) return super.dispatchGenericMotionEvent(event);
-            if (this.session == null || !this.session.crownScrollEnabled()) {
-                this.crownScrollController.reset();
-                this.crownScrollDispatcher.cancel();
-                return true;
-            }
-            int baseStep = dp(28);
-            int speed = this.session.crownScrollSpeed();
-            int distance = this.crownScrollController.distance(axis, baseStep, speed);
-            if (distance == 0) return true;
-            if (scrollWithCrown(distance,
-                    this.crownScrollController.frameLimit(baseStep, speed))) return true;
-        }
+        if (this.crownInput != null && this.crownInput.handle(event)) return true;
         return super.dispatchGenericMotionEvent(event);
-    }
-
-    private boolean scrollWithCrown(int distance, int frameLimit) {
-        return this.crownScrollDispatcher.enqueue(distance, frameLimit);
-    }
-
-    private View findCrownScrollTarget(int direction) {
-        View target;
-        if ("detail".equals(this.screen)) {
-            target = this.detailPager != null && this.detailPager.showingComments()
-                    ? this.detailCommentScroll : this.detailScroll;
-        } else if ("feed".equals(this.screen)) {
-            target = this.feedPage == null ? null : this.feedPage.listView();
-        } else if ("search".equals(this.screen)) {
-            target = this.searchPage == null ? null : this.searchPage.listView();
-        } else {
-            target = findScrollableView(this.content, direction);
-        }
-        if (target == null || !target.canScrollVertically(direction)) {
-            target = findScrollableView(this.content, direction);
-        }
-        return target;
-    }
-
-    private void performCrownFeedback() {
-        if (this.session == null || !this.session.crownHapticsEnabled()) return;
-        long now = SystemClock.uptimeMillis();
-        if (now - this.lastCrownFeedbackAt < 36L) return;
-        this.lastCrownFeedbackAt = now;
-        int effect;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            effect = HapticFeedbackConstants.CLOCK_TICK;
-        } else {
-            effect = HapticFeedbackConstants.KEYBOARD_TAP;
-        }
-        View target = this.content == null ? getWindow().getDecorView() : this.content;
-        target.performHapticFeedback(effect);
-    }
-
-    private View findScrollableView(View view, int direction) {
-        if (view == null || view.getVisibility() != View.VISIBLE) return null;
-        if ((view instanceof ScrollView || view instanceof AbsListView)
-                && view.canScrollVertically(direction)) {
-            return view;
-        }
-        if (!(view instanceof ViewGroup)) return null;
-        ViewGroup group = (ViewGroup) view;
-        for (int i = group.getChildCount() - 1; i >= 0; i--) {
-            View target = findScrollableView(group.getChildAt(i), direction);
-            if (target != null) return target;
-        }
-        return null;
     }
 
     private void checkUpdateOnLaunch() {
@@ -375,12 +310,22 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private void buildShell() {
-        if (this.qrLoginPage != null) this.qrLoginPage.stop();
+        if (this.qrLoginPage != null) {
+            this.qrLoginPage.close();
+            this.qrLoginPage = null;
+        }
         if (this.checkinCenterPage != null) {
             this.checkinCenterPage.close();
             this.checkinCenterPage = null;
         }
         discardRetainedLayoutViews();
+        initializeSettingsFeatures();
+        initializeContentFeatures();
+        initializeDetailFeatures();
+        buildShellView();
+    }
+
+    private void initializeSettingsFeatures() {
         this.settingsUi = new SettingsUi(this, this.session, this.themeTokens,
                 usesRoundLayout(), roundHeaderInnerInset(), this.handler,
                 this::onBackPressed);
@@ -456,7 +401,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                     }
                 });
         this.appSettingsPage = new AppSettingsPage(this, this.session, this.localCache,
-                this.settingsUi, this.themeTokens, this.crownScrollController,
+                this.settingsUi, this.themeTokens, this.crownInput.scrollController(),
                 this.cacheMaintenance, new AppSettingsPage.Host() {
                     @Override
                     public LinearLayout openPage(String key, String title) {
@@ -493,8 +438,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                         return MainActivity.this.content;
                     }
                 });
-        this.noticeCenter = new NoticeCenter(this, this.session, this.settingsUi,
-                this.liteDialogs, this.themeTokens, usesRoundLayout(),
+        this.noticeCenter = new NoticeCenter(this, this.session, this.localCache,
+                this.settingsUi, this.liteDialogs, this.themeTokens, usesRoundLayout(),
                 new NoticeCenter.Host() {
                     @Override
                     public LinearLayout openSettingsPage(String key, String title) {
@@ -543,481 +488,213 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                         return MainActivity.this.subpageTopPadding();
                     }
                 });
-        this.detailContentRenderer = new DetailContentRenderer(this, this.session,
-                this.themeTokens, usesRoundLayout(), this::openImage);
-        this.userSpacePage = new UserSpacePage(this, this.session, this.api,
-                this.localCache, this.themeTokens, new UserSpacePage.Host() {
-                    @Override
-                    public boolean isActive() {
-                        return "user_space".equals(MainActivity.this.screen);
-                    }
+    }
 
-                    @Override
-                    public void openPost(FeedItem item) {
-                        MainActivity.this.showDetail(item);
-                    }
-                });
-        this.savedContentController = new SavedContentController(this, this.session,
-                this.api, this.localCache, this.searchBars, this.settingsUi,
-                this.userSpacePage, this.themeTokens, usesRoundLayout(),
-                new SavedContentController.Host() {
-                    @Override
-                    public void prepareReadingCenter() {
-                        MainActivity.this.prepareReadingCenterChrome();
-                    }
+    private void initializeContentFeatures() {
+        MainContentFeatures features = new MainContentFeatures(this, this.session, this.api,
+                this.writeActions, this.localCache, this.themeTokens, this.searchBars,
+                this.settingsUi, this.checkinCenterCoordinator, this.handler,
+                contentFeatureHost());
+        this.detailContentRenderer = features.detailContentRenderer;
+        this.userSpacePage = features.userSpacePage;
+        this.savedContentController = features.savedContentController;
+        this.profilePage = features.profilePage;
+        this.qrLoginPage = features.qrLoginPage;
+        this.postActions = features.postActions;
+        this.feedPage = features.feedPage;
+    }
 
-                    @Override
-                    public void prepareSavedPage(String title) {
-                        MainActivity.this.prepareSavedPageChrome(title);
-                    }
+    private MainContentFeatures.Host contentFeatureHost() {
+        return new MainContentFeatures.Host() {
+            @Override public String screen() { return MainActivity.this.screen; }
+            @Override public String currentLinkId() { return MainActivity.this.currentLinkId; }
+            @Override public String currentLinkHsrc() { return currentLinkHsrc; }
+            @Override public FeedItem currentDetailItem() { return currentDetailItem; }
+            @Override public List<FeedItem> searchItems() { return searchPage.items(); }
+            @Override public void prepareReadingCenter() { prepareReadingCenterChrome(); }
+            @Override public void prepareSavedPage(String value) {
+                prepareSavedPageChrome(value);
+            }
+            @Override public void prepareProfile() {
+                activate("profile");
+                title.setText("我的");
+                action.setVisibility(View.INVISIBLE);
+            }
+            @Override public void prepareLogin() {
+                screen = "login";
+                shellBar.setVisibility(View.GONE);
+                setBottomNavVisible(false);
+                leading.setVisibility(View.INVISIBLE);
+                action.setVisibility(View.INVISIBLE);
+                title.setText("扫码登录");
+            }
+            @Override public void prepareFeed() {
+                activate("feed");
+                title.setText("社区");
+                action.setText("");
+                setIcon(action, R.drawable.ic_refresh, TEXT, 19);
+                action.setVisibility(View.INVISIBLE);
+                action.setOnClickListener(view -> feedPage.load(true));
+            }
+            @Override public void showContent(View view) {
+                content.removeAllViews();
+                content.addView(view, match());
+            }
+            @Override public void showPage(View view) { transitionTo(view); }
+            @Override public void retainPage(String key, View view) {
+                retainedPages.put(key, view);
+            }
+            @Override public void showLoading() { MainActivity.this.showLoading(); }
+            @Override public void showProfileLoading() {
+                transitionTo(detailLoadingPage());
+            }
+            @Override public void hideLoading() { MainActivity.this.hideLoading(); }
+            @Override public void showMessage(String message) {
+                MainActivity.this.showMessage(message);
+            }
+            @Override public void showToast(String message) { toast(message); }
+            @Override public void showProfile() { MainActivity.this.showProfile(); }
+            @Override public void showLogin() { MainActivity.this.showLogin(); }
+            @Override public void showFeed() { MainActivity.this.showFeed(); }
+            @Override public void showSearch() { MainActivity.this.showSearch(); }
+            @Override public void showReadingCenter() {
+                MainActivity.this.showReadingCenter();
+            }
+            @Override public void showReadingStats() {
+                MainActivity.this.showReadingStats();
+            }
+            @Override public void showFavorites() { MainActivity.this.showFavorites(); }
+            @Override public void showCheckinCenter() {
+                MainActivity.this.showCheckinCenter();
+            }
+            @Override public void showSettings() { showSettingsHome(); }
+            @Override public void showDetail(FeedItem item) {
+                MainActivity.this.showDetail(item);
+            }
+            @Override public void showUserSpace(String id, String name, String avatar) {
+                MainActivity.this.showUserSpace(id, name, avatar);
+            }
+            @Override public void openImage(ImageView source, String url) {
+                MainActivity.this.openImage(source, url);
+            }
+            @Override public void openImages(ImageView source, String[] urls, int index) {
+                MainActivity.this.openImage(source, urls, index);
+            }
+            @Override public void addBottomSpace(LinearLayout page) {
+                addBottomNavSafeSpace(page);
+            }
+            @Override public void loginCompleted() {
+                feedPage.clearItems();
+                profilePage.invalidate();
+                toast("登录成功");
+                EmojiStore.load(api, () -> { });
+                showFeed();
+                PresenceReporter.pingNow(session, readingTimeTracker,
+                        MainActivity.this::applyAccessStatus);
+                RemoteConfig.load(session.userId(), () ->
+                        applyAccessStatus(RemoteConfig.accessStatus()));
+            }
+            @Override public void feedChanged() { feedPage.notifyItemsChanged(); }
+            @Override public void setFeedRefreshBusy(boolean busy) {
+                action.setEnabled(!busy);
+                action.setAlpha(busy ? 0.45f : 1f);
+            }
+            @Override public void markFeedLateralTransition() {
+                if ("profile".equals(screen)) {
+                    pendingBackTransition = true;
+                    pendingLateralPush = true;
+                }
+            }
+            @Override public FeedAdapter createFeedAdapter(List<FeedItem> items) {
+                return MainActivity.this.createFeedAdapter(items);
+            }
+            @Override public String readingSummary() { return readingEntrySummary(); }
+            @Override public boolean savedScreenActive() {
+                return "saved".equals(screen);
+            }
+            @Override public int pageHorizontalPadding() {
+                return MainActivity.this.pageHorizontalPadding();
+            }
+            @Override public int pageTopPadding() {
+                return MainActivity.this.pageTopPadding();
+            }
+            @Override public int subpageTopPadding() {
+                return MainActivity.this.subpageTopPadding();
+            }
+            @Override public int roundHeaderInset() {
+                return roundHorizontalInset(RoundLayoutMetrics.HEADER_HORIZONTAL_RATIO, 10);
+            }
+            @Override public int roundHeaderTopPadding() {
+                return RoundLayoutMetrics.componentInset(screenMetrics().heightPixels,
+                        RoundLayoutMetrics.PAGE_TOP_RATIO, dp(9));
+            }
+            @Override public int roundSearchInset() {
+                return roundHorizontalInset(RoundLayoutMetrics.SEARCH_HORIZONTAL_RATIO, 6);
+            }
+        };
+    }
 
-                    @Override
-                    public void showContent(View view) {
-                        MainActivity.this.content.removeAllViews();
-                        MainActivity.this.content.addView(view, MainActivity.this.match());
+    private void initializeDetailFeatures() {
+        MainDetailFeatures detail = new MainDetailFeatures(this, this.session, this.api,
+                this.writeActions, this.localCache, this.themeTokens, this.postActions,
+                this.detailContentRenderer, this.readingTimeTracker, this.handler,
+                new MainDetailFeatures.Host() {
+                    @Override public FeedItem currentItem() { return currentDetailItem; }
+                    @Override public JSONObject currentBody() { return currentDetailBody; }
+                    @Override public String currentLinkId() { return currentLinkId; }
+                    @Override public String currentAuthCode() { return currentAuthCode; }
+                    @Override public DetailPager currentPager() { return detailPager; }
+                    @Override public boolean detailActive(FeedItem item) {
+                        return "detail".equals(screen) && item != null
+                                && item.id.equals(currentLinkId);
                     }
-
-                    @Override
-                    public void retainPage(String key, View view) {
-                        MainActivity.this.retainedPages.put(key, view);
-                    }
-
-                    @Override
-                    public void showLoading() {
-                        MainActivity.this.showLoading();
-                    }
-
-                    @Override
-                    public void hideLoading() {
-                        MainActivity.this.hideLoading();
-                    }
-
-                    @Override
-                    public void showMessage(String message) {
-                        MainActivity.this.showMessage(message);
-                    }
-
-                    @Override
-                    public void showToast(String message) {
-                        MainActivity.this.toast(message);
-                    }
-
-                    @Override
-                    public void showProfile() {
-                        MainActivity.this.showProfile();
-                    }
-
-                    @Override
-                    public void showLogin() {
-                        MainActivity.this.showLogin();
-                    }
-
-                    @Override
-                    public void showReadingStats() {
-                        MainActivity.this.showReadingStats();
-                    }
-
-                    @Override
-                    public void showDetail(FeedItem item) {
-                        MainActivity.this.showDetail(item);
-                    }
-
-                    @Override
-                    public FeedAdapter createFeedAdapter(List<FeedItem> items) {
-                        return MainActivity.this.createFeedAdapter(items);
-                    }
-
-                    @Override
-                    public void addBottomNavSafeSpace(LinearLayout page) {
-                        MainActivity.this.addBottomNavSafeSpace(page);
-                    }
-
-                    @Override
-                    public String readingSummary() {
-                        return MainActivity.this.readingEntrySummary();
-                    }
-
-                    @Override
-                    public boolean isSavedScreen() {
-                        return "saved".equals(MainActivity.this.screen);
-                    }
-
-                    @Override
-                    public int pageHorizontalPadding() {
+                    @Override public int dp(int value) { return MainActivity.this.dp(value); }
+                    @Override public int pageHorizontalPadding() {
                         return MainActivity.this.pageHorizontalPadding();
                     }
-
-                    @Override
-                    public int subpageTopPadding() {
+                    @Override public int subpageTopPadding() {
                         return MainActivity.this.subpageTopPadding();
                     }
-
-                    @Override
-                    public int roundSearchInset() {
-                        return MainActivity.this.roundHorizontalInset(
-                                RoundLayoutMetrics.SEARCH_HORIZONTAL_RATIO, 6);
-                    }
-                });
-        this.profilePage = new ProfilePage(this, this.session, this.api,
-                this.localCache, this.settingsUi, this.themeTokens,
-                this.checkinCenterCoordinator, usesRoundLayout(),
-                new ProfilePage.Host() {
-                    @Override
-                    public void prepareProfileChrome() {
-                        MainActivity.this.activate("profile");
-                        MainActivity.this.title.setText("我的");
-                        MainActivity.this.action.setVisibility(View.INVISIBLE);
-                    }
-
-                    @Override
-                    public boolean isProfileActive() {
-                        return "profile".equals(MainActivity.this.screen);
-                    }
-
-                    @Override
-                    public void showPage(View page) {
-                        MainActivity.this.transitionTo(page);
-                    }
-
-                    @Override
-                    public void showLoading() {
-                        MainActivity.this.transitionTo(MainActivity.this.detailLoadingPage());
-                    }
-
-                    @Override
-                    public void hideLoading() {
-                        MainActivity.this.hideLoading();
-                    }
-
-                    @Override
-                    public void showLogin() {
-                        MainActivity.this.showLogin();
-                    }
-
-                    @Override
-                    public void showReadingCenter() {
-                        MainActivity.this.showReadingCenter();
-                    }
-
-                    @Override
-                    public void showFavorites() {
-                        MainActivity.this.showFavorites();
-                    }
-
-                    @Override
-                    public void showCheckinCenter() {
-                        MainActivity.this.showCheckinCenter();
-                    }
-
-                    @Override
-                    public void showSettings() {
-                        MainActivity.this.showSettingsHome();
-                    }
-
-                    @Override
-                    public void showUserSpace(String userId, String name, String avatar) {
-                        MainActivity.this.showUserSpace(userId, name, avatar);
-                    }
-
-                    @Override
-                    public void showToast(String message) {
-                        MainActivity.this.toast(message);
-                    }
-
-                    @Override
-                    public void addBottomSafeSpace(LinearLayout page) {
-                        MainActivity.this.addBottomNavSafeSpace(page);
-                    }
-
-                    @Override
-                    public String readingSummary() {
-                        return MainActivity.this.readingEntrySummary();
-                    }
-
-                    @Override
-                    public int pageHorizontalPadding() {
-                        return MainActivity.this.pageHorizontalPadding();
-                    }
-
-                    @Override
-                    public int pageTopPadding() {
-                        return MainActivity.this.pageTopPadding();
-                    }
-
-                    @Override
-                    public int roundHeaderInset() {
+                    @Override public int roundHeaderInnerInset() {
                         return MainActivity.this.roundHeaderInnerInset();
                     }
-                });
-        this.qrLoginPage = new QrLoginPage(this, this.session, this.api,
-                this.handler, this.themeTokens, usesRoundLayout(),
-                new QrLoginPage.Host() {
-                    @Override
-                    public void prepareLoginChrome() {
-                        MainActivity.this.screen = "login";
-                        MainActivity.this.shellBar.setVisibility(View.GONE);
-                        MainActivity.this.setBottomNavVisible(false);
-                        MainActivity.this.leading.setVisibility(View.INVISIBLE);
-                        MainActivity.this.action.setVisibility(View.INVISIBLE);
-                        MainActivity.this.title.setText("扫码登录");
+                    @Override public boolean watchLayout() { return usesWatchLayout(); }
+                    @Override public boolean roundLayout() { return usesRoundLayout(); }
+                    @Override public void reloadDetail() {
+                        if (currentDetailItem != null) showDetail(currentDetailItem);
                     }
-
-                    @Override
-                    public void showPage(View page) {
-                        MainActivity.this.content.removeAllViews();
-                        MainActivity.this.content.addView(page, MainActivity.this.match());
+                    @Override public void showUserSpace(String id, String name, String avatar) {
+                        MainActivity.this.showUserSpace(id, name, avatar);
                     }
-
-                    @Override
-                    public void onLoginComplete() {
-                        MainActivity.this.feedPage.clearItems();
-                        MainActivity.this.profilePage.invalidate();
-                        MainActivity.this.toast("登录成功");
-                        EmojiStore.load(MainActivity.this.api, () -> {
-                        });
-                        MainActivity.this.showFeed();
-                        PresenceReporter.pingNow(MainActivity.this.session,
-                                MainActivity.this.readingTimeTracker,
-                                MainActivity.this::applyAccessStatus);
-                        RemoteConfig.load(MainActivity.this.session.userId(), () ->
-                                MainActivity.this.applyAccessStatus(
-                                        RemoteConfig.accessStatus()));
-                    }
-
-                    @Override
-                    public void showFeed() {
-                        MainActivity.this.showFeed();
-                    }
-
-                    @Override
-                    public int pageHorizontalPadding() {
-                        return MainActivity.this.pageHorizontalPadding();
-                    }
-
-                    @Override
-                    public int pageTopPadding() {
-                        return MainActivity.this.pageTopPadding();
-                    }
-                });
-        this.postActions = new PostActionController(this, this.session,
-                this.writeActions, this.localCache, this.themeTokens,
-                usesRoundLayout(), new PostActionController.Host() {
-                    @Override
-                    public String currentLinkId() {
-                        return MainActivity.this.currentLinkId;
-                    }
-
-                    @Override
-                    public String currentLinkHsrc() {
-                        return MainActivity.this.currentLinkHsrc;
-                    }
-
-                    @Override
-                    public FeedItem currentDetailItem() {
-                        return MainActivity.this.currentDetailItem;
-                    }
-
-                    @Override
-                    public List<FeedItem> feedItems() {
-                        return MainActivity.this.feedPage.items();
-                    }
-
-                    @Override
-                    public List<FeedItem> searchItems() {
-                        return MainActivity.this.searchPage.items();
-                    }
-
-                    @Override
-                    public void feedChanged() {
-                        MainActivity.this.feedPage.notifyItemsChanged();
-                    }
-
-                    @Override
-                    public void showToast(String message) {
-                        MainActivity.this.toast(message);
-                    }
-                });
-        this.feedPage = new FeedPage(this, this.session, this.api,
-                this.localCache, this.themeTokens, this.postActions,
-                usesRoundLayout(), new FeedPage.Host() {
-                    @Override
-                    public void prepareFeedChrome() {
-                        if ("profile".equals(MainActivity.this.screen)) {
-                            MainActivity.this.pendingBackTransition = true;
-                            MainActivity.this.pendingLateralPush = true;
-                        }
-                        MainActivity.this.activate("feed");
-                        MainActivity.this.title.setText("社区");
-                        MainActivity.this.action.setText("");
-                        MainActivity.this.setIcon(MainActivity.this.action,
-                                R.drawable.ic_refresh, MainActivity.this.TEXT, 19);
-                        MainActivity.this.action.setVisibility(View.INVISIBLE);
-                        MainActivity.this.action.setOnClickListener(
-                                view -> MainActivity.this.feedPage.load(true));
-                    }
-
-                    @Override
-                    public boolean isFeedActive() {
-                        return "feed".equals(MainActivity.this.screen);
-                    }
-
-                    @Override
-                    public void showPage(View page) {
-                        MainActivity.this.transitionTo(page);
-                    }
-
-                    @Override
-                    public void showSearch() {
-                        MainActivity.this.showSearch();
-                    }
-
-                    @Override
-                    public void openDetail(FeedItem item) {
-                        MainActivity.this.showDetail(item);
-                    }
-
-                    @Override
-                    public void showLoading() {
-                        MainActivity.this.showLoading();
-                    }
-
-                    @Override
-                    public void hideLoading() {
-                        MainActivity.this.hideLoading();
-                    }
-
-                    @Override
-                    public void showMessage(String message) {
-                        MainActivity.this.showMessage(message);
-                    }
-
-                    @Override
-                    public void showToast(String message) {
-                        MainActivity.this.toast(message);
-                    }
-
-                    @Override
-                    public void setRefreshBusy(boolean busy) {
-                        MainActivity.this.action.setEnabled(!busy);
-                        MainActivity.this.action.setAlpha(busy ? 0.45f : 1.0f);
-                    }
-
-                    @Override
-                    public int pageTopPadding() {
-                        return MainActivity.this.pageTopPadding();
-                    }
-
-                    @Override
-                    public int roundHeaderTopPadding() {
-                        return RoundLayoutMetrics.componentInset(
-                                MainActivity.this.screenMetrics().heightPixels,
-                                RoundLayoutMetrics.PAGE_TOP_RATIO,
-                                MainActivity.this.dp(9));
-                    }
-
-                    @Override
-                    public int roundHeaderInset() {
-                        return MainActivity.this.roundHorizontalInset(
-                                RoundLayoutMetrics.HEADER_HORIZONTAL_RATIO, 10);
-                    }
-
-                    @Override
-                    public int roundCardInset() {
-                        return MainActivity.this.pageHorizontalPadding();
-                    }
-
-                    @Override
-                    public int roundSearchInset() {
-                        return MainActivity.this.roundHorizontalInset(
-                                RoundLayoutMetrics.SEARCH_HORIZONTAL_RATIO, 6);
-                    }
-                });
-        this.detailHeaderRenderer = new DetailHeaderRenderer(this, this.session,
-                this.themeTokens, this.postActions, usesRoundLayout(),
-                this::showUserSpace);
-        this.commentController = new CommentController(this, this.session,
-                this.api, this.writeActions, this.localCache, this.themeTokens,
-                usesRoundLayout(), new CommentController.PageHost() {
-                    @Override
-                    public FeedItem currentItem() {
-                        return MainActivity.this.currentDetailItem;
-                    }
-
-                    @Override
-                    public JSONObject currentBody() {
-                        return MainActivity.this.currentDetailBody;
-                    }
-
-                    @Override
-                    public String currentLinkId() {
-                        return MainActivity.this.currentLinkId;
-                    }
-
-                    @Override
-                    public String currentHsrc() {
-                        return MainActivity.this.postActions.hsrcFor(
-                                MainActivity.this.currentDetailItem);
-                    }
-
-                    @Override
-                    public String currentAuthCode() {
-                        return MainActivity.this.currentAuthCode;
-                    }
-
-                    @Override
-                    public boolean requireLogin(String actionName) {
-                        return MainActivity.this.postActions.requireLogin(actionName);
-                    }
-
-                    @Override
-                    public boolean allowWriteAction(String actionName) {
-                        return MainActivity.this.postActions.allowWriteAction(actionName);
-                    }
-
-                    @Override
-                    public String writeErrorMessage(String actionName,
-                                                    String message) {
-                        return MainActivity.this.postActions.writeErrorMessage(
-                                actionName, message);
-                    }
-
-                    @Override
-                    public void reloadDetail() {
-                        if (MainActivity.this.currentDetailItem != null) {
-                            MainActivity.this.showDetail(
-                                    MainActivity.this.currentDetailItem);
-                        }
-                    }
-
-                    @Override
-                    public void showToast(String message) {
-                        MainActivity.this.toast(message);
-                    }
-
-                    @Override
-                    public void openImage(ImageView source, String url) {
+                    @Override public void openImage(ImageView source, String url) {
                         MainActivity.this.openImage(source, url);
                     }
-                });
-        this.commentRenderer = this.commentController.renderer();
-        this.detailCommentsSection = new DetailCommentsSection(this, this.session,
-                this.themeTokens, this.commentRenderer, this.handler,
-                pager -> MainActivity.this.detailPager == pager);
-        this.detailActionBar = new DetailActionBar(this, this.session,
-                this.localCache, this.themeTokens, this.postActions,
-                this.commentController, this.commentRenderer,
-                this.detailContentRenderer, usesRoundLayout(),
-                new DetailActionBar.Host() {
-                    @Override
-                    public JSONObject currentDetailBody() {
-                        return MainActivity.this.currentDetailBody;
+                    @Override public void hideLoading() { MainActivity.this.hideLoading(); }
+                    @Override public void renderDetail(JSONObject body, FeedItem fallback) {
+                        MainActivity.this.renderDetail(body, fallback);
                     }
+                    @Override public void showMessage(String message) {
+                        MainActivity.this.showMessage(message);
+                    }
+                    @Override public void showToast(String message) { toast(message); }
+                    @Override public LinearLayout articleSurface() {
+                        return detailArticleSurface();
+                    }
+                    @Override public View detailReturnPreview() {
+                        return MainActivity.this.detailReturnPreview();
+                    }
+                    @Override public View detailBackButton() { return detailBackButton(); }
+                });
+        this.detailHeaderRenderer = detail.headerRenderer;
+        this.commentController = detail.commentController;
+        this.commentRenderer = detail.commentRenderer;
+        this.detailCommentsSection = detail.commentsSection;
+        this.detailActionBar = detail.actionBar;
+        this.detailLoader = detail.loader;
+        this.detailPageAssembler = detail.pageAssembler;
+    }
 
-                    @Override
-                    public void showToast(String message) {
-                        MainActivity.this.toast(message);
-                    }
-                });
+    private void buildShellView() {
         LinearLayout linearLayoutVertical = vertical(this.BG);
         this.shellRoot = linearLayoutVertical;
         LinearLayout bar = new LinearLayout(this);
@@ -1048,27 +725,11 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         linearLayoutVertical.addView(body, new LinearLayout.LayoutParams(-1, 0, 1.0f));
         this.content = new BackSwipeFrameLayout(this, this);
         body.addView(this.content, match());
-        DisplayMetrics displayMetrics = screenMetrics();
-        this.bottomDockDimensions = ResponsiveDock.fromScreen(
-                displayMetrics.widthPixels, displayMetrics.heightPixels,
-                usesRoundLayout());
-        this.bottom = new LinearLayout(this);
-        this.bottom.setGravity(17);
-        this.bottom.setPadding(this.bottomDockDimensions.paddingHorizontal,
-                this.bottomDockDimensions.paddingVertical,
-                this.bottomDockDimensions.paddingHorizontal,
-                this.bottomDockDimensions.paddingVertical);
-        if (Build.VERSION.SDK_INT >= 21) this.bottom.setElevation(dp(10));
-        Compat.setBackground(this.bottom, UiComponents.dock(this, this.themeTokens,
-                this.session.uiScale() / 100.0f));
-        this.bottom.setVisibility(8);
-        this.bottom.setAlpha(0.0f);
-        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
-                this.bottomDockDimensions.width, this.bottomDockDimensions.height, 81);
-        bottomParams.setMargins(0, 0, 0, this.bottomDockDimensions.marginBottom);
-        body.addView(this.bottom, bottomParams);
-        addNav("社区", "feed", R.drawable.ic_nav_home, this::onFeedNavClick);
-        addNav("我的", "profile", R.drawable.ic_nav_profile, () -> {
+        this.bottomNavigation = new BottomNavigationController(this, this.session,
+                this.themeTokens, usesRoundLayout(), body, this::runWithPressFeedback);
+        this.bottomNavigation.addItem("社区", "feed", R.drawable.ic_nav_home,
+                this::onFeedNavClick);
+        this.bottomNavigation.addItem("我的", "profile", R.drawable.ic_nav_profile, () -> {
             showTopLevel(1);
         });
         setContentView(linearLayoutVertical);
@@ -1157,107 +818,13 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         }
     }
 
-    private void addNav(String label, String key, int drawable, Runnable click) {
-        ImageView item = new ImageView(this);
-        item.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        int itemWidth = Math.max(this.bottomDockDimensions.iconSize,
-                (this.bottomDockDimensions.width
-                        - (this.bottomDockDimensions.paddingHorizontal * 2)
-                        - (this.bottomDockDimensions.itemMargin * 4)) / 2);
-        int itemHeight = Math.max(this.bottomDockDimensions.iconSize,
-                this.bottomDockDimensions.height
-                        - (this.bottomDockDimensions.paddingVertical * 2));
-        int horizontalInset = Math.max(0,
-                (itemWidth - this.bottomDockDimensions.iconSize) / 2);
-        int verticalInset = Math.max(0,
-                (itemHeight - this.bottomDockDimensions.iconSize) / 2);
-        item.setPadding(horizontalInset, verticalInset, horizontalInset, verticalInset);
-        item.setAdjustViewBounds(false);
-        item.setImageDrawable(navIcon(drawable, this.MUTED));
-        item.setColorFilter(this.MUTED);
-        item.setContentDescription(label);
-        item.setTag(key);
-        item.setOnClickListener(view -> {
-            runWithPressFeedback(item, click);
-        });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -1, 1.0f);
-        params.setMargins(this.bottomDockDimensions.itemMargin, 0,
-                this.bottomDockDimensions.itemMargin, 0);
-        this.bottom.addView(item, params);
-    }
-
     private void setBottomNavVisible(boolean visible) {
         setBottomNavVisible(visible, true);
     }
 
     private void setBottomNavVisible(boolean visible, boolean animate) {
-        if (this.bottom == null) {
-            return;
-        }
-        animate = animate && !Motions.off();
-        if (visible) {
-            if (this.bottomNavShowPending) {
-                return;
-            }
-            if (this.bottomVisible && this.bottom.getVisibility() == 0
-                    && this.bottom.getAlpha() > 0.98f
-                    && Math.abs(this.bottom.getTranslationY()) < 1.0f) {
-                return;
-            }
-        }
-        int serial = ++this.bottomNavAnimSerial;
-        boolean wasHidden = this.bottom.getVisibility() != 0;
-        this.bottom.animate().cancel();
-        if (visible) {
-            this.bottomVisible = true;
-            if (this.shellAnimating && animate) {
-                this.bottomNavShowPending = false;
-                this.bottom.setVisibility(0);
-                this.bottom.setAlpha(1.0f);
-                this.bottom.setTranslationY(0.0f);
-                return;
-            }
-            this.bottomNavShowPending = false;
-            this.bottom.setVisibility(0);
-            if (animate) {
-                if (wasHidden || this.bottom.getAlpha() <= 0.0f) {
-                    this.bottom.setAlpha(0.0f);
-                    this.bottom.setTranslationY(dp(22));
-                }
-                this.bottom.animate()
-                        .alpha(1.0f)
-                        .translationY(0.0f)
-                        .setDuration(170L)
-                        .setInterpolator(MotionSpec.EASE_OUT)
-                        .start();
-            } else {
-                this.bottom.setAlpha(1.0f);
-                this.bottom.setTranslationY(0.0f);
-            }
-            return;
-        }
-        this.bottomNavShowPending = false;
-        if (!this.bottomVisible && this.bottom.getVisibility() != 0) {
-            return;
-        }
-        this.bottomVisible = false;
-        if (animate) {
-            this.bottom.animate()
-                    .alpha(0.0f)
-                    .translationY(dp(22))
-                    .setDuration(120L)
-                    .setInterpolator(new DecelerateInterpolator())
-                    .start();
-            this.bottom.postDelayed(() -> {
-                if (serial == MainActivity.this.bottomNavAnimSerial && !MainActivity.this.bottomVisible && MainActivity.this.bottom != null) {
-                    MainActivity.this.bottom.setVisibility(8);
-                    MainActivity.this.bottom.setTranslationY(0.0f);
-                }
-            }, 140L);
-        } else {
-            this.bottom.setAlpha(0.0f);
-            this.bottom.setTranslationY(0.0f);
-            this.bottom.setVisibility(8);
+        if (this.bottomNavigation != null) {
+            this.bottomNavigation.setVisible(visible, animate, this.shellAnimating);
         }
     }
 
@@ -1266,16 +833,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             return;
         }
         View spacer = new View(this);
-        page.addView(spacer, new LinearLayout.LayoutParams(-1, dp(76)));
-    }
-
-    private Drawable navIcon(int drawable, int color) {
-        Drawable icon = Compat.tintedDrawable(this, drawable, color);
-        if (icon != null) {
-            icon.setBounds(0, 0, this.bottomDockDimensions.iconSize,
-                    this.bottomDockDimensions.iconSize);
-        }
-        return icon;
+        int height = this.bottomNavigation == null
+                ? dp(76) : this.bottomNavigation.bottomSafeSpace();
+        page.addView(spacer, new LinearLayout.LayoutParams(-1, height));
     }
 
     private boolean canHeaderBack() {
@@ -1332,35 +892,11 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private void captureShellSnapshot(String key, View view) {
-        captureSnapshot(this.screenSnapshots, 8, key, view);
+        this.screenSnapshots.capture(key, 8, view, this.BG, this.localCache);
     }
 
     private void captureFullScreenSnapshot(String key) {
-        captureSnapshot(this.fullScreenSnapshots, 4, key, this.shellRoot);
-    }
-
-    private void captureSnapshot(Map<String, Bitmap> target, int maxCount, String key, View view) {
-        if (key == null || key.isEmpty() || view == null) {
-            return;
-        }
-        int width = view.getWidth();
-        int height = view.getHeight();
-        if (width <= 1 || height <= 1) {
-            return;
-        }
-        try {
-            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565);
-            Canvas canvas = new Canvas(bitmap);
-            canvas.drawColor(this.BG);
-            view.draw(canvas);
-            target.put(key, bitmap);
-            trimSnapshots(target, maxCount);
-        } catch (RuntimeException | OutOfMemoryError error) {
-            if (this.localCache != null) {
-                this.localCache.log("transition snapshot skipped error="
-                        + error.getClass().getSimpleName());
-            }
-        }
+        this.fullScreenSnapshots.capture(key, 4, this.shellRoot, this.BG, this.localCache);
     }
 
     private Bitmap screenSnapshot(String key) {
@@ -1375,21 +911,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             return null;
         }
         return this.fullScreenSnapshots.get(key);
-    }
-
-    private void trimSnapshots(Map<String, Bitmap> target, int maxCount) {
-        if (target.size() <= maxCount) {
-            return;
-        }
-        Iterator<String> iterator = target.keySet().iterator();
-        if (iterator.hasNext()) {
-            String key = iterator.next();
-            iterator.remove();
-        }
-    }
-
-    private void clearSnapshots(Map<String, Bitmap> snapshots) {
-        snapshots.clear();
     }
 
     private ImageView installFullScreenTransitionOverlay(Bitmap bitmap) {
@@ -1407,6 +928,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         overlay.setImageBitmap(bitmap);
         overlay.setAlpha(1.0f);
         root.addView(overlay, new ViewGroup.LayoutParams(-1, -1));
+        this.fullScreenSnapshots.registerOverlay(overlay, bitmap);
         overlay.bringToFront();
         return overlay;
     }
@@ -1420,6 +942,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 if (overlay.getParent() instanceof ViewGroup) {
                     ((ViewGroup) overlay.getParent()).removeView(overlay);
                 }
+                this.fullScreenSnapshots.releaseOverlay(overlay);
             }, 48L);
         });
     }
@@ -1534,23 +1057,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         }
         setBottomNavVisible(true);
         this.leading.setVisibility(4);
-        int activeColor = this.TEXT;
-        int inactiveColor = this.themeTokens.subtle;
-        for (int i = 0; i < this.bottom.getChildCount(); i++) {
-            View item = this.bottom.getChildAt(i);
-            boolean active = key.equals(item.getTag());
-            item.setAlpha(active ? 1.0f : 0.62f);
-            if (item instanceof ImageView) {
-                ((ImageView) item).setColorFilter(active ? activeColor : inactiveColor);
-                Compat.setBackground(item, active
-                        ? UiComponents.navSelection(this, this.themeTokens,
-                        this.session.uiScale() / 100.0f) : null);
-            } else if (item instanceof TextView) {
-                TextView textItem = (TextView) item;
-                textItem.setTextColor(active ? activeColor : inactiveColor);
-                textItem.setTypeface(appRegularTypeface(), active ? 1 : 0);
-            }
-        }
+        if (this.bottomNavigation != null) this.bottomNavigation.select(key);
     }
 
     @Override
@@ -1745,9 +1252,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.currentAuthCode = "";
         this.currentDetailItem = item;
         this.currentDetailBody = null;
-        this.detailHasRendered = false;
-        this.pendingDetailBody = null;
-        this.detailLoadStartedAt = SystemClock.elapsedRealtime();
         this.commentController.reset();
         this.localCache.rememberRecent(item);
         if (this.shellBar != null) {
@@ -1761,243 +1265,19 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.title.setText("正文");
         this.action.setVisibility(4);
         transitionTo(detailLoadingPage());
-        final int requestToken = this.detailRequestToken + 1;
-        this.detailRequestToken = requestToken;
-        renderDetailAfterEntry(item, requestToken);
-        if (!isNetworkConnected()) {
-            runAfterDetailEntry(() -> {
-                if (isCurrentDetailRequest(item, requestToken)) {
-                    hideLoading();
-                    handleDetailFailure(item, "当前无网络");
-                }
-            });
-            return;
-        }
-        this.api.get(EndpointProvider.linkTreeV2(), detailParams(item), new ApiClient.Callback() {
-            @Override
-            public void onSuccess(JSONObject body) {
-                if (MainActivity.this.isCurrentDetailRequest(item, requestToken)) {
-                    MainActivity.this.hideLoading();
-                    String blocked = MainActivity.this.detailBlockedMessage(body);
-                    if (!blocked.isEmpty()) {
-                        MainActivity.this.handleDetailFailureAfterEntry(
-                                item, requestToken, blocked);
-                    } else if (!MainActivity.this.hasDetailLink(body)) {
-                        MainActivity.this.handleDetailFailureAfterEntry(
-                                item, requestToken, "详情数据为空");
-                    } else {
-                        MainActivity.this.cacheDetailAndRender(item, body);
-                    }
-                }
-            }
-
-            @Override
-            public void onError(String message) {
-                if (MainActivity.this.isCurrentDetailRequest(item, requestToken)) {
-                    MainActivity.this.hideLoading();
-                    MainActivity.this.handleDetailFailureAfterEntry(
-                            item, requestToken, message);
-                }
-            }
-        });
-    }
-
-    private boolean isCurrentDetailRequest(FeedItem item, int requestToken) {
-        return "detail".equals(this.screen) && item != null && item.id.equals(this.currentLinkId) && requestToken == this.detailRequestToken;
-    }
-
-    private void cacheDetailAndRender(FeedItem item, JSONObject body) {
-        JSONObject normalized = DetailResponseNormalizer.normalize(body);
-        this.localCache.saveDetail(item.id, normalized);
-        if (this.localCache.isWatchLater(item.id)) {
-            this.detailActionBar.refreshOffline(item, normalized);
-        }
-        this.pendingDetailBody = normalized;
-        renderDetailAfterEntry(item, this.detailRequestToken);
-    }
-
-    private void renderDetailAfterEntry(FeedItem item, int requestToken) {
-        runAfterDetailEntry(() -> {
-            if (!isCurrentDetailRequest(item, requestToken)) return;
-            JSONObject body = this.pendingDetailBody;
-            this.pendingDetailBody = null;
-            if (body == null && !this.detailHasRendered) {
-                body = initialDetailBody(item);
-            }
-            if (body != null) renderDetail(body, item);
-        });
-    }
-
-    private void runAfterDetailEntry(Runnable action) {
-        long elapsed = Math.max(0L,
-                SystemClock.elapsedRealtime() - this.detailLoadStartedAt);
-        long delay = Math.max(0L, MotionSpec.TRANSITION_FULL_MS - elapsed);
-        this.handler.postDelayed(action, delay);
-    }
-
-    private JSONObject initialDetailBody(FeedItem item) {
-        JSONObject cached = this.localCache.detail(item.id);
-        if (cached != null && detailBlockedMessage(cached).isEmpty()
-                && hasDetailLink(cached)) {
-            this.localCache.log("perf app stage=detail-cache-hit link=true");
-            return cached;
-        }
-        try {
-            JSONObject result = new JSONObject();
-            result.put("link", item.toJson());
-            result.put("comments", new JSONArray());
-            JSONObject body = new JSONObject();
-            body.put("result", result);
-            body.put("_progressive_preview", true);
-            return body;
-        } catch (JSONException error) {
-            return null;
-        }
-    }
-
-    private Map<String, String> detailParams(FeedItem item) {
-        return OfficialRequestParams.detail(item.id, item.hsrc);
-    }
-
-    private boolean isNetworkConnected() {
-        try {
-            ConnectivityManager manager = (ConnectivityManager)
-                    getSystemService(Context.CONNECTIVITY_SERVICE);
-            NetworkInfo info = manager == null ? null : manager.getActiveNetworkInfo();
-            return info != null && info.isConnected();
-        } catch (SecurityException ignored) {
-            return true;
-        }
-    }
-
-    private void handleDetailFailure(FeedItem item, String message) {
-        this.localCache.log("detail failed " + item.id + ": " + message);
-        if (this.detailHasRendered) {
-            toast("详情更新失败，已保留当前内容");
-            return;
-        }
-        JSONObject cached = this.localCache.detail(item.id);
-        if (cached != null && detailBlockedMessage(cached).isEmpty() && hasDetailLink(cached)) {
-            toast(MSG_OFFLINE_CACHE);
-            renderDetail(cached, item);
-        } else if (!renderFallbackDetail(item, message)) {
-            showMessage("详情加载失败\n" + message);
-        }
-    }
-
-    private void handleDetailFailureAfterEntry(FeedItem item, int requestToken,
-                                               String message) {
-        runAfterDetailEntry(() -> {
-            if (isCurrentDetailRequest(item, requestToken)) {
-                handleDetailFailure(item, message);
-            }
-        });
-    }
-
-    private boolean renderFallbackDetail(FeedItem item, String reason) {
-        if (item == null) {
-            return false;
-        }
-        try {
-            String notice = fallbackDetailNotice(reason);
-            JSONObject link = item.toJson();
-            if (link.optString("title").isEmpty()) {
-                link.put("title", "帖子摘要暂不可用");
-            }
-            if (link.optString("description").isEmpty() && link.optString("text").isEmpty()) {
-                link.put("description", notice + " 当前列表没有返回正文摘要，登录后可查看完整详情");
-            }
-            JSONObject result = new JSONObject();
-            result.put("link", link);
-            result.put("comments", new JSONArray());
-            JSONObject body = new JSONObject();
-            body.put("result", result);
-            body.put("_fallback_notice", notice);
-            renderDetail(body, item);
-            return true;
-        } catch (JSONException error) {
-            return false;
-        }
-    }
-
-    private String fallbackDetailNotice(String reason) {
-        if (reason == null) {
-            reason = "";
-        }
-        if (reason.contains("验证") || reason.contains("captcha") || reason.contains("403") || reason.contains("限制")) {
-            return "游客模式：完整详情需要验证，已显示首页摘要";
-        }
-        return "详情接口暂不可用，已显示首页摘要";
-    }
-
-    private String detailBlockedMessage(JSONObject body) {
-        if (body == null) {
-            return "详情数据为空";
-        }
-        String direct = detailBlockedMessageFrom(body);
-        if (!direct.isEmpty()) {
-            return direct;
-        }
-        JSONObject result = body.optJSONObject("result");
-        return result == null ? "" : detailBlockedMessageFrom(result);
-    }
-
-    private boolean hasDetailLink(JSONObject body) {
-        JSONObject result;
-        return (body == null || (result = body.optJSONObject("result")) == null || result.optJSONObject("link") == null) ? false : true;
-    }
-
-    private String detailBlockedMessageFrom(JSONObject object) {
-        String status = object.optString("status");
-        String code = object.optString("code");
-        String message = Json.first(object.optString("msg"), object.optString("message"));
-        return (isVerificationStatus(status) || isVerificationStatus(code)) ? Json.first(message, status, code, "需要完成验证后才能继续") : isVerificationText(message) ? message : "";
-    }
-
-    private boolean isVerificationStatus(String value) {
-        if (value == null) {
-            return false;
-        }
-        String lower = value.toLowerCase(Locale.US);
-        return lower.contains("captcha") || lower.contains("verify") || lower.contains("verification") || lower.contains("name_verify") || lower.contains("need_alipay_verify") || lower.contains("need_bind_phone") || lower.contains("need_phone_code");
-    }
-
-    private boolean isVerificationText(String value) {
-        if (value == null) {
-            return false;
-        }
-        String lower = value.toLowerCase(Locale.US);
-        return lower.contains("captcha") || lower.contains("verify") || value.contains("需要完成验证") || value.contains("验证") || value.contains("接口限制") || value.contains("请求过于频繁");
+        this.detailLoader.load(item);
     }
 
     private void renderDetail(JSONObject body, FeedItem fallback) {
-        boolean replacing = this.detailHasRendered;
+        boolean replacing = this.detailLoader.rendered();
         boolean previousComments = replacing && this.detailPager != null
                 && this.detailPager.showingComments();
         int previousArticleScroll = replacing && this.detailScroll != null
                 ? this.detailScroll.getScrollY() : 0;
         int previousCommentScroll = replacing && this.detailCommentScroll != null
                 ? this.detailCommentScroll.getScrollY() : 0;
-        body = DetailResponseNormalizer.normalize(body);
-        this.currentDetailBody = body;
-        JSONObject result = body.optJSONObject("result");
-        JSONObject link = result == null ? null : result.optJSONObject("link");
-        String[] strArr = new String[3];
-        strArr[0] = this.postActions.hsrc(link);
-        strArr[1] = fallback == null ? "" : fallback.hsrc;
-        strArr[2] = this.currentLinkHsrc;
-        this.currentLinkHsrc = Json.first(strArr);
-        String authCode = link == null ? "" : link.optString("auth_code");
-        if (authCode.isEmpty() && result != null) {
-            authCode = result.optString("auth_code");
-        }
-        if (authCode.isEmpty()) {
-            authCode = body.optString("auth_code");
-        }
-        if (!authCode.isEmpty()) {
-            this.currentAuthCode = authCode;
-        }
-        DetailPager pager = new DetailPager(this, this::dp, usesWatchLayout(),
+        DetailPageAssembler.Result detail = this.detailPageAssembler.assemble(
+                body, fallback, this.currentLinkHsrc, this.screen, this.currentLinkId,
                 new DetailPager.Listener() {
             @Override
             public boolean canSwipeBack() {
@@ -2014,98 +1294,29 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 MainActivity.this.returnFromDetailGesture();
             }
                 });
-        pager.setBackgroundColor(this.BG);
-        this.detailPager = pager;
-        ScrollView articleScroll = new ScrollView(this);
-        articleScroll.setBackgroundColor(this.BG);
-        LinearLayout page = vertical(this.BG);
-        boolean roundLayout = usesRoundLayout();
-        int pagePadding = roundLayout ? pageHorizontalPadding()
-                : Math.max(dp(10), dp(this.session.pagePadding()));
-        int roundHeaderTop = roundLayout ? subpageTopPadding() : 0;
-        int detailTopPadding = roundLayout
-                ? roundHeaderTop + dp(40) : dp(50);
-        page.setPadding(pagePadding, detailTopPadding, pagePadding, dp(18));
-        articleScroll.addView(page);
-        LinearLayout article = detailArticleSurface();
-        JSONObject user = link == null ? null : link.optJSONObject("user");
-        String author = user == null ? fallback.author : user.optString("username", fallback.author);
-        String heading = link == null ? fallback.title : link.optString("title", fallback.title);
-        TextView headline = text("", 19.0f, this.TEXT);
-        EmojiRenderer.set(headline, RichContent.plainText(heading), this.session.darkMode());
-        headline.setTypeface(appRegularTypeface(), 1);
-        headline.setLineSpacing(dp(2), 1.08f);
-        article.addView(headline);
-        this.detailHeaderRenderer.addAuthor(article, link, user, author);
-        if (this.readingTimeTracker != null) {
-            this.readingTimeTracker.tagTopic(
-                    this.detailHeaderRenderer.firstTopicName(link, fallback.topicName));
-        }
-        if (fallback.article) {
-            this.detailHeaderRenderer.addTopics(article, link, fallback.topicName);
-        }
-        String notice = body.optString("_fallback_notice");
-        if (!notice.isEmpty()) {
-            TextView fallbackNotice = text(notice, 11.0f, this.SECONDARY);
-            fallbackNotice.setLineSpacing(0.0f, 1.16f);
-            GradientDrawable noticeBg = round(blend(this.PANEL, this.SECONDARY, this.session.darkMode() ? 0.22f : 0.12f), 7);
-            noticeBg.setStroke(dp(1), blend(this.SECONDARY, this.TEXT, this.session.darkMode() ? 0.2f : 0.12f));
-            fallbackNotice.setPadding(dp(8), dp(6), dp(8), dp(6));
-            Compat.setBackground(fallbackNotice, noticeBg);
-            addTop(article, fallbackNotice, 7);
-        }
-        JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
-        JSONArray comments = result == null ? null : result.optJSONArray("comments");
-        this.lastDetailDiagnostics = DetailDiagnostics.build(
-                this.screen, this.currentLinkId, this.session.playGif(),
-                body, fallback, link, fallbackImages, comments);
-        this.localCache.log("detail diagnostics captured link="
-                + (fallback == null ? "" : fallback.id)
-                + " title=" + DetailDiagnostics.compactText(heading, 48));
-        this.detailContentRenderer.add(
-                article, link, fallback.description, fallbackImages);
-        if (!fallback.article) {
-            this.detailHeaderRenderer.addTopics(article, link, fallback.topicName);
-        }
-        this.detailActionBar.add(article, fallback, link);
-        page.addView(article);
-        LinearLayout articleCommentHost = this.detailCommentsSection.placeholder(
-                page, comments);
-        ScrollView commentScroll = new ScrollView(this);
-        commentScroll.setBackgroundColor(this.BG);
-        LinearLayout commentPage = vertical(this.BG);
-        commentPage.setPadding(pagePadding, detailTopPadding, pagePadding, dp(18));
-        commentScroll.addView(commentPage);
-        LinearLayout commentPageHost = this.detailCommentsSection.placeholder(
-                commentPage, comments);
-        pager.setPages(detailReturnPreview(), articleScroll, commentScroll);
-        FrameLayout detailRoot = new FrameLayout(this);
-        detailRoot.setBackgroundColor(this.BG);
-        detailRoot.addView(pager, match());
-        ImageView back = detailBackButton();
-        FrameLayout.LayoutParams backParams =
-                new FrameLayout.LayoutParams(dp(36), dp(36), 51);
-        backParams.leftMargin = pagePadding
-                + (roundLayout ? roundHeaderInnerInset() : 0);
-        backParams.topMargin = roundLayout ? roundHeaderTop : dp(8);
-        detailRoot.addView(back, backParams);
-        installDetailRoot(detailRoot, pager, replacing, previousArticleScroll,
-                previousCommentScroll, previousComments, articleScroll, commentScroll);
-        this.detailCommentsSection.populate(articleCommentHost, comments, pager, 72L,
-                articleScroll, previousArticleScroll);
-        this.detailCommentsSection.populate(commentPageHost, comments, pager, 140L,
-                commentScroll, previousCommentScroll);
-        this.detailHasRendered = true;
-        if (this.activityResumed && this.readingTimeTracker != null && fallback != null) {
+        this.currentDetailBody = detail.body;
+        this.currentLinkHsrc = detail.hsrc;
+        if (!detail.authCode.isEmpty()) this.currentAuthCode = detail.authCode;
+        this.lastDetailDiagnostics = detail.diagnostics;
+        this.detailPager = detail.pager;
+        installDetailRoot(detail.root, detail.pager, replacing, previousArticleScroll,
+                previousCommentScroll, previousComments,
+                detail.articleScroll, detail.commentScroll);
+        this.detailCommentsSection.populate(detail.articleCommentHost, detail.comments,
+                detail.pager, 72L, detail.articleScroll, previousArticleScroll);
+        this.detailCommentsSection.populate(detail.commentPageHost, detail.comments,
+                detail.pager, 140L, detail.commentScroll, previousCommentScroll);
+        this.detailLoader.markRendered();
+        if (this.activityResumed && this.readingTimeTracker != null) {
             this.readingTimeTracker.start(fallback.article, fallback.id);
         }
-        this.detailScroll = articleScroll;
-        this.detailCommentScroll = commentScroll;
-        int savedScroll = this.session.rememberDetailScroll() ? this.localCache.scroll(this.currentLinkId) : 0;
+        this.detailScroll = detail.articleScroll;
+        this.detailCommentScroll = detail.commentScroll;
+        int savedScroll = this.session.rememberDetailScroll()
+                ? this.localCache.scroll(this.currentLinkId) : 0;
         if (!replacing && savedScroll > 0) {
-            articleScroll.postDelayed(() -> {
-                articleScroll.scrollTo(0, savedScroll);
-            }, 80L);
+            detail.articleScroll.postDelayed(
+                    () -> detail.articleScroll.scrollTo(0, savedScroll), 80L);
         }
     }
 
@@ -2147,7 +1358,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             if (this.detailPager == pager && !isFinishing()) {
                 this.localCache.log("perf app stage=detail-first-frame totalMs="
                         + Math.max(0L, SystemClock.elapsedRealtime()
-                        - this.detailLoadStartedAt)
+                        - this.detailLoader.loadStartedAt())
                         + " progressiveUpdate=" + replacing);
             }
         });
@@ -2431,10 +1642,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.noticeCenter.showAbout();
     }
 
-    private static int blend(int base, int overlay, float amount) {
-        return ThemeTokens.blend(base, overlay, amount);
-    }
-
     private String appVersion() {
         return BuildConfig.VERSION_NAME;
     }
@@ -2570,7 +1777,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             updateReadingTimeEntry();
         }
         saveCurrentDetailProgress();
-        this.detailRequestToken++;
+        this.detailLoader.cancel();
         View returnView = this.detailPager == null ? this.detailReturnView
                 : this.detailPager.takeReturnView();
         this.detailPager = null;
@@ -2628,21 +1835,18 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             return null;
         }
         this.detailPager.cancelMotion();
-        this.detailRequestToken++;
+        DetailLoadCoordinator.State loadState = this.detailLoader.suspend();
         DetailNavigationState state = new DetailNavigationState(
                 root, this.detailPager, this.detailScroll, this.detailCommentScroll,
                 this.currentDetailItem, this.detailReturn, this.detailReturnView,
                 this.detailReturnTitle, this.currentLinkId, this.currentLinkHsrc,
                 this.currentAuthCode, this.lastDetailDiagnostics,
-                this.currentDetailBody, this.pendingDetailBody,
-                this.detailHasRendered, this.detailLoadStartedAt);
+                this.currentDetailBody, loadState);
         this.detailPager = null;
         this.detailScroll = null;
         this.detailCommentScroll = null;
         this.detailReturnView = null;
         this.currentDetailBody = null;
-        this.pendingDetailBody = null;
-        this.detailHasRendered = false;
         if (this.readingTimeTracker != null) {
             this.readingTimeTracker.pause();
             updateReadingTimeEntry();
@@ -2653,7 +1857,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private boolean restorePreviousDetail(boolean alreadyAttached) {
         DetailNavigationState state = this.detailHistory.pop();
         if (state == null) return false;
-        this.detailRequestToken++;
+        this.detailLoader.restore(state.loadState);
         this.currentDetailItem = state.item;
         this.detailReturn = state.returnScreen;
         this.detailReturnView = state.returnView;
@@ -2663,9 +1867,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.currentAuthCode = state.authCode;
         this.lastDetailDiagnostics = state.diagnostics;
         this.currentDetailBody = state.body;
-        this.pendingDetailBody = state.pendingBody;
-        this.detailHasRendered = state.rendered;
-        this.detailLoadStartedAt = state.loadStartedAt;
         this.detailPager = state.pager;
         this.detailScroll = state.articleScroll;
         this.detailCommentScroll = state.commentScroll;
@@ -2820,7 +2021,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     @Override
     protected void onPause() {
         this.activityResumed = false;
-        this.crownScrollDispatcher.cancel();
+        this.crownInput.cancel();
         if (this.checkinCenterPage != null) this.checkinCenterPage.onPause();
         if (this.qrLoginPage != null) this.qrLoginPage.pause();
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
@@ -2834,15 +2035,15 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         super.onTrimMemory(level);
         if (level < ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return;
         ImageLoader.clear();
-        clearSnapshots(this.screenSnapshots);
-        clearSnapshots(this.fullScreenSnapshots);
+        this.screenSnapshots.clear();
+        this.fullScreenSnapshots.clear();
     }
 
     @Override
     public void onLowMemory() {
         ImageLoader.clear();
-        clearSnapshots(this.screenSnapshots);
-        clearSnapshots(this.fullScreenSnapshots);
+        this.screenSnapshots.clear();
+        this.fullScreenSnapshots.clear();
         super.onLowMemory();
     }
 
@@ -2858,7 +2059,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
 
     @Override
     protected void onDestroy() {
-        this.crownScrollDispatcher.cancel();
+        this.crownInput.cancel();
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
         if (this.checkinCenterPage != null) {
             this.checkinCenterPage.close();
@@ -2870,6 +2071,10 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         }
         saveCurrentDetailProgress();
         stopQrPolling();
+        if (this.qrLoginPage != null) {
+            this.qrLoginPage.close();
+            this.qrLoginPage = null;
+        }
         this.pageTransitions.cancelNow();
         discardDetailHistory();
         if (this.feedPage != null) this.feedPage.close();
@@ -2878,12 +2083,13 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             ((BackSwipeFrameLayout) this.content).cancelMotion();
         }
         ImageLoader.cancelTree(this.content);
-        clearSnapshots(this.screenSnapshots);
-        clearSnapshots(this.fullScreenSnapshots);
+        this.screenSnapshots.releaseAll();
+        this.fullScreenSnapshots.releaseAll();
         this.retainedPages.clear();
         if (this.searchPage != null) this.searchPage.close();
         if (this.searchBars != null) this.searchBars.clear();
         if (this.writeActions != null) this.writeActions.close();
+        if (this.detailLoader != null) this.detailLoader.close();
         this.handler.removeCallbacksAndMessages(null);
         if (this.writeTokenProvider != null) {
             this.writeTokenProvider.close();
@@ -2891,12 +2097,14 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if (this.api != null) {
             this.api.close();
         }
+        if (this.cacheMaintenance != null) this.cacheMaintenance.close();
+        if (this.diagnosticsController != null) this.diagnosticsController.close();
         super.onDestroy();
     }
 
     /** 页面切换统一入口：真实双 View 转场；方向由 pendingBackTransition 决定，消费后复位。 */
     private void transitionTo(View next) {
-        this.crownScrollDispatcher.cancel();
+        this.crownInput.cancel();
         if (!"detail".equals(this.screen) && this.readingTimeTracker != null) {
             this.readingTimeTracker.pause();
         }
@@ -2926,16 +2134,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.shellAnimating = false;
         this.pendingBackTransition = false;
         this.pendingLateralPush = false;
-        this.bottomNavShowPending = false;
-        this.bottomNavAnimSerial++;
-        if (this.bottom != null) {
-            this.bottom.animate().cancel();
-            this.bottom.setTranslationY(0.0f);
-            this.bottom.setScaleX(1.0f);
-            this.bottom.setScaleY(1.0f);
-            this.bottom.setAlpha(this.bottomVisible ? 1.0f : 0.0f);
-            this.bottom.setVisibility(this.bottomVisible ? View.VISIBLE : View.GONE);
-        }
+        if (this.bottomNavigation != null) this.bottomNavigation.finishMotion();
     }
 
     /** 页面不满屏时下半截透明，转场重叠期会透出旧页并在结束时闪变，这里统一兜底成不透明底色。 */

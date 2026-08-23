@@ -521,7 +521,7 @@ public final class ImageViewerActivity extends Activity {
         counter.setText((index + 1) + "/" + urls.length);
         refreshOriginalLabel();
         pager.postDelayed(() -> {
-            if (!destroyed && current != previous) releaseLongPage(previous);
+            if (!destroyed && current != previous) releaseDistantPages();
         }, 300L);
     }
 
@@ -726,6 +726,26 @@ public final class ImageViewerActivity extends Activity {
             imagePages[index].removeView(scroll);
         }
         images[index].setVisibility(View.VISIBLE);
+    }
+
+    private void releaseDistantPages() {
+        for (int index = 0; index < images.length; index++) {
+            if (Math.abs(index - current) <= 1) continue;
+            releaseLongPage(index);
+            ZoomImageView view = images[index];
+            view.animate().cancel();
+            view.cancelMotion();
+            ImageLoader.cancel(view);
+            GifSupport.setRunning(view.getDrawable(), false);
+            view.setImageDrawable(null);
+            resetImageTransform(view);
+            loaded[index] = false;
+            originalLoaded[index] = false;
+            longCandidates[index] = false;
+            spinners[index].animate().cancel();
+            spinners[index].setAlpha(1.0f);
+            spinners[index].setVisibility(View.GONE);
+        }
     }
 
     private void cancelLongLoad(int index) {
@@ -970,6 +990,8 @@ public final class ImageViewerActivity extends Activity {
                     view.animate().cancel();
                     view.cancelMotion();
                     ImageLoader.cancel(view);
+                    GifSupport.setRunning(view.getDrawable(), false);
+                    view.setImageDrawable(null);
                 }
             }
         }

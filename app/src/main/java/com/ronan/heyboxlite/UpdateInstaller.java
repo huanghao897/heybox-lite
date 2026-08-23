@@ -155,6 +155,14 @@ final class UpdateInstaller {
             this.host.showToast("安装包不存在");
             return;
         }
+        if (!UpdateApkVerifier.isTrusted(this.activity, apk)) {
+            if (!apk.delete()) apk.deleteOnExit();
+            this.localCache.log("update rejected reason=signature_or_package_mismatch");
+            this.dialogs.show("安装包校验失败",
+                    "下载的安装包不是 heybox Lite 官方签名，已停止安装。",
+                    "知道了", null, null, null, null, null);
+            return;
+        }
         try {
             Uri uri = UpdateApkProvider.uriFor(apk);
             Intent intent = new Intent(Intent.ACTION_VIEW);
