@@ -86,7 +86,7 @@ public class FeedItemTest {
         assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "article")
                 .put("is_article", 1)
-                .put("use_concept_type", 1)).article);
+                .put("use_concept_type", 0)).article);
         assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "news")
                 .put("content_type", 101)).article);
@@ -95,10 +95,38 @@ public class FeedItemTest {
                 .put("content_type", 102)).article);
         assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "concept-article")
-                .put("use_concept_type", 1)).article);
+                .put("use_concept_type", 0)).article);
         assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "concept-post")
+                .put("use_concept_type", 1)).article);
+    }
+
+    @Test
+    public void ignoresEmptyArticleFlagAndUsesTheNextOfficialField() throws Exception {
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "empty-flag")
+                .put("is_article", "")
+                .put("content_type", 101)).article);
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "null-flag")
+                .put("is_article", JSONObject.NULL)
+                .put("link_info", new JSONObject().put("is_article", 1))).article);
+    }
+
+    @Test
+    public void recognizesTextArticleTypesAndOfficialConceptMapping() throws Exception {
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "link-type")
+                .put("link_type", "article")).article);
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "type")
+                .put("type", "news")).article);
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "concept-article")
                 .put("use_concept_type", 0)).article);
+        assertFalse(FeedItem.from(new JSONObject()
+                .put("linkid", "concept-post")
+                .put("use_concept_type", 1)).article);
     }
 
     @Test
@@ -114,7 +142,7 @@ public class FeedItemTest {
     public void articleTypeSurvivesOfflineSerialization() throws Exception {
         FeedItem article = FeedItem.from(new JSONObject()
                 .put("linkid", "article")
-                .put("use_concept_type", 1));
+                .put("use_concept_type", 0));
 
         assertTrue(FeedItem.from(article.toJson()).article);
     }

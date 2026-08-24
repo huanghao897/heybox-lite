@@ -139,7 +139,7 @@ final class FeedItem {
             json.put("comment_num", comments);
             json.put("click", clicks);
             json.put("link_award_num", likes);
-            json.put("use_concept_type", article ? 1 : 0);
+            json.put("use_concept_type", article ? 0 : 1);
             json.put("is_top", pinned);
             json.put("is_liked", liked);
             JSONObject user = new JSONObject();
@@ -162,29 +162,89 @@ final class FeedItem {
     }
 
     private static boolean isArticle(JSONObject json) {
-        if (json.has("is_article")) return Json.truthy(json, "is_article");
+        return isArticle(json, new HashSet<JSONObject>());
+    }
+
+    private static boolean isArticle(JSONObject json, Set<JSONObject> visited) {
+        if (json == null || !visited.add(json)) return false;
+
+        Boolean explicit = booleanValue(json, "is_article");
+        if (explicit != null) return explicit;
+
         int contentType = json.optInt("content_type", Integer.MIN_VALUE);
         if (contentType == 101 || contentType == 103) return true;
         if (contentType == 102) return false;
-        String type = json.optString("link_type",
-                json.optString("content_type", json.optString("type")));
-        if ("article".equalsIgnoreCase(type) || "news".equalsIgnoreCase(type)
-                || "文章".equals(type)) {
-            return true;
-        }
-        if (json.has("use_concept_type")) {
-            return Json.truthy(json, "use_concept_type");
-        }
-        if (json.optJSONObject("news_content") != null
-                || json.optJSONObject("article_info") != null) {
-            return true;
-        }
+
+        String type = firstValue(json, "link_type", "content_type", "type");
+        if (isArticleType(type)) return true;
+        if (isPostType(type)) return false;
+
+        if (hasArticlePayload(json)) return true;
         String[] nestedKeys = {"link", "link_content", "link_info", "basic_info"};
         for (String key : nestedKeys) {
             JSONObject nested = json.optJSONObject(key);
-            if (nested != null && isArticle(nested)) return true;
+            if (nested != null && isArticle(nested, visited)) return true;
         }
-        return false;
+
+        Boolean conceptType = booleanValue(json, "use_concept_type");
+        // The official feed contract uses 0 for articles and 1 for posts.
+        return conceptType != null && !conceptType;
+    }
+
+    private static Boolean booleanValue(JSONObject json, String key) {
+        if (json == null || !json.has(key)) return null;
+        Object value = json.opt(key);
+        if (value == null || value == JSONObject.NULL) return null;
+        if (value instanceof Boolean) return (Boolean) value;
+        if (value instanceof Number) {
+            int number = ((Number) value).intValue();
+            if (number == 0) return false;
+            if (number == 1) return true;
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) return null;
+        if ("0".equals(text) || "false".equalsIgnoreCase(text)
+                || isPostType(text)) return false;
+        if ("1".equals(text) || "true".equalsIgnoreCase(text)
+                || isArticleType(text)) return true;
+        return null;
+    }
+
+    private static String firstValue(JSONObject json, String... keys) {
+        for (String key : keys) {
+            Object value = json.opt(key);
+            if (value == null || value == JSONObject.NULL) continue;
+            String text = String.valueOf(value).trim();
+            if (!text.isEmpty()) return text;
+        }
+        return "";
+    }
+
+    private static boolean isArticleType(String value) {
+        return "article".equalsIgnoreCase(value)
+                || "news".equalsIgnoreCase(value)
+                || "投稿".equals(value)
+                || "文章".equals(value);
+    }
+
+    private static boolean isPostType(String value) {
+        return "post".equalsIgnoreCase(value)
+                || "thread".equalsIgnoreCase(value)
+                || "帖子".equals(value)
+                || "动态".equals(value);
+    }
+
+    private static boolean hasArticlePayload(JSONObject json) {
+        return hasValue(json, "news_content") || hasValue(json, "article_info");
+    }
+
+    private static boolean hasValue(JSONObject json, String key) {
+        Object value = json.opt(key);
+        if (value == null || value == JSONObject.NULL) return false;
+        if (value instanceof JSONObject) return ((JSONObject) value).length() > 0;
+        if (value instanceof JSONArray) return ((JSONArray) value).length() > 0;
+        return !String.valueOf(value).trim().isEmpty();
     }
 
     private static String hsrc(JSONObject json) {
