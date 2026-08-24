@@ -179,16 +179,17 @@ final class FeedItem {
         if (isArticleType(type)) return true;
         if (isPostType(type)) return false;
 
+        Boolean conceptType = booleanValue(json, "use_concept_type");
+        // The official feed contract uses 0 for articles and 1 for posts.
+        if (conceptType != null) return !conceptType;
+
         if (hasArticlePayload(json)) return true;
         String[] nestedKeys = {"link", "link_content", "link_info", "basic_info"};
         for (String key : nestedKeys) {
             JSONObject nested = json.optJSONObject(key);
             if (nested != null && isArticle(nested, visited)) return true;
         }
-
-        Boolean conceptType = booleanValue(json, "use_concept_type");
-        // The official feed contract uses 0 for articles and 1 for posts.
-        return conceptType != null && !conceptType;
+        return false;
     }
 
     private static Boolean booleanValue(JSONObject json, String key) {
