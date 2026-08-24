@@ -108,7 +108,7 @@ final class FeedItem {
                         "reply_count", "comments"),
                 firstInt(json, "click", "click_num", "read_num", "view_num", "views"),
                 firstInt(json, LIKE_KEYS),
-                isArticle(json),
+                isArticleJson(json),
                 json.optBoolean("is_award", json.optBoolean("liked",
                         json.optBoolean("is_liked", json.optInt("has_award") == 1))),
                 pinned(json),
@@ -139,7 +139,7 @@ final class FeedItem {
             json.put("comment_num", comments);
             json.put("click", clicks);
             json.put("link_award_num", likes);
-            json.put("use_concept_type", article ? 0 : 1);
+            json.put("is_article", article ? 1 : 0);
             json.put("is_top", pinned);
             json.put("is_liked", liked);
             JSONObject user = new JSONObject();
@@ -161,7 +161,7 @@ final class FeedItem {
         return json;
     }
 
-    private static boolean isArticle(JSONObject json) {
+    static boolean isArticleJson(JSONObject json) {
         return isArticle(json, new HashSet<JSONObject>());
     }
 
@@ -172,16 +172,12 @@ final class FeedItem {
         if (explicit != null) return explicit;
 
         int contentType = json.optInt("content_type", Integer.MIN_VALUE);
-        if (contentType == 101 || contentType == 103) return true;
+        if (contentType == -1 || contentType == 101 || contentType == 103) return true;
         if (contentType == 102) return false;
 
         String type = firstValue(json, "link_type", "content_type", "type");
         if (isArticleType(type)) return true;
         if (isPostType(type)) return false;
-
-        Boolean conceptType = booleanValue(json, "use_concept_type");
-        // The official feed contract uses 0 for articles and 1 for posts.
-        if (conceptType != null) return !conceptType;
 
         if (hasArticlePayload(json)) return true;
         String[] nestedKeys = {"link", "link_content", "link_info", "basic_info"};
@@ -189,7 +185,11 @@ final class FeedItem {
             JSONObject nested = json.optJSONObject(key);
             if (nested != null && isArticle(nested, visited)) return true;
         }
-        return false;
+
+        // Older cached responses used 0 as the article marker. Keep this only
+        // as a last fallback because the current API uses is_article.
+        Boolean conceptType = booleanValue(json, "use_concept_type");
+        return conceptType != null && !conceptType;
     }
 
     private static Boolean booleanValue(JSONObject json, String key) {

@@ -46,9 +46,7 @@ final class DetailContentParser {
                 blocks = RichContent.parse(fallback, fallbackImages);
             }
         }
-        boolean article = link != null
-                && (Json.truthy(link, "use_concept_type")
-                || Json.truthy(link, "is_article"));
+        boolean article = FeedItem.isArticleJson(link);
         return new Result(Collections.unmodifiableList(new ArrayList<>(blocks)), !article);
     }
 

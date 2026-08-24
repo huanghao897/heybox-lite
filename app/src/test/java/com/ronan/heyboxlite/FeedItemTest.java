@@ -86,10 +86,13 @@ public class FeedItemTest {
         assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "article")
                 .put("is_article", 1)
-                .put("use_concept_type", 0)).article);
+                .put("use_concept_type", 1)).article);
         assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "news")
                 .put("content_type", 101)).article);
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "published-work")
+                .put("content_type", -1)).article);
         assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "post")
                 .put("content_type", 102)).article);
@@ -127,7 +130,7 @@ public class FeedItemTest {
         assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "concept-post")
                 .put("use_concept_type", 1)).article);
-        assertFalse(FeedItem.from(new JSONObject()
+        assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "post-with-article-child")
                 .put("use_concept_type", 1)
                 .put("link_info", new JSONObject().put("is_article", 1))).article);

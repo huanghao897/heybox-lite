@@ -91,8 +91,7 @@ final class RichContent {
             out.append("fallbackImages: ").append(length(fallbackImages)).append('\n');
             return out.toString();
         }
-        boolean articleMode = Json.truthy(source, "use_concept_type")
-                || Json.truthy(source, "is_article");
+        boolean articleMode = FeedItem.isArticleJson(source);
         out.append("articleMode: ").append(articleMode).append('\n');
         out.append("use_concept_type: ").append(source.optInt("use_concept_type", -1)).append('\n');
         out.append("is_article: ").append(source.opt("is_article")).append('\n');
@@ -141,8 +140,7 @@ final class RichContent {
             return result.blocks;
         }
 
-        boolean articleMode = Json.truthy(source, "use_concept_type")
-                || Json.truthy(source, "is_article");
+        boolean articleMode = FeedItem.isArticleJson(source);
         ParseResult bestReadable = null;
         int bestScore = Integer.MIN_VALUE;
         for (String key : DETAIL_BODY_KEYS) {
