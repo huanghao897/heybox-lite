@@ -24,6 +24,9 @@ final class FeedItem {
             "extra_tag", "link_extra_tag"
     };
     private static final String[] NESTED_TOPIC_KEYS = {"link", "link_content"};
+    private static final String[] ARTICLE_NESTED_KEYS = {
+            "link", "link_content", "link_info", "basic_info"
+    };
 
     final String id;
     final String hsrc;
@@ -162,34 +165,48 @@ final class FeedItem {
     }
 
     static boolean isArticleJson(JSONObject json) {
-        return isArticle(json, new HashSet<JSONObject>());
+        return articleValue(json, new HashSet<JSONObject>()) == Boolean.TRUE;
     }
 
-    private static boolean isArticle(JSONObject json, Set<JSONObject> visited) {
-        if (json == null || !visited.add(json)) return false;
+    private static Boolean articleValue(JSONObject json, Set<JSONObject> visited) {
+        if (json == null || !visited.add(json)) return null;
 
         Boolean explicit = booleanValue(json, "is_article");
-        if (explicit != null) return explicit;
-
         int contentType = json.optInt("content_type", Integer.MIN_VALUE);
-        if (contentType == -1 || contentType == 101 || contentType == 103) return true;
-        if (contentType == 102) return false;
-
         String type = firstValue(json, "link_type", "content_type", "type");
-        if (isArticleType(type)) return true;
-        if (isPostType(type)) return false;
 
-        if (hasArticlePayload(json)) return true;
-        String[] nestedKeys = {"link", "link_content", "link_info", "basic_info"};
-        for (String key : nestedKeys) {
-            JSONObject nested = json.optJSONObject(key);
-            if (nested != null && isArticle(nested, visited)) return true;
+        // Feed wrappers can carry a generic false marker while their nested
+        // link is an article. Check positive official markers before negatives.
+        if (Boolean.TRUE.equals(explicit)
+                || contentType == -1 || contentType == 101 || contentType == 103
+                || isArticleType(type) || hasArticlePayload(json)) {
+            return Boolean.TRUE;
         }
 
-        // Older cached responses used 0 as the article marker. Keep this only
-        // as a last fallback because the current API uses is_article.
-        Boolean conceptType = booleanValue(json, "use_concept_type");
-        return conceptType != null && !conceptType;
+        Boolean nestedResult = null;
+        for (String key : ARTICLE_NESTED_KEYS) {
+            JSONObject nested = nestedObject(json, key);
+            Boolean value = articleValue(nested, visited);
+            if (Boolean.TRUE.equals(value)) return Boolean.TRUE;
+            if (value != null) nestedResult = value;
+        }
+
+        if (explicit != null) return explicit;
+        if (contentType == 102 || isPostType(type)) return Boolean.FALSE;
+        return nestedResult;
+    }
+
+    private static JSONObject nestedObject(JSONObject json, String key) {
+        Object value = json == null ? null : json.opt(key);
+        if (value instanceof JSONObject) return (JSONObject) value;
+        if (!(value instanceof String)) return null;
+        String text = ((String) value).trim();
+        if (!text.startsWith("{")) return null;
+        try {
+            return new JSONObject(text);
+        } catch (JSONException ignored) {
+            return null;
+        }
     }
 
     private static Boolean booleanValue(JSONObject json, String key) {

@@ -96,7 +96,7 @@ public class FeedItemTest {
         assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "post")
                 .put("content_type", 102)).article);
-        assertTrue(FeedItem.from(new JSONObject()
+        assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "concept-article")
                 .put("use_concept_type", 0)).article);
         assertFalse(FeedItem.from(new JSONObject()
@@ -117,14 +117,14 @@ public class FeedItemTest {
     }
 
     @Test
-    public void recognizesTextArticleTypesAndOfficialConceptMapping() throws Exception {
+    public void recognizesTextArticleTypesWithoutConceptFallback() throws Exception {
         assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "link-type")
                 .put("link_type", "article")).article);
         assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "type")
                 .put("type", "news")).article);
-        assertTrue(FeedItem.from(new JSONObject()
+        assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "concept-article")
                 .put("use_concept_type", 0)).article);
         assertFalse(FeedItem.from(new JSONObject()
@@ -146,10 +146,23 @@ public class FeedItemTest {
     }
 
     @Test
+    public void nestedArticleMarkerOverridesWrapperPostMarker() throws Exception {
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "wrapped-article")
+                .put("is_article", 0)
+                .put("content_type", 102)
+                .put("link_info", new JSONObject().put("is_article", 1))).article);
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "wrapped-article-string")
+                .put("is_article", 0)
+                .put("link_info", "{\"is_article\":1}")).article);
+    }
+
+    @Test
     public void articleTypeSurvivesOfflineSerialization() throws Exception {
         FeedItem article = FeedItem.from(new JSONObject()
                 .put("linkid", "article")
-                .put("use_concept_type", 0));
+                .put("is_article", 1));
 
         assertTrue(FeedItem.from(article.toJson()).article);
     }
