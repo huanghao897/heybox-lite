@@ -682,7 +682,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                     @Override public View detailReturnPreview() {
                         return MainActivity.this.detailReturnPreview();
                     }
-                    @Override public View detailBackButton() { return detailBackButton(); }
+                    @Override public View detailBackButton() {
+                        return MainActivity.this.detailBackButton();
+                    }
                 });
         this.detailHeaderRenderer = detail.headerRenderer;
         this.commentController = detail.commentController;

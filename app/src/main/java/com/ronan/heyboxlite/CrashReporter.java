@@ -11,6 +11,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.charset.Charset;
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -19,6 +20,8 @@ import java.util.Locale;
 final class CrashReporter {
     private static final Object LOCK = new Object();
     private static final int MAX_BYTES = 96 * 1024;
+    private static final Charset UTF_8 = Charset.forName("UTF-8");
+    private static final String TRUNCATED = "\n... crash stack truncated ...\n";
     private static final String PREFERENCES = "heybox_crash_reporter";
     private static final String HANDLED_FINGERPRINT = "handled_fingerprint";
     private static final String PENDING = "pending";
@@ -135,19 +138,33 @@ final class CrashReporter {
         return dir;
     }
 
-    private static String trim(String value) {
+    static String trim(String value) {
         if (value == null) return "";
-        byte[] bytes;
-        try {
-            bytes = value.getBytes("UTF-8");
-        } catch (Exception ignored) {
-            return value.length() > MAX_BYTES ? value.substring(value.length() - MAX_BYTES) : value;
-        }
+        byte[] bytes = value.getBytes(UTF_8);
         if (bytes.length <= MAX_BYTES) return value;
-        // 按字节预算换算保留的字符数（UTF-8 中文最多 3 字节/字），避免截完仍超预算
-        int keepChars = Math.max(1, MAX_BYTES / 3);
-        int start = Math.max(0, value.length() - keepChars);
-        return value.substring(start);
+        byte[] marker = TRUNCATED.getBytes(UTF_8);
+        int contentBudget = MAX_BYTES - marker.length;
+        int prefixEnd = utf8PrefixEnd(bytes, contentBudget / 3);
+        int suffixStart = utf8SuffixStart(bytes, contentBudget - prefixEnd);
+        return new String(bytes, 0, prefixEnd, UTF_8)
+                + TRUNCATED
+                + new String(bytes, suffixStart, bytes.length - suffixStart, UTF_8);
+    }
+
+    private static int utf8PrefixEnd(byte[] bytes, int budget) {
+        int end = Math.min(bytes.length, Math.max(0, budget));
+        while (end > 0 && end < bytes.length && isUtf8Continuation(bytes[end])) end--;
+        return end;
+    }
+
+    private static int utf8SuffixStart(byte[] bytes, int budget) {
+        int start = Math.max(0, bytes.length - Math.max(0, budget));
+        while (start < bytes.length && isUtf8Continuation(bytes[start])) start++;
+        return start;
+    }
+
+    private static boolean isUtf8Continuation(byte value) {
+        return (value & 0xC0) == 0x80;
     }
 
     private static void write(File file, String value) {
