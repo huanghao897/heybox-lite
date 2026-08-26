@@ -46,6 +46,7 @@ final class CheckinCenterClient {
         SMS_SUBMIT,
         PASSWORD_LOGIN,
         STATUS,
+        LEADERBOARD,
         TASK_SETTINGS,
         RUN_NOW,
         REVOKE,
@@ -586,6 +587,11 @@ final class CheckinCenterClient {
                 null, CheckinCenterClient::parseStatus));
     }
 
+    void getLeaderboard(Callback<CheckinLeaderboard.Data> callback) {
+        submit(callback, () -> request(Operation.LEADERBOARD, "GET", "/leaderboard", "",
+                null, CheckinLeaderboard::parse));
+    }
+
     void updateTaskSettings(String deviceToken, boolean enabled, String scheduleTime,
                             int offsetMinutes, Callback<Task> callback) {
         final String token;
@@ -1093,6 +1099,8 @@ final class CheckinCenterClient {
                         || operation == Operation.BILLING_QR
                         || operation == Operation.BILLING_CLAIM) {
                     message = "赞助记录不存在";
+                } else if (operation == Operation.LEADERBOARD) {
+                    message = "排行榜暂不可用";
                 } else {
                     message = "签到任务尚未配置";
                 }

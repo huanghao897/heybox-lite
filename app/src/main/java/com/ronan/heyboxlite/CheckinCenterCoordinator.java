@@ -88,6 +88,11 @@ final class CheckinCenterCoordinator {
         statusAttempt(token, callback, 0);
     }
 
+    void getLeaderboard(
+            CheckinCenterClient.Callback<CheckinLeaderboard.Data> callback) {
+        leaderboardAttempt(callback, 0);
+    }
+
     void sendSmsCode(String phone, String captchaTicket, String captchaRandstr,
                      CheckinCenterClient.Callback<CheckinCenterClient.SmsSession> callback) {
         String token = store.deviceToken();
@@ -245,6 +250,29 @@ final class CheckinCenterCoordinator {
                 if (callback != null) callback.onError(error);
             }
         });
+    }
+
+    private void leaderboardAttempt(
+            CheckinCenterClient.Callback<CheckinLeaderboard.Data> callback,
+            int retries) {
+        client.getLeaderboard(
+                new CheckinCenterClient.Callback<CheckinLeaderboard.Data>() {
+                    @Override
+                    public void onSuccess(CheckinLeaderboard.Data value) {
+                        if (callback != null) callback.onSuccess(value);
+                    }
+
+                    @Override
+                    public void onError(CheckinCenterClient.ApiError error) {
+                        if (CheckinRetryPolicy.shouldRetry(error, retries)) {
+                            handler.postDelayed(
+                                    () -> leaderboardAttempt(callback, retries + 1),
+                                    CheckinRetryPolicy.delayMillis(error, retries, 0L));
+                            return;
+                        }
+                        if (callback != null) callback.onError(error);
+                    }
+                });
     }
 
     private void revokeAttempt(String token, CheckinCenterClient.Callback<Boolean> callback,

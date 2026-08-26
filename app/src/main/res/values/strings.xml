@@ -17,6 +17,7 @@
     <string name="title_comments">评论</string>
     <string name="title_user_space">个人主页</string>
     <string name="title_checkin">小黑盒签到</string>
+    <string name="title_leaderboard">排行榜</string>
     <string name="action_back">返回</string>
     <string name="action_retry">重新检查</string>
     <string name="message_missing_user_id">没有获取到用户 ID</string>

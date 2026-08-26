@@ -34,6 +34,8 @@ final class ProfilePage {
 
         void showCheckinCenter();
 
+        void showLeaderboard();
+
         void showSettings();
 
         void showUserSpace(String userId, String name, String avatar);
@@ -258,6 +260,8 @@ final class ProfilePage {
                     if (loggedIn) this.host.showFavorites();
                     else this.host.showLogin();
                 });
+        this.settingsUi.addEntry(panel, "排行榜", null, null,
+                R.drawable.il_leaderboard, this.host::showLeaderboard);
         this.settingsUi.addEntry(panel, "小黑盒签到", null,
                 this.checkinCoordinator != null && this.checkinCoordinator.paired()
                         ? "已连接" : null,

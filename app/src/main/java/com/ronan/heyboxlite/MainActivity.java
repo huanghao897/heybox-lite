@@ -80,6 +80,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private QrLoginPage qrLoginPage;
     private CheckinCenterCoordinator checkinCenterCoordinator;
     private CheckinCenterPage checkinCenterPage;
+    private CheckinLeaderboardPage checkinLeaderboardPage;
     private ReadingTimeTracker readingTimeTracker;
     private LinearLayout shellRoot;
     private LinearLayout shellBar;
@@ -316,6 +317,10 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if (this.checkinCenterPage != null) {
             this.checkinCenterPage.close();
             this.checkinCenterPage = null;
+        }
+        if (this.checkinLeaderboardPage != null) {
+            this.checkinLeaderboardPage.close();
+            this.checkinLeaderboardPage = null;
         }
         discardRetainedLayoutViews();
         initializeSettingsFeatures();
@@ -565,6 +570,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             @Override public void showFavorites() { MainActivity.this.showFavorites(); }
             @Override public void showCheckinCenter() {
                 MainActivity.this.showCheckinCenter();
+            }
+            @Override public void showLeaderboard() {
+                MainActivity.this.showLeaderboard();
             }
             @Override public void showSettings() { showSettingsHome(); }
             @Override public void showDetail(FeedItem item) {
@@ -1433,6 +1441,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if ("checkin_center".equals(this.screen) && this.checkinCenterPage != null) {
             this.checkinCenterPage.onPause();
         }
+        if ("leaderboard".equals(this.screen) && this.checkinLeaderboardPage != null) {
+            this.checkinLeaderboardPage.onPause();
+        }
         if ("feed".equals(this.screen)) {
             this.pendingLateralPush = true;
         }
@@ -1532,6 +1543,61 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.checkinCenterPage.onResume();
         View page = this.checkinCenterPage.view();
         this.retainedPages.put("checkin_center", page);
+        transitionTo(page);
+    }
+
+    private void showLeaderboard() {
+        stopQrPolling();
+        this.screen = "leaderboard";
+        setBottomNavVisible(false);
+        this.leading.setVisibility(0);
+        this.leading.setOnClickListener(view -> {
+            this.pendingBackTransition = true;
+            showProfile();
+        });
+        this.title.setText(R.string.title_leaderboard);
+        this.action.setVisibility(4);
+        this.action.setOnClickListener(null);
+        if (this.checkinLeaderboardPage != null
+                && this.checkinLeaderboardPage.usesRoundLayout() != usesRoundLayout()) {
+            this.checkinLeaderboardPage.close();
+            this.checkinLeaderboardPage = null;
+        }
+        if (this.checkinLeaderboardPage == null) {
+            this.checkinLeaderboardPage = new CheckinLeaderboardPage(this, this.session,
+                    this.checkinCenterCoordinator, this.themeTokens, usesRoundLayout(),
+                    new CheckinLeaderboardPage.Host() {
+                        @Override
+                        public void closePage() {
+                            MainActivity.this.pendingBackTransition = true;
+                            MainActivity.this.showProfile();
+                        }
+
+                        @Override
+                        public boolean isActive() {
+                            return "leaderboard".equals(MainActivity.this.screen)
+                                    && !MainActivity.this.isFinishing();
+                        }
+
+                        @Override
+                        public int pageHorizontalPadding() {
+                            return MainActivity.this.pageHorizontalPadding();
+                        }
+
+                        @Override
+                        public int subpageTopPadding() {
+                            return MainActivity.this.subpageTopPadding();
+                        }
+
+                        @Override
+                        public int roundHeaderInset() {
+                            return MainActivity.this.roundHeaderInnerInset();
+                        }
+                    });
+        }
+        this.checkinLeaderboardPage.onResume();
+        View page = this.checkinLeaderboardPage.view();
+        this.retainedPages.put("leaderboard", page);
         transitionTo(page);
     }
 
@@ -1707,6 +1773,10 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 this.pendingBackTransition = false;
                 return;
             }
+            showProfile();
+            return;
+        }
+        if ("leaderboard".equals(this.screen)) {
             showProfile();
             return;
         }
@@ -1995,6 +2065,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if (this.checkinCenterPage != null && "checkin_center".equals(this.screen)) {
             this.checkinCenterPage.onResume();
         }
+        if (this.checkinLeaderboardPage != null && "leaderboard".equals(this.screen)) {
+            this.checkinLeaderboardPage.onResume();
+        }
         if ("login".equals(this.screen) && this.qrLoginPage != null) {
             this.qrLoginPage.resume();
         }
@@ -2017,6 +2090,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.activityResumed = false;
         this.crownInput.cancel();
         if (this.checkinCenterPage != null) this.checkinCenterPage.onPause();
+        if (this.checkinLeaderboardPage != null) this.checkinLeaderboardPage.onPause();
         if (this.qrLoginPage != null) this.qrLoginPage.pause();
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
         this.handler.removeCallbacks(this.presenceTick);
@@ -2058,6 +2132,10 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if (this.checkinCenterPage != null) {
             this.checkinCenterPage.close();
             this.checkinCenterPage = null;
+        }
+        if (this.checkinLeaderboardPage != null) {
+            this.checkinLeaderboardPage.close();
+            this.checkinLeaderboardPage = null;
         }
         if (this.checkinCenterCoordinator != null) {
             this.checkinCenterCoordinator.close();

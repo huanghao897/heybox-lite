@@ -17,6 +17,7 @@ final class ScreenRoutes {
         parents.put("search", "feed");
         parents.put("reading_stats", "reading_center");
         parents.put("reading_center", "profile");
+        parents.put("leaderboard", "profile");
         parents.put("checkin_center", "profile");
         parents.put("announcement_board", "about");
         parents.put("display_preview", "display_settings");
