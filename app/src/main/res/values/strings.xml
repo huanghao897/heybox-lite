@@ -11,6 +11,7 @@
     <string name="title_ui_preview">界面预览</string>
     <string name="title_startup_update">启动与更新</string>
     <string name="title_content_cache">内容与缓存</string>
+    <string name="title_video_playback">视频播放</string>
     <string name="title_about">关于</string>
     <string name="title_search">搜索</string>
     <string name="title_post_body">正文</string>

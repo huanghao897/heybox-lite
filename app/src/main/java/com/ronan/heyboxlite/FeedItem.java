@@ -7,6 +7,7 @@ import org.json.JSONObject;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -43,6 +44,8 @@ final class FeedItem {
     final int clicks;
     int likes;
     final boolean article;
+    final boolean video;
+    final List<VideoData> videos;
     final boolean pinned;
     boolean liked;
     boolean following;
@@ -50,7 +53,8 @@ final class FeedItem {
 
     private FeedItem(String id, String title, String description, String author,
                      String authorId, String authorAvatar,
-                     String topicName, String image, long createdAt, int comments, int clicks, int likes, boolean article, boolean liked,
+                     String topicName, String image, long createdAt, int comments, int clicks, int likes,
+                     boolean article, boolean video, List<VideoData> videos, boolean liked,
                      boolean pinned, boolean following, String hsrc, String[] images) {
         this.id = id;
         this.hsrc = hsrc;
@@ -67,6 +71,10 @@ final class FeedItem {
         this.clicks = clicks;
         this.likes = likes;
         this.article = article;
+        this.video = video;
+        this.videos = videos == null || videos.isEmpty()
+                ? Collections.emptyList()
+                : Collections.unmodifiableList(new ArrayList<>(videos));
         this.pinned = pinned;
         this.liked = liked;
         this.following = following;
@@ -80,6 +88,8 @@ final class FeedItem {
         if (image.isEmpty()) image = firstImage(imageArray);
         if (image.isEmpty()) image = json.optString("image");
         if (image.isEmpty()) image = json.optString("thumb");
+        List<VideoData> videos = VideoData.from(json);
+        if (image.isEmpty() && !videos.isEmpty()) image = videos.get(0).cover;
         String[] detailImages = images(imageArray, thumbs, image,
                 json.optString("image"), json.optString("thumb"));
         String title = first(json.optString("title"), json.optString("subject"),
@@ -112,6 +122,8 @@ final class FeedItem {
                 firstInt(json, "click", "click_num", "read_num", "view_num", "views"),
                 firstInt(json, LIKE_KEYS),
                 isArticleJson(json),
+                !videos.isEmpty(),
+                videos,
                 json.optBoolean("is_award", json.optBoolean("liked",
                         json.optBoolean("is_liked", json.optInt("has_award") == 1))),
                 pinned(json),
@@ -143,6 +155,13 @@ final class FeedItem {
             json.put("click", clicks);
             json.put("link_award_num", likes);
             json.put("is_article", article ? 1 : 0);
+            json.put("has_video", video ? 1 : 0);
+            if (!videos.isEmpty()) {
+                VideoData firstVideo = videos.get(0);
+                if (!firstVideo.url.isEmpty()) json.put("video_url", firstVideo.url);
+                if (!firstVideo.cover.isEmpty()) json.put("video_thumb", firstVideo.cover);
+                if (!firstVideo.title.isEmpty()) json.put("video_title", firstVideo.title);
+            }
             json.put("is_top", pinned);
             json.put("is_liked", liked);
             JSONObject user = new JSONObject();
@@ -193,6 +212,9 @@ final class FeedItem {
 
         if (explicit != null) return explicit;
         if (contentType == 102 || isPostType(type)) return Boolean.FALSE;
+        // Older official feed responses use 0 for articles and 1 for posts.
+        Boolean conceptType = booleanValue(json, "use_concept_type");
+        if (conceptType != null) return !conceptType;
         return nestedResult;
     }
 

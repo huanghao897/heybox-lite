@@ -12,12 +12,14 @@ public class ScreenRoutesTest {
         assertParent("search", "feed");
         assertParent("reading_stats", "reading_center");
         assertParent("reading_center", "profile");
+        assertParent("leaderboard", "profile");
         assertParent("checkin_center", "profile");
         assertParent("announcement_board", "about");
         assertParent("display_preview", "display_settings");
         assertParent("display_settings", "settings_home");
         assertParent("startup_settings", "settings_home");
         assertParent("app_settings", "settings_home");
+        assertParent("video_settings", "settings_home");
         assertParent("about", "settings_home");
         assertParent("settings_home", "profile");
     }

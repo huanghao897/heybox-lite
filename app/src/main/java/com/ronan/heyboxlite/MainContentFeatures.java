@@ -35,6 +35,7 @@ final class MainContentFeatures {
         void showReadingStats();
         void showFavorites();
         void showCheckinCenter();
+        void showLeaderboard();
         void showSettings();
         void showDetail(FeedItem item);
         void showUserSpace(String userId, String name, String avatar);
@@ -139,6 +140,7 @@ final class MainContentFeatures {
                     @Override public void showReadingCenter() { host.showReadingCenter(); }
                     @Override public void showFavorites() { host.showFavorites(); }
                     @Override public void showCheckinCenter() { host.showCheckinCenter(); }
+                    @Override public void showLeaderboard() { host.showLeaderboard(); }
                     @Override public void showSettings() { host.showSettings(); }
                     @Override public void showUserSpace(String id, String name, String avatar) {
                         host.showUserSpace(id, name, avatar);

@@ -364,7 +364,7 @@ final class BackSwipeFrameLayout extends FrameLayout {
     private boolean isSafeSwipeOrigin(float dx) {
         int width = Math.max(1, getWidth());
         int topLevel = host.shellTopLevelIndex();
-        if (topLevel < 0) return startX <= width * 0.40f;
+        if (topLevel < 0) return true;
         if (dx < 0.0f) return startX >= width * 0.54f;
         return startX <= width * 0.46f;
     }

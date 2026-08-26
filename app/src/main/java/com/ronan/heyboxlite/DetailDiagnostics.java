@@ -4,6 +4,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.Iterator;
+import java.util.Collections;
 import java.util.List;
 
 final class DetailDiagnostics {
@@ -16,6 +17,15 @@ final class DetailDiagnostics {
                         JSONObject body, FeedItem fallback, JSONObject link,
                         JSONArray fallbackImages, JSONArray comments,
                         List<RichContent.Block> contentBlocks) {
+        return build(screen, currentLinkId, playGif, body, fallback, link,
+                fallbackImages, comments, contentBlocks, Collections.emptyList());
+    }
+
+    static String build(String screen, String currentLinkId, boolean playGif,
+                        JSONObject body, FeedItem fallback, JSONObject link,
+                        JSONArray fallbackImages, JSONArray comments,
+                        List<RichContent.Block> contentBlocks,
+                        List<VideoData> videos) {
         StringBuilder out = new StringBuilder();
         out.append("detail screen: ").append(screen == null ? "" : screen).append('\n');
         out.append("currentLinkId: ")
@@ -28,7 +38,7 @@ final class DetailDiagnostics {
         out.append("fallbackArticle: ").append(fallback != null && fallback.article).append('\n');
         out.append("playGif: ").append(playGif).append('\n');
         appendBodyKeys(out, body);
-        appendLink(out, link, fallbackImages, contentBlocks);
+        appendLink(out, link, fallbackImages, contentBlocks, videos);
         appendComments(out, comments);
         return out.toString();
     }
@@ -57,7 +67,8 @@ final class DetailDiagnostics {
 
     private static void appendLink(StringBuilder out, JSONObject link,
                                    JSONArray fallbackImages,
-                                   List<RichContent.Block> contentBlocks) {
+                                   List<RichContent.Block> contentBlocks,
+                                   List<VideoData> videos) {
         if (link == null) {
             out.append("link: null\n");
             return;
@@ -73,6 +84,18 @@ final class DetailDiagnostics {
         out.append("content_type: ").append(link.opt("content_type")).append('\n');
         out.append("has imgs: ").append(link.has("imgs"))
                 .append(" count=").append(images == null ? 0 : images.length())
+                .append('\n');
+        int playable = 0;
+        int covers = 0;
+        if (videos != null) {
+            for (VideoData video : videos) {
+                if (video.playable()) playable++;
+                if (!video.cover.isEmpty()) covers++;
+            }
+        }
+        out.append("video candidates: ").append(videos == null ? 0 : videos.size())
+                .append(" playable=").append(playable)
+                .append(" covers=").append(covers)
                 .append('\n');
         appendParsedContent(out, contentBlocks);
     }

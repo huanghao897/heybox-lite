@@ -58,6 +58,15 @@ public class OfficialRequestParamsTest {
     }
 
     @Test
+    public void detailAddsVideoMarkerOnlyForVideoPosts() {
+        Map<String, String> video = OfficialRequestParams.detail("42", "feed", true);
+        Map<String, String> post = OfficialRequestParams.detail("42", "feed", false);
+
+        assertEquals("1", video.get("has_video"));
+        assertFalse(post.containsKey("has_video"));
+    }
+
+    @Test
     public void subCommentsUseOnlyCursorParameters() {
         Map<String, String> params = OfficialRequestParams.subComments("100", "101", "detail");
 

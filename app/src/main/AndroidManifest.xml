@@ -9,6 +9,7 @@
 
     <queries>
         <package android:name="com.max.xiaoheihe" />
+        <package android:name="com.aliangmaker.media" />
     </queries>
 
     <application
@@ -40,6 +41,12 @@
             android:name=".ImageViewerActivity"
             android:exported="false"
             android:theme="@style/ImageViewerTheme" />
+        <activity
+            android:name=".VideoPlayerActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|density"
+            android:exported="false"
+            android:screenOrientation="unspecified"
+            android:theme="@style/AppTheme" />
         <activity
             android:name=".CheckinCaptchaActivity"
             android:excludeFromRecents="true"

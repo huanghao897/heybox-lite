@@ -270,11 +270,12 @@ final class RichContent {
                                         boolean articleMode, int depth) {
         if (depth > MAX_JSON_DEPTH) return;
         String type = item.optString("type").toLowerCase(Locale.ROOT);
-        if (isImageType(type) || type.contains("video")) {
+        if (isImageType(type)) {
             addImage(result.blocks, result.imageUrls, detailImage(item));
             addCaption(result.blocks, imageCaption(item));
             return;
         }
+        if (type.contains("video")) return;
         String text = firstText(item);
         boolean hasText = !text.isEmpty();
         if (hasText && isCaptionType(type)) {
@@ -465,6 +466,7 @@ final class RichContent {
         }
 
         String type = item.optString("type").toLowerCase(Locale.ROOT);
+        if (type.contains("video")) return;
         String image = firstImage(item);
         if (!image.isEmpty() && (isImageType(type) || !hasReadableContent(item))) {
             addImage(blocks, imageUrls, image);

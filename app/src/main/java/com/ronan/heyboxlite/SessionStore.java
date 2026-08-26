@@ -70,6 +70,13 @@ final class SessionStore {
     private static final String DOUBLE_TAP_COMMENT_REPLY = "double_tap_comment_reply";
     private static final String PLAY_GIF = "play_gif";
     private static final String NETWORK_MODE = "network_mode";
+    private static final String VIDEO_AUTOPLAY = "video_autoplay";
+    private static final String VIDEO_LOOP = "video_loop";
+    private static final String VIDEO_MUTED = "video_muted";
+    // Keep the old preference key so existing users retain their gesture setting.
+    private static final String VIDEO_LONG_PRESS_FAST_FORWARD = "video_double_tap_seek";
+    private static final String VIDEO_EXTERNAL_FALLBACK = "video_external_fallback";
+    private static final String VIDEO_DISPLAY_MODE = "video_display_mode";
     private static final String COMMENT_DRAFT_PREFIX = "comment_draft_";
     private static final String TEST_RELEASE_ID = "test_release_id";
     private static final String MOTION_LEVEL = "motion_level";
@@ -452,6 +459,54 @@ final class SessionStore {
 
     void setPlayGif(boolean value) {
         prefs.edit().putBoolean(PLAY_GIF, value).apply();
+    }
+
+    boolean videoAutoplay() {
+        return prefs.getBoolean(VIDEO_AUTOPLAY, true);
+    }
+
+    void setVideoAutoplay(boolean value) {
+        prefs.edit().putBoolean(VIDEO_AUTOPLAY, value).apply();
+    }
+
+    boolean videoLoop() {
+        return prefs.getBoolean(VIDEO_LOOP, false);
+    }
+
+    void setVideoLoop(boolean value) {
+        prefs.edit().putBoolean(VIDEO_LOOP, value).apply();
+    }
+
+    boolean videoMuted() {
+        return prefs.getBoolean(VIDEO_MUTED, false);
+    }
+
+    void setVideoMuted(boolean value) {
+        prefs.edit().putBoolean(VIDEO_MUTED, value).apply();
+    }
+
+    boolean videoLongPressFastForward() {
+        return prefs.getBoolean(VIDEO_LONG_PRESS_FAST_FORWARD, true);
+    }
+
+    void setVideoLongPressFastForward(boolean value) {
+        prefs.edit().putBoolean(VIDEO_LONG_PRESS_FAST_FORWARD, value).apply();
+    }
+
+    boolean videoExternalFallback() {
+        return prefs.getBoolean(VIDEO_EXTERNAL_FALLBACK, true);
+    }
+
+    void setVideoExternalFallback(boolean value) {
+        prefs.edit().putBoolean(VIDEO_EXTERNAL_FALLBACK, value).apply();
+    }
+
+    int videoDisplayMode() {
+        return Math.max(0, Math.min(1, prefs.getInt(VIDEO_DISPLAY_MODE, 0)));
+    }
+
+    void setVideoDisplayMode(int value) {
+        prefs.edit().putInt(VIDEO_DISPLAY_MODE, Math.max(0, Math.min(1, value))).apply();
     }
 
     int networkMode() {

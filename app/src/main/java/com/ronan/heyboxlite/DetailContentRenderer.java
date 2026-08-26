@@ -3,12 +3,15 @@ package com.ronan.heyboxlite;
 import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -47,8 +50,63 @@ final class DetailContentRenderer {
         return this.parser.resolve(link, fallback, fallbackImages);
     }
 
+    DetailContentParser.Result resolve(JSONObject link, String fallback,
+                                       JSONArray fallbackImages, FeedItem fallbackItem) {
+        return this.parser.resolve(link, fallback, fallbackImages, fallbackItem);
+    }
+
     void add(LinearLayout parent, DetailContentParser.Result content) {
+        addVideos(parent, content.videos);
         addBlocks(parent, content.blocks, content.useImagePager);
+    }
+
+    private void addVideos(LinearLayout parent, List<VideoData> videos) {
+        for (VideoData video : videos) {
+            FrameLayout card = new FrameLayout(this.activity);
+            Compat.setBackground(card, UiComponents.round(this.activity,
+                    placeholderColor(), 8, this.uiScale));
+            Compat.clipToOutline(card);
+            int height = Math.max(dp(126), Math.min(dp(190), imageTargetPx() * 9 / 16));
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, height);
+            cardParams.topMargin = dp(10);
+
+            if (!video.cover.isEmpty() && !this.session.noImage()) {
+                ImageView cover = new ImageView(this.activity);
+                cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                card.addView(cover, match());
+                ImageLoader.intoMeasuredRevealStable(cover, video.cover, imageTargetPx(), null);
+            }
+
+            if (video.playable() || !video.cover.isEmpty()) {
+                ImageButton play = new ImageButton(this.activity);
+                play.setContentDescription("播放视频");
+                play.setClickable(false);
+                play.setFocusable(false);
+                play.setPadding(dp(14), dp(14), dp(14), dp(14));
+                Drawable drawable = Compat.tintedDrawable(this.activity,
+                        R.drawable.ic_play, Color.WHITE);
+                if (drawable != null) play.setImageDrawable(drawable);
+                Compat.setBackground(play, UiComponents.round(this.activity,
+                        Color.argb(178, 0, 0, 0), 24, this.uiScale));
+                FrameLayout.LayoutParams playParams = new FrameLayout.LayoutParams(
+                        dp(54), dp(54), Gravity.CENTER);
+                card.addView(play, playParams);
+            } else {
+                TextView unavailable = text("视频暂不可播放", 12.0f, this.tokens.muted);
+                unavailable.setGravity(Gravity.CENTER);
+                card.addView(unavailable, match());
+            }
+            card.setOnClickListener(view -> {
+                if (!video.playable()) {
+                    Toast.makeText(this.activity, "当前详情没有返回可播放地址",
+                            Toast.LENGTH_SHORT).show();
+                } else if (!VideoPlayerLauncher.open(this.activity, video)) {
+                    Toast.makeText(this.activity, "请先安装凉腕播放器",
+                            Toast.LENGTH_SHORT).show();
+                }
+            });
+            parent.addView(card, cardParams);
+        }
     }
 
     int imageTargetPx() {

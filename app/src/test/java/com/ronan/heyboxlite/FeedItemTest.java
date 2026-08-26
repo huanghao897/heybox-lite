@@ -96,7 +96,7 @@ public class FeedItemTest {
         assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "post")
                 .put("content_type", 102)).article);
-        assertFalse(FeedItem.from(new JSONObject()
+        assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "concept-article")
                 .put("use_concept_type", 0)).article);
         assertFalse(FeedItem.from(new JSONObject()
@@ -117,14 +117,14 @@ public class FeedItemTest {
     }
 
     @Test
-    public void recognizesTextArticleTypesWithoutConceptFallback() throws Exception {
+    public void recognizesTextArticleTypesAndOfficialConceptMapping() throws Exception {
         assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "link-type")
                 .put("link_type", "article")).article);
         assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "type")
                 .put("type", "news")).article);
-        assertFalse(FeedItem.from(new JSONObject()
+        assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "concept-article")
                 .put("use_concept_type", 0)).article);
         assertFalse(FeedItem.from(new JSONObject()
@@ -134,6 +134,16 @@ public class FeedItemTest {
                 .put("linkid", "post-with-article-child")
                 .put("use_concept_type", 1)
                 .put("link_info", new JSONObject().put("is_article", 1))).article);
+    }
+
+    @Test
+    public void recognizesOfficialConceptTypeAsString() throws Exception {
+        assertTrue(FeedItem.from(new JSONObject()
+                .put("linkid", "string-article")
+                .put("use_concept_type", "0")).article);
+        assertFalse(FeedItem.from(new JSONObject()
+                .put("linkid", "string-post")
+                .put("use_concept_type", "1")).article);
     }
 
     @Test
@@ -165,6 +175,41 @@ public class FeedItemTest {
                 .put("is_article", 1));
 
         assertTrue(FeedItem.from(article.toJson()).article);
+    }
+
+    @Test
+    public void recognizesVideoFeedAndPreservesItOffline() throws Exception {
+        FeedItem video = FeedItem.from(new JSONObject()
+                .put("linkid", "video")
+                .put("has_video", 1)
+                .put("video_url", "https://video.example/test.mp4"));
+
+        assertTrue(video.video);
+        assertTrue(FeedItem.from(video.toJson()).video);
+        assertEquals("https://video.example/test.mp4",
+                FeedItem.from(video.toJson()).videos.get(0).url);
+    }
+
+    @Test
+    public void recognizesNestedVideoFeed() throws Exception {
+        FeedItem video = FeedItem.from(new JSONObject()
+                .put("linkid", "nested-video")
+                .put("link_info", new JSONObject()
+                        .put("type", "video")
+                        .put("play_url", "https://video.example/test.mp4")));
+
+        assertTrue(video.video);
+    }
+
+    @Test
+    public void doesNotTreatARegularImagePostAsVideo() throws Exception {
+        FeedItem post = FeedItem.from(new JSONObject()
+                .put("linkid", "image-post")
+                .put("has_video", 1)
+                .put("imgs", new JSONArray().put("https://img.example/post.jpg")));
+
+        assertFalse(post.video);
+        assertTrue(post.videos.isEmpty());
     }
 
     @Test

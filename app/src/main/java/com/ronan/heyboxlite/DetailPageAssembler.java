@@ -134,9 +134,9 @@ final class DetailPageAssembler {
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
         JSONArray comments = result == null ? null : result.optJSONArray("comments");
         DetailContentParser.Result content = contentRenderer.resolve(
-                link, fallback.description, fallbackImages);
+                link, fallback.description, fallbackImages, fallback);
         String diagnostics = DetailDiagnostics.build(screen, linkId, session.playGif(),
-                body, fallback, link, fallbackImages, comments, content.blocks);
+                body, fallback, link, fallbackImages, comments, content.blocks, content.videos);
         cache.log("detail diagnostics captured link=" + fallback.id
                 + " title=" + DetailDiagnostics.compactText(heading, 48));
         contentRenderer.add(article, content);

@@ -70,7 +70,8 @@ final class DetailLoadCoordinator {
             });
             return;
         }
-        api.get(EndpointProvider.linkTreeV2(), OfficialRequestParams.detail(item.id, item.hsrc),
+        api.get(EndpointProvider.linkTreeV2(),
+                OfficialRequestParams.detail(item.id, item.hsrc, item.video),
                 new ApiClient.Callback() {
                     @Override
                     public void onSuccess(JSONObject body) {
@@ -134,6 +135,7 @@ final class DetailLoadCoordinator {
 
     private void cacheAndRender(FeedItem item, JSONObject body, int token) {
         JSONObject normalized = DetailResponseNormalizer.normalize(body);
+        DetailResponseNormalizer.mergeVideoFallback(normalized, item.toJson());
         cache.saveDetail(item.id, normalized);
         if (cache.isWatchLater(item.id)) {
             host.refreshOffline(item, normalized);

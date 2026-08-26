@@ -24,7 +24,6 @@ import android.os.SystemClock;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
-import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -45,7 +44,8 @@ import java.util.Map;
 import org.json.JSONObject;
 
 @SuppressLint("WrongConstant")
-public final class MainActivity extends Activity implements BackSwipeFrameLayout.Host {
+public final class MainActivity extends Activity implements BackSwipeFrameLayout.Host,
+        ShellScreenNavigator.Host, CheckinLeaderboardController.Host {
     private static final int REQUEST_CHECKIN_CAPTCHA = 9134;
     private int BG;
     private int PANEL;
@@ -58,6 +58,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private LiteDialogPresenter liteDialogs;
     private DisplaySettingsPage displaySettingsPage;
     private AppSettingsPage appSettingsPage;
+    private VideoSettingsPage videoSettingsPage;
     private NoticeCenter noticeCenter;
     private UpdateInstaller updateInstaller;
     private DiagnosticsController diagnosticsController;
@@ -80,7 +81,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private QrLoginPage qrLoginPage;
     private CheckinCenterCoordinator checkinCenterCoordinator;
     private CheckinCenterPage checkinCenterPage;
-    private CheckinLeaderboardPage checkinLeaderboardPage;
+    private CheckinLeaderboardController checkinLeaderboardController;
     private ReadingTimeTracker readingTimeTracker;
     private LinearLayout shellRoot;
     private LinearLayout shellBar;
@@ -103,6 +104,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private long lastExitBackAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final PageTransitionController pageTransitions = new PageTransitionController();
+    private ShellScreenNavigator shellScreenNavigator;
+    private MainActivityLayout layout;
     private CrownInputHandler crownInput;
     private SearchBarController searchBars;
     private SearchPage searchPage;
@@ -141,6 +144,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             return;
         }
         this.session = new SessionStore(this);
+        this.layout = new MainActivityLayout(this, this.session);
+        this.shellScreenNavigator = new ShellScreenNavigator(this);
         this.crownInput = new CrownInputHandler(this, this.session,
                 new CrownInputHandler.Host() {
                     @Override public String screen() {
@@ -318,14 +323,16 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             this.checkinCenterPage.close();
             this.checkinCenterPage = null;
         }
-        if (this.checkinLeaderboardPage != null) {
-            this.checkinLeaderboardPage.close();
-            this.checkinLeaderboardPage = null;
+        if (this.checkinLeaderboardController != null) {
+            this.checkinLeaderboardController.close();
+            this.checkinLeaderboardController = null;
         }
         discardRetainedLayoutViews();
         initializeSettingsFeatures();
         initializeContentFeatures();
         initializeDetailFeatures();
+        this.checkinLeaderboardController = new CheckinLeaderboardController(this, this.session,
+                this.checkinCenterCoordinator, this.themeTokens, this);
         buildShellView();
     }
 
@@ -442,6 +449,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                         return MainActivity.this.content;
                     }
                 });
+        this.videoSettingsPage = new VideoSettingsPage(this.session, this.settingsUi,
+                (key, title) -> MainActivity.this.settingsPage(key, title));
         this.noticeCenter = new NoticeCenter(this, this.session, this.localCache,
                 this.settingsUi, this.liteDialogs, this.themeTokens, usesRoundLayout(),
                 new NoticeCenter.Host() {
@@ -632,8 +641,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 return roundHorizontalInset(RoundLayoutMetrics.HEADER_HORIZONTAL_RATIO, 10);
             }
             @Override public int roundHeaderTopPadding() {
-                return RoundLayoutMetrics.componentInset(screenMetrics().heightPixels,
-                        RoundLayoutMetrics.PAGE_TOP_RATIO, dp(9));
+                return MainActivity.this.layout.roundHeaderTopPadding();
             }
             @Override public int roundSearchInset() {
                 return roundHorizontalInset(RoundLayoutMetrics.SEARCH_HORIZONTAL_RATIO, 6);
@@ -744,59 +752,34 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         setContentView(linearLayoutVertical);
     }
 
-    private DisplayMetrics screenMetrics() {
-        DisplayMetrics metrics = new DisplayMetrics();
-        try {
-            if (Build.VERSION.SDK_INT >= 17) {
-                getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
-            } else {
-                getWindowManager().getDefaultDisplay().getMetrics(metrics);
-            }
-        } catch (RuntimeException error) {
-            return getResources().getDisplayMetrics();
-        }
-        return metrics;
-    }
-
     private boolean usesRoundLayout() {
-        return this.session != null && this.session.usesRoundLayout();
+        return this.layout != null && this.layout.usesRoundLayout();
     }
 
     private boolean usesWatchLayout() {
-        return this.session != null && RoundLayoutMetrics.isWatchDisplay(this);
+        return this.layout != null && this.layout.usesWatchLayout();
     }
 
-    private int pageHorizontalPadding() {
-        if (!usesRoundLayout()) return dp(8);
-        DisplayMetrics metrics = screenMetrics();
-        return RoundLayoutMetrics.componentInset(metrics.widthPixels,
-                RoundLayoutMetrics.PAGE_HORIZONTAL_RATIO, dp(8));
+    @Override
+    public int pageHorizontalPadding() {
+        return this.layout.pageHorizontalPadding();
     }
 
     private int pageTopPadding() {
-        if (!usesRoundLayout()) return dp(8);
-        DisplayMetrics metrics = screenMetrics();
-        return RoundLayoutMetrics.componentInset(metrics.heightPixels,
-                RoundLayoutMetrics.PAGE_TOP_RATIO, dp(8));
+        return this.layout.pageTopPadding();
     }
 
-    private int subpageTopPadding() {
-        if (!usesRoundLayout()) return dp(8);
-        DisplayMetrics metrics = screenMetrics();
-        return RoundLayoutMetrics.componentInset(metrics.heightPixels,
-                RoundLayoutMetrics.SUBPAGE_TOP_RATIO, dp(8));
+    @Override
+    public int subpageTopPadding() {
+        return this.layout.subpageTopPadding();
     }
 
     private int roundHorizontalInset(float targetRatio, int minimumDp) {
-        DisplayMetrics metrics = screenMetrics();
-        return RoundLayoutMetrics.componentInset(metrics.widthPixels,
-                targetRatio, dp(minimumDp));
+        return this.layout.horizontalInset(targetRatio, minimumDp);
     }
 
     private int roundHeaderInnerInset() {
-        return usesRoundLayout()
-                ? RoundLayoutMetrics.headerInnerInset(screenMetrics().widthPixels)
-                : 0;
+        return this.layout.headerInnerInset();
     }
 
     private void discardRetainedLayoutViews() {
@@ -966,96 +949,97 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 : this.retainedPages.get(key);
         return target != null && target.getParent() == null ? target : null;
     }
-
     private void configureAdoptedShellScreen(String key) {
-        if ("checkin_center".equals(this.screen) && this.checkinCenterPage != null) {
-            this.checkinCenterPage.onPause();
+        this.shellScreenNavigator.adopt(key);
+    }
+    @Override
+    public String screen() { return this.screen; }
+    @Override public void pauseCheckinPage() {
+        if (this.checkinCenterPage != null) this.checkinCenterPage.onPause();
+    }
+    @Override public void pauseLeaderboardPage() {
+        if (this.checkinLeaderboardController != null) {
+            this.checkinLeaderboardController.onPause();
         }
-        if ("feed".equals(key)) {
-            activate("feed");
-            this.title.setText(R.string.title_feed);
-            this.action.setVisibility(4);
-            this.feedPage.restoreScroll();
-            return;
-        }
-        if ("profile".equals(key)) {
-            this.userSpaceReturnScreen = "feed";
-            activate("profile");
-            if (this.profilePage != null) this.profilePage.updateReadingSummary();
-            this.title.setText(R.string.title_profile);
-            this.action.setVisibility(0);
-            setIcon(this.action, R.drawable.il_refresh, this.TEXT, 19);
-            this.action.setOnClickListener(view -> {
-                if (this.profilePage != null) this.profilePage.invalidate();
-                showProfile();
-            });
-            return;
-        }
-        if ("reading_stats".equals(key)) {
-            this.screen = key;
-            setBottomNavVisible(false, false);
-            this.title.setText(R.string.title_reading_time);
-            this.leading.setVisibility(0);
-            this.leading.setOnClickListener(view -> {
-                this.pendingBackTransition = true;
-                showReadingCenter();
-            });
-            this.action.setVisibility(4);
-            return;
-        }
-        if ("reading_center".equals(key)) {
-            this.screen = key;
-            setBottomNavVisible(false, false);
-            this.title.setText(R.string.title_reading_center);
-            this.leading.setVisibility(0);
-            this.leading.setOnClickListener(view -> {
-                this.pendingBackTransition = true;
-                showProfile();
-            });
-            this.action.setVisibility(4);
-            return;
-        }
+    }
+    @Override public void activateTopLevel(String key) {
+        if ("profile".equals(key)) this.userSpaceReturnScreen = "feed";
+        activate(key);
+    }
+    @Override public void restoreFeedScroll() { this.feedPage.restoreScroll(); }
+    @Override public void updateProfileSummary() {
+        if (this.profilePage != null) this.profilePage.updateReadingSummary();
+    }
+    @Override public void showProfileRefreshAction() {
+        this.title.setText(R.string.title_profile);
+        this.action.setVisibility(View.VISIBLE);
+        setIcon(this.action, R.drawable.il_refresh, this.TEXT, 19);
+        this.action.setOnClickListener(view -> {
+            if (this.profilePage != null) this.profilePage.invalidate();
+            showProfile();
+        });
+    }
+    @Override public void showSubpage(String key, int titleRes, Runnable backAction) {
         this.screen = key;
         setBottomNavVisible(false, false);
-        this.leading.setVisibility(0);
-        this.action.setVisibility(4);
-        if ("settings_home".equals(key)) {
-            this.title.setText(R.string.title_settings);
-            this.leading.setOnClickListener(view -> {
-                this.pendingBackTransition = true;
-                showProfile();
-            });
-        } else if ("display_settings".equals(key)) {
-            this.title.setText(R.string.title_display);
-            this.leading.setOnClickListener(view -> {
-                this.pendingBackTransition = true;
-                showSettingsHome();
-            });
-        } else if ("display_preview".equals(key)) {
-            this.title.setText(R.string.title_ui_preview);
-            this.leading.setOnClickListener(view -> {
-                this.pendingBackTransition = true;
-                showDisplaySettings();
-            });
-        } else if ("startup_settings".equals(key)) {
-            this.title.setText(R.string.title_startup_update);
-            this.leading.setOnClickListener(view -> {
-                this.pendingBackTransition = true;
-                showSettingsHome();
-            });
-        } else if ("app_settings".equals(key)) {
-            this.title.setText(R.string.title_content_cache);
-            this.leading.setOnClickListener(view -> {
-                this.pendingBackTransition = true;
-                showSettingsHome();
-            });
-        } else if ("about".equals(key)) {
-            this.title.setText(R.string.title_about);
-            this.leading.setOnClickListener(view -> {
-                this.pendingBackTransition = true;
-                showSettingsHome();
-            });
-        }
+        this.title.setText(titleRes);
+        this.leading.setVisibility(View.VISIBLE);
+        this.leading.setOnClickListener(view -> {
+            this.pendingBackTransition = true;
+            backAction.run();
+        });
+        this.action.setVisibility(View.INVISIBLE);
+    }
+    @Override public void navigateToProfile() { showProfile(); }
+    @Override public void navigateToReadingCenter() { showReadingCenter(); }
+    @Override public void navigateToSettingsHome() { showSettingsHome(); }
+    @Override public void navigateToDisplaySettings() { showDisplaySettings(); }
+
+    @Override
+    public boolean leaderboardUsesRoundLayout() {
+        return usesRoundLayout();
+    }
+
+    @Override
+    public boolean leaderboardIsActive() {
+        return "leaderboard".equals(this.screen) && !isFinishing();
+    }
+
+    @Override
+    public void prepareLeaderboardChrome(Runnable backAction) {
+        stopQrPolling();
+        showSubpage("leaderboard", R.string.title_leaderboard, backAction);
+    }
+
+    @Override
+    public void retainLeaderboardPage(View page) {
+        this.retainedPages.put("leaderboard", page);
+    }
+
+    @Override
+    public void transitionToLeaderboard(View page) {
+        transitionTo(page);
+    }
+
+    @Override
+    public void returnFromLeaderboard() {
+        this.pendingBackTransition = true;
+        showProfile();
+    }
+
+    @Override
+    public void navigateToAbout() {
+        showAbout();
+    }
+
+    @Override
+    public void navigateToFeed() {
+        showFeed();
+    }
+
+    @Override
+    public int roundHeaderInset() {
+        return roundHeaderInnerInset();
     }
 
     private void activate(String key) {
@@ -1441,8 +1425,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if ("checkin_center".equals(this.screen) && this.checkinCenterPage != null) {
             this.checkinCenterPage.onPause();
         }
-        if ("leaderboard".equals(this.screen) && this.checkinLeaderboardPage != null) {
-            this.checkinLeaderboardPage.onPause();
+        if ("leaderboard".equals(this.screen) && this.checkinLeaderboardController != null) {
+            this.checkinLeaderboardController.onPause();
         }
         if ("feed".equals(this.screen)) {
             this.pendingLateralPush = true;
@@ -1481,6 +1465,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 R.drawable.il_refresh, this::showStartupSettings);
         this.settingsUi.addEntry(panel, getString(R.string.title_content_cache), null, null,
                 R.drawable.il_globe, this::showAppSettings);
+        this.settingsUi.addEntry(panel, getString(R.string.title_video_playback), null, null,
+                R.drawable.il_gif, () -> this.videoSettingsPage.show());
         this.settingsUi.addEntry(panel, getString(R.string.title_about), null, appVersion(),
                 R.drawable.il_info, this::showAbout);
         page.addView(panel);
@@ -1547,58 +1533,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private void showLeaderboard() {
-        stopQrPolling();
-        this.screen = "leaderboard";
-        setBottomNavVisible(false);
-        this.leading.setVisibility(0);
-        this.leading.setOnClickListener(view -> {
-            this.pendingBackTransition = true;
-            showProfile();
-        });
-        this.title.setText(R.string.title_leaderboard);
-        this.action.setVisibility(4);
-        this.action.setOnClickListener(null);
-        if (this.checkinLeaderboardPage != null
-                && this.checkinLeaderboardPage.usesRoundLayout() != usesRoundLayout()) {
-            this.checkinLeaderboardPage.close();
-            this.checkinLeaderboardPage = null;
+        if (this.checkinLeaderboardController != null) {
+            this.checkinLeaderboardController.show();
         }
-        if (this.checkinLeaderboardPage == null) {
-            this.checkinLeaderboardPage = new CheckinLeaderboardPage(this, this.session,
-                    this.checkinCenterCoordinator, this.themeTokens, usesRoundLayout(),
-                    new CheckinLeaderboardPage.Host() {
-                        @Override
-                        public void closePage() {
-                            MainActivity.this.pendingBackTransition = true;
-                            MainActivity.this.showProfile();
-                        }
-
-                        @Override
-                        public boolean isActive() {
-                            return "leaderboard".equals(MainActivity.this.screen)
-                                    && !MainActivity.this.isFinishing();
-                        }
-
-                        @Override
-                        public int pageHorizontalPadding() {
-                            return MainActivity.this.pageHorizontalPadding();
-                        }
-
-                        @Override
-                        public int subpageTopPadding() {
-                            return MainActivity.this.subpageTopPadding();
-                        }
-
-                        @Override
-                        public int roundHeaderInset() {
-                            return MainActivity.this.roundHeaderInnerInset();
-                        }
-                    });
-        }
-        this.checkinLeaderboardPage.onResume();
-        View page = this.checkinLeaderboardPage.view();
-        this.retainedPages.put("leaderboard", page);
-        transitionTo(page);
     }
 
     private void showReadingCenter() {
@@ -1780,40 +1717,27 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             showProfile();
             return;
         }
-        if (!"saved".equals(this.screen)) {
-            if (!"announcement_board".equals(this.screen)) {
-                if (!"display_preview".equals(this.screen)) {
-                    if (!"display_settings".equals(this.screen) && !"startup_settings".equals(this.screen) && !"app_settings".equals(this.screen) && !"about".equals(this.screen)) {
-                        if (!"settings_home".equals(this.screen)) {
-                            if ("feed".equals(this.screen)) {
-                                if (this.session.confirmExitOnBack()) {
-                                    long now = System.currentTimeMillis();
-                                    if (now - this.lastExitBackAt > 2000L) {
-                                        this.lastExitBackAt = now;
-                                        toast(getString(R.string.message_press_back_again));
-                                        return;
-                                    }
-                                }
-                                super.onBackPressed();
-                                return;
-                            } else {
-                                showFeed();
-                                return;
-                            }
-                        }
-                        showProfile();
-                        return;
-                    }
-                    showSettingsHome();
-                    return;
-                }
-                showDisplaySettings();
-                return;
-            }
-            showAbout();
+        if ("saved".equals(this.screen)) {
+            returnFromSavedPage();
             return;
         }
-        returnFromSavedPage();
+        if (ScreenRoutes.canNavigateBack(this.screen)) {
+            this.shellScreenNavigator.navigateToParent(this.screen);
+            return;
+        }
+        if (!"feed".equals(this.screen)) {
+            showFeed();
+            return;
+        }
+        if (this.session.confirmExitOnBack()) {
+            long now = System.currentTimeMillis();
+            if (now - this.lastExitBackAt > 2000L) {
+                this.lastExitBackAt = now;
+                toast(getString(R.string.message_press_back_again));
+                return;
+            }
+        }
+        super.onBackPressed();
     }
 
     private void returnFromDetail() {
@@ -2065,8 +1989,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if (this.checkinCenterPage != null && "checkin_center".equals(this.screen)) {
             this.checkinCenterPage.onResume();
         }
-        if (this.checkinLeaderboardPage != null && "leaderboard".equals(this.screen)) {
-            this.checkinLeaderboardPage.onResume();
+        if (this.checkinLeaderboardController != null && "leaderboard".equals(this.screen)) {
+            this.checkinLeaderboardController.onResume();
         }
         if ("login".equals(this.screen) && this.qrLoginPage != null) {
             this.qrLoginPage.resume();
@@ -2090,7 +2014,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.activityResumed = false;
         this.crownInput.cancel();
         if (this.checkinCenterPage != null) this.checkinCenterPage.onPause();
-        if (this.checkinLeaderboardPage != null) this.checkinLeaderboardPage.onPause();
+        if (this.checkinLeaderboardController != null) {
+            this.checkinLeaderboardController.onPause();
+        }
         if (this.qrLoginPage != null) this.qrLoginPage.pause();
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
         this.handler.removeCallbacks(this.presenceTick);
@@ -2133,9 +2059,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             this.checkinCenterPage.close();
             this.checkinCenterPage = null;
         }
-        if (this.checkinLeaderboardPage != null) {
-            this.checkinLeaderboardPage.close();
-            this.checkinLeaderboardPage = null;
+        if (this.checkinLeaderboardController != null) {
+            this.checkinLeaderboardController.close();
+            this.checkinLeaderboardController = null;
         }
         if (this.checkinCenterCoordinator != null) {
             this.checkinCenterCoordinator.close();

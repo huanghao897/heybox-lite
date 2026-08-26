@@ -26,6 +26,10 @@ final class OfficialRequestParams {
     }
 
     static Map<String, String> detail(String linkId, String hsrc) {
+        return detail(linkId, hsrc, false);
+    }
+
+    static Map<String, String> detail(String linkId, String hsrc, boolean hasVideo) {
         Map<String, String> params = new LinkedHashMap<>();
         putIfPresent(params, "h_src", hsrc);
         params.put("link_id", linkId);
@@ -33,6 +37,7 @@ final class OfficialRequestParams {
         params.put("limit", "20");
         params.put("is_first", "1");
         params.put("owner_only", "0");
+        if (hasVideo) params.put("has_video", "1");
         return params;
     }
 

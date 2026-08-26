@@ -77,6 +77,59 @@ public class DetailResponseNormalizerTest {
         assertEquals("https://example.com/avatar.jpg", item.authorAvatar);
     }
 
+    @Test
+    public void movesVideoDetailCommentVariantsIntoRendererField() throws Exception {
+        JSONArray comments = new JSONArray().put(new JSONObject()
+                .put("comment", new JSONArray().put(new JSONObject()
+                        .put("commentid", "video-comment"))));
+        JSONObject response = new JSONObject().put("result", new JSONObject()
+                .put("link", new JSONObject().put("linkid", "video-1"))
+                .put("data", new JSONObject().put("comments", comments)));
+
+        JSONObject normalized = DetailResponseNormalizer.normalize(response);
+
+        assertEquals("video-comment", normalized.getJSONObject("result")
+                .getJSONArray("comments").getJSONObject(0)
+                .getJSONArray("comment").getJSONObject(0)
+                .getString("commentid"));
+    }
+
+    @Test
+    public void restoresVideoFieldsWhenDetailOmitsThem() throws Exception {
+        JSONObject response = new JSONObject().put("result", new JSONObject()
+                .put("link", new JSONObject()
+                        .put("linkid", "video-1")
+                        .put("has_video", 1)));
+        JSONObject fallback = new JSONObject()
+                .put("has_video", 1)
+                .put("video_url", "https://video.example/test.mp4")
+                .put("video_thumb", "https://img.example/test.jpg");
+
+        DetailResponseNormalizer.mergeVideoFallback(response, fallback);
+
+        JSONObject link = response.getJSONObject("result").getJSONObject("link");
+        assertEquals("https://video.example/test.mp4", link.getString("video_url"));
+        assertEquals("https://img.example/test.jpg", link.getString("video_thumb"));
+    }
+
+    @Test
+    public void restoresVideoCoverWhenDetailOnlyReturnsPlayableUrl() throws Exception {
+        JSONObject response = new JSONObject().put("result", new JSONObject()
+                .put("link", new JSONObject()
+                        .put("linkid", "video-2")
+                        .put("has_video", 1)
+                        .put("video_url", "https://video.example/test.mp4")));
+        JSONObject fallback = new JSONObject()
+                .put("has_video", 1)
+                .put("video_url", "https://video.example/test.mp4")
+                .put("video_thumb", "https://img.example/test.jpg");
+
+        DetailResponseNormalizer.mergeVideoFallback(response, fallback);
+
+        assertEquals("https://img.example/test.jpg", response.getJSONObject("result")
+                .getJSONObject("link").getString("video_thumb"));
+    }
+
     private static JSONObject response(JSONObject link, JSONArray comments) throws Exception {
         return new JSONObject().put("result", new JSONObject()
                 .put("link", link)

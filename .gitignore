@@ -43,3 +43,13 @@ native-sign*.txt
 /hot-main-list-sample.json
 /tmp-official-*
 /frida-*
+
+# Local Gradle cache (kept out of the repo; the wrapper itself stays tracked)
+.gradle-local/
+
+# Playwright / browser test residue (profiles, crash dumps, temp data)
+output/
+.playwright-cli/
+
+# UI design iteration artifacts: screenshots, uiautomator dumps, publish scripts
+build-artifacts/

@@ -123,9 +123,7 @@ final class CheckinCenterClient {
         boolean captchaRequired() {
             return "captcha_required".equals(diagnosticCode) && !captchaUri.isEmpty();
         }
-
     }
-
     static final class PairingStart {
         final String deviceCode;
         final String userCode;
@@ -145,7 +143,6 @@ final class CheckinCenterClient {
             this.registrationEmailRequired = registrationEmailRequired;
         }
     }
-
     static final class RegistrationEmailSession {
         final String challengeId;
         final int retryAfterSeconds;
@@ -158,7 +155,6 @@ final class CheckinCenterClient {
             this.expiresInSeconds = expiresInSeconds;
         }
     }
-
     static final class PairingPoll {
         final String state;
         final String deviceToken;
@@ -172,7 +168,6 @@ final class CheckinCenterClient {
             return "authorized".equals(state) && !deviceToken.isEmpty();
         }
     }
-
     static final class ConnectedAccount {
         final String displayName;
         final String externalIdMasked;
@@ -184,7 +179,6 @@ final class CheckinCenterClient {
             this.taskEnabled = taskEnabled;
         }
     }
-
     static final class SmsSession {
         final String sessionId;
         final int retryAfterSeconds;
@@ -196,7 +190,6 @@ final class CheckinCenterClient {
             this.expiresInSeconds = expiresInSeconds;
         }
     }
-
     static final class Status {
         final Account account;
         final Task task;
@@ -211,7 +204,6 @@ final class CheckinCenterClient {
             this.membership = membership;
         }
     }
-
     static final class Account {
         final String state;
         final String displayName;
