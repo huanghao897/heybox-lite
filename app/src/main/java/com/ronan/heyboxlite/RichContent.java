@@ -934,7 +934,7 @@ final class RichContent {
             String label = decodeHtml(matcher.group(2)).trim();
             if (label.isEmpty()) label = "表情";
             EmojiUrls urls = extractEmojiUrls(attrs);
-            if (urls.hasUrl()) {
+            if (urls.hasUrl() && !RichLinkClassifier.isContentLink(attrs)) {
                 String token = token(label);
                 EmojiStore.register(token, urls.light, urls.dark);
                 matcher.appendReplacement(output, Matcher.quoteReplacement(token));

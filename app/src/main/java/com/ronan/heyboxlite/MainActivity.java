@@ -1092,6 +1092,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         captureFullScreenSnapshot(screenKey);
     }
 
+    @Override public boolean shouldCaptureShellState() { return !"reading_center".equals(this.screen); }
+
     @Override
     public BackSwipeFrameLayout.Preview createShellPreview(String targetKey, boolean back) {
         View target = realShellPreview(targetKey);
@@ -1555,7 +1557,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         });
         this.title.setText(R.string.title_reading_center);
         this.action.setVisibility(4);
-        this.content.removeAllViews();
         this.pendingBackTransition = false;
     }
 

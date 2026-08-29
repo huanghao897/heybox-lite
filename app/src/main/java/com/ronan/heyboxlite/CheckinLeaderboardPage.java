@@ -9,6 +9,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -67,7 +68,6 @@ final class CheckinLeaderboardPage {
                 host.roundHeaderInset(), handler, host::closePage);
         this.root = new FrameLayout(activity);
         this.root.setBackgroundColor(tokens.background);
-        render();
     }
 
     View view() {
@@ -112,12 +112,13 @@ final class CheckinLeaderboardPage {
     void close() {
         closed = true;
         handler.removeCallbacksAndMessages(null);
+        ImageLoader.cancelTree(root);
         root.removeAllViews();
     }
 
     private void render() {
         if (closed) return;
-        Motions.resetTree(root);
+        ImageLoader.cancelTree(root);
         root.removeAllViews();
 
         ScrollView scroll = new ScrollView(activity);
@@ -132,7 +133,6 @@ final class CheckinLeaderboardPage {
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
 
         page.addView(settingsUi.topCard(activity.getString(R.string.title_leaderboard)));
-        ui.addTop(page, overviewCard(), dimensions.compactGap());
 
         if (loading || data == null && errorMessage.isEmpty()) {
             ui.addTop(page, loadingCard(), dimensions.sectionGap());
@@ -143,13 +143,6 @@ final class CheckinLeaderboardPage {
             ui.addTop(page, boardCard(), dimensions.compactGap());
         }
         root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
-    }
-
-    private View overviewCard() {
-        LinearLayout card = card();
-        card.addView(ui.statusHeader(R.drawable.il_leaderboard, "公开排行榜",
-                dimensions.overviewSubtitle(), tokens.text, false));
-        return card;
     }
 
     private View loadingCard() {
@@ -264,13 +257,7 @@ final class CheckinLeaderboardPage {
         row.addView(rank, new LinearLayout.LayoutParams(rankWidth, uiDp(30)));
 
         int avatarSize = dimensions.avatarSize();
-        TextView avatar = ui.label(entry.initial, dimensions.bodySp(), tokens.text);
-        avatar.setGravity(Gravity.CENTER);
-        avatar.setSingleLine(true);
-        avatar.setEllipsize(TextUtils.TruncateAt.END);
-        avatar.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        Compat.setBackground(avatar, UiComponents.round(
-                activity, tokens.pressedSurface(), dimensions.avatarRadius(), scale()));
+        FrameLayout avatar = avatarView(entry, avatarSize);
         LinearLayout.LayoutParams avatarParams = new LinearLayout.LayoutParams(
                 avatarSize, avatarSize);
         avatarParams.leftMargin = dimensions.avatarLeftMargin();
@@ -296,6 +283,41 @@ final class CheckinLeaderboardPage {
         valueParams.leftMargin = dimensions.valueLeftMargin();
         row.addView(value, valueParams);
         return row;
+    }
+
+    private FrameLayout avatarView(CheckinLeaderboard.Entry entry, int size) {
+        FrameLayout container = new FrameLayout(activity);
+
+        TextView fallback = ui.label(entry.initial, dimensions.bodySp(), tokens.text);
+        fallback.setGravity(Gravity.CENTER);
+        fallback.setSingleLine(true);
+        fallback.setEllipsize(TextUtils.TruncateAt.END);
+        fallback.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        Compat.setBackground(fallback, UiComponents.round(
+                activity, tokens.pressedSurface(), dimensions.avatarRadius(), scale()));
+        container.addView(fallback, new FrameLayout.LayoutParams(-1, -1));
+
+        ImageView image = new ImageView(activity);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        Compat.setBackground(image, UiComponents.round(
+                activity, tokens.pressedSurface(), dimensions.avatarRadius(), scale()));
+        Compat.clipToOutline(image);
+        image.setVisibility(View.INVISIBLE);
+        container.addView(image, new FrameLayout.LayoutParams(-1, -1));
+
+        if (!session.noImage() && !entry.avatarUrl.isEmpty()) {
+            ImageLoader.intoMeasuredStable(image, entry.avatarUrl, size,
+                    (success, bitmap) -> {
+                        if (success && bitmap != null) {
+                            image.setVisibility(View.VISIBLE);
+                            fallback.setVisibility(View.GONE);
+                        } else {
+                            image.setVisibility(View.INVISIBLE);
+                            fallback.setVisibility(View.VISIBLE);
+                        }
+                    });
+        }
+        return container;
     }
 
     private void addDivider(LinearLayout parent, int rank) {

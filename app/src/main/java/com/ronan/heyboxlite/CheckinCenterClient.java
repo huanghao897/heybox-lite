@@ -954,7 +954,7 @@ final class CheckinCenterClient {
         return result >= 0 && result <= 1_000_000 ? result : -1;
     }
 
-    private static URI requireTrustedUri(String value, boolean api, Operation operation)
+    static URI requireTrustedUri(String value, boolean api, Operation operation)
             throws ApiError {
         try {
             URI uri = new URI(value);

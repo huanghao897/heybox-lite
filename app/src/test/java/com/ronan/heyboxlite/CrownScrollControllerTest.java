@@ -10,7 +10,7 @@ public class CrownScrollControllerTest {
     public void scalesDistanceWithConfiguredSpeed() {
         CrownScrollController controller = new CrownScrollController();
 
-        assertEquals(-11, controller.distance(1.0f, 44, 50));
+        assertEquals(-22, controller.distance(1.0f, 44, 50));
         assertEquals(-44, controller.distance(1.0f, 44, 100));
         assertEquals(-88, controller.distance(1.0f, 44, 200));
     }
@@ -36,7 +36,7 @@ public class CrownScrollControllerTest {
     }
 
     @Test
-    public void changesDirectionWithoutCarryingOldRemainder() {
+    public void keepsDirectionChangesResponsive() {
         CrownScrollController controller = new CrownScrollController();
         controller.distance(0.01f, 44, 100);
 
@@ -44,22 +44,14 @@ public class CrownScrollControllerTest {
     }
 
     @Test
-    public void boundsRepeatedEventsToOneFrameStep() {
-        assertEquals(40, CrownScrollController.coalesceBounded(30, 35, 40));
-        assertEquals(-40, CrownScrollController.coalesceBounded(-30, -35, 40));
-        assertEquals(5, CrownScrollController.coalesceBounded(30, -25, 40));
-    }
-
-    @Test
-    public void capsUnusuallyLargeHardwareAxisValues() {
+    public void preservesUsefulFastAxisMagnitude() {
         CrownScrollController controller = new CrownScrollController();
 
-        assertEquals(-44, controller.distance(8.0f, 44, 100));
-        assertEquals(44, controller.frameLimit(44, 100));
+        assertEquals(-176, controller.distance(8.0f, 44, 100));
     }
 
     @Test
-    public void lowestSpeedProducesFineMovement() {
+    public void lowestSpeedRemainsMonotonic() {
         CrownScrollController controller = new CrownScrollController();
         int total = 0;
 
@@ -67,15 +59,6 @@ public class CrownScrollControllerTest {
             total += controller.distance(1.0f, 84, 5);
         }
 
-        assertEquals(-4, total);
-        assertEquals(1, controller.frameLimit(84, 5));
-    }
-
-    @Test
-    public void acceptsOnlyConsistentVisibleListWindows() {
-        assertTrue(CrownScrollController.isStableListWindow(20, 20, 4, 6));
-        assertTrue(!CrownScrollController.isStableListWindow(20, 19, 4, 6));
-        assertTrue(!CrownScrollController.isStableListWindow(20, 20, 18, 3));
-        assertTrue(!CrownScrollController.isStableListWindow(0, 0, 0, 0));
+        assertEquals(-84, total);
     }
 }

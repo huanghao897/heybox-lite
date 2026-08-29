@@ -37,6 +37,7 @@ public final class ImageViewerActivity extends Activity {
     static final String EXTRA_ORIGIN_WIDTH = "origin_width";
     static final String EXTRA_ORIGIN_HEIGHT = "origin_height";
     static final String EXTRA_PREVIEW_ID = "preview_id";
+    static final String EXTRA_LOAD_ORIGINAL_IMMEDIATELY = "load_original_immediately";
 
     private FrameLayout root;
     private View backdrop;
@@ -68,6 +69,7 @@ public final class ImageViewerActivity extends Activity {
     private WeakReference<Bitmap> preparedPreviewBitmap;
     private int sourcePreviewVisibility = View.VISIBLE;
     private boolean sourcePreviewHidden;
+    private boolean loadOriginalImmediately;
     private SessionStore session;
     static long preparePreview(String sourceUrl, Bitmap bitmap, ImageView source) {
         return ImagePreviewStore.prepare(sourceUrl, bitmap, source);
@@ -81,6 +83,8 @@ public final class ImageViewerActivity extends Activity {
         session = new SessionStore(this);
         Motions.setLevel(session.motionLevel());
         roundDisplay = session.usesRoundLayout();
+        loadOriginalImmediately = getIntent().getBooleanExtra(
+                EXTRA_LOAD_ORIGINAL_IMMEDIATELY, false);
         claimPreview();
 
         urls = resolveUrls();
@@ -207,7 +211,8 @@ public final class ImageViewerActivity extends Activity {
                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         originalParams.bottomMargin = chromeInset();
         root.addView(original, originalParams);
-        original.setVisibility(session.originalImages() ? View.VISIBLE : View.GONE);
+        original.setVisibility(session.originalImages() && !loadOriginalImmediately
+                ? View.VISIBLE : View.GONE);
 
         setContentView(root);
         if (roundDisplay) root.post(this::positionRoundChrome);
@@ -536,11 +541,22 @@ public final class ImageViewerActivity extends Activity {
         if (startup && showPreparedPreview(index)) {
             probeSize(index);
             refreshOriginalLabel();
+            requestImmediateOriginal(index);
             return;
         }
         ensurePreview(index);
         probeSize(index);
         refreshOriginalLabel();
+        requestImmediateOriginal(index);
+    }
+
+    private void requestImmediateOriginal(int index) {
+        if (!loadOriginalImmediately || index != current || originalLoaded[index]) return;
+        imagePages[index].postDelayed(() -> {
+            if (!destroyed && !isFinishing() && current == index) {
+                loadOriginal(index, true);
+            }
+        }, Motions.off() ? 0L : 120L);
     }
 
     private void preloadNeighbors(int index) {
@@ -568,6 +584,7 @@ public final class ImageViewerActivity extends Activity {
                 }
                 return;
             }
+            if (originalLoaded[index]) return;
             if (index == current && !pageTransitionStarted) {
                 view.setVisibility(View.INVISIBLE);
             }
@@ -766,7 +783,7 @@ public final class ImageViewerActivity extends Activity {
 
     private void probeSize(int index) {
         // 大小只用于“查看原图”按钮，按钮不显示时无需请求
-        if (!session.originalImages()) return;
+        if (!session.originalImages() || loadOriginalImmediately) return;
         if (sizes[index] >= 0L) {
             refreshOriginalLabel();
             return;
@@ -804,7 +821,10 @@ public final class ImageViewerActivity extends Activity {
     }
 
     private void loadOriginal() {
-        final int index = current;
+        loadOriginal(current, false);
+    }
+
+    private void loadOriginal(final int index, boolean automatic) {
         if (originalLoaded[index]) return;
         original.setEnabled(false);
         original.setText("加载中");
@@ -816,8 +836,11 @@ public final class ImageViewerActivity extends Activity {
             if (destroyed || isFinishing()) return;
             spinner.setVisibility(View.GONE);
             if (bitmap == null) {
-                original.setEnabled(true);
-                original.setText("重试原图");
+                if (index == current) {
+                    original.setVisibility(View.VISIBLE);
+                    original.setEnabled(true);
+                    original.setText("重试原图");
+                }
                 Toast.makeText(this, "原图加载失败", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -826,7 +849,10 @@ public final class ImageViewerActivity extends Activity {
             view.setImageBitmap(bitmap);
             view.post(view::fitImage);
             updateLongCandidate(index, bitmap);
-            if (index == current) refreshOriginalLabel();
+            if (index == current) {
+                if (automatic) original.setVisibility(View.GONE);
+                refreshOriginalLabel();
+            }
         });
     }
 

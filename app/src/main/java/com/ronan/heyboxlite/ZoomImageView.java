@@ -78,7 +78,7 @@ final class ZoomImageView extends ImageView {
 
                     @Override public boolean onScale(ScaleGestureDetector detector) {
                         cancelMatrixAnimation();
-                        float factor = detector.getScaleFactor();
+                        float factor = ImageZoomPolicy.pinchFactor(detector.getScaleFactor(), roundDisplay);
                         float next = Math.max(1f, Math.min(
                                 ImageZoomPolicy.MAX_ZOOM, scale * factor));
                         factor = next / scale;

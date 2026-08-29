@@ -22,16 +22,7 @@ public class CheckinLeaderboardLayoutTest {
                 360, 480, 1.0f, 0.82f, false, true);
 
         assertTrue(layout.isCompact());
-        assertTrue(layout.overviewSubtitle().contains("无需登录"));
         assertTrue(layout.valueColumnWidth(layout.pageHorizontalPadding(8), 1) > 0);
-    }
-
-    @Test
-    public void narrowDisplayShortensIntroCopy() {
-        CheckinLeaderboardLayout layout = CheckinLeaderboardLayout.forMetrics(
-                240, 240, 1.0f, 1.0f, true, true);
-
-        assertTrue(layout.overviewSubtitle().length() < 12);
     }
 
     @Test

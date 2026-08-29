@@ -138,6 +138,14 @@ public class CommentDataTest {
                 new JSONObject().put("username", "u"))));
         assertEquals("n", CommentData.replyTarget(new JSONObject().put("reply_user",
                 new JSONObject().put("nickname", "n"))));
+        assertEquals("official", CommentData.replyTarget(new JSONObject()
+                .put("replyid", "child")
+                .put("replyuser", new JSONObject().put("username", "official")), "root"));
+        assertEquals("", CommentData.replyTarget(new JSONObject()
+                .put("replyid", "root")
+                .put("replyuser", new JSONObject().put("username", "root user")), "root"));
+        assertEquals("fallback", CommentData.replyTarget(new JSONObject()
+                .put("replyusername", "fallback"), "root"));
         assertEquals("", CommentData.replyTarget(new JSONObject()));
     }
 
@@ -157,9 +165,21 @@ public class CommentDataTest {
                 .put("https://img/1.jpg");
         assertEquals(2, CommentData.commentImages(new JSONObject().put("imgs", images)).size());
         assertEquals("https://img/1.jpg",
-                CommentData.commentImages(new JSONObject().put("imgs", images)).get(0).url);
+                CommentData.commentImages(new JSONObject().put("imgs", images)).get(0).previewUrl);
         assertEquals("https://img/2.jpg",
-                CommentData.commentImages(new JSONObject().put("imgs", images)).get(1).url);
+                CommentData.commentImages(new JSONObject().put("imgs", images)).get(1).originalUrl);
+    }
+
+    @Test
+    public void commentImages_keepsThumbnailAndOriginalSeparately() throws Exception {
+        JSONObject image = new JSONObject()
+                .put("url", "https://img/thumb.jpg?imageMogr2/thumbnail/200x")
+                .put("original_url", "https://img/full.jpg");
+        CommentData.CommentImage parsed = CommentData.commentImages(
+                new JSONObject().put("imgs", new JSONArray().put(image))).get(0);
+
+        assertEquals("https://img/thumb.jpg?imageMogr2/thumbnail/200x", parsed.previewUrl);
+        assertEquals("https://img/full.jpg", parsed.originalUrl);
     }
 
     @Test

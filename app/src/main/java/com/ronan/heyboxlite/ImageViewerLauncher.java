@@ -12,6 +12,15 @@ final class ImageViewerLauncher {
     private ImageViewerLauncher() {}
 
     static void open(Activity activity, ImageView source, String[] urls, int index) {
+        open(activity, source, urls, index, false);
+    }
+
+    static void openOriginal(Activity activity, ImageView source, String url) {
+        open(activity, source, new String[]{url}, 0, true);
+    }
+
+    private static void open(Activity activity, ImageView source, String[] urls,
+                             int index, boolean loadOriginalImmediately) {
         int currentIndex = Math.max(0, Math.min(urls.length - 1, index));
         String current = urls.length == 0 ? "" : urls[currentIndex];
         Drawable drawable = source.getDrawable();
@@ -22,6 +31,8 @@ final class ImageViewerLauncher {
         Intent intent = new Intent(activity, ImageViewerActivity.class);
         intent.putExtra(ImageViewerActivity.EXTRA_URL, current);
         intent.putExtra(ImageViewerActivity.EXTRA_PREVIEW_ID, previewId);
+        intent.putExtra(ImageViewerActivity.EXTRA_LOAD_ORIGINAL_IMMEDIATELY,
+                loadOriginalImmediately);
         if (urls.length > 1) {
             intent.putExtra(ImageViewerActivity.EXTRA_URLS, urls);
             intent.putExtra(ImageViewerActivity.EXTRA_INDEX, currentIndex);

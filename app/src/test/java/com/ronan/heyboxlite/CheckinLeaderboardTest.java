@@ -16,9 +16,10 @@ public class CheckinLeaderboardTest {
                         .put(new JSONObject()
                                 .put("rank", 1)
                                 .put("display_name", "小**甲")
-                                .put("streak_days", 12)
-                                .put("value_label", "12 天")
-                                .put("initial", "小")))
+                                 .put("streak_days", 12)
+                                 .put("value_label", "12 天")
+                                 .put("initial", "小")
+                                 .put("avatar_url", "https://heyboxlite.xyz/checkin/api/lite/leaderboard/avatar/checkin/1")))
                 .put("sponsorship", new JSONArray()
                         .put(new JSONObject()
                                 .put("rank", 1)
@@ -32,6 +33,8 @@ public class CheckinLeaderboardTest {
         assertEquals(1, result.checkin.size());
         assertEquals("小**甲", result.checkin.get(0).displayName);
         assertEquals(12, result.checkin.get(0).value);
+        assertEquals("https://heyboxlite.xyz/checkin/api/lite/leaderboard/avatar/checkin/1",
+                result.checkin.get(0).avatarUrl);
         assertEquals(1, result.sponsorship.size());
         assertEquals(2500, result.sponsorship.get(0).value);
     }
@@ -72,6 +75,19 @@ public class CheckinLeaderboardTest {
         CheckinLeaderboard.parse(new JSONObject()
                 .put("schema", 1)
                 .put("checkin", rows)
+                .put("sponsorship", new JSONArray()));
+    }
+
+    @Test(expected = CheckinCenterClient.ApiError.class)
+    public void rejectsUntrustedAvatarUrl() throws Exception {
+        CheckinLeaderboard.parse(new JSONObject()
+                .put("schema", 1)
+                .put("checkin", new JSONArray().put(new JSONObject()
+                        .put("rank", 1)
+                        .put("display_name", "用户")
+                        .put("streak_days", 1)
+                        .put("value_label", "1 天")
+                        .put("avatar_url", "https://example.com/avatar.jpg")))
                 .put("sponsorship", new JSONArray()));
     }
 }

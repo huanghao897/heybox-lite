@@ -3,6 +3,7 @@ package com.ronan.heyboxlite;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -25,13 +26,20 @@ final class CheckinLeaderboard {
         final int value;
         final String valueLabel;
         final String initial;
+        final String avatarUrl;
 
         Entry(int rank, String displayName, int value, String valueLabel, String initial) {
+            this(rank, displayName, value, valueLabel, initial, "");
+        }
+
+        Entry(int rank, String displayName, int value, String valueLabel, String initial,
+              String avatarUrl) {
             this.rank = rank;
             this.displayName = displayName;
             this.value = value;
             this.valueLabel = valueLabel;
             this.initial = initial;
+            this.avatarUrl = avatarUrl;
         }
     }
 
@@ -58,16 +66,32 @@ final class CheckinLeaderboard {
             String name = item.optString("display_name", "").trim();
             String label = item.optString("value_label", "").trim();
             String initial = item.optString("initial", "").trim();
+            String avatarUrl = item.optString("avatar_url", "").trim();
             if (rank <= 0 || rank > 100 || numericValue < 0
                     || numericValue > 100_000_000 || name.isEmpty()
                     || name.length() > 128 || label.isEmpty() || label.length() > 64) {
                 throw protocolError();
             }
+            if (!avatarUrl.isEmpty() && !isTrustedAvatarUrl(avatarUrl)) {
+                throw protocolError();
+            }
             if (initial.isEmpty()) initial = firstCharacter(name);
             if (initial.isEmpty() || initial.length() > 4) throw protocolError();
-            entries.add(new Entry(rank, name, numericValue, label, initial));
+            entries.add(new Entry(rank, name, numericValue, label, initial, avatarUrl));
         }
         return Collections.unmodifiableList(entries);
+    }
+
+    private static boolean isTrustedAvatarUrl(String value) {
+        try {
+            URI uri = CheckinCenterClient.requireTrustedUri(
+                    value, true, CheckinCenterClient.Operation.LEADERBOARD);
+            String path = uri.getRawPath();
+            return path != null && path.matches("/checkin/api/lite/leaderboard/avatar/"
+                    + "(?:checkin|sponsorship)/[1-9][0-9]{0,2}");
+        } catch (CheckinCenterClient.ApiError ignored) {
+            return false;
+        }
     }
 
     private static String firstCharacter(String value) {

@@ -75,8 +75,8 @@ final class MainDetailFeatures {
                     @Override public void showToast(String message) {
                         host.showToast(message);
                     }
-                    @Override public void openImage(ImageView source, String url) {
-                        host.openImage(source, url);
+                    @Override public void openOriginalImage(ImageView source, String url) {
+                        ImageViewerLauncher.openOriginal(activity, source, url);
                     }
                 });
         commentRenderer = commentController.renderer();

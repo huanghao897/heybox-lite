@@ -28,8 +28,6 @@ import java.util.List;
 import java.util.Map;
 
 final class CommentController implements CommentRenderer.Host {
-    private static final int REPLY_PAGE_SIZE = 5;
-
     interface PageHost {
         FeedItem currentItem();
 
@@ -51,7 +49,7 @@ final class CommentController implements CommentRenderer.Host {
 
         void showToast(String message);
 
-        void openImage(ImageView source, String url);
+        void openOriginalImage(ImageView source, String url);
     }
 
     private static final class ReplyState {
@@ -246,7 +244,7 @@ final class CommentController implements CommentRenderer.Host {
                                 CommentData.commentTime(right)));
                         renderer.renderReplies(target, root, merged,
                                 Math.max(expected, merged.size()),
-                                shown + REPLY_PAGE_SIZE,
+                                shown + CommentReplyPaging.PAGE_SIZE,
                                 !requestState.hasMore);
                         if (replies.isEmpty()) {
                             pageHost.showToast("没有更多回复了");
@@ -315,8 +313,8 @@ final class CommentController implements CommentRenderer.Host {
     }
 
     @Override
-    public void openImage(ImageView source, String url) {
-        this.pageHost.openImage(source, url);
+    public void openOriginalImage(ImageView source, String url) {
+        this.pageHost.openOriginalImage(source, url);
     }
 
     @Override

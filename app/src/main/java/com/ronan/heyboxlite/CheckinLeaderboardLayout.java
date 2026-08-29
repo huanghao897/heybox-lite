@@ -68,10 +68,6 @@ final class CheckinLeaderboardLayout {
         return Math.min(Math.max(0, requested), maximum);
     }
 
-    String overviewSubtitle() {
-        return narrow ? "无需登录即可查看" : "无需登录或连接签到服务即可查看";
-    }
-
     int pageBottomPadding() {
         return dp(compact ? 16 : 20);
     }

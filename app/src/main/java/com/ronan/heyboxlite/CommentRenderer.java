@@ -25,7 +25,6 @@ import java.util.List;
 
 final class CommentRenderer {
     private static final int REPLY_PREVIEW_COUNT = 2;
-    private static final int REPLY_PAGE_SIZE = 5;
 
     interface Host {
         void loadReplies(LinearLayout target, JSONObject root,
@@ -37,7 +36,7 @@ final class CommentRenderer {
 
         void copy(String text);
 
-        void openImage(ImageView source, String url);
+        void openOriginalImage(ImageView source, String url);
 
         boolean isPostAuthor(JSONObject user, String author);
     }
@@ -91,7 +90,7 @@ final class CommentRenderer {
             }
             LinearLayout card = vertical(this.tokens.background);
             card.setPadding(dp(4), dp(9), dp(4), dp(8));
-            addComment(card, root, false);
+            addComment(card, root, false, "");
             List<JSONObject> replies = repliesFrom(comments);
             Collections.sort(replies, (left, right) -> Long.compare(
                     CommentData.commentTime(left), CommentData.commentTime(right)));
@@ -127,19 +126,24 @@ final class CommentRenderer {
         parent.removeAllViews();
         int total = Math.max(expected, replies.size());
         int shown = Math.min(Math.max(0, visibleCount), replies.size());
-        for (int i = 0; i < shown; i++) addComment(parent, replies.get(i), true);
-        if (shown < replies.size()) {
-            int nextCount = Math.min(REPLY_PAGE_SIZE, replies.size() - shown);
-            TextView more = replyControl("再展开 " + nextCount + " 条",
-                    R.drawable.ic_expand);
+        String rootId = CommentData.commentId(root);
+        for (int i = 0; i < shown; i++) {
+            addComment(parent, replies.get(i), true, rootId);
+        }
+        boolean bufferedReplies = shown < replies.size();
+        boolean remoteReplies = !allLoaded;
+        if (bufferedReplies || remoteReplies) {
+            String label = CommentReplyPaging.expansionLabel(
+                    total, shown, remoteReplies);
+            TextView more = replyControl(label, R.drawable.ic_expand);
             addReplyControl(parent, more);
-            more.setOnClickListener(view -> renderReplies(parent, root, replies,
-                    total, shown + REPLY_PAGE_SIZE, allLoaded));
-        } else if (!allLoaded && total > replies.size()) {
-            TextView more = replyControl("再展开 5 条", R.drawable.ic_expand);
-            addReplyControl(parent, more);
-            more.setOnClickListener(view -> this.host.loadReplies(
-                    parent, root, replies, total, shown));
+            if (bufferedReplies) {
+                more.setOnClickListener(view -> renderReplies(parent, root, replies,
+                        total, shown + CommentReplyPaging.PAGE_SIZE, allLoaded));
+            } else {
+                more.setOnClickListener(view -> this.host.loadReplies(
+                        parent, root, replies, total, shown));
+            }
         }
         if (shown > REPLY_PREVIEW_COUNT) {
             TextView collapse = replyControl("收起回复", R.drawable.ic_collapse);
@@ -210,7 +214,7 @@ final class CommentRenderer {
     }
 
     private void addComment(LinearLayout parent, JSONObject comment,
-                            boolean reply) {
+                            boolean reply, String rootCommentId) {
         LinearLayout row = new LinearLayout(this.activity);
         row.setGravity(Gravity.TOP);
         int verticalPadding = reply ? 2 : (this.roundLayout ? 6 : 8);
@@ -225,7 +229,7 @@ final class CommentRenderer {
                 new LinearLayout.LayoutParams(0, -2, 1.0f);
         blockParams.leftMargin = reply ? 0 : dp(this.roundLayout ? 8 : 10);
         row.addView(block, blockParams);
-        String target = CommentData.replyTarget(comment);
+        String target = CommentData.replyTarget(comment, rootCommentId);
         long created = CommentData.commentTime(comment);
         String visibleComment = RichContent.commentText(
                 comment.optString("text"), comment.optString("content"),
@@ -344,12 +348,12 @@ final class CommentRenderer {
                 ? Color.rgb(28, 30, 32) : Color.rgb(235, 237, 240), 6));
         Compat.clipToOutline(image);
         image.setOnClickListener(view ->
-                this.host.openImage(image, source.url));
-        ImageLoader.intoMeasuredRevealStable(image, source.url,
+                this.host.openOriginalImage(image, source.originalUrl));
+        ImageLoader.intoMeasuredRevealStable(image, source.previewUrl,
                 Math.max(96, dp(sizeDp)), (success, bitmap) -> {
                     if (success && this.session.playGif()
-                            && (source.animated || GifSupport.isGifUrl(source.url))) {
-                        ImageLoader.intoGif(image, source.url, animated ->
+                            && (source.animated || GifSupport.isGifUrl(source.originalUrl))) {
+                        ImageLoader.intoGif(image, source.originalUrl, animated ->
                                 this.localCache.log("comment gif "
                                         + (animated ? "started" : "failed")));
                     } else if (!success && image.getDrawable() == null) {
@@ -370,7 +374,7 @@ final class CommentRenderer {
         String cyBadge = CommentData.isCyComment(comment) ? " Cy " : "";
         boolean hasTarget = !target.isEmpty();
         String replyLabel = hasTarget ? " 回复 " : "";
-        String replyName = hasTarget ? "@" + target : "";
+        String replyName = hasTarget ? target : "";
         String meta = commentMeta(comment, created);
         String metaSegment = meta.isEmpty() ? "" : "  " + meta;
         String full = name + authorBadge + replyLabel + replyName + "："

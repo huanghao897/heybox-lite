@@ -160,7 +160,8 @@ final class DetailDiagnostics {
         for (CommentData.CommentImage image : images) {
             out.append(" [mime=").append(image.mimeType)
                     .append(" animated=").append(image.animated)
-                    .append(" url=").append(compactText(image.url, 100))
+                    .append(" preview=").append(compactText(image.previewUrl, 100))
+                    .append(" original=").append(compactText(image.originalUrl, 100))
                     .append(']');
         }
         out.append('\n');

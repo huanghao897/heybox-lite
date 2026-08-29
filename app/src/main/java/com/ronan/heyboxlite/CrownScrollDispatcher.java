@@ -15,8 +15,7 @@ final class CrownScrollDispatcher {
     private final Runnable feedback;
     private final Runnable applyPending = this::applyPending;
     private View pendingTarget;
-    private int pendingDistance;
-    private int pendingLimit;
+    private long pendingDistance;
     private boolean posted;
 
     CrownScrollDispatcher(TargetProvider targetProvider, Runnable feedback) {
@@ -24,7 +23,7 @@ final class CrownScrollDispatcher {
         this.feedback = feedback;
     }
 
-    boolean enqueue(int distance, int frameLimit) {
+    boolean enqueue(int distance) {
         if (distance == 0) return false;
         int direction = distance > 0 ? 1 : -1;
         View target = this.targetProvider.resolve(direction);
@@ -32,12 +31,9 @@ final class CrownScrollDispatcher {
 
         if (this.pendingTarget != null && this.pendingTarget != target) cancel();
         this.pendingTarget = target;
-        this.pendingLimit = Math.max(1, frameLimit);
-        this.pendingDistance = CrownScrollController.coalesceBounded(
-                this.pendingDistance, distance, this.pendingLimit);
+        this.pendingDistance += distance;
         if (!this.posted) {
-            this.posted = true;
-            postOnNextFrame(target, this.applyPending);
+            schedule(target);
         }
         return true;
     }
@@ -48,45 +44,87 @@ final class CrownScrollDispatcher {
         }
         this.pendingTarget = null;
         this.pendingDistance = 0;
-        this.pendingLimit = 0;
         this.posted = false;
     }
 
     private void applyPending() {
         View target = this.pendingTarget;
-        int distance = this.pendingDistance;
-        this.pendingTarget = null;
-        this.pendingDistance = 0;
-        this.pendingLimit = 0;
         this.posted = false;
-        if (target == null || distance == 0 || target.getParent() == null
-                || target.getVisibility() != View.VISIBLE || target.isLayoutRequested()) {
+        if (target == null || this.pendingDistance == 0) {
+            clearPending();
             return;
         }
 
-        int direction = distance > 0 ? 1 : -1;
-        if (target != this.targetProvider.resolve(direction)) return;
+        int direction = this.pendingDistance > 0 ? 1 : -1;
+        if (target.getParent() == null || target.getVisibility() != View.VISIBLE) {
+            clearPending();
+            return;
+        }
+        if (target.getWidth() <= 0 || target.getHeight() <= 0) {
+            schedule(target);
+            return;
+        }
+        if (target.isLayoutRequested()) {
+            schedule(target);
+            return;
+        }
+        if (target != this.targetProvider.resolve(direction)
+                || !target.canScrollVertically(direction)) {
+            clearPending();
+            return;
+        }
+
+        int distance = toIntDistance(this.pendingDistance);
+        boolean applied = false;
         if (target instanceof ScrollView) {
             target.scrollBy(0, distance);
-            this.feedback.run();
+            applied = true;
         } else if (target instanceof AbsListView) {
-            scrollList((AbsListView) target, distance);
+            applied = scrollList((AbsListView) target, distance);
+        }
+        if (!applied) {
+            clearPending();
+            return;
+        }
+        this.pendingDistance -= distance;
+        this.feedback.run();
+        if (this.pendingDistance == 0) {
+            clearPending();
+        } else {
+            schedule(target);
         }
     }
 
-    private void scrollList(AbsListView list, int distance) {
+    private boolean scrollList(AbsListView list, int distance) {
         ListAdapter adapter = list.getAdapter();
-        if (adapter == null || !CrownScrollController.isStableListWindow(
-                adapter.getCount(), list.getCount(), list.getFirstVisiblePosition(),
-                list.getChildCount())) {
-            return;
-        }
+        if (adapter == null || adapter.getCount() == 0) return false;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             list.scrollListBy(distance);
         } else {
             list.smoothScrollBy(distance, 1);
         }
-        this.feedback.run();
+        return true;
+    }
+
+    private void schedule(View target) {
+        if (this.posted || target == null) return;
+        this.posted = true;
+        postOnNextFrame(target, this.applyPending);
+    }
+
+    private void clearPending() {
+        if (this.pendingTarget != null && this.posted) {
+            this.pendingTarget.removeCallbacks(this.applyPending);
+        }
+        this.pendingTarget = null;
+        this.pendingDistance = 0L;
+        this.posted = false;
+    }
+
+    private static int toIntDistance(long value) {
+        if (value > Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        if (value < Integer.MIN_VALUE) return Integer.MIN_VALUE;
+        return (int) value;
     }
 
     private static void postOnNextFrame(View view, Runnable action) {

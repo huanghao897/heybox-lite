@@ -18,14 +18,18 @@ import java.util.Set;
  */
 final class CommentData {
     static final class CommentImage {
-        final String url;
+        final String previewUrl;
+        final String originalUrl;
         final String mimeType;
         final boolean animated;
 
-        CommentImage(String url, String mimeType, boolean animated) {
-            this.url = url;
+        CommentImage(String previewUrl, String originalUrl,
+                     String mimeType, boolean animated) {
+            this.previewUrl = previewUrl;
+            this.originalUrl = originalUrl;
             this.mimeType = mimeType;
-            this.animated = animated || isAnimatedMime(mimeType) || isGifUrl(url);
+            this.animated = animated || isAnimatedMime(mimeType)
+                    || isGifUrl(previewUrl) || isGifUrl(originalUrl);
         }
 
         private static boolean isAnimatedMime(String value) {
@@ -114,13 +118,20 @@ final class CommentData {
             Object item = images.opt(i);
             if (item instanceof JSONObject) {
                 JSONObject image = (JSONObject) item;
-                String url = Json.first(image.optString("url"), image.optString("original"),
-                        image.optString("origin_url"), image.optString("large_url"),
-                        image.optString("src"));
+                String previewUrl = Json.first(image.optString("thumb_url"),
+                        image.optString("thumbnail_url"), image.optString("small_url"),
+                        image.optString("url"), image.optString("src"),
+                        image.optString("original"), image.optString("original_url"),
+                        image.optString("origin_url"), image.optString("large_url"));
+                String originalUrl = Json.first(image.optString("original"),
+                        image.optString("original_url"), image.optString("origin_url"),
+                        image.optString("large_url"), image.optString("full_url"),
+                        image.optString("raw_url"), image.optString("url"),
+                        image.optString("src"), previewUrl);
                 String mimeType = Json.first(image.optString("mimetype"),
                         image.optString("mime_type"), image.optString("content_type"));
                 boolean animated = Json.truthy(image, "is_animated", "animated", "is_gif");
-                addCommentImage(result, seen, url, mimeType, animated);
+                addCommentImage(result, seen, previewUrl, originalUrl, mimeType, animated);
             } else if (item instanceof String) {
                 addCommentImage(result, seen, (String) item);
             }
@@ -128,14 +139,20 @@ final class CommentData {
     }
 
     private static void addCommentImage(List<CommentImage> result, Set<String> seen, String url) {
-        addCommentImage(result, seen, url, "", false);
+        addCommentImage(result, seen, url, url, "", false);
     }
 
-    private static void addCommentImage(List<CommentImage> result, Set<String> seen, String url,
+    private static void addCommentImage(List<CommentImage> result, Set<String> seen,
+                                        String previewUrl, String originalUrl,
                                         String mimeType, boolean animated) {
-        String value = url == null ? "" : url.trim();
-        if (!value.isEmpty() && seen.add(value)) {
-            result.add(new CommentImage(value, mimeType == null ? "" : mimeType.trim(), animated));
+        String preview = previewUrl == null ? "" : previewUrl.trim();
+        String original = originalUrl == null ? "" : originalUrl.trim();
+        if (preview.isEmpty()) preview = original;
+        if (original.isEmpty()) original = preview;
+        String key = original.isEmpty() ? preview : original;
+        if (!key.isEmpty() && seen.add(key)) {
+            result.add(new CommentImage(preview, original,
+                    mimeType == null ? "" : mimeType.trim(), animated));
         }
     }
 
@@ -189,13 +206,25 @@ final class CommentData {
     }
 
     static String replyTarget(JSONObject comment) {
-        JSONObject target = comment.optJSONObject("to_user");
-        if (target == null) {
-            target = comment.optJSONObject("reply_user");
+        return replyTarget(comment, "");
+    }
+
+    static String replyTarget(JSONObject comment, String rootCommentId) {
+        if (comment == null) return "";
+        String replyId = Json.first(comment.optString("replyid"),
+                comment.optString("reply_id"), comment.optString("to_comment_id"),
+                comment.optString("target_comment_id"));
+        if (!rootCommentId.isEmpty() && rootCommentId.equals(replyId)) return "";
+
+        JSONObject target = Json.firstObject(comment, "replyuser", "reply_user",
+                "to_user", "target_user");
+        if (target != null) {
+            String name = Json.first(target.optString("username"),
+                    target.optString("nickname"), target.optString("name"));
+            if (!name.isEmpty()) return name;
         }
-        if (target == null) {
-            target = comment.optJSONObject("target_user");
-        }
-        return target == null ? "" : target.optString("username", target.optString("nickname"));
+        return Json.first(comment.optString("replyusername"),
+                comment.optString("reply_user_name"), comment.optString("to_username"),
+                comment.optString("target_username"));
     }
 }

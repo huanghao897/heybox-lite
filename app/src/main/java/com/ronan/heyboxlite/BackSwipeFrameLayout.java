@@ -31,6 +31,8 @@ final class BackSwipeFrameLayout extends FrameLayout {
 
         void captureShellState(String screenKey, View currentView);
 
+        boolean shouldCaptureShellState();
+
         Preview createShellPreview(String targetKey, boolean back);
 
         void prepareShellView(View view);
@@ -71,6 +73,7 @@ final class BackSwipeFrameLayout extends FrameLayout {
     private boolean previewIsReal;
     private String displayedScreenKey = "";
     private ValueAnimator swipeAnimator;
+    private boolean shellInterceptionCandidate;
 
     BackSwipeFrameLayout(Context context, Host host) {
         super(context);
@@ -86,10 +89,18 @@ final class BackSwipeFrameLayout extends FrameLayout {
 
     @Override
     public void removeAllViews() {
-        host.captureShellState(displayedScreenKey, currentShellChild());
+        if (host.shouldCaptureShellState()) {
+            host.captureShellState(displayedScreenKey, currentShellChild());
+        }
         super.removeAllViews();
         previewChild = null;
         previewIsReal = false;
+    }
+
+    @Override
+    public void requestDisallowInterceptTouchEvent(boolean disallowIntercept) {
+        if (disallowIntercept && shellInterceptionCandidate) return;
+        super.requestDisallowInterceptTouchEvent(disallowIntercept);
     }
 
     @Override
@@ -103,6 +114,7 @@ final class BackSwipeFrameLayout extends FrameLayout {
             case MotionEvent.ACTION_CANCEL:
                 tracking = false;
                 dragging = false;
+                shellInterceptionCandidate = false;
                 return false;
             case MotionEvent.ACTION_MOVE:
                 if (!tracking) return false;
@@ -129,6 +141,7 @@ final class BackSwipeFrameLayout extends FrameLayout {
                 else performClick();
                 tracking = false;
                 dragging = false;
+                shellInterceptionCandidate = false;
                 break;
             case MotionEvent.ACTION_MOVE:
                 float dx = event.getX() - startX;
@@ -139,6 +152,7 @@ final class BackSwipeFrameLayout extends FrameLayout {
                 if (dragging) settleShellDrag(0.0f, this::resetShellDrag);
                 tracking = false;
                 dragging = false;
+                shellInterceptionCandidate = false;
                 break;
             default:
                 break;
@@ -155,12 +169,15 @@ final class BackSwipeFrameLayout extends FrameLayout {
         dragging = false;
         gestureMode = MODE_NONE;
         dragChild = null;
+        shellInterceptionCandidate = host.canStartShellSwipe();
+        super.requestDisallowInterceptTouchEvent(false);
     }
 
     private boolean startShellDragIfReady(float dx, float dy) {
         if (!tracking) return false;
         if (Math.abs(dy) > touchSlop * 2 && Math.abs(dy) > Math.abs(dx)) {
             tracking = false;
+            shellInterceptionCandidate = false;
             return false;
         }
         boolean compact = host.compactShellMotion();
@@ -372,6 +389,7 @@ final class BackSwipeFrameLayout extends FrameLayout {
     void cancelMotion() {
         tracking = false;
         dragging = false;
+        shellInterceptionCandidate = false;
         resetShellDrag();
     }
 
