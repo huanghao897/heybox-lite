@@ -36,6 +36,7 @@ final class LocalCache {
     private static final String SCROLL_PREFIX = "scroll_";
     private static final int MAX_DETAIL_FILES = 80;
     private static final int MAX_OFFLINE_COMMENTS = 10;
+    private static final int MAX_CACHED_FEED_ITEMS = 60;
     private static final int MAX_LOG_BYTES = 96 * 1024;
     private static final Object SESSION_LOCK = new Object();
     private static final ExecutorService LOG_EXECUTOR =
@@ -107,11 +108,12 @@ final class LocalCache {
     }
 
     void saveFeed(List<FeedItem> items) {
-        List<FeedItem> snapshot = items == null
-                ? new ArrayList<>() : new ArrayList<>(items);
+        int count = items == null ? 0 : Math.min(items.size(), MAX_CACHED_FEED_ITEMS);
+        List<FeedItem> snapshot = count == 0
+                ? new ArrayList<>() : new ArrayList<>(items.subList(0, count));
         long savedAt = System.currentTimeMillis();
         CACHE_EXECUTOR.execute(() -> prefs.edit()
-                .putString(FEED_ITEMS, encodeItems(snapshot))
+                .putString(FEED_ITEMS, encodeFeedItems(snapshot))
                 .putLong(FEED_SAVED_AT, savedAt)
                 .apply());
     }
@@ -488,6 +490,14 @@ final class LocalCache {
             for (FeedItem item : items) {
                 if (item != null) array.put(item.toJson());
             }
+        }
+        return array.toString();
+    }
+
+    private String encodeFeedItems(List<FeedItem> items) {
+        JSONArray array = new JSONArray();
+        for (FeedItem item : items) {
+            if (item != null) array.put(item.toCacheJson());
         }
         return array.toString();
     }

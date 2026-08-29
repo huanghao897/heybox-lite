@@ -12,6 +12,8 @@ public class RichLinkClassifierTest {
                 "data-link-type=\"game\" data-game-id=\"42\" icon-url=\"game.png\""));
         assertTrue(RichLinkClassifier.isContentLink(
                 "data-link-type=\"text\" icon-url=\"article.png\""));
+        assertTrue(RichLinkClassifier.isGameLink(
+                "data-link-type='game'data-game-id='42'"));
     }
 
     @Test

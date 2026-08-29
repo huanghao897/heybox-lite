@@ -181,7 +181,8 @@ final class DetailContentRenderer {
         Compat.setLetterSpacing(heading,
                 this.session.bodyLetterSpacing() / 200.0f);
         heading.setTextIsSelectable(true);
-        EmojiRenderer.set(heading, value, this.session.darkMode());
+        RichInlineRenderer.set(heading, value,
+                this.session.darkMode(), this.tokens.link);
         addTop(parent, heading, bodyStarted
                 ? Math.max(14, this.session.bodyParagraphSpacing() + 10) : 14);
     }
@@ -194,7 +195,8 @@ final class DetailContentRenderer {
         caption.setGravity(Gravity.CENTER);
         caption.setLineSpacing(dp(1), 1.3f);
         caption.setTextIsSelectable(true);
-        EmojiRenderer.set(caption, value, this.session.darkMode());
+        RichInlineRenderer.set(caption, value,
+                this.session.darkMode(), this.tokens.link);
         addTop(parent, caption, 6);
     }
 
@@ -216,7 +218,8 @@ final class DetailContentRenderer {
                         this.session.bodyLetterSpacing() / 200.0f);
                 body.setTypeface(Typeface.DEFAULT);
                 body.setTextIsSelectable(true);
-                EmojiRenderer.set(body, paragraph, this.session.darkMode());
+                RichInlineRenderer.set(body, paragraph,
+                        this.session.darkMode(), this.tokens.link);
                 addTop(parent, body, bodyStarted
                         ? Math.max(8, this.session.bodyParagraphSpacing() + 6) : 14);
             }
@@ -247,7 +250,8 @@ final class DetailContentRenderer {
                 this.session.bodyLineSpacing() / 100.0f));
         Compat.setLetterSpacing(copy,
                 this.session.bodyLetterSpacing() / 220.0f);
-        EmojiRenderer.set(copy, value, this.session.darkMode());
+        RichInlineRenderer.set(copy, value,
+                this.session.darkMode(), this.tokens.link);
         copy.setPadding(dp(10), 0, 0, 0);
         quote.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.0f));
         addTop(parent, quote, bodyStarted ? 10 : 14);

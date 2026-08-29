@@ -10,9 +10,9 @@ public class CrownScrollControllerTest {
     public void scalesDistanceWithConfiguredSpeed() {
         CrownScrollController controller = new CrownScrollController();
 
-        assertEquals(-22, controller.distance(1.0f, 44, 50));
+        assertEquals(-11, controller.distance(1.0f, 44, 50));
         assertEquals(-44, controller.distance(1.0f, 44, 100));
-        assertEquals(-88, controller.distance(1.0f, 44, 200));
+        assertEquals(-73, controller.distance(1.0f, 44, 200));
     }
 
     @Test
@@ -44,10 +44,10 @@ public class CrownScrollControllerTest {
     }
 
     @Test
-    public void preservesUsefulFastAxisMagnitude() {
+    public void clampsLargeAxisMagnitudeToOneStep() {
         CrownScrollController controller = new CrownScrollController();
 
-        assertEquals(-176, controller.distance(8.0f, 44, 100));
+        assertEquals(-44, controller.distance(8.0f, 44, 100));
     }
 
     @Test
@@ -55,10 +55,17 @@ public class CrownScrollControllerTest {
         CrownScrollController controller = new CrownScrollController();
         int total = 0;
 
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 100; i++) {
             total += controller.distance(1.0f, 84, 5);
         }
 
-        assertEquals(-84, total);
+        assertEquals(-21, total);
+    }
+
+    @Test
+    public void boundsQueuedDistanceWithoutDiscardingDirection() {
+        assertEquals(30, CrownScrollController.coalesceBounded(25, 20, 30));
+        assertEquals(-30, CrownScrollController.coalesceBounded(-25, -20, 30));
+        assertEquals(5, CrownScrollController.coalesceBounded(-5, 10, 30));
     }
 }

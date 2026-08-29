@@ -14,6 +14,7 @@ final class ThemeTokens {
     final int subtle;
     final int hairline;
     final int accent;
+    final int link;
     final int glassStroke;
     final int onPrimary;
 
@@ -39,6 +40,7 @@ final class ThemeTokens {
             hairline = Color.rgb(224, 224, 227);
         }
         accent = secondary;
+        link = dark ? Color.rgb(89, 169, 235) : Color.rgb(0, 103, 173);
         glassStroke = blend(hairline, text, dark ? 0.06f : 0.04f);
         onPrimary = contrast(primary);
     }

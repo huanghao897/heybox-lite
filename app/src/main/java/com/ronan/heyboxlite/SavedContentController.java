@@ -31,6 +31,8 @@ final class SavedContentController {
     interface Host {
         void prepareReadingCenter();
 
+        boolean isReadingCenterScreen();
+
         void prepareSavedPage(String title);
 
         void showContent(View view);
@@ -83,6 +85,7 @@ final class SavedContentController {
     private final ThemeTokens tokens;
     private final boolean roundLayout;
     private final Host host;
+    private final ReadingCenterPage readingCenterPage;
 
     private int requestSerial;
     private String returnScreen = "profile";
@@ -101,6 +104,28 @@ final class SavedContentController {
         this.tokens = tokens;
         this.roundLayout = roundLayout;
         this.host = host;
+        this.readingCenterPage = new ReadingCenterPage(activity, session, localCache,
+                settingsUi, tokens, new ReadingCenterPage.Host() {
+                    @Override public boolean isActive() { return host.isReadingCenterScreen(); }
+                    @Override public void prepare() { host.prepareReadingCenter(); }
+                    @Override public void showContent(View view) { host.showContent(view); }
+                    @Override public void retain(View view) {
+                        host.retainPage("reading_center", view);
+                    }
+                    @Override public void showDetail(FeedItem item) { host.showDetail(item); }
+                    @Override public void showReadingStats() { host.showReadingStats(); }
+                    @Override public void showWatchLater() { SavedContentController.this.showWatchLater(); }
+                    @Override public void showCloudHistory() { SavedContentController.this.showCloudHistory(); }
+                    @Override public void addBottomSpace(LinearLayout page) {
+                        host.addBottomNavSafeSpace(page);
+                    }
+                    @Override public void showToast(String message) { host.showToast(message); }
+                    @Override public String readingSummary() { return host.readingSummary(); }
+                    @Override public int horizontalPadding() {
+                        return host.pageHorizontalPadding();
+                    }
+                    @Override public int topPadding() { return host.subpageTopPadding(); }
+                });
     }
 
     String returnScreen() {
@@ -111,37 +136,12 @@ final class SavedContentController {
         this.requestSerial++;
     }
 
+    void close() {
+        this.readingCenterPage.close();
+    }
+
     void showReadingCenter() {
-        this.host.prepareReadingCenter();
-        ScrollView scroll = new ScrollView(this.activity);
-        LinearLayout page = page();
-        scroll.addView(page);
-
-        List<FeedItem> recent = this.localCache.recentItems();
-        if (!recent.isEmpty()) {
-            FeedItem item = recent.get(0);
-            LinearLayout panel = this.settingsUi.list();
-            addEntry(panel, "继续阅读", item.title, null,
-                    R.drawable.il_reading, () -> this.host.showDetail(item));
-            if (this.localCache.scroll(item.id) > 0) {
-                addTop(panel, text("已记录上次阅读位置", 10.5f, this.tokens.muted), 0);
-            }
-            page.addView(panel);
-        }
-
-        LinearLayout library = this.settingsUi.list();
-        addEntry(library, "阅读时长", this.host.readingSummary(), null,
-                R.drawable.il_reading, this.host::showReadingStats);
-        addEntry(library, "稍后看", this.localCache.watchLaterItems().size()
-                        + " 篇 · " + Format.cacheMb(this.localCache.offlineBytes()), null,
-                R.drawable.il_history, this::showWatchLater);
-        addEntry(library, "历史记录", this.session.isLoggedIn()
-                        ? "与小黑盒账号同步" : "登录后查看小黑盒记录", null,
-                R.drawable.il_history, this::showCloudHistory);
-        addTop(page, library, page.getChildCount() == 0 ? 0 : 8);
-        this.host.addBottomNavSafeSpace(page);
-        this.host.retainPage("reading_center", scroll);
-        this.host.showContent(scroll);
+        this.readingCenterPage.show();
     }
 
     void showCloudHistory() {

@@ -134,17 +134,26 @@ final class FeedItem {
     }
 
     JSONObject toJson() {
+        return toJson(false);
+    }
+
+    JSONObject toCacheJson() {
+        return toJson(true);
+    }
+
+    private JSONObject toJson(boolean compact) {
         JSONObject json = new JSONObject();
         try {
             json.put("linkid", id);
             json.put("h_src", hsrc);
-            json.put("title", title);
-            json.put("description", description);
+            json.put("title", compact ? limited(title, 180) : title);
+            json.put("description", compact ? limited(description, 640) : description);
             json.put("image", image);
             if (createdAt > 0L) json.put("create_time", createdAt);
             if (images.length > 0) {
                 JSONArray values = new JSONArray();
-                for (String value : images) values.put(value);
+                int count = compact ? Math.min(4, images.length) : images.length;
+                for (int index = 0; index < count; index++) values.put(images[index]);
                 json.put("imgs", values);
             } else if (!image.isEmpty()) {
                 JSONArray values = new JSONArray();
@@ -160,7 +169,8 @@ final class FeedItem {
                 VideoData firstVideo = videos.get(0);
                 if (!firstVideo.url.isEmpty()) json.put("video_url", firstVideo.url);
                 if (!firstVideo.cover.isEmpty()) json.put("video_thumb", firstVideo.cover);
-                if (!firstVideo.title.isEmpty()) json.put("video_title", firstVideo.title);
+                if (!firstVideo.title.isEmpty()) json.put("video_title",
+                        compact ? limited(firstVideo.title, 180) : firstVideo.title);
             }
             json.put("is_top", pinned);
             json.put("is_liked", liked);
@@ -181,6 +191,13 @@ final class FeedItem {
         } catch (JSONException ignored) {
         }
         return json;
+    }
+
+    private static String limited(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) return value == null ? "" : value;
+        int end = Character.isHighSurrogate(value.charAt(maxLength - 1))
+                ? maxLength - 1 : maxLength;
+        return value.substring(0, end);
     }
 
     static boolean isArticleJson(JSONObject json) {

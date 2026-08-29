@@ -44,11 +44,11 @@ final class CrownInputHandler {
             reset();
             return true;
         }
-        int baseStep = dp(28);
+        int baseStep = dp(12);
         int speed = session.crownScrollSpeed();
         int distance = scrollController.distance(axis, baseStep, speed);
         if (distance != 0) {
-            dispatcher.enqueue(distance);
+            dispatcher.enqueue(distance, scrollController.frameLimit(baseStep, speed));
         }
         return true;
     }

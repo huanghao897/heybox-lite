@@ -762,7 +762,7 @@ final class RichContent {
             if (value.length() > 0) value.append('\n');
             value.append(block.value);
         }
-        return value.toString().trim();
+        return RichGameLinkMarkup.plainText(value.toString().trim());
     }
 
     static String commentText(String... sources) {
@@ -781,7 +781,7 @@ final class RichContent {
     }
 
     private static String inlineText(String source) {
-        String decoded = decodeTransport(source);
+        String decoded = RichGameLinkMarkup.normalizeAnchors(decodeAttributeEntities(decodeTransport(source)));
         if (decoded.indexOf('<') < 0 && !looksStructured(decoded)) {
             return normalizeInlineText(decoded);
         }
@@ -926,7 +926,7 @@ final class RichContent {
     }
 
     private static String normalizeInlineEmojis(String html) {
-        html = decodeAttributeEntities(html);
+        html = RichGameLinkMarkup.normalizeAnchors(decodeAttributeEntities(html));
         Matcher matcher = INLINE_EMOJI.matcher(html);
         StringBuffer output = new StringBuffer();
         while (matcher.find()) {

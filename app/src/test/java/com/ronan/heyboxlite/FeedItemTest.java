@@ -178,6 +178,23 @@ public class FeedItemTest {
     }
 
     @Test
+    public void compactFeedSnapshotBoundsLargeTextAndImages() throws Exception {
+        StringBuilder description = new StringBuilder();
+        for (int i = 0; i < 800; i++) description.append('文');
+        JSONArray images = new JSONArray();
+        for (int i = 0; i < 8; i++) images.put("https://img.example/" + i + ".jpg");
+        FeedItem item = FeedItem.from(new JSONObject()
+                .put("linkid", "large")
+                .put("description", description.toString())
+                .put("imgs", images));
+
+        JSONObject cached = item.toCacheJson();
+
+        assertEquals(640, cached.getString("description").length());
+        assertEquals(4, cached.getJSONArray("imgs").length());
+    }
+
+    @Test
     public void recognizesVideoFeedAndPreservesItOffline() throws Exception {
         FeedItem video = FeedItem.from(new JSONObject()
                 .put("linkid", "video")

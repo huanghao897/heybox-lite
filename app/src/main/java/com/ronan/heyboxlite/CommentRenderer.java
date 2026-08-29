@@ -263,7 +263,7 @@ final class CommentRenderer {
             row.addView(likes.root, likeParams);
         }
         View.OnLongClickListener copy = view -> {
-            this.host.copy(visibleComment);
+            this.host.copy(RichInlineRenderer.plainText(visibleComment));
             return true;
         };
         block.setOnLongClickListener(copy);
@@ -305,7 +305,8 @@ final class CommentRenderer {
         Compat.setLetterSpacing(value,
                 this.session.bodyLetterSpacing() / 200.0f);
         value.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        EmojiRenderer.set(value, display, this.session.darkMode(), span -> {
+        RichInlineRenderer.set(value, display, this.session.darkMode(),
+                this.tokens.link, span -> {
             if (CommentData.isCyComment(comment)) {
                 applyInlineBadge(span, 0, 2,
                         R.drawable.official_cy_badge, 15);
@@ -391,7 +392,8 @@ final class CommentRenderer {
         value.setLineSpacing(dp(1),
                 this.session.bodyLineSpacing() / 100.0f);
         value.setPadding(0, dp(2), 0, dp(3));
-        EmojiRenderer.set(value, full, this.session.darkMode(), span -> {
+        RichInlineRenderer.set(value, full, this.session.darkMode(),
+                this.tokens.link, span -> {
             span.setSpan(new ForegroundColorSpan(this.tokens.secondary),
                     0, nameEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             span.setSpan(new StyleSpan(Typeface.BOLD),

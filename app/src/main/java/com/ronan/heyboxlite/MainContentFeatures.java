@@ -86,6 +86,9 @@ final class MainContentFeatures {
                     @Override public void prepareReadingCenter() {
                         host.prepareReadingCenter();
                     }
+                    @Override public boolean isReadingCenterScreen() {
+                        return "reading_center".equals(host.screen());
+                    }
                     @Override public void prepareSavedPage(String title) {
                         host.prepareSavedPage(title);
                     }

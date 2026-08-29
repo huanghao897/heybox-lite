@@ -15,7 +15,8 @@ final class CrownScrollDispatcher {
     private final Runnable feedback;
     private final Runnable applyPending = this::applyPending;
     private View pendingTarget;
-    private long pendingDistance;
+    private int pendingDistance;
+    private int pendingLimit;
     private boolean posted;
 
     CrownScrollDispatcher(TargetProvider targetProvider, Runnable feedback) {
@@ -23,7 +24,7 @@ final class CrownScrollDispatcher {
         this.feedback = feedback;
     }
 
-    boolean enqueue(int distance) {
+    boolean enqueue(int distance, int frameLimit) {
         if (distance == 0) return false;
         int direction = distance > 0 ? 1 : -1;
         View target = this.targetProvider.resolve(direction);
@@ -31,7 +32,14 @@ final class CrownScrollDispatcher {
 
         if (this.pendingTarget != null && this.pendingTarget != target) cancel();
         this.pendingTarget = target;
-        this.pendingDistance += distance;
+        this.pendingLimit = Math.max(1, frameLimit);
+        if (this.pendingDistance != 0
+                && Integer.signum(this.pendingDistance) != Integer.signum(distance)) {
+            this.pendingDistance = 0;
+        }
+        int backlogLimit = this.pendingLimit * 3;
+        this.pendingDistance = CrownScrollController.coalesceBounded(
+                this.pendingDistance, distance, backlogLimit);
         if (!this.posted) {
             schedule(target);
         }
@@ -44,6 +52,7 @@ final class CrownScrollDispatcher {
         }
         this.pendingTarget = null;
         this.pendingDistance = 0;
+        this.pendingLimit = 0;
         this.posted = false;
     }
 
@@ -74,7 +83,8 @@ final class CrownScrollDispatcher {
             return;
         }
 
-        int distance = toIntDistance(this.pendingDistance);
+        int distance = CrownScrollController.coalesceBounded(
+                0, this.pendingDistance, this.pendingLimit);
         boolean applied = false;
         if (target instanceof ScrollView) {
             target.scrollBy(0, distance);
@@ -117,14 +127,9 @@ final class CrownScrollDispatcher {
             this.pendingTarget.removeCallbacks(this.applyPending);
         }
         this.pendingTarget = null;
-        this.pendingDistance = 0L;
+        this.pendingDistance = 0;
+        this.pendingLimit = 0;
         this.posted = false;
-    }
-
-    private static int toIntDistance(long value) {
-        if (value > Integer.MAX_VALUE) return Integer.MAX_VALUE;
-        if (value < Integer.MIN_VALUE) return Integer.MIN_VALUE;
-        return (int) value;
     }
 
     private static void postOnNextFrame(View view, Runnable action) {

@@ -2077,6 +2077,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.pageTransitions.cancelNow();
         discardDetailHistory();
         if (this.feedPage != null) this.feedPage.close();
+        if (this.savedContentController != null) this.savedContentController.close();
         if (this.detailPager != null) this.detailPager.cancelMotion();
         if (this.content instanceof BackSwipeFrameLayout) {
             ((BackSwipeFrameLayout) this.content).cancelMotion();

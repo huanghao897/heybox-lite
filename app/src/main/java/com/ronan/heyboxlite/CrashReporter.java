@@ -57,6 +57,14 @@ final class CrashReporter {
                 && "Thread starting during runtime shutdown".equals(error.getMessage());
     }
 
+    static void recordNonFatal(Context context, String operation, RuntimeException error) {
+        if (context == null || error == null || hasPendingCrashReport(context)) return;
+        String name = operation == null || operation.trim().isEmpty()
+                ? "background_operation" : operation.trim();
+        writeCrash(context.getApplicationContext(), Thread.currentThread(),
+                new IllegalStateException(name, error));
+    }
+
     static String pendingCrashReport(Context context) {
         String report = latestCrashReport(context);
         if (report.isEmpty()) return "";
