@@ -16,6 +16,9 @@ final class RichGameLinkMarkup {
     private static final Pattern CONTENT_FRAGMENT = Pattern.compile(
             "(?is)(?:<a\\s*)?data-link-type\\s*=\\s*(['\"])(game|text)\\1"
                     + "[^>]{0,512}>(.*?)(?:</a\\s*>|$)");
+    private static final Pattern HREF_FRAGMENT = Pattern.compile(
+            "(?is)(?:<a\\s*)?href\\s*=\\s*(['\"])(.*?)\\1([^>]{0,512})>"
+                    + "(.*?)(?:</a\\s*>|$)");
 
     static final class Link {
         final int start;
@@ -54,7 +57,7 @@ final class RichGameLinkMarkup {
             }
         }
         matcher.appendTail(output);
-        return normalizeFragments(output.toString());
+        return normalizeHrefFragments(normalizeFragments(output.toString()));
     }
 
     private static String normalizeFragments(String source) {
@@ -65,6 +68,21 @@ final class RichGameLinkMarkup {
             String replacement = "game".equalsIgnoreCase(matcher.group(2))
                     ? String.valueOf(START) + label + END : label;
             matcher.appendReplacement(output, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(output);
+        return output.toString();
+    }
+
+    private static String normalizeHrefFragments(String source) {
+        Matcher matcher = HREF_FRAGMENT.matcher(source);
+        StringBuffer output = new StringBuffer();
+        while (matcher.find()) {
+            String attributes = "href=" + matcher.group(1) + matcher.group(2)
+                    + matcher.group(1) + matcher.group(3);
+            if (RichLinkClassifier.isGameLink(attributes)) {
+                String replacement = String.valueOf(START) + matcher.group(4) + END;
+                matcher.appendReplacement(output, Matcher.quoteReplacement(replacement));
+            }
         }
         matcher.appendTail(output);
         return output.toString();

@@ -58,4 +58,32 @@ public class RichGameLinkMarkupTest {
 
         assertEquals(source, RichGameLinkMarkup.normalizeAnchors(source));
     }
+
+    @Test
+    public void marksEveryOfficialGameDetailAnchor() {
+        String first = "heybox://%7B%22protocol_type%22%3A%22openGameDetail%22%2C"
+                + "%22app_id%22%3A607080%2C%22game_type%22%3A%22pc%22%7D";
+        String second = "heybox://%7B%22protocol_type%22%3A%22openGameDetail%22%2C"
+                + "%22app_id%22%3A1077510%2C%22game_type%22%3A%22pc%22%7D";
+        String source = "<a href=\"" + first + "\">意航员2</a> 和 "
+                + "<a href=\"" + second + "\">盒裂变</a>";
+
+        String normalized = RichGameLinkMarkup.normalizeAnchors(source);
+
+        assertEquals("意航员2 和 盒裂变", RichGameLinkMarkup.plainText(normalized));
+        assertEquals(2, RichGameLinkMarkup.parse(normalized).links.size());
+        assertEquals(2, RichGameLinkMarkup.parse(RichContent.commentText(source)).links.size());
+    }
+
+    @Test
+    public void repairsOfficialGameHrefFragment() {
+        String source = "href=\"heybox://%7B%22protocol_type%22%3A"
+                + "%22openGameDetail%22%2C%22app_id%22%3A42%2C"
+                + "%22game_type%22%3A%22pc%22%7D\">游戏名称";
+
+        String normalized = RichGameLinkMarkup.normalizeAnchors(source);
+
+        assertEquals("游戏名称", RichGameLinkMarkup.plainText(normalized));
+        assertEquals(1, RichGameLinkMarkup.parse(normalized).links.size());
+    }
 }

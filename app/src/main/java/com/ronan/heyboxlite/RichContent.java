@@ -7,14 +7,12 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.net.URLDecoder;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -214,7 +212,7 @@ final class RichContent {
         if (value == null || value == JSONObject.NULL) return result;
         if (value instanceof String) {
             String raw = (String) value;
-            String jsonText = decodeJsonTransport(raw).trim();
+            String jsonText = RichTransportDecoder.decodeJson(raw).trim();
             if (jsonText.isEmpty()) return result;
             try {
                 addDetailArray(result, new JSONArray(jsonText), articleMode, 0);
@@ -234,7 +232,7 @@ final class RichContent {
                     && !result.blocks.isEmpty()) {
                 return result;
             }
-            String text = decodeTransport(raw).trim();
+            String text = RichTransportDecoder.decode(raw).trim();
             if (text.isEmpty()) return result;
             if (addStructured(result.blocks, result.imageUrls, text)
                     && !result.blocks.isEmpty()) {
@@ -362,9 +360,9 @@ final class RichContent {
     static List<Block> parse(String source, JSONArray fallbackImages) {
         List<Block> blocks = new ArrayList<>();
         Set<String> imageUrls = new HashSet<>();
-        String jsonSource = decodeJsonTransport(source);
+        String jsonSource = RichTransportDecoder.decodeJson(source);
         if (!addStructured(blocks, imageUrls, jsonSource)) {
-            source = decodeTransport(source);
+            source = RichTransportDecoder.decode(source);
             source = normalizeInlineEmojis(source);
             if (!addStructured(blocks, imageUrls, source)) {
                 addHtml(blocks, imageUrls, source);
@@ -529,7 +527,7 @@ final class RichContent {
         } else if (raw instanceof JSONArray) {
             addArray(blocks, imageUrls, (JSONArray) raw, depth + 1);
         } else if (raw instanceof String) {
-            String value = decodeTransport((String) raw);
+            String value = RichTransportDecoder.decode((String) raw);
             value = normalizeInlineEmojis(value);
             if (!addStructured(blocks, imageUrls, value, depth + 1)) {
                 addHtml(blocks, imageUrls, value);
@@ -781,7 +779,8 @@ final class RichContent {
     }
 
     private static String inlineText(String source) {
-        String decoded = RichGameLinkMarkup.normalizeAnchors(decodeAttributeEntities(decodeTransport(source)));
+        String decoded = RichGameLinkMarkup.normalizeAnchors(
+                decodeAttributeEntities(RichTransportDecoder.decode(source)));
         if (decoded.indexOf('<') < 0 && !looksStructured(decoded)) {
             return normalizeInlineText(decoded);
         }
@@ -1191,57 +1190,6 @@ final class RichContent {
     @SuppressWarnings("deprecation")
     private static String legacyFromHtml(String value) {
         return Html.fromHtml(value).toString();
-    }
-
-    private static String decodeTransport(String value) {
-        if (value == null || value.isEmpty()) return "";
-        String decoded = value
-                .replace("\\u003c", "<")
-                .replace("\\u003C", "<")
-                .replace("\\u003e", ">")
-                .replace("\\u003E", ">")
-                .replace("\\u0026", "&")
-                .replace("\\\"", "\"")
-                .replace("\\/", "/");
-        for (int i = 0; i < 2; i++) {
-            String lower = decoded.toLowerCase(Locale.ROOT);
-            if (!lower.contains("%3c") && !lower.contains("%5b")
-                    && !lower.contains("%7b")) break;
-            try {
-                String next = URLDecoder.decode(decoded.replace("+", "%2B"),
-                        "UTF-8");
-                if (next.equals(decoded)) break;
-                decoded = next;
-            } catch (IllegalArgumentException | UnsupportedEncodingException ignored) {
-                break;
-            }
-        }
-        return decoded;
-    }
-
-    private static String decodeJsonTransport(String value) {
-        if (value == null || value.isEmpty()) return "";
-        String decoded = value
-                .replace("\\u003c", "<")
-                .replace("\\u003C", "<")
-                .replace("\\u003e", ">")
-                .replace("\\u003E", ">")
-                .replace("\\u0026", "&")
-                .replace("\\/", "/");
-        for (int i = 0; i < 2; i++) {
-            String lower = decoded.toLowerCase(Locale.ROOT);
-            if (!lower.contains("%3c") && !lower.contains("%5b")
-                    && !lower.contains("%7b")) break;
-            try {
-                String next = URLDecoder.decode(decoded.replace("+", "%2B"),
-                        "UTF-8");
-                if (next.equals(decoded)) break;
-                decoded = next;
-            } catch (IllegalArgumentException | UnsupportedEncodingException ignored) {
-                break;
-            }
-        }
-        return decoded;
     }
 
     private static String first(String... values) {

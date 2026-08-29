@@ -21,4 +21,16 @@ public class RichLinkClassifierTest {
         assertFalse(RichLinkClassifier.isContentLink(
                 "icon-url=\"https://img/emoji/cube_smile.png\""));
     }
+
+    @Test
+    public void recognizesOfficialGameDetailDeepLinks() {
+        String href = "heybox://%7B%22protocol_type%22%3A%22openGameDetail%22%2C"
+                + "%22app_id%22%3A607080%2C%22game_type%22%3A%22pc%22%7D";
+
+        assertTrue(RichLinkClassifier.isGameLink("href=\"" + href + "\""));
+        assertTrue(RichLinkClassifier.isGameHref(
+                "xhh://route?protocol_type=open_game_detail&app_id=42&game_type=pc"));
+        assertFalse(RichLinkClassifier.isGameHref(
+                "heybox://%7B%22protocol_type%22%3A%22openUserProfile%22%7D"));
+    }
 }
