@@ -51,22 +51,24 @@ final class UpdateChecker {
 
     private UpdateChecker() {}
 
-    static void check(String currentVersion, String userId, int testReleaseId, Callback callback) {
-        EXECUTOR.execute(() -> request(currentVersion, userId, testReleaseId, callback));
+    static void check(String currentVersion, SessionStore session,
+                      int testReleaseId, Callback callback) {
+        EXECUTOR.execute(() -> request(currentVersion, session, testReleaseId, callback));
     }
 
-    private static void request(String currentVersion, String userId, int testReleaseId,
+    private static void request(String currentVersion, SessionStore session, int testReleaseId,
                                 Callback callback) {
         HttpURLConnection connection = null;
         try {
             String endpoint = buildEndpoint(requireTrustedUrl(BuildConfig.UPDATE_API_URL),
-                    userId, testReleaseId);
+                    testReleaseId);
             URL url = new URL(endpoint);
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(4000);
             connection.setReadTimeout(5000);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("User-Agent", "heybox-Lite/" + currentVersion);
+            new DeviceAuthorizationStore(session.appContext()).apply(connection, session);
             int status = connection.getResponseCode();
             InputStream stream = status >= 200 && status < 300
                     ? connection.getInputStream() : connection.getErrorStream();
@@ -109,8 +111,7 @@ final class UpdateChecker {
         }
     }
 
-    private static String buildEndpoint(String endpoint, String userId,
-                                        int testReleaseId) throws Exception {
+    private static String buildEndpoint(String endpoint, int testReleaseId) throws Exception {
         String separator = endpoint.contains("?") ? "&" : "?";
         String result = endpoint + separator
                 + "versionCode=" + BuildConfig.VERSION_CODE
@@ -118,9 +119,7 @@ final class UpdateChecker {
                 + "&testReleaseId=" + Math.max(0, testReleaseId)
                 + "&versionName=" + URLEncoder.encode(BuildConfig.VERSION_NAME, "UTF-8")
                 + "&currentVersion=" + URLEncoder.encode(BuildConfig.VERSION_NAME, "UTF-8");
-        String cleanUserId = userId == null ? "" : userId.trim();
-        return cleanUserId.isEmpty() ? result
-                : result + "&userId=" + URLEncoder.encode(cleanUserId, "UTF-8");
+        return result;
     }
 
     private static boolean isUpdateAvailable(JSONObject payload, String latest,

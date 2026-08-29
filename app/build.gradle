@@ -34,8 +34,6 @@ android {
                 "\"https://heyboxlite.xyz/api/heybox-lite/config\""
         buildConfigField "String", "DIAGNOSTICS_API_URL",
                 "\"https://heyboxlite.xyz/api/diagnostics\""
-        buildConfigField "String", "HEYBOX_GATEWAY_API_URL",
-                "\"https://heyboxlite.xyz/api/heybox/gateway/v1\""
         buildConfigField "String", "HEYBOX_API_BASE_URL",
                 "\"https://api.xiaoheihe.cn\""
     }

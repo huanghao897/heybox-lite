@@ -7,9 +7,11 @@ final class DiagnosticSanitizer {
     private static final Charset UTF_8 = Charset.forName("UTF-8");
     private static final int MAX_UPLOAD_BYTES = 28 * 1024;
     private static final Pattern SECRET_LINE = Pattern.compile(
-            "(?im)^\\s*(?:cookie|set-cookie|authorization)\\s*[:=].*$");
+            "(?im)^\\s*(?:cookie|set-cookie|authorization|x-heybox-device-token)"
+                    + "\\s*[:=].*$");
     private static final Pattern SECRET_FIELD = Pattern.compile(
-            "(?i)([\\\"']?(?:cookie|set-cookie|authorization)[\\\"']?"
+            "(?i)([\\\"']?(?:cookie|set-cookie|authorization|x-heybox-device-token)"
+                    + "[\\\"']?"
                     + "\\s*[:=]\\s*)[^\\r\\n]+");
     private static final Pattern SECRET_VALUE = Pattern.compile(
             "(?i)([\\\"']?(?:pkey|user_pkey|x_pkey|x_xhh_tokenid|device_token|"
@@ -17,6 +19,8 @@ final class DiagnosticSanitizer {
                     + "[^\\s;,}&\\]\\\"']+");
     private static final Pattern BEARER = Pattern.compile(
             "(?i)(bearer\\s+)[a-z0-9._~-]{16,}");
+    private static final Pattern DEVICE_TOKEN = Pattern.compile(
+            "(?i)hblite_device_[a-z0-9_-]{40,64}");
     private static final Pattern PHONE = Pattern.compile(
             "(?i)([\\\"']?(?:phone|phone_num|phone_number|mobile|手机号)[\\\"']?"
                     + "\\s*[:=]\\s*[\\\"']?)\\+?[0-9 -]{6,20}");
@@ -32,6 +36,7 @@ final class DiagnosticSanitizer {
         text = SECRET_FIELD.matcher(text).replaceAll("$1<redacted>");
         text = SECRET_VALUE.matcher(text).replaceAll("$1<redacted>");
         text = BEARER.matcher(text).replaceAll("$1<redacted>");
+        text = DEVICE_TOKEN.matcher(text).replaceAll("<redacted device token>");
         text = PHONE.matcher(text).replaceAll("$1<redacted>");
         return SMS_CODE.matcher(text).replaceAll("$1<redacted>");
     }

@@ -64,7 +64,7 @@ final class NoticeCenter {
     }
 
     void checkUpdateOnLaunch() {
-        UpdateChecker.check(appVersion(), this.session.userId(),
+        UpdateChecker.check(appVersion(), this.session,
                 this.session.testReleaseId(), new UpdateChecker.Callback() {
                     @Override
                     public void onResult(UpdateChecker.Result result) {
@@ -211,7 +211,7 @@ final class NoticeCenter {
             if (checking[0]) return;
             checking[0] = true;
             this.host.showToast("正在检查更新");
-            UpdateChecker.check(appVersion(), this.session.userId(),
+            UpdateChecker.check(appVersion(), this.session,
                     this.session.testReleaseId(), new UpdateChecker.Callback() {
                         @Override
                         public void onResult(UpdateChecker.Result result) {

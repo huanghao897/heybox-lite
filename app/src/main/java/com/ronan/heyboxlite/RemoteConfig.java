@@ -9,7 +9,6 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URLEncoder;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
@@ -21,14 +20,11 @@ final class RemoteConfig {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final Map<String, Feature> FEATURES = new HashMap<>();
     private static volatile AccessStatus accessStatus = new AccessStatus(false, "");
-    private static volatile boolean testAdmin;
-    private static volatile String configuredUserId = "";
-
     private RemoteConfig() {}
 
-    static void load(String userId, Runnable complete) {
+    static void load(SessionStore session, Runnable complete) {
         EXECUTOR.execute(() -> {
-            boolean loaded = request(userId);
+            boolean loaded = request(session);
             if (loaded && complete != null) MAIN.post(complete);
         });
     }
@@ -46,36 +42,21 @@ final class RemoteConfig {
         return accessStatus;
     }
 
-    static boolean readGatewayEnabled(String userId) {
-        String cleanUserId = userId == null ? "" : userId.trim();
-        if (!cleanUserId.equals(configuredUserId)) return false;
-        synchronized (FEATURES) {
-            Feature publicGateway = FEATURES.get("gateway_read");
-            if (publicGateway != null && publicGateway.enabled) return true;
-            Feature testGateway = FEATURES.get("gateway_read_test");
-            return testAdmin && testGateway != null && testGateway.enabled;
-        }
-    }
-
-    private static boolean request(String userId) {
+    private static boolean request(SessionStore session) {
         HttpURLConnection connection = null;
         try {
             String endpoint = UpdateChecker.requireTrustedUrl(BuildConfig.CONFIG_API_URL);
             String separator = endpoint.contains("?") ? "&" : "?";
-            String cleanUserId = userId == null ? "" : userId.trim();
-            URL url = new URL(endpoint + separator + "versionCode=" + BuildConfig.VERSION_CODE
-                    + (cleanUserId.isEmpty() ? "" : "&userId="
-                    + URLEncoder.encode(cleanUserId, "UTF-8")));
+            URL url = new URL(endpoint + separator + "versionCode=" + BuildConfig.VERSION_CODE);
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(3000);
             connection.setReadTimeout(4000);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("User-Agent", "heybox-Lite/" + BuildConfig.VERSION_NAME);
+            new DeviceAuthorizationStore(session.appContext()).apply(connection, session);
             if (connection.getResponseCode() / 100 != 2) return false;
             JSONObject payload = new JSONObject(read(connection.getInputStream()));
             accessStatus = AccessStatus.from(payload);
-            testAdmin = payload.optBoolean("testAdmin", false);
-            configuredUserId = cleanUserId;
             JSONObject values = payload.optJSONObject("features");
             if (values == null) return true;
             Map<String, Feature> next = new HashMap<>();

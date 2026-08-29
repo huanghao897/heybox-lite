@@ -232,7 +232,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             showAccountBlocked(this.session.appBlockMessage());
         }
         PresenceReporter.ping(this.session, this.readingTimeTracker, this::applyAccessStatus);
-        RemoteConfig.load(this.session.userId(), () ->
+        RemoteConfig.load(this.session, () ->
                 applyAccessStatus(RemoteConfig.accessStatus()));
         if (!this.accountBlockedScreen && pendingCrashReport) {
             this.handler.postDelayed(this::showPendingCrashDialog, 220L);
@@ -607,7 +607,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 showFeed();
                 PresenceReporter.pingNow(session, readingTimeTracker,
                         MainActivity.this::applyAccessStatus);
-                RemoteConfig.load(session.userId(), () ->
+                RemoteConfig.load(session, () ->
                         applyAccessStatus(RemoteConfig.accessStatus()));
             }
             @Override public void feedChanged() { feedPage.notifyItemsChanged(); }

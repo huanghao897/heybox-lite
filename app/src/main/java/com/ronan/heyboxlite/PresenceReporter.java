@@ -49,7 +49,7 @@ final class PresenceReporter {
         lastPingAt = now;
         final String payload = buildPayload(session, readingTime, includeIdentity);
         EXECUTOR.execute(() -> {
-            AccessStatus status = request(payload);
+            AccessStatus status = request(session, payload, true);
             if (status != null && includeIdentity) session.markPresenceIdentityUploaded();
             if (status != null && callback != null) {
                 MAIN.post(() -> callback.onResult(status));
@@ -86,9 +86,12 @@ final class PresenceReporter {
         }
     }
 
-    private static AccessStatus request(String payload) {
+    private static AccessStatus request(SessionStore session, String payload,
+                                        boolean retryWithoutToken) {
         HttpURLConnection connection = null;
         try {
+            DeviceAuthorizationStore authorization = new DeviceAuthorizationStore(
+                    session.appContext());
             URL url = new URL(presenceUrl());
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
@@ -97,6 +100,7 @@ final class PresenceReporter {
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("User-Agent",
                     "heybox-Lite/" + BuildConfig.VERSION_NAME);
+            authorization.apply(connection, session);
             if (payload == null || payload.isEmpty()) {
                 connection.setDoOutput(false);
             } else {
@@ -113,8 +117,16 @@ final class PresenceReporter {
             InputStream stream = status >= 200 && status < 300
                     ? connection.getInputStream() : connection.getErrorStream();
             String response = read(stream);
+            if (status == HttpURLConnection.HTTP_UNAUTHORIZED && retryWithoutToken
+                    && !authorization.token().isEmpty()) {
+                authorization.clear();
+                return request(session, payload, false);
+            }
             if (status < 200 || status >= 300) return null;
-            return AccessStatus.from(response.isEmpty() ? null : new JSONObject(response));
+            JSONObject body = response.isEmpty() ? new JSONObject() : new JSONObject(response);
+            String deviceToken = body.optString("deviceToken", "");
+            if (!deviceToken.isEmpty()) authorization.save(deviceToken);
+            return AccessStatus.from(body);
         } catch (Exception ignored) {
             return null;
         } finally {

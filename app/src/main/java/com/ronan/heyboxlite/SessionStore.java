@@ -757,14 +757,6 @@ final class SessionStore {
         return result;
     }
 
-    Map<String, String> gatewayMobileParams() {
-        Map<String, String> result = mobileCommonParams();
-        result.remove(SecureStrings.time());
-        result.put("dw", com.max.xiaoheihe.utils.i.e());
-        result.put("channel", com.max.xiaoheihe.utils.f.x0());
-        return result;
-    }
-
     String deviceIdentifier() {
         return prefs.getString(SecureStrings.deviceId(), "");
     }

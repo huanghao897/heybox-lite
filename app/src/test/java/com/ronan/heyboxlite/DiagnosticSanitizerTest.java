@@ -11,6 +11,8 @@ public class DiagnosticSanitizerTest {
     @Test
     public void redactsSensitiveHeadersAndStructuredFields() {
         String input = "Authorization: Bearer ccdevice1_secret-value-1234567890\n"
+                + "X-HeyBox-Device-Token: "
+                + "hblite_device_abcdefghijklmnopqrstuvwxyz0123456789ABCDE\n"
                 + "{\"cookie\":\"pkey=private; x_xhh_tokenid=token\","
                 + "\"phone\":\"+86 13800000000\",\"code\":\"654321\","
                 + "\"nonce\":\"nonce-value\"}";
@@ -18,6 +20,7 @@ public class DiagnosticSanitizerTest {
         String output = DiagnosticSanitizer.redact(input);
 
         assertFalse(output.contains("ccdevice1_secret"));
+        assertFalse(output.contains("hblite_device_"));
         assertFalse(output.contains("private"));
         assertFalse(output.contains("13800000000"));
         assertFalse(output.contains("654321"));

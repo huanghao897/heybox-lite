@@ -179,17 +179,6 @@ final class ApiClient {
         boolean debugRequest = taskRequest || isWritePath(path);
         try {
             if (closed || Thread.currentThread().isInterrupted()) return;
-            if (shouldUseReadGateway(method, path, algorithm, profile)) {
-                try {
-                    requestThroughGateway(path, extra, callback);
-                    return;
-                } catch (HeyboxGatewayClient.GatewayException gatewayError) {
-                    logTask("api gateway fallback operation="
-                            + HeyboxGatewayClient.operationFor(path)
-                            + " http=" + gatewayError.status
-                            + " code=" + gatewayError.code);
-                }
-            }
             Map<String, String> params = new LinkedHashMap<>(baseParams(profile));
             if (extra != null) params.putAll(extra);
             params.putAll(HeyboxSigner.sign(path, algorithm));
@@ -284,12 +273,6 @@ final class ApiClient {
             if (closed) return;
             String message = error.getMessage() == null
                     ? error.getClass().getSimpleName() : error.getMessage();
-            String gatewayOperation = HeyboxGatewayClient.operationFor(path);
-            if (!gatewayOperation.isEmpty()
-                    && RemoteConfig.readGatewayEnabled(session.userId())) {
-                logTask("api gateway error operation=" + gatewayOperation
-                        + " message=" + trim(message));
-            }
             if (debugRequest) {
                 logTask("api " + debugKind(path) + " error path=" + path
                         + " profile=" + profile
@@ -305,32 +288,6 @@ final class ApiClient {
         }
     }
 
-    private boolean shouldUseReadGateway(String method, String path,
-                                         HeyboxSigner.Algorithm algorithm,
-                                         RequestProfile profile) {
-        return "GET".equals(method)
-                && algorithm == HeyboxSigner.Algorithm.LEGACY
-                && profile == RequestProfile.WEB
-                && !HeyboxGatewayClient.operationFor(path).isEmpty()
-                && RemoteConfig.readGatewayEnabled(session.userId());
-    }
-
-    private void requestThroughGateway(String path, Map<String, String> extra,
-                                       Callback callback) throws Exception {
-        long appStartedAt = SystemClock.elapsedRealtime();
-        Map<String, String> params = new LinkedHashMap<>(session.gatewayMobileParams());
-        if (extra != null) params.putAll(extra);
-        HeyboxGatewayClient.Result result = HeyboxGatewayClient.get(session, path, params);
-        long validateStartedAt = SystemClock.elapsedRealtime();
-        validateApiResponse("GET", result.body);
-        long totalMs = Math.max(0L, SystemClock.elapsedRealtime() - appStartedAt);
-        logTask("api gateway success operation=" + HeyboxGatewayClient.operationFor(path));
-        logPerformance("gateway", path, totalMs, result.roundTripMs,
-                Math.max(0L, SystemClock.elapsedRealtime() - validateStartedAt),
-                result.gatewayMs, result.upstreamMs);
-        postSuccess(callback, result.body);
-    }
-
     private void logPerformance(String route, String path, long totalMs,
                                 long connectMs, long readMs, long parseOrGatewayMs,
                                 long upstreamMs) {
@@ -344,8 +301,6 @@ final class ApiClient {
     }
 
     private static String operationLabel(String path) {
-        String gatewayOperation = HeyboxGatewayClient.operationFor(path);
-        if (!gatewayOperation.isEmpty()) return gatewayOperation;
         if (normalizePath(EndpointProvider.favoriteTabs()).equals(normalizePath(path))) {
             return "favorite.tabs";
         }
