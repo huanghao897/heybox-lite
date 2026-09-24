@@ -24,6 +24,9 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false">
+        <uses-library
+            android:name="wear-sdk"
+            android:required="false" />
         <activity
             android:name=".SplashActivity"
             android:exported="true">

@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "HeyBoxCommunity"
 include(":app")
+include(":cnwearoverlay-runtime")
+project(":cnwearoverlay-runtime").projectDir = file("third_party/cnwearoverlay/runtime")

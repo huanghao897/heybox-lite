@@ -27,3 +27,18 @@
 -keep class okhttp3.** { *; }
 -keep class okio.** { *; }
 -keep class com.ronan.heyboxlite.NativeLibraryLoader { *; }
+
+# cnwearoverlay resolves optional vendor Wear classes by reflection.
+-keep class cc.star0.wear.lib.cnwearoverlay.runtime.CnWearOverlay { *; }
+-keep class com.google.wear.input.WearHapticFeedbackConstants {
+    public static int getScrollItemFocus();
+    public static int getScrollTick();
+    public static int getScrollLimit();
+}
+-keep class com.xiaomi.miwear.input.WearHapticFeedbackConstants {
+    public static int getScrollItemFocus();
+    public static int getScrollTick();
+    public static int getScrollLimit();
+}
+-dontwarn com.google.wear.input.WearHapticFeedbackConstants
+-dontwarn com.xiaomi.miwear.input.WearHapticFeedbackConstants

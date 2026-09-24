@@ -1,0 +1,19 @@
+plugins {
+    id "com.android.library"
+}
+
+android {
+    namespace "cc.star0.wear.lib.cnwearoverlay.runtime"
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 14
+        consumerProguardFiles "src/main/proguard/cnwearoverlay-runtime.pro"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+}

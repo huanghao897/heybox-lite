@@ -159,6 +159,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 dependencies {
+    implementation project(":cnwearoverlay-runtime")
     implementation "com.google.zxing:core:3.3.3"
 
     // 本地单测（纯逻辑回归网，不进 APK）：真 org.json 覆盖 android.jar 的桩实现

@@ -1,9 +1,6 @@
 package com.ronan.heyboxlite;
 
 import android.app.Activity;
-import android.os.Build;
-import android.os.SystemClock;
-import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -27,12 +24,15 @@ final class CrownInputHandler {
     private final CrownScrollController scrollController = new CrownScrollController();
     private final CrownScrollDispatcher dispatcher =
             new CrownScrollDispatcher(this::findScrollTarget, this::performFeedback);
-    private long lastFeedbackAt;
+    private final CrownHapticProvider hapticProvider;
+    private final float axisGain;
 
     CrownInputHandler(Activity activity, SessionStore session, Host host) {
         this.activity = activity;
         this.session = session;
         this.host = host;
+        this.hapticProvider = new CrownHapticProvider(activity, session);
+        this.axisGain = CrownDeviceProfile.scrollAxisGain(activity);
     }
 
     boolean handle(MotionEvent event) {
@@ -42,13 +42,14 @@ final class CrownInputHandler {
         if (axis == 0f) return false;
         if (!session.crownScrollEnabled()) {
             reset();
-            return true;
+            // Leave the event to the focused view/system when Lite crown scrolling is off.
+            return false;
         }
         int baseStep = dp(12);
         int speed = session.crownScrollSpeed();
-        int distance = scrollController.distance(axis, baseStep, speed);
+        int distance = scrollController.distance(axis, baseStep, speed, axisGain);
         if (distance != 0) {
-            dispatcher.enqueue(distance, scrollController.frameLimit(baseStep, speed));
+            dispatcher.enqueue(distance, scrollController.frameLimit(baseStep, speed, axisGain));
         }
         return true;
     }
@@ -85,16 +86,7 @@ final class CrownInputHandler {
     }
 
     private void performFeedback() {
-        if (!session.crownHapticsEnabled()) return;
-        long now = SystemClock.uptimeMillis();
-        if (now - lastFeedbackAt < 36L) return;
-        lastFeedbackAt = now;
-        int effect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
-                ? HapticFeedbackConstants.CLOCK_TICK
-                : HapticFeedbackConstants.KEYBOARD_TAP;
-        View content = host.contentRoot();
-        View target = content == null ? activity.getWindow().getDecorView() : content;
-        target.performHapticFeedback(effect);
+        this.hapticProvider.performScrollTick(host.contentRoot());
     }
 
     private static View findScrollableView(View view, int direction) {

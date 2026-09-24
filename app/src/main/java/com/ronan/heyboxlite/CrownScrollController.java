@@ -10,8 +10,13 @@ final class CrownScrollController {
     private int lastDirection;
 
     int distance(float axis, int baseStepPixels, int speedPercent) {
+        return distance(axis, baseStepPixels, speedPercent, 1.0f);
+    }
+
+    int distance(float axis, int baseStepPixels, int speedPercent, float axisGain) {
         if (axis == 0.0f || Float.isNaN(axis) || Float.isInfinite(axis)
-                || baseStepPixels <= 0) {
+                || baseStepPixels <= 0 || Float.isNaN(axisGain) || Float.isInfinite(axisGain)
+                || axisGain <= 0.0f) {
             return 0;
         }
 
@@ -21,7 +26,8 @@ final class CrownScrollController {
         }
         this.lastDirection = direction;
 
-        float boundedAxis = Math.max(-MAX_AXIS_VALUE, Math.min(MAX_AXIS_VALUE, axis));
+        float scaledAxis = axis * axisGain;
+        float boundedAxis = Math.max(-MAX_AXIS_VALUE, Math.min(MAX_AXIS_VALUE, scaledAxis));
         float scaled = remainder - boundedAxis * baseStepPixels
                 * responseFactor(speedPercent);
         int pixels = Math.round(scaled);
@@ -35,9 +41,14 @@ final class CrownScrollController {
     }
 
     int frameLimit(int baseStepPixels, int speedPercent) {
+        return frameLimit(baseStepPixels, speedPercent, 1.0f);
+    }
+
+    int frameLimit(int baseStepPixels, int speedPercent, float axisGain) {
         if (baseStepPixels <= 0) return 1;
         return Math.max(1, Math.round(baseStepPixels
-                * responseFactor(speedPercent) * 1.25f));
+                * responseFactor(speedPercent) * 1.25f
+                * boundedGain(axisGain)));
     }
 
     static int clampSpeed(int value) {
@@ -53,5 +64,10 @@ final class CrownScrollController {
     private static float responseFactor(int speedPercent) {
         float ratio = clampSpeed(speedPercent) / 100.0f;
         return ratio <= 1.0f ? ratio * ratio : 1.0f + (ratio - 1.0f) * 0.65f;
+    }
+
+    private static float boundedGain(float axisGain) {
+        if (Float.isNaN(axisGain) || Float.isInfinite(axisGain)) return 1.0f;
+        return Math.max(1.0f, Math.min(6.0f, axisGain));
     }
 }

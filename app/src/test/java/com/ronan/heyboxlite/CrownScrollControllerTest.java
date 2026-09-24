@@ -51,6 +51,22 @@ public class CrownScrollControllerTest {
     }
 
     @Test
+    public void appliesDeviceAxisGainBeforeClamping() {
+        CrownScrollController controller = new CrownScrollController();
+
+        assertEquals(-18, controller.distance(0.1f, 44, 100, 4.0f));
+    }
+
+    @Test
+    public void keepsDefaultAxisGainBehaviorUnchanged() {
+        CrownScrollController defaultController = new CrownScrollController();
+        CrownScrollController explicitController = new CrownScrollController();
+
+        assertEquals(defaultController.distance(0.25f, 44, 100),
+                explicitController.distance(0.25f, 44, 100, 1.0f));
+    }
+
+    @Test
     public void lowestSpeedRemainsMonotonic() {
         CrownScrollController controller = new CrownScrollController();
         int total = 0;
