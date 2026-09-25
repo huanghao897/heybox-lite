@@ -15,12 +15,13 @@ final class DiagnosticSanitizer {
                     + "\\s*[:=]\\s*)[^\\r\\n]+");
     private static final Pattern SECRET_VALUE = Pattern.compile(
             "(?i)([\\\"']?(?:pkey|user_pkey|x_pkey|x_xhh_tokenid|device_token|"
-                    + "access_token|refresh_token|hkey|nonce)[\\\"']?\\s*[:=]\\s*[\\\"']?)"
+                    + "access_token|refresh_token|token|password|passwd|pwd|hkey|nonce|"
+                    + "x_heybox_id|heybox_id|user_id|userid)[\\\"']?\\s*[:=]\\s*[\\\"']?)"
                     + "[^\\s;,}&\\]\\\"']+");
     private static final Pattern BEARER = Pattern.compile(
             "(?i)(bearer\\s+)[a-z0-9._~-]{16,}");
     private static final Pattern DEVICE_TOKEN = Pattern.compile(
-            "(?i)hblite_device_[a-z0-9_-]{40,64}");
+            "(?i)(?:hblite_device_[a-z0-9_-]{40,64}|ccdevice1_[a-z0-9_-]{16,})");
     private static final Pattern PHONE = Pattern.compile(
             "(?i)([\\\"']?(?:phone|phone_num|phone_number|mobile|手机号)[\\\"']?"
                     + "\\s*[:=]\\s*[\\\"']?)\\+?[0-9 -]{6,20}");

@@ -8,7 +8,6 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.AbsListView;
 import android.widget.LinearLayout;
-import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.TextView;
 
@@ -178,7 +177,7 @@ final class FeedPage {
     void restoreScroll() {
         if (this.listView == null || this.items.isEmpty()) return;
         int maxPosition = Math.max(0,
-                this.items.size() + this.listView.getHeaderViewsCount() - 1);
+                this.items.size() + ((PullRefreshListView) this.listView).contentHeaderCount() - 1);
         int position = Math.max(0, Math.min(this.firstVisible, maxPosition));
         int top = this.firstTop;
         this.listView.post(() -> {
@@ -195,6 +194,7 @@ final class FeedPage {
 
     void clearItems() {
         this.items.clear();
+        notifyAdapter();
     }
 
     void notifyItemsChanged() {
@@ -296,14 +296,13 @@ final class FeedPage {
         list.setPullRefreshAction(() -> {
             if (!load(true)) list.setRefreshing(false);
         });
-        list.addHeaderView(topBar(), null, false);
         int bannerTopMargin = this.roundLayout ? this.host.pageTopPadding() : dp(10);
         this.paginationView = new FeedPaginationView(this.activity, list, this.tokens,
                 this.session.uiScale() / 100.0f,
                 this.session.textScale() / 100.0f,
                 bannerTopMargin, () -> load(false));
         this.adapter = createAdapter(this.items);
-        list.setAdapter((ListAdapter) this.adapter);
+        list.setContentAdapter(this.adapter, topBar(), this.paginationView.footerView());
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(AbsListView view, int state) {
@@ -316,7 +315,7 @@ final class FeedPage {
                     View child = view.getChildAt(0);
                     firstTop = child == null ? 0 : child.getTop();
                     exposureTracker.markVisible(
-                            items, first, visible, list.getHeaderViewsCount());
+                            items, first, visible, list.contentHeaderCount());
                 }
                 if (total > 0 && total - first - visible <= 5 && paging.canPrefetch()) {
                     load(false);

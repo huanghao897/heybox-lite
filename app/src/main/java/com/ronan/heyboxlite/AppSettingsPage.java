@@ -137,6 +137,8 @@ final class AppSettingsPage {
                 this.host::exportDiagnostics);
         addEntry(maintain, "上传日志", null, R.drawable.il_info,
                 this.host::uploadDiagnostics);
+        addEntry(maintain, "崩溃测试", null, R.drawable.il_info,
+                () -> CrashTestController.confirm(this.activity, this.session, this.tokens));
         SettingsUi.Entry[] cacheEntry = new SettingsUi.Entry[1];
         cacheEntry[0] = this.settingsUi.addEntry(maintain, "清除缓存", null,
                 "计算中",

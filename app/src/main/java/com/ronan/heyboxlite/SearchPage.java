@@ -12,7 +12,6 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.TextView;
 
@@ -315,9 +314,8 @@ final class SearchPage {
                 ? "没有更多了" : "上滑加载更多", 11.5f, this.tokens.muted);
         footer.setGravity(Gravity.CENTER);
         footer.setPadding(0, dp(10), 0, dp(12));
-        list.addFooterView(footer, null, false);
         FeedAdapter adapter = this.host.createFeedAdapter(this.state.items());
-        list.setAdapter((ListAdapter) adapter);
+        list.setAdapter(new FixedRowsAdapter(adapter, footer));
         footer.setOnClickListener(view -> loadMore(adapter, footer));
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override

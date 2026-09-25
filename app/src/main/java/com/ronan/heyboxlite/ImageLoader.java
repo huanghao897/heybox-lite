@@ -66,7 +66,7 @@ final class ImageLoader {
     private static final long MAX_HEAP_BYTES = Runtime.getRuntime().maxMemory();
     private static final int CACHE_KB = memoryCacheKb(MAX_HEAP_BYTES);
     private static final int MAX_DECODE_BYTES = 10 * 1024 * 1024;
-    private static final int MAX_BITMAP_PIXELS = 5_000_000;
+    private static final int MAX_BITMAP_PIXELS = ImageMemoryBudget.bitmapPixels(MAX_HEAP_BYTES);
     private static final int MAX_BITMAP_SIDE = 2400;
     private static final Object SMALL_DECODE_LOCK = new Object();
     private static final Object LARGE_DECODE_LOCK = new Object();

@@ -171,7 +171,7 @@ HeyBoxCommunity/
 - **`SessionStore`** — 本地登录态与全部设置项（详见 [§8](#8-设置项清单)）。登录 Cookie 加密存储（`ModernCookieCrypto`），用户 id/昵称/头像，各类显示与交互开关，签到相关字段与普通 Cookie 严格隔离。`motionLevel()` 首启按设备判定。`resetToDefaults` 清空时保留设备 id、全部显示/交互偏好与搜索历史等，不误删用户配置。
 - **`LocalCache`** — 本地缓存与诊断日志：缓存信息流与帖子详情（详情按数量上限滚动清理）、写会话日志（新会话把上一份转存为 previous）、写崩溃日志与 native 签名日志、导出诊断到 `Download/heyboxlite`（`.txt`）。也保存「本版本官方 native 是否已禁用」等运行标志。
 - **`ModernCookieCrypto`** — Cookie 加密（Android 6.0+）：AES/GCM，密钥存 AndroidKeyStore，IV 与密文一起打包 Base64。低版本无法使用时由 `SessionStore` 降级处理。
-- **`CrashReporter`** — 全局未捕获异常处理：写 `crash-latest.log`（旧的转 `crash-previous.log`），按字节预算截断（中文按 3 字节/字换算），末端兜底不让崩溃路径二次崩溃。
+- **崩溃处理** — `LiteApplication` 在所有应用进程启动时安装 `CrashReporter`。`CrashText` 限制堆栈内存和 UTF-8 字节数；`CrashReportStore` 将脱敏报告写入私有目录 `files/crash-reports`，最多保留 8 份待传报告；`CrashUploads` 自动上传，服务器明确返回 `ok: true` 才删除队列项，跨进程锁避免重复提交。`DiagnosticSource` 区分手动诊断、自动崩溃、系统异常退出、运行错误和崩溃测试，旧日志没有标记时保持未知。`CrashRecoveryActivity` 在独立进程展示 `CrashRecoveryView`，摘要最多 3 行，重启、退出、保存独立布局。`CrashExitHistory` 在 Android 11+ 下次启动时补采可用的 ANR、原生崩溃及低内存退出记录。设置 / 内容与缓存 / 维护中的“崩溃测试”会触发明确标记的真实异常。具体边界与测试见 `CRASH_RECOVERY_SPEC.md`。
 
 ### 6.7 更新 / 公告 / 在线
 

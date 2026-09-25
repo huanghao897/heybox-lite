@@ -78,29 +78,6 @@ final class DiagnosticsController {
                 }));
     }
 
-    void showPendingCrash() {
-        this.executor.execute(() -> {
-            String crash = CrashReporter.pendingCrashReport(this.activity);
-            if (crash.isEmpty()) return;
-            String report = DiagnosticsClient.crashReport(this.activity, this.session, crash);
-            File file = this.localCache.writeDiagnostics(report);
-            String redacted = DiagnosticSanitizer.redact(crash);
-            String details = redacted.length() > 1_400
-                    ? redacted.substring(0, 1_400) + "\n..." : redacted;
-            CrashReporter.markHandled(this.activity, crash);
-            this.activity.runOnUiThread(() -> {
-                if (this.activity.isFinishing()) return;
-                this.dialogs.show("上次运行出现异常",
-                        "应用已经保存故障信息。日志不会自动上传。\n\n" + details,
-                        "上传日志", () -> DiagnosticsClient.upload(
-                                this.session, report,
-                                (uploaded, message) -> this.host.showToast(message)),
-                        "知道了", null,
-                        "保存日志", () -> save(file.getName(), report));
-            });
-        });
-    }
-
     void export() {
         RuntimeState state = this.host.runtimeState();
         this.host.showToast("正在生成日志");
@@ -120,6 +97,7 @@ final class DiagnosticsController {
     private String build(RuntimeState state) {
         StringBuilder out = new StringBuilder();
         out.append("heybox Lite diagnostics\n");
+        out.append(DiagnosticSource.MANUAL.reportHeader());
         out.append("exportTimeLocal: ").append(time(System.currentTimeMillis())).append('\n');
         out.append("exportTimeMillis: ").append(System.currentTimeMillis()).append('\n');
         out.append("timeZone: ").append(TimeZone.getDefault().getID()).append('\n');

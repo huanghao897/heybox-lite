@@ -14,6 +14,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -39,7 +40,8 @@ final class FeedAdapter extends BaseAdapter {
     }
 
     private final Context context;
-    private final List<FeedItem> items;
+    private final List<FeedItem> sourceItems;
+    private List<FeedItem> items;
     private final Listener listener;
     private final LikeListener likeListener;
     private final FollowListener followListener;
@@ -88,7 +90,8 @@ final class FeedAdapter extends BaseAdapter {
                 String currentUserId, boolean roundLayout,
                 int roundHorizontalPaddingPx) {
         this.context = context;
-        this.items = items;
+        this.sourceItems = items;
+        this.items = new ArrayList<>(items);
         this.noImage = noImage;
         this.uiScale = uiScale;
         this.textScale = textScale;
@@ -116,6 +119,12 @@ final class FeedAdapter extends BaseAdapter {
     @Override public int getCount() { return items.size(); }
     @Override public FeedItem getItem(int position) { return items.get(position); }
     @Override public long getItemId(int position) { return position; }
+
+    @Override public void notifyDataSetChanged() {
+        this.items = new ArrayList<>(this.sourceItems);
+        this.plainCopyCache.clear();
+        super.notifyDataSetChanged();
+    }
 
     @Override
     public View getView(int position, View reusable, ViewGroup parent) {

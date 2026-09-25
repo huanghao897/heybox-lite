@@ -173,7 +173,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.pageTransitions.setCompactMotion(usesWatchLayout());
         this.localCache = new LocalCache(this);
         this.cacheMaintenance = new CacheMaintenance(this, this.localCache, this.handler);
-        boolean pendingCrashReport = CrashReporter.hasPendingCrashReport(this);
         this.checkinCenterCoordinator = new CheckinCenterCoordinator(this, this.localCache);
         this.checkinCenterCoordinator.setAuthorizationListener(paired -> {
             if (this.profilePage != null) this.profilePage.invalidate();
@@ -234,16 +233,13 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         PresenceReporter.ping(this.session, this.readingTimeTracker, this::applyAccessStatus);
         RemoteConfig.load(this.session, () ->
                 applyAccessStatus(RemoteConfig.accessStatus()));
-        if (!this.accountBlockedScreen && pendingCrashReport) {
-            this.handler.postDelayed(this::showPendingCrashDialog, 220L);
-        }
         if (!this.accountBlockedScreen && this.session.autoUpdateCheck()) {
             this.handler.postDelayed(this::checkUpdateOnLaunch,
-                    pendingCrashReport ? 1_800L : 650L);
+                    650L);
         }
         if (!this.accountBlockedScreen) {
             this.handler.postDelayed(this::checkAnnouncementOnLaunch,
-                    pendingCrashReport ? 2_100L : 950L);
+                    950L);
         }
     }
 
@@ -1673,10 +1669,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.diagnosticsController.upload();
     }
 
-    private void showPendingCrashDialog() {
-        this.diagnosticsController.showPendingCrash();
-    }
-
     private void exportDiagnostics() {
         this.diagnosticsController.export();
     }
@@ -2013,7 +2005,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     @Override
     protected void onPause() {
         this.activityResumed = false;
-        this.crownInput.cancel();
+        if (this.crownInput != null) this.crownInput.cancel();
         if (this.checkinCenterPage != null) this.checkinCenterPage.onPause();
         if (this.checkinLeaderboardController != null) {
             this.checkinLeaderboardController.onPause();
@@ -2028,6 +2020,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
+        CrashBreadcrumbs.record("memory trim level=" + level);
         if (level < ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return;
         ImageLoader.clear();
         this.screenSnapshots.clear();
@@ -2054,7 +2047,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
 
     @Override
     protected void onDestroy() {
-        this.crownInput.cancel();
+        if (this.crownInput != null) this.crownInput.cancel();
         if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
         if (this.checkinCenterPage != null) {
             this.checkinCenterPage.close();
@@ -2104,6 +2097,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
 
     /** 页面切换统一入口：真实双 View 转场；方向由 pendingBackTransition 决定，消费后复位。 */
     private void transitionTo(View next) {
+        CrashBreadcrumbs.screen(this.screen);
         this.crownInput.cancel();
         if (!"detail".equals(this.screen) && this.readingTimeTracker != null) {
             this.readingTimeTracker.pause();

@@ -26,7 +26,6 @@ final class FeedPaginationView extends FrameLayout {
                 dp(context, 8, uiScale), dp(context, 16, uiScale));
         footer.setMinHeight(dp(context, 46, uiScale));
         footer.setOnClickListener(view -> retry.run());
-        list.addFooterView(footer, null, false);
         addView(list, new LayoutParams(-1, -1));
 
         banner = new TransientStatusBanner(context, tokens, uiScale, textScale,
@@ -35,6 +34,10 @@ final class FeedPaginationView extends FrameLayout {
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         bannerParams.topMargin = bannerTopMargin;
         addView(banner, bannerParams);
+    }
+
+    TextView footerView() {
+        return footer;
     }
 
     void render(FeedPagingState state, boolean hasItems, boolean active) {

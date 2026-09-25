@@ -21,9 +21,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 final class LocalCache {
@@ -46,11 +48,12 @@ final class LocalCache {
                 return thread;
             });
     private static final ExecutorService CACHE_EXECUTOR =
-            Executors.newSingleThreadExecutor(runnable -> {
+            new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(4), runnable -> {
                 Thread thread = new Thread(runnable, "heybox-local-cache");
                 thread.setDaemon(true);
                 return thread;
-            });
+            }, new ThreadPoolExecutor.DiscardOldestPolicy());
     private static String processSessionId;
     private static long processSessionStartedAt;
     private static boolean processSessionLogPrepared;
@@ -112,10 +115,14 @@ final class LocalCache {
         List<FeedItem> snapshot = count == 0
                 ? new ArrayList<>() : new ArrayList<>(items.subList(0, count));
         long savedAt = System.currentTimeMillis();
-        CACHE_EXECUTOR.execute(() -> prefs.edit()
-                .putString(FEED_ITEMS, encodeFeedItems(snapshot))
-                .putLong(FEED_SAVED_AT, savedAt)
-                .apply());
+        CACHE_EXECUTOR.execute(() -> {
+            try {
+                prefs.edit().putString(FEED_ITEMS, encodeFeedItems(snapshot))
+                        .putLong(FEED_SAVED_AT, savedAt).apply();
+            } catch (OutOfMemoryError ignored) {
+                // Optional cache writes must not terminate reading on small heaps.
+            }
+        });
     }
 
     List<FeedItem> feedItems() {
@@ -161,11 +168,14 @@ final class LocalCache {
         if (linkId == null || linkId.isEmpty() || body == null) return;
         JSONObject cached = copyForOffline(body);
         if (cached == null) return;
-        trimOfflineComments(cached);
-        String value = cached.toString();
         CACHE_EXECUTOR.execute(() -> {
-            write(file(detailDir, linkId + ".json"), value);
-            prune(detailDir, MAX_DETAIL_FILES);
+            try {
+                String value = cached.toString();
+                if (value != null) write(file(detailDir, linkId + ".json"), value);
+                prune(detailDir, MAX_DETAIL_FILES);
+            } catch (OutOfMemoryError ignored) {
+                // Keep the previously saved detail when a new snapshot cannot fit.
+            }
         });
     }
 
@@ -178,15 +188,15 @@ final class LocalCache {
             if (trimOfflineComments(body)) write(source, body.toString());
             source.setLastModified(System.currentTimeMillis());
             return body;
-        } catch (JSONException | SecurityException ignored) {
+        } catch (JSONException | SecurityException | OutOfMemoryError ignored) {
             return null;
         }
     }
 
     private JSONObject copyForOffline(JSONObject body) {
         try {
-            return new JSONObject(body.toString());
-        } catch (JSONException ignored) {
+            return OfflineDetailSnapshot.copy(body);
+        } catch (JSONException | OutOfMemoryError ignored) {
             return null;
         }
     }
@@ -382,6 +392,7 @@ final class LocalCache {
     }
 
     void log(String message) {
+        CrashBreadcrumbs.record(message);
         String line = timestamp() + "  " + (message == null ? "" : message) + "\n";
         File file = logFile();
         LOG_EXECUTOR.execute(() -> appendEvent(file, line));
@@ -401,15 +412,11 @@ final class LocalCache {
     }
 
     String crashLog() {
-        synchronized (SESSION_LOCK) {
-            return read(crashLogFile());
-        }
+        return CrashReporter.latestCrashReport(context);
     }
 
     String previousCrashLog() {
-        synchronized (SESSION_LOCK) {
-            return read(previousCrashLogFile());
-        }
+        return CrashReporter.previousCrashReport(context);
     }
 
     String nativeSignLog() {
@@ -524,14 +531,6 @@ final class LocalCache {
         return new File(diagnosticsDir, "events-previous-session.log");
     }
 
-    private File crashLogFile() {
-        return new File(diagnosticsDir, "crash-latest.log");
-    }
-
-    private File previousCrashLogFile() {
-        return new File(diagnosticsDir, "crash-previous.log");
-    }
-
     private File nativeSignLogFile() {
         return new File(diagnosticsDir, "native-sign.log");
     }
@@ -565,11 +564,11 @@ final class LocalCache {
 
     private static void writeStatic(File file, String value) {
         try {
+            byte[] bytes = (value == null ? "" : value).getBytes(UTF_8);
             File parent = file.getParentFile();
             if (parent != null) parent.mkdirs();
             try (FileOutputStream output = new FileOutputStream(file, false)) {
-                output.write((value == null ? "" : value)
-                        .getBytes(UTF_8));
+                output.write(bytes);
             }
         } catch (IOException | SecurityException ignored) {
         }

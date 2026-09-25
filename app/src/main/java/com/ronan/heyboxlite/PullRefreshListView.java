@@ -13,6 +13,7 @@ import android.view.ViewParent;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.AbsListView;
 import android.widget.FrameLayout;
+import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.TextView;
 
@@ -59,8 +60,15 @@ final class PullRefreshListView extends ListView {
         this.refreshHeaderContainer.addView(this.refreshHeader,
                 new FrameLayout.LayoutParams(-1, -1));
 
-        addHeaderView(this.refreshHeaderContainer, null, false);
         hideHeaderImmediately();
+    }
+
+    void setContentAdapter(ListAdapter adapter, View header, View footer) {
+        setAdapter(new FixedRowsAdapter(adapter, footer, this.refreshHeaderContainer, header));
+    }
+
+    int contentHeaderCount() {
+        return 2;
     }
 
     void setPullRefreshAction(Runnable action) {
@@ -308,7 +316,7 @@ final class PullRefreshListView extends ListView {
             return true;
         }
         int firstPosition = getFirstVisiblePosition();
-        if (firstPosition >= getHeaderViewsCount()) {
+        if (firstPosition >= contentHeaderCount()) {
             return false;
         }
         View firstChild = getChildCount() == 0 ? null : getChildAt(0);

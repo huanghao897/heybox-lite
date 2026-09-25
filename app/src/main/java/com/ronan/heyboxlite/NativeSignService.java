@@ -2,6 +2,7 @@ package com.ronan.heyboxlite;
 
 import android.app.Service;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -59,7 +60,10 @@ public final class NativeSignService extends Service {
     }
 
     @Override public void onDestroy() {
-        if (signingThread != null) signingThread.quitSafely();
+        if (signingThread != null) {
+            if (Build.VERSION.SDK_INT >= 18) signingThread.quitSafely();
+            else signingThread.quit();
+        }
         signingThread = null;
         messenger = null;
         super.onDestroy();

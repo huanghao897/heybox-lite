@@ -11,12 +11,15 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 public final class CheckinCenterDeviceTestRunner extends Instrumentation {
+    private boolean crashRecoverySuite;
     private static final String SYNTHETIC_TOKEN =
             "ccdevice1_abcdefghijklmnopqrstuvwxyzABCDEFGH123456789";
 
     @Override
     public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
+        crashRecoverySuite = arguments != null
+                && "crash_recovery".equals(arguments.getString("suite"));
         start();
     }
 
@@ -25,6 +28,12 @@ public final class CheckinCenterDeviceTestRunner extends Instrumentation {
         new Thread(() -> {
             Bundle result = new Bundle();
             try {
+                if (crashRecoverySuite) {
+                    CrashRecoveryDeviceChecks.run(this);
+                    result.putString("stream", "Crash recovery device checks passed\n");
+                    finish(Activity.RESULT_OK, result);
+                    return;
+                }
                 testDeviceTokenIsEncryptedAtRest();
                 testPinnedServerRejectsSyntheticAuthorization();
                 testLegacyDownloadUrlUpgradesToHttps();
