@@ -7,6 +7,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
@@ -53,15 +54,23 @@ final class UpdateChecker {
 
     static void check(String currentVersion, SessionStore session,
                       int testReleaseId, Callback callback) {
-        EXECUTOR.execute(() -> request(currentVersion, session, testReleaseId, callback));
+        PresenceReporter.prepareUpdate(session, ready -> {
+            if (!ready) {
+                callback.onError("设备认证暂未完成，请稍后重试");
+                return;
+            }
+            EXECUTOR.execute(() -> request(currentVersion, session, testReleaseId, callback));
+        });
     }
 
     private static void request(String currentVersion, SessionStore session, int testReleaseId,
                                 Callback callback) {
         HttpURLConnection connection = null;
         try {
+            String fingerprint = InstalledApkFingerprint.read(new File(
+                    session.appContext().getApplicationInfo().sourceDir));
             String endpoint = buildEndpoint(requireTrustedUrl(BuildConfig.UPDATE_API_URL),
-                    testReleaseId);
+                    testReleaseId, fingerprint);
             URL url = new URL(endpoint);
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(4000);
@@ -111,12 +120,14 @@ final class UpdateChecker {
         }
     }
 
-    private static String buildEndpoint(String endpoint, int testReleaseId) throws Exception {
+    private static String buildEndpoint(String endpoint, int testReleaseId,
+                                        String fingerprint) throws Exception {
         String separator = endpoint.contains("?") ? "&" : "?";
         String result = endpoint + separator
                 + "versionCode=" + BuildConfig.VERSION_CODE
                 + "&currentVersionCode=" + BuildConfig.VERSION_CODE
                 + "&testReleaseId=" + Math.max(0, testReleaseId)
+                + "&installedApkSha256=" + fingerprint
                 + "&versionName=" + URLEncoder.encode(BuildConfig.VERSION_NAME, "UTF-8")
                 + "&currentVersion=" + URLEncoder.encode(BuildConfig.VERSION_NAME, "UTF-8");
         return result;

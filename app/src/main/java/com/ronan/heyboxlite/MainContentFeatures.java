@@ -199,8 +199,6 @@ final class MainContentFeatures {
                     @Override public void showPage(View page) { host.showPage(page); }
                     @Override public void showSearch() { host.showSearch(); }
                     @Override public void openDetail(FeedItem item) { host.showDetail(item); }
-                    @Override public void showLoading() { host.showLoading(); }
-                    @Override public void hideLoading() { host.hideLoading(); }
                     @Override public void showMessage(String message) {
                         host.showMessage(message);
                     }

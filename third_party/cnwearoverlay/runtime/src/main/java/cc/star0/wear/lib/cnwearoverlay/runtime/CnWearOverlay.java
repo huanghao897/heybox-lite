@@ -3,6 +3,7 @@ package cc.star0.wear.lib.cnwearoverlay.runtime;
 import android.view.View;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 
 /**
  * cnwearoverlay 运行时辅助类。Lite 以独立 Android runtime 模块引用它，
@@ -166,14 +167,18 @@ public final class CnWearOverlay {
                 return hapticConstants(hapticConstantsClass,
                         OPPO_SCROLL_ITEM_FOCUS, OPPO_SCROLL_TICK, OPPO_SCROLL_LIMIT);
             }
-        } catch (ReflectiveOperationException e) {
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            // Reflection multi-catch resolves to an API 19-only superclass.
             throw new IllegalStateException("Unsupported wear-compose HapticConstants structure", e);
         }
         return null;
     }
 
     private static Object hapticConstants(Class<?> cls, int focus, int tick, int limit)
-            throws ReflectiveOperationException {
+            throws ClassNotFoundException, NoSuchMethodException, InstantiationException,
+                   IllegalAccessException, InvocationTargetException, NoSuchFieldException {
         // 1.6.2 的基类是 abstract；创建具体子类的新实例，不修改 Kotlin 全局单例。
         Class<?> concrete = Class.forName(
                 cls.getName() + "$Wear4RotaryHapticConstants", true, cls.getClassLoader());
@@ -187,7 +192,7 @@ public final class CnWearOverlay {
     }
 
     private static void setConstant(Class<?> cls, Object instance, String name, int value)
-            throws ReflectiveOperationException {
+            throws NoSuchFieldException, IllegalAccessException {
         Field field = cls.getDeclaredField(name);
         field.setAccessible(true);
         field.set(instance, value);

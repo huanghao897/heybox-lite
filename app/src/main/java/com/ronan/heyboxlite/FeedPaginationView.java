@@ -47,11 +47,14 @@ final class FeedPaginationView extends FrameLayout {
             banner.hideBanner();
         }
 
-        boolean visible = hasItems || state.loadingMore()
+        boolean initialLoading = !hasItems && state.refreshing();
+        boolean visible = initialLoading || hasItems || state.loadingMore()
                 || state.loadMoreFailed() || state.noMore();
         footer.setVisibility(visible ? VISIBLE : GONE);
         footer.setEnabled(state.loadMoreFailed());
-        if (state.loadingMore()) {
+        if (initialLoading) {
+            setFooter("正在加载", mutedColor);
+        } else if (state.loadingMore()) {
             setFooter("", mutedColor);
         } else if (state.loadMoreFailed()) {
             setFooter("加载失败，点按重试", retryColor);

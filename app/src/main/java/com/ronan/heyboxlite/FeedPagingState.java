@@ -63,6 +63,10 @@ final class FeedPagingState {
         return loadingMore;
     }
 
+    boolean refreshing() {
+        return refreshing;
+    }
+
     boolean noMore() {
         return noMore;
     }

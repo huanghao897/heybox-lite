@@ -30,10 +30,6 @@ final class FeedPage {
 
         void openDetail(FeedItem item);
 
-        void showLoading();
-
-        void hideLoading();
-
         void showMessage(String message);
 
         void showToast(String message);
@@ -119,10 +115,10 @@ final class FeedPage {
         boolean suppressCacheFallback = reset && this.suppressNextCacheFallback;
         if (reset) this.suppressNextCacheFallback = false;
         PullRefreshListView refreshList = reset && this.listView instanceof PullRefreshListView
+                && (!this.items.isEmpty() || ((PullRefreshListView) this.listView).isRefreshing())
                 ? (PullRefreshListView) this.listView : null;
         if (reset) {
             setRefreshBusy(true, refreshList);
-            if (this.items.isEmpty()) this.host.showLoading();
         }
         int pull = reset ? 1 : 0;
         String requestedLastval = this.paging.lastval();
@@ -137,7 +133,6 @@ final class FeedPage {
                 boolean accepted = paging.accepts(requestSerial);
                 paging.finish(reset, requestSerial);
                 if (!accepted) return;
-                host.hideLoading();
                 applyResponse(body, reset, pull, previous, loadStartedAt);
                 if (reset) setRefreshBusy(false, refreshList, requestSerial);
             }
@@ -147,7 +142,6 @@ final class FeedPage {
                 boolean accepted = paging.accepts(requestSerial);
                 paging.finish(reset, requestSerial);
                 if (!accepted) return;
-                host.hideLoading();
                 applyFailure(message, reset, previous, suppressCacheFallback);
                 if (reset) setRefreshBusy(false, refreshList, requestSerial);
             }

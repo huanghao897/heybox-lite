@@ -61,7 +61,7 @@ public class FeedItemTest {
                 .put("topics", new JSONArray().put("数码"));
         assertEquals("数码", FeedItem.topicName(stringTopic));
 
-        assertEquals("游戏", FeedItem.topicName(
+        assertEquals("", FeedItem.topicName(
                 new JSONObject().put("tag_name", "游戏")));
     }
 
@@ -69,7 +69,8 @@ public class FeedItemTest {
     public void topicNameReadsCurrentFeedContentTags() throws Exception {
         JSONObject value = new JSONObject()
                 .put("content_tags", new JSONArray()
-                        .put(new JSONObject().put("text", "硬件交流")))
+                        .put(new JSONObject().put("text", "硬件交流")
+                                .put("protocol", "heybox://{\"path\":\"/bbs/topic\"}")))
                 .put("link_tag", 27);
 
         assertEquals("硬件交流", FeedItem.topicName(value));
@@ -78,7 +79,7 @@ public class FeedItemTest {
                 .put("link_extra_tag_v2", new JSONObject()
                         .put("children", new JSONArray()
                                 .put(new JSONObject().put("text", "评测"))));
-        assertEquals("评测", FeedItem.topicName(uiKitTag));
+        assertEquals("", FeedItem.topicName(uiKitTag));
     }
 
     @Test
@@ -90,13 +91,13 @@ public class FeedItemTest {
         assertTrue(FeedItem.from(new JSONObject()
                 .put("linkid", "news")
                 .put("content_type", 101)).article);
-        assertTrue(FeedItem.from(new JSONObject()
+        assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "published-work")
                 .put("content_type", -1)).article);
         assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "post")
                 .put("content_type", 102)).article);
-        assertTrue(FeedItem.from(new JSONObject()
+        assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "concept-article")
                 .put("use_concept_type", 0)).article);
         assertFalse(FeedItem.from(new JSONObject()
@@ -117,14 +118,14 @@ public class FeedItemTest {
     }
 
     @Test
-    public void recognizesTextArticleTypesAndOfficialConceptMapping() throws Exception {
-        assertTrue(FeedItem.from(new JSONObject()
+    public void doesNotGuessArticleFromUndocumentedOrPresentationFields() throws Exception {
+        assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "link-type")
                 .put("link_type", "article")).article);
-        assertTrue(FeedItem.from(new JSONObject()
+        assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "type")
                 .put("type", "news")).article);
-        assertTrue(FeedItem.from(new JSONObject()
+        assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "concept-article")
                 .put("use_concept_type", 0)).article);
         assertFalse(FeedItem.from(new JSONObject()
@@ -137,8 +138,8 @@ public class FeedItemTest {
     }
 
     @Test
-    public void recognizesOfficialConceptTypeAsString() throws Exception {
-        assertTrue(FeedItem.from(new JSONObject()
+    public void stringConceptTypeDoesNotDetermineArticleIdentity() throws Exception {
+        assertFalse(FeedItem.from(new JSONObject()
                 .put("linkid", "string-article")
                 .put("use_concept_type", "0")).article);
         assertFalse(FeedItem.from(new JSONObject()

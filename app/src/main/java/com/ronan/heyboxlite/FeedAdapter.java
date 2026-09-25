@@ -240,15 +240,11 @@ final class FeedAdapter extends BaseAdapter {
             card.addView(actions, actionsParams);
 
             TextView topic = label(9.5f, mutedColor);
-            topic.setGravity(Gravity.CENTER);
+            topic.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
             topic.setSingleLine(true);
             topic.setEllipsize(TextUtils.TruncateAt.END);
-            topic.setMaxWidth(dp(roundLayout ? 76 : 110));
-            topic.setPadding(dp(7), 0, dp(7), 0);
-            Compat.setBackground(topic, UiComponents.softPill(context, tokens, uiScale));
-            actions.addView(topic, new LinearLayout.LayoutParams(-2, dp(20)));
-            actions.addView(new View(context),
-                    new LinearLayout.LayoutParams(0, 1, 1.0f));
+            topic.setPadding(0, 0, dp(6), 0);
+            actions.addView(topic, new LinearLayout.LayoutParams(0, dp(20), 1f));
             TextView likes = stat(R.drawable.official_comment_like_line);
             LinearLayout.LayoutParams likesParams =
                     new LinearLayout.LayoutParams(-2, dp(24));
@@ -285,7 +281,7 @@ final class FeedAdapter extends BaseAdapter {
         holder.badge.setTextColor(item.pinned ? tokens.accent : mutedColor);
         holder.badge.setVisibility(View.VISIBLE);
         holder.topic.setText(item.topicName);
-        holder.topic.setVisibility(item.topicName.isEmpty() ? View.GONE : View.VISIBLE);
+        holder.topic.setVisibility(item.topicName.isEmpty() ? View.INVISIBLE : View.VISIBLE);
         updateFollowView(holder.follow, item);
         boolean showAvatar = !noImage && !item.authorAvatar.isEmpty();
         if (showAvatar) {

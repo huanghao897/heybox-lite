@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -68,7 +69,7 @@ final class NoticeCenter {
                 this.session.testReleaseId(), new UpdateChecker.Callback() {
                     @Override
                     public void onResult(UpdateChecker.Result result) {
-                        if (!result.updateAvailable || activity.isFinishing()) return;
+                        if (!result.updateAvailable || activityUnavailable()) return;
                         if (result.title != null || result.notes != null) {
                             showUpdate(result);
                             return;
@@ -77,7 +78,6 @@ final class NoticeCenter {
                                 ? result.releaseUrl : result.downloadUrl;
                         dialogs.show("发现新版本 " + result.version,
                                 "heybox Lite 有新版本可用，是否前往下载", "下载", () -> {
-                                    rememberTestRelease(result);
                                     host.openUpdateUrl(target);
                                 }, "稍后", null, null, null);
                     }
@@ -101,7 +101,7 @@ final class NoticeCenter {
             @Override
             public void onResult(List<AnnouncementChecker.Item> items) {
                 AnnouncementChecker.Item item = firstUnseen(items);
-                if (!activity.isFinishing() && item != null) showAnnouncement(item);
+                if (!activityUnavailable() && item != null) showAnnouncement(item);
             }
 
             @Override
@@ -120,13 +120,14 @@ final class NoticeCenter {
     }
 
     private void notifyLaunchServiceFailure() {
-        if (!this.activity.isFinishing()
+        if (!activityUnavailable()
                 && DailyNoticeThrottle.claim(this.activity, "launch-service-failure")) {
             this.host.showToast("更新与公告暂时无法连接，可稍后在设置中重试");
         }
     }
 
     void showUpdate(UpdateChecker.Result result) {
+        if (activityUnavailable()) return;
         String releaseTitle = TextUtils.isEmpty(result.title) ? "" : result.title.trim();
         String notes = TextUtils.isEmpty(result.notes)
                 ? "暂无更新内容说明" : limitUpdateNotes(result.notes.trim());
@@ -139,7 +140,6 @@ final class NoticeCenter {
                 ? result.releaseUrl : result.downloadUrl;
         this.dialogs.show("发现新版本 " + result.version, message.toString(),
                 "下载", () -> {
-                    rememberTestRelease(result);
                     this.host.openUpdateUrl(target);
                 }, "稍后", null, null, null);
     }
@@ -165,7 +165,7 @@ final class NoticeCenter {
         page.addView(list, new LinearLayout.LayoutParams(-1, 0, 1.0f));
         this.host.showAnnouncementPage(page);
         list.post(() -> {
-            if (!this.activity.isFinishing() && this.host.isAnnouncementPageActive()) {
+            if (!activityUnavailable() && this.host.isAnnouncementPageActive()) {
                 list.setRefreshing(true);
                 loadAnnouncements(list, adapter);
             }
@@ -215,16 +215,16 @@ final class NoticeCenter {
                     this.session.testReleaseId(), new UpdateChecker.Callback() {
                         @Override
                         public void onResult(UpdateChecker.Result result) {
-                            if (activity.isFinishing()) return;
                             checking[0] = false;
+                            if (activityUnavailable()) return;
                             if (result.updateAvailable) showUpdate(result);
                             else host.showToast("当前已是最新版");
                         }
 
                         @Override
                         public void onError(String message) {
-                            if (activity.isFinishing()) return;
                             checking[0] = false;
+                            if (activityUnavailable()) return;
                             host.showToast("检查更新失败：" + message);
                         }
                     });
@@ -286,7 +286,7 @@ final class NoticeCenter {
         AnnouncementChecker.load(new AnnouncementChecker.Callback() {
             @Override
             public void onResult(List<AnnouncementChecker.Item> items) {
-                if (!host.isAnnouncementPageActive() || activity.isFinishing()) {
+                if (!host.isAnnouncementPageActive() || activityUnavailable()) {
                     list.setRefreshing(false);
                     return;
                 }
@@ -296,7 +296,7 @@ final class NoticeCenter {
 
             @Override
             public void onError(String message) {
-                if (!host.isAnnouncementPageActive() || activity.isFinishing()) {
+                if (!host.isAnnouncementPageActive() || activityUnavailable()) {
                     list.setRefreshing(false);
                     return;
                 }
@@ -350,7 +350,7 @@ final class NoticeCenter {
     }
 
     private void showAnnouncement(AnnouncementChecker.Item item) {
-        if (item == null || this.activity.isFinishing()) return;
+        if (item == null || activityUnavailable()) return;
         String title = TextUtils.isEmpty(item.title) ? "公告" : item.title;
         Runnable acknowledge = () -> {
             if (item.onceOnly) markSeen(item);
@@ -370,12 +370,6 @@ final class NoticeCenter {
         }
     }
 
-    private void rememberTestRelease(UpdateChecker.Result result) {
-        if (result != null && "test".equals(result.channel) && result.releaseId > 0) {
-            this.session.setTestReleaseId(result.releaseId);
-        }
-    }
-
     private String limitUpdateNotes(String notes) {
         return notes.length() <= 1800 ? notes
                 : notes.substring(0, 1800) + "\n\n内容较长，完整更新日志请打开更新页面查看。";
@@ -383,6 +377,11 @@ final class NoticeCenter {
 
     private String appVersion() {
         return BuildConfig.VERSION_NAME;
+    }
+
+    private boolean activityUnavailable() {
+        return this.activity.isFinishing()
+                || Build.VERSION.SDK_INT >= 17 && this.activity.isDestroyed();
     }
 
     private void addEntry(LinearLayout parent, String name, int icon, Runnable action) {

@@ -10,10 +10,8 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.util.ArrayList;
 import java.util.List;
 
 final class DetailHeaderRenderer {
@@ -116,34 +114,48 @@ final class DetailHeaderRenderer {
         addTop(article, row, article.getChildCount() == 0 ? 0 : 14);
     }
 
-    void addTopics(LinearLayout article, JSONObject link, String fallbackName) {
-        JSONArray topics = link == null ? null : link.optJSONArray("topics");
-        LinearLayout row = new LinearLayout(this.activity);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        List<String> shown = new ArrayList<>();
-        int added = addTopicArray(row, topics, shown);
-
-        JSONObject topic = link == null ? null : link.optJSONObject("topic");
-        if (topic != null && added < 3) {
-            String name = topicName(topic);
-            if (!shown.contains(name) && addTopic(row, name, topicIcon(topic), added)) {
-                shown.add(name);
-                added++;
+    void addTopics(LinearLayout article, JSONObject link, FeedItem fallback) {
+        FeedMetadata.Section metadata = FeedMetadata.section(link);
+        String section = metadata.name.isEmpty() ? fallback.topicName : metadata.name;
+        String icon = metadata.icon.isEmpty() && section.equals(fallback.topicName)
+                ? fallback.topicIcon : metadata.icon;
+        if (!section.isEmpty()) {
+            LinearLayout sectionRow = new LinearLayout(this.activity);
+            sectionRow.setGravity(Gravity.CENTER_VERTICAL);
+            sectionRow.setPadding(dp(8), dp(6), dp(8), dp(6));
+            Compat.setBackground(sectionRow, round(this.tokens.panel, 6));
+            ImageView image = new ImageView(this.activity);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            Compat.setBackground(image, round(this.tokens.panelElevated, 4));
+            Compat.clipToOutline(image);
+            sectionRow.addView(image, new LinearLayout.LayoutParams(dp(24), dp(24)));
+            if (!this.session.noImage() && !icon.isEmpty()) {
+                ImageLoader.intoPlain(image, icon, dp(24));
+            } else {
+                image.setImageDrawable(Compat.tintedDrawable(
+                        this.activity, R.drawable.il_globe, this.tokens.muted));
             }
+            TextView name = text(section, 11.5f, this.tokens.text);
+            name.setMaxLines(2);
+            name.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, -2, 1f);
+            nameParams.leftMargin = dp(7);
+            sectionRow.addView(name, nameParams);
+            addTop(article, sectionRow, 9);
         }
 
-        List<String> names = FeedItem.topicNames(link);
-        if (!TextUtils.isEmpty(fallbackName) && !names.contains(fallbackName)) {
-            names.add(fallbackName);
-        }
-        for (String name : names) {
-            if (added >= 3) break;
-            if (!shown.contains(name) && addTopic(row, name, "", added)) {
-                shown.add(name);
-                added++;
+        List<String> tags = FeedMetadata.tags(link);
+        tags.remove(section);
+        if (!tags.isEmpty()) {
+            StringBuilder copy = new StringBuilder();
+            for (String tag : tags) {
+                if (copy.length() > 0) copy.append("  ");
+                copy.append(tag.startsWith("#") ? tag : "#" + tag);
             }
+            TextView tagRow = text(copy.toString(), 10.5f, this.tokens.muted);
+            tagRow.setLineSpacing(dp(3), 1f);
+            addTop(article, tagRow, 7);
         }
-        if (added > 0) addTop(article, row, 9);
     }
 
     String firstTopicName(JSONObject link, String fallbackName) {
@@ -163,73 +175,6 @@ final class DetailHeaderRenderer {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(32), dp(15));
         params.leftMargin = dp(5);
         row.addView(badge, params);
-    }
-
-    private int addTopicArray(LinearLayout row, JSONArray topics, List<String> shown) {
-        if (topics == null) return 0;
-        int added = 0;
-        for (int index = 0; index < topics.length() && added < 3; index++) {
-            JSONObject topic = topics.optJSONObject(index);
-            Object raw = topics.opt(index);
-            String name;
-            if (topic != null) {
-                name = topicName(topic);
-            } else if (raw instanceof String) {
-                name = ((String) raw).trim();
-            } else {
-                continue;
-            }
-            String icon = topic == null ? "" : topicIcon(topic);
-            if (addTopic(row, name, icon, added)) {
-                shown.add(name);
-                added++;
-            }
-        }
-        return added;
-    }
-
-    private boolean addTopic(LinearLayout row, String name, String icon, int index) {
-        if (TextUtils.isEmpty(name)) return false;
-        LinearLayout chip = new LinearLayout(this.activity);
-        chip.setGravity(Gravity.CENTER_VERTICAL);
-        chip.setPadding(dp(5), 0, dp(9), 0);
-        int background = ThemeTokens.blend(this.tokens.background, this.tokens.text,
-                this.session.darkMode() ? 0.07f : 0.05f);
-        Compat.setBackground(chip, round(background, 9));
-        if (!this.session.noImage() && !TextUtils.isEmpty(icon)) {
-            ImageView image = new ImageView(this.activity);
-            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            int placeholder = ThemeTokens.blend(
-                    this.tokens.background, this.tokens.text, 0.12f);
-            Compat.setBackground(image, round(placeholder, 4));
-            Compat.clipToOutline(image);
-            LinearLayout.LayoutParams imageParams =
-                    new LinearLayout.LayoutParams(dp(16), dp(16));
-            imageParams.rightMargin = dp(5);
-            chip.addView(image, imageParams);
-            ImageLoader.intoPlain(image, icon, 64);
-        } else {
-            chip.setPadding(dp(9), 0, dp(9), 0);
-        }
-        TextView label = text(name, 10.5f, this.tokens.text);
-        label.setSingleLine(true);
-        label.setEllipsize(TextUtils.TruncateAt.END);
-        label.setMaxWidth(dp(120));
-        chip.addView(label, new LinearLayout.LayoutParams(-2, -2));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(26));
-        if (index > 0) params.leftMargin = dp(6);
-        row.addView(chip, params);
-        return true;
-    }
-
-    private static String topicName(JSONObject topic) {
-        return Json.first(topic.optString("name"), topic.optString("title"),
-                topic.optString("topic_name"), topic.optString("tag_name"));
-    }
-
-    private static String topicIcon(JSONObject topic) {
-        return Json.first(topic.optString("pic_url"), topic.optString("icon"),
-                topic.optString("img_url"), topic.optString("appicon"));
     }
 
     private LinearLayout vertical() {

@@ -128,7 +128,7 @@ final class DetailPageAssembler {
         if (readingTimeTracker != null) {
             readingTimeTracker.tagTopic(headerRenderer.firstTopicName(link, fallback.topicName));
         }
-        if (fallback.article) headerRenderer.addTopics(article, link, fallback.topicName);
+        if (fallback.article) headerRenderer.addTopics(article, link, fallback);
         addFallbackNotice(article, body.optString("_fallback_notice"));
 
         JSONArray fallbackImages = link == null ? null : link.optJSONArray("imgs");
@@ -140,7 +140,7 @@ final class DetailPageAssembler {
         cache.log("detail diagnostics captured link=" + fallback.id
                 + " title=" + DetailDiagnostics.compactText(heading, 48));
         contentRenderer.add(article, content);
-        if (!fallback.article) headerRenderer.addTopics(article, link, fallback.topicName);
+        if (!fallback.article) headerRenderer.addTopics(article, link, fallback);
         actionBar.add(article, fallback, link, content.blocks);
         page.addView(article);
         LinearLayout articleComments = commentsSection.placeholder(page, comments);

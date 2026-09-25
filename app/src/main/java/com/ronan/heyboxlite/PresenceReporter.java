@@ -3,6 +3,7 @@ package com.ronan.heyboxlite;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import org.json.JSONObject;
 
@@ -21,38 +22,57 @@ final class PresenceReporter {
         void onResult(AccessStatus status);
     }
 
-    private static final long PING_INTERVAL_MS = 10L * 60L * 1000L;
+    interface Completion {
+        void onComplete(boolean success);
+    }
+
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
-    private static long lastPingAt;
+    private static final PresenceSyncState SYNC = new PresenceSyncState();
 
     private PresenceReporter() {}
 
     static void ping(SessionStore session, ReadingTimeTracker readingTime) {
-        ping(session, readingTime, false, null);
+        ping(session, readingTime, false, null, null);
     }
 
     static void ping(SessionStore session, ReadingTimeTracker readingTime, Callback callback) {
-        ping(session, readingTime, false, callback);
+        ping(session, readingTime, false, callback, null);
+    }
+
+    static void prepareUpdate(SessionStore session, Completion completion) {
+        // This uses the heartbeat queue, so neither manual nor startup checks
+        // can overtake registration or an account change.
+        ping(session, null, false, null, completion);
     }
 
     static void pingNow(SessionStore session, ReadingTimeTracker readingTime, Callback callback) {
-        ping(session, readingTime, true, callback);
+        ping(session, readingTime, true, callback, null);
     }
 
-    private static synchronized void ping(SessionStore session, ReadingTimeTracker readingTime,
-                                          boolean force, Callback callback) {
-        long now = System.currentTimeMillis();
-        boolean includeIdentity = session != null && session.isLoggedIn()
+    private static void ping(SessionStore session, ReadingTimeTracker readingTime,
+                             boolean force, Callback callback, Completion completion) {
+        String identity = session.isLoggedIn() ? session.userId() : "";
+        boolean includeIdentity = session.isLoggedIn()
                 && !session.presenceIdentityUploaded();
-        if (!force && !includeIdentity && now - lastPingAt < PING_INTERVAL_MS) return;
-        lastPingAt = now;
         final String payload = buildPayload(session, readingTime, includeIdentity);
         EXECUTOR.execute(() -> {
-            AccessStatus status = request(session, payload, true);
-            if (status != null && includeIdentity) session.markPresenceIdentityUploaded();
-            if (status != null && callback != null) {
-                MAIN.post(() -> callback.onResult(status));
+            DeviceAuthorizationStore authorization = new DeviceAuthorizationStore(
+                    session.appContext());
+            if (SYNC.shouldSend(SystemClock.elapsedRealtime(), identity,
+                    !authorization.token().isEmpty(), force)) {
+                AccessStatus status = request(session, payload, true);
+                SYNC.record(SystemClock.elapsedRealtime(), identity, status != null);
+                if (status != null && includeIdentity && identity.equals(session.userId())) {
+                    session.markPresenceIdentityUploaded();
+                }
+                if (status != null && callback != null) {
+                    MAIN.post(() -> callback.onResult(status));
+                }
+            }
+            if (completion != null) {
+                boolean ready = SYNC.ready(identity, !authorization.token().isEmpty());
+                MAIN.post(() -> completion.onComplete(ready));
             }
         });
     }
