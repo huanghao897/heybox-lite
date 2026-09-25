@@ -22,10 +22,6 @@ final class ProfilePage {
 
         void showPage(View page);
 
-        void showLoading();
-
-        void hideLoading();
-
         void showLogin();
 
         void showReadingCenter();
@@ -67,6 +63,13 @@ final class ProfilePage {
     private boolean cachedLoggedIn;
     private String cachedUserId = "";
     private TextView readingSummaryView;
+    private ImageView profileAvatarView;
+    private TextView profileNameView;
+    private TextView profileStatsView;
+    private TextView profileSignatureView;
+    private String profileAvatarUrl = "";
+    private String profileDisplayName = "";
+    private int profileRequestSerial;
 
     ProfilePage(Activity activity, SessionStore session, ApiClient api,
                 LocalCache localCache, SettingsUi settingsUi, ThemeTokens tokens,
@@ -91,37 +94,58 @@ final class ProfilePage {
             return;
         }
         if (this.cachedPage != null && this.cachedLoggedIn
-                && this.session.userId().equals(this.cachedUserId)
-                && this.cachedPage.getParent() == null) {
-            this.host.showPage(this.cachedPage);
+                && this.session.userId().equals(this.cachedUserId)) {
+            if (this.cachedPage.getParent() == null) {
+                this.host.showPage(this.cachedPage);
+            }
+            refreshSilently(false);
             return;
         }
-        this.host.showLoading();
+        render(null);
+        refreshSilently(false);
+    }
+
+    void refresh() {
+        if (!this.session.isLoggedIn()) {
+            show();
+            return;
+        }
+        if (this.cachedPage == null || !this.cachedLoggedIn
+                || !this.session.userId().equals(this.cachedUserId)) {
+            show();
+            return;
+        }
+        refreshSilently(true);
+    }
+
+    private void refreshSilently(boolean showError) {
+        final int requestSerial = ++this.profileRequestSerial;
         this.api.get(EndpointProvider.profileUserLinks(),
                 OfficialRequestParams.profileLinks(this.session.userId(), 0, 1),
                 new ApiClient.Callback() {
                     @Override
                     public void onSuccess(JSONObject body) {
-                        if (!host.isProfileActive() || activity.isFinishing()) return;
-                        host.hideLoading();
-                        render(body);
+                        if (requestSerial != profileRequestSerial
+                                || !host.isProfileActive() || activity.isFinishing()) return;
+                        updateProfile(body);
                     }
 
                     @Override
                     public void onError(String message) {
-                        if (!host.isProfileActive() || activity.isFinishing()) return;
-                        host.hideLoading();
-                        host.showToast("个人资料加载失败" + message);
-                        render(new JSONObject());
+                        if (!showError || requestSerial != profileRequestSerial
+                                || !host.isProfileActive() || activity.isFinishing()) return;
+                        host.showToast("个人资料刷新失败" + message);
                     }
                 });
     }
 
     void invalidate() {
+        this.profileRequestSerial++;
         this.cachedPage = null;
         this.cachedLoggedIn = false;
         this.cachedUserId = "";
         this.readingSummaryView = null;
+        clearProfileBindings();
     }
 
     View cachedPage() {
@@ -135,6 +159,7 @@ final class ProfilePage {
     }
 
     private void showGuest() {
+        clearProfileBindings();
         if (this.cachedPage != null && !this.cachedLoggedIn
                 && this.cachedPage.getParent() == null) {
             this.host.showPage(this.cachedPage);
@@ -206,22 +231,22 @@ final class ProfilePage {
         }
         int avatarSize = dp(this.roundLayout ? 54 : 56);
         header.addView(avatar, new LinearLayout.LayoutParams(avatarSize, avatarSize));
+        this.profileAvatarView = avatar;
 
         LinearLayout copy = vertical(0);
         String name = account == null ? this.session.userName()
                 : account.optString("username", this.session.userName());
-        copy.addView(boldText(name.isEmpty() ? "小黑盒用户" : name,
-                this.roundLayout ? 17.0f : 18.0f, this.tokens.text));
+        TextView nameView = boldText(name.isEmpty() ? "小黑盒用户" : name,
+                this.roundLayout ? 17.0f : 18.0f, this.tokens.text);
+        copy.addView(nameView);
+        this.profileNameView = nameView;
         copy.addView(text("ID " + this.session.userId(), 11.0f, this.tokens.muted));
-        if (account != null) {
-            TextView stats = text("关注 " + ProfileData.followCount(account)
-                    + "  粉丝 " + ProfileData.fanCount(account)
-                    + "  获赞 " + ProfileData.likeCount(account),
-                    12.0f, this.tokens.accent);
-            LinearLayout.LayoutParams statsParams = new LinearLayout.LayoutParams(-2, -2);
-            statsParams.topMargin = dp(4);
-            copy.addView(stats, statsParams);
-        }
+        TextView stats = text("", 12.0f, this.tokens.accent);
+        LinearLayout.LayoutParams statsParams = new LinearLayout.LayoutParams(-2, -2);
+        statsParams.topMargin = dp(4);
+        stats.setVisibility(View.GONE);
+        copy.addView(stats, statsParams);
+        this.profileStatsView = stats;
         LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
         copyParams.leftMargin = dp(12);
         header.addView(copy, copyParams);
@@ -233,20 +258,72 @@ final class ProfilePage {
         arrow.setAlpha(0.55f);
         header.addView(arrow, new LinearLayout.LayoutParams(dp(18), dp(18)));
         profile.addView(header);
-        String signature = account == null ? "" : account.optString("signature");
-        if (!signature.isEmpty()) {
-            addTop(profile, text(signature, 13.0f, this.tokens.text), 11);
-        }
+        TextView signatureView = text("", 13.0f, this.tokens.text);
+        signatureView.setVisibility(View.GONE);
+        addTop(profile, signatureView, 11);
+        this.profileSignatureView = signatureView;
         String displayName = name.isEmpty() ? "小黑盒用户" : name;
+        this.profileDisplayName = displayName;
+        this.profileAvatarUrl = avatarUrl;
         profile.setOnClickListener(view -> {
             UiComponents.press(profile);
-            this.host.showUserSpace(this.session.userId(), displayName, avatarUrl);
+            this.host.showUserSpace(this.session.userId(),
+                    this.profileDisplayName, this.profileAvatarUrl);
         });
         page.addView(profile);
         addMenu(page, true);
         this.host.addBottomSafeSpace(page);
         cache(scroll, true, this.session.userId());
+        updateProfile(body);
         this.host.showPage(scroll);
+    }
+
+    private void updateProfile(JSONObject body) {
+        if (this.profileNameView == null || this.profileAvatarView == null) {
+            render(body);
+            return;
+        }
+        JSONObject account = ProfileData.user(body);
+        String name = account == null ? this.session.userName()
+                : Json.first(account.optString("username"), this.session.userName());
+        String displayName = name.isEmpty() ? "小黑盒用户" : name;
+        this.profileDisplayName = displayName;
+        this.profileNameView.setText(displayName);
+
+        if (account == null) {
+            this.profileStatsView.setVisibility(View.GONE);
+            this.profileSignatureView.setVisibility(View.GONE);
+        } else {
+            this.profileStatsView.setText("关注 " + ProfileData.followCount(account)
+                    + "  粉丝 " + ProfileData.fanCount(account)
+                    + "  获赞 " + ProfileData.likeCount(account));
+            this.profileStatsView.setVisibility(View.VISIBLE);
+            String signature = account.optString("signature", "").trim();
+            this.profileSignatureView.setText(signature);
+            this.profileSignatureView.setVisibility(
+                    signature.isEmpty() ? View.GONE : View.VISIBLE);
+        }
+
+        String avatarUrl = account == null ? this.session.avatar()
+                : Json.first(account.optString("avatar"), this.session.avatar());
+        this.profileAvatarUrl = avatarUrl;
+        if (!this.session.noImage() && !avatarUrl.isEmpty()) {
+            ImageLoader.intoStable(this.profileAvatarView, avatarUrl, 160);
+        } else {
+            Drawable placeholder = Compat.tintedDrawable(
+                    this.activity, R.drawable.il_person, this.tokens.muted);
+            this.profileAvatarView.setImageDrawable(placeholder);
+            this.profileAvatarView.setPadding(dp(13), dp(13), dp(13), dp(13));
+        }
+    }
+
+    private void clearProfileBindings() {
+        this.profileAvatarView = null;
+        this.profileNameView = null;
+        this.profileStatsView = null;
+        this.profileSignatureView = null;
+        this.profileAvatarUrl = "";
+        this.profileDisplayName = "";
     }
 
     private void addMenu(LinearLayout page, boolean loggedIn) {

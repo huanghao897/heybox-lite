@@ -23,7 +23,6 @@ final class MainContentFeatures {
         void showPage(View view);
         void retainPage(String key, View view);
         void showLoading();
-        void showProfileLoading();
         void hideLoading();
         void showMessage(String message);
         void showToast(String message);
@@ -137,8 +136,6 @@ final class MainContentFeatures {
                         return "profile".equals(host.screen());
                     }
                     @Override public void showPage(View page) { host.showPage(page); }
-                    @Override public void showLoading() { host.showProfileLoading(); }
-                    @Override public void hideLoading() { host.hideLoading(); }
                     @Override public void showLogin() { host.showLogin(); }
                     @Override public void showReadingCenter() { host.showReadingCenter(); }
                     @Override public void showFavorites() { host.showFavorites(); }

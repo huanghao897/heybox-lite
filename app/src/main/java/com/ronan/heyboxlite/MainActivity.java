@@ -554,9 +554,6 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 retainedPages.put(key, view);
             }
             @Override public void showLoading() { MainActivity.this.showLoading(); }
-            @Override public void showProfileLoading() {
-                transitionTo(detailLoadingPage());
-            }
             @Override public void hideLoading() { MainActivity.this.hideLoading(); }
             @Override public void showMessage(String message) {
                 MainActivity.this.showMessage(message);
@@ -971,8 +968,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         this.action.setVisibility(View.VISIBLE);
         setIcon(this.action, R.drawable.il_refresh, this.TEXT, 19);
         this.action.setOnClickListener(view -> {
-            if (this.profilePage != null) this.profilePage.invalidate();
-            showProfile();
+            if (this.profilePage != null) this.profilePage.refresh();
         });
     }
     @Override public void showSubpage(String key, int titleRes, Runnable backAction) {
