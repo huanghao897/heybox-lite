@@ -1,6 +1,6 @@
 # heybox Lite — Android 项目
 
-小黑盒手表端第三方客户端，Java View 体系，面向 Android 7.0+。当前版本 `2.0.4`。
+小黑盒手表端第三方客户端，Java View 体系，面向 Android 7.0+。当前版本 `2.16`（versionCode `219`）。
 
 ## 构建
 
@@ -29,7 +29,8 @@
 | `ApiClient` | 小黑盒接口请求 |
 | `SessionStore` | 本地登录态与开关 |
 | `ImageLoader` | 图片缓存、缩略图、查看器 |
-| `SignInManager` | 签到（实验性，与其它逻辑隔离） |
+| `CheckinCenterClient` / `CheckinCenterCoordinator` / `CheckinCenterPage` | 云端自动签到连接、状态和设置页面 |
+| `NativeSignBridge` / `NativeSignService` | 官方请求安全参数兼容层；不是本地签到流程 |
 | `UpdateChecker` / `AnnouncementChecker` | 更新与公告 |
 | `PresenceReporter` | 后台在线心跳 |
 
@@ -39,5 +40,5 @@
 
 ## 注意
 
-- 签到接口依赖非公开风控，不保证稳定
+- 云端签到与普通浏览流程隔离；不要恢复已经删除的本地签到实现
 - 不要提交 `*.har`、Cookie、logcat、keystore、`release-signing.properties`

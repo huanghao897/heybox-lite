@@ -1,6 +1,6 @@
 # heybox Lite 工程文档
 
-面向后续维护、构建、发布与排查的工程说明。目标是让接手者能快速理解项目结构、核心流程与风险点，少踩坑。所有内容以仓库当前代码为准（版本 `2.0.6` / versionCode `209`）。
+面向后续维护、构建、发布与排查的工程说明。目标是让接手者能快速理解项目结构、核心流程与风险点，少踩坑。所有内容以仓库当前代码为准（版本 `2.16` / versionCode `219`）。
 
 > 本文尽量只描述**项目本身**，不写入任何本机绝对路径、keystore 密码或服务器内部路径。这类信息属于各自环境的私有配置，请勿写进公开仓库。
 
@@ -21,7 +21,7 @@ heybox Lite 是面向 **Android 手表和小屏设备**的小黑盒（HeyBox）�
 | 语言 / UI | Java，原生 View（无 Compose） |
 | `applicationId` | `com.ronan.heyboxlite.preview` |
 | `namespace` / 包名 | `com.ronan.heyboxlite` |
-| `versionName` / `versionCode` | `2.0.6` / `209` |
+| `versionName` / `versionCode` | `2.16` / `219` |
 | `minSdk` / `targetSdk` / `compileSdk` | `14` / `35` / `36` |
 | JDK | 17 |
 | 第三方依赖 | 仅 `com.google.zxing:core:3.3.3`（二维码登录） |
@@ -47,7 +47,7 @@ ANNOUNCEMENT_API_URL     // 公告接口
 ## 3. 设计原则
 
 1. **不要把手机端整体搬进手表**：新增功能优先考虑能否少一层页面、是否遮挡底部胶囊、圆屏边缘是否裁切、低性能能否扛住、断网时旧内容能否保留。
-2. **隔离高风险功能**：签到、写入接口、移动端签名、官方 App 凭据读取都可能受风控影响，必须与主浏览流程隔离 —— 签到失败不能污染登录态，互动失败不能拖垮主页加载。
+2. **隔离高风险功能**：云端签到、写入接口和移动端安全参数都可能受风控影响，必须与主浏览流程隔离 —— 签到失败不能污染登录态，互动失败不能拖垮主页加载。
 3. **失败要优雅**：请求失败不清空旧列表；UI 回调前检查 Activity 状态；写入失败要恢复按钮状态；接口返回风控时直接提示，不重复轰炸。
 4. **不覆盖用户数据**：部署后台时只同步代码与静态资源，不动服务器上的数据目录（SQLite、上传的 APK、公告、统计）。
 5. **改完即验证**：改动源码后应能通过签名 Release 构建与签名校验，再提交。构建失败不推送未验证代码。
@@ -90,7 +90,7 @@ HeyBoxCommunity/
 | `REQUEST_INSTALL_PACKAGES` | 应用内下载 APK 后拉起系统安装器 |
 | `WRITE_EXTERNAL_STORAGE`（`maxSdk 28`） | Android 9 及以下导出日志 |
 
-**`<queries>`**：声明可见 `com.max.xiaoheihe`（官方 App）及其 `statusprovider`，用于检查官方 App 与签到实验相关的凭据读取。
+**`<queries>`**：声明可见的官方小黑盒包和可选视频播放器包，用于兼容外部视频播放；不读取官方 App 的账号凭据。
 
 **组件**
 
@@ -99,17 +99,17 @@ HeyBoxCommunity/
 | `SplashActivity` | Activity（LAUNCHER） | 启动页，可开关的打字机开屏动画 |
 | `MainActivity` | Activity（`singleTop`） | 主界面与绝大多数页面 |
 | `ImageViewerActivity` | Activity | 大图查看器（独立主题） |
-| `NativeSignService` | Service（`:native_signer` 独立进程） | native 签名尝试，崩溃不拖垮主进程 |
+| `NativeSignService` | Service（`:native_signer` 独立进程） | 官方请求安全参数兼容，崩溃不拖垮主进程 |
 | `DiagnosticsProvider` | FileProvider | 诊断日志分享 |
 | `UpdateApkProvider` | FileProvider | 应用内更新 APK 分享给系统安装器 |
 
-**网络安全**（`res/xml/network_security_config.xml`）：默认禁明文；临时对自建更新服务器 IP 放行明文 HTTP。绑定域名并配置 HTTPS 后应收敛该白名单。
+**网络安全**（`res/xml/network_security_config.xml`）：默认禁止明文流量，更新、诊断、公告和签到服务使用 HTTPS 域名；客户端拒绝 HTTP 跳转，不把自建服务当作小黑盒接口代理。
 
 ---
 
 ## 6. Android 模块详解
 
-全部源码约 40 个类，位于 `app/src/main/java/com/ronan/heyboxlite/`。下面按职责分组。
+源码位于 `app/src/main/java/com/ronan/heyboxlite/`，按页面、流程协调器、网络、解析和缓存职责分组。遗留大类的拆分边界记录在 `ARCHITECTURE.md` 与 `config/java-size-limits.properties`，新增代码不得继续堆入这些大类。
 
 ### 6.1 入口与外壳
 
@@ -161,7 +161,7 @@ HeyBoxCommunity/
 
 - **`ApiClient`** — 小黑盒接口请求层。拼接 baseUrl+path、装配请求头、加签名参数、处理 GET/POST、超时控制、gzip 解码、JSON 解析、错误归一化、写诊断日志、按 `RequestProfile`（Web / Mobile / 多种 Official 变体）切换凭据与头，并在官方原生客户端场景下经 `NativeSignBridge` 追加原生安全参数。任务/写入类请求会额外记录调试日志（键名与顺序，不含敏感值）。
 - **`OfficialRequestParams`** — 官方接口参数的唯一构造点。信息流游标、详情、楼中楼、搜索、用户动态、历史、收藏和全部写操作都在这里定义，单元测试锁定必填字段并禁止旧别名回流。
-- **`EndpointProvider`** — 集中保存当前实际使用的接口路径，经异或混淆存储（运行时解码），避免明文接口散落。覆盖信息流、帖子详情 v2、二维码登录、评论、用户资料与动态、历史、收藏、表情、搜索、互动和已禁用的签到 v3。已删除无人调用的旧详情、旧收藏、旧签到与兼容写接口。**这些不是公开稳定 API，path 与参数可能随官方版本变化，修接口前先对照官方 APK 和诊断日志。**
+- **`EndpointProvider`** — 集中保存当前实际使用的官方接口路径，经异或混淆存储（运行时解码），避免明文接口散落。覆盖信息流、帖子详情 v2、二维码登录、评论、用户资料与动态、历史、收藏、表情、搜索和互动；云端签到路径由 `CheckinCenterClient` 独立管理。**这些不是公开稳定 API，path 与参数可能随官方版本变化，修接口前先对照官方 APK 和脱敏诊断日志。**
 - **`HeaderProvider`** — 按请求档位组装请求头与 Cookie（Web UA / 移动端 UA / 官方各变体），签到走独立的凭据来源，与普通登录态隔离。
 - **`HeyboxSigner`** — 请求签名（Legacy / Android 等算法）。
 - **`SecureStrings`** — 敏感字符串（Cookie 键名、参数名、pkey/token/heyboxid 字段名等）异或编码，避免明文出现在反编译结果里。
@@ -181,16 +181,15 @@ HeyBoxCommunity/
 - **`UpdateApkProvider`** — 应用内下载的更新 APK 通过 FileProvider 分享给系统安装器。
 - **`DiagnosticsProvider`** — 诊断日志通过 FileProvider 分享。
 
-### 6.8 签到与 native（实验，隔离）
+### 6.8 云端签到与 native 兼容层
 
-签到是实验功能：真实小黑盒签到涉及移动端凭据、签名、风控与官方 App 行为。`MainActivity.SIGN_IN_ENABLED` 与 `SignInManager.ENABLED` 当前均为 `false`，入口提示「已暂停」，自动与手动流程都在发请求前返回，形成双重零请求保护。
+云端签到由 `CheckinCenterClient` 调用签到服务完成。Lite 不在本地执行签到，也不把普通小黑盒浏览请求改成签到代理。`CheckinCenterCoordinator` 持有页面级状态，`CheckinPairingFlow`、`CheckinServiceAccountFlow`、`CheckinMobileLoginFlow` 和 `CheckinTaskSettingsFlow` 分别负责配对、服务账号、手机号登录和任务设置；`CheckinHistory` 只负责最近执行记录的解析与展示。
 
-- **`SignInManager`** — 签到流程编排（当前被开关禁用）。曾尝试公开接口、`task/sign_v3`、移动端参数、pkey/imei/token、官方 Provider、native signer、请求重放等多路径。
-- **`WriteTokenProvider`** — 通过隐藏 WebView 拿写入验证 token（点赞/收藏/关注/评论等写操作需要）。
-- **`NativeSignBridge` / `NativeSignService` / `NativeSecuritySigner` / `NativeLibraryLoader`** — native 签名尝试，跑在 `:native_signer` 独立进程，崩溃不拖垮主进程。
-- **`OfficialContext` / `OfficialAppVerifier` / `OfficialNativeSigner` / `AppIntegrityCheck` / `ModernSignatureReader`** — 校验官方 App、尝试复用官方相关能力、读取应用签名等。
+- `CheckinCenterClient`：只连接固定 HTTPS 服务地址，限制响应大小，拒绝重定向，并把 HTTP、TLS、网络、协议和客户端错误统一回调给页面。
+- `CheckinCenterPage`：展示连接状态、计划时间、最近日志和手动执行，不持有本地签到实现。
+- `NativeSignBridge` / `NativeSignService` / `NativeSecuritySigner`：仅为官方只读/互动请求提供兼容安全参数，并在独立进程执行；不能被复用于云端签到凭据上传。
 
-> 这是高风险区域。任何改动前必须先看诊断日志；维护铁律：签到失败不影响主页、不清登录态、不污染普通写入请求。
+维护铁律：签到服务失败不能影响主页、不清理普通登录态、不向日志写入 Cookie、pkey、token 或 Authorization；修改签到协议前必须以服务端接口文档和脱敏诊断为准。
 
 ---
 
@@ -226,7 +225,7 @@ HeyBoxCommunity/
 | 更新 / 开屏 | 自动检查更新、开屏动画开关、开屏文案、开屏时长 |
 | 内容 | 屏蔽关键词 |
 | 公告（内部） | 已读公告 id |
-| 签到（隔离，内部） | 签到尝试/成功日期、签到摘要、官方凭据是否导入 |
+| 签到（云端） | 服务配对状态、任务开关、计划时间、最近执行结果和最近日志 |
 
 默认开屏文案：`方寸之间，看见热爱`。
 

@@ -20,6 +20,7 @@ import java.net.URL;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLException;
@@ -1266,7 +1267,7 @@ final class CheckinCenterClient {
             deliverError(callback, new ApiError(Operation.STATUS, 0, "签到服务已关闭"));
             return;
         }
-        executor.execute(() -> {
+        Runnable task = () -> {
             try {
                 T value = call.execute();
                 mainHandler.post(() -> {
@@ -1274,8 +1275,21 @@ final class CheckinCenterClient {
                 });
             } catch (ApiError error) {
                 deliverError(callback, error);
+            } catch (RuntimeException error) {
+                // Parsers and platform network implementations can still throw
+                // unchecked failures. Surface them through the normal callback
+                // instead of leaving a page permanently in its loading state.
+                eventLogger.log("checkin response handling failed");
+                deliverError(callback, new ApiError(Operation.STATUS, 0,
+                        "签到服务响应异常", ErrorKind.PROTOCOL));
             }
-        });
+        };
+        try {
+            executor.execute(task);
+        } catch (RejectedExecutionException error) {
+            if (!closed) deliverError(callback,
+                    new ApiError(Operation.STATUS, 0, "签到服务已关闭"));
+        }
     }
 
     private <T> void deliverError(Callback<T> callback, ApiError error) {

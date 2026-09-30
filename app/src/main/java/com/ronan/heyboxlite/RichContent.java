@@ -44,6 +44,7 @@ final class RichContent {
         static Block gameCard(JSONObject object, String appId) {
             return new Block(GAME_CARD, appId == null ? "" : appId, object);
         }
+        static Block text(String value) { return new Block(TEXT, value == null ? "" : value); }
     }
 
     private static final Pattern IMAGE = Pattern.compile("(?is)<img\\b[^>]*>");
@@ -143,6 +144,10 @@ final class RichContent {
     }
 
     static List<Block> parse(JSONObject source, JSONArray fallbackImages) {
+        return RichContentRecovery.parseObject(source, fallbackImages);
+    }
+
+    static List<Block> parseInternal(JSONObject source, JSONArray fallbackImages) {
         ParseResult result = new ParseResult();
         if (source == null) {
             addFallbackImages(result.blocks, result.imageUrls, fallbackImages);
@@ -159,7 +164,6 @@ final class RichContent {
                     return candidate.blocks;
                 }
                 int score = bodyScore(candidate, key, articleMode);
-                // Prefer typed game-card streams when feed metadata is wrong.
                 if (RichContentSupport.hasGameCards(candidate.blocks)) score += 10000;
                 if (score > bestScore) {
                     bestReadable = candidate;
@@ -262,8 +266,6 @@ final class RichContent {
                     return true;
                 }
             } catch (JSONException ignored) {
-            } catch (StackOverflowError error) {
-                return true;
             }
             candidate = candidate.replace("\\\"", "\"");
         }
@@ -287,9 +289,6 @@ final class RichContent {
                                         boolean articleMode, int depth) {
         if (depth > MAX_JSON_DEPTH) return;
         String type = item.optString("type").toLowerCase(Locale.ROOT);
-        // `cpt=game` is a web component, not a native typed-text card. It is
-        // parsed by ArticleGameCards where the surrounding article payload is
-        // available; accepting it here turns platform descriptors into cards.
         if (RichGameCardParser.isGameNode(item)) {
             result.blocks.add(RichGameCardParser.block(item));
             return;
@@ -389,6 +388,10 @@ final class RichContent {
     }
 
     static List<Block> parse(String source, JSONArray fallbackImages) {
+        return RichContentRecovery.parseText(source, fallbackImages);
+    }
+
+    static List<Block> parseTextInternal(String source, JSONArray fallbackImages) {
         List<Block> blocks = new ArrayList<>();
         Set<String> imageUrls = new HashSet<>();
         String jsonSource = RichTransportDecoder.decodeJson(source);
@@ -440,8 +443,6 @@ final class RichContent {
                 addReadableFragment(blocks, imageUrls, suffix);
                 return true;
             } catch (JSONException ignored) {
-            } catch (StackOverflowError error) {
-                return true;
             }
         }
         if (isLikelyJsonArray(value)) {
@@ -449,8 +450,6 @@ final class RichContent {
                 addArray(blocks, imageUrls, new JSONArray(value), depth + 1);
                 return true;
             } catch (JSONException ignored) {
-            } catch (StackOverflowError error) {
-                return true;
             }
         }
         return addObjectStream(blocks, imageUrls, value, depth + 1);
@@ -482,6 +481,12 @@ final class RichContent {
         }
     }
 
+    static List<Block> fallbackBlocks(JSONArray fallbackImages) {
+        List<Block> blocks = new ArrayList<>();
+        addFallbackImages(blocks, new HashSet<>(), fallbackImages);
+        return blocks;
+    }
+
     private static void addObject(List<Block> blocks, Set<String> imageUrls, JSONObject item) {
         addObject(blocks, imageUrls, item, 0);
     }
@@ -490,8 +495,6 @@ final class RichContent {
                                   int depth) {
         if (depth > MAX_JSON_DEPTH) return;
         String type = item.optString("type").toLowerCase(Locale.ROOT);
-        // Keep web `cpt=game` components out of the generic text parser. The
-        // article parser handles them with their surrounding metadata.
         if (RichGameCardParser.isGameNode(item)) {
             blocks.add(RichGameCardParser.block(item));
             return;
@@ -712,8 +715,6 @@ final class RichContent {
                         found = true;
                         lastEnd = i + 1;
                     } catch (JSONException ignored) {
-                    } catch (StackOverflowError error) {
-                        return true;
                     }
                     start = -1;
                 }
@@ -1140,7 +1141,6 @@ final class RichContent {
     }
 
 
-    /** 文章小标题（h1-h6 / 富文本 header 类型），渲染端会加粗放大显示。 */
     private static void addHeading(List<Block> blocks, String value) {
         String clean = cleanInlineText(value);
         if (clean.isEmpty() || clean.length() > 64 || isStructuredNoise(clean)) return;

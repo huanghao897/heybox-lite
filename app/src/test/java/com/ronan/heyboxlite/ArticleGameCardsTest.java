@@ -265,6 +265,25 @@ public class ArticleGameCardsTest {
     }
 
     @Test
+    public void mergesWebCardIntoMatchingSourcePositionInsteadOfAppending() throws Exception {
+        List<RichContent.Block> original = new ArrayList<>();
+        original.add(RichContent.Block.text("开头文字"));
+        original.add(RichContent.Block.text("结尾文字"));
+        List<RichContent.Block> source = new ArrayList<>();
+        source.add(RichContent.Block.text("开头文字"));
+        source.add(RichContent.Block.gameCard(new JSONObject().put("appid", "101"), "101"));
+        source.add(RichContent.Block.text("结尾文字"));
+
+        ArticleGameCardOrdering.mergeBlocks(original, source, new java.util.HashSet<>());
+
+        assertEquals(3, original.size());
+        assertEquals("开头文字", original.get(0).value);
+        assertTrue(RichGameCardParser.isCard(original.get(1)));
+        assertEquals("101", original.get(1).value);
+        assertEquals("结尾文字", original.get(2).value);
+    }
+
+    @Test
     public void doesNotTreatHyphenatedGameLinksAsArticleCards() throws Exception {
         String html = "<p>正文</p><a data-game-id=\"303\">普通游戏链接</a><p>结尾</p>";
         assertEquals(0, ArticleGameMarkupScanner.scanGameMarkers(html).size());

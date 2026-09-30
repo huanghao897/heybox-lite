@@ -6,9 +6,9 @@ import android.os.SystemClock;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -20,9 +20,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.zip.GZIPInputStream;
 
 final class ApiClient {
+    private static final int MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
     private static final boolean ENABLE_NATIVE_SIGNER = true;
     private static final String OFFICIAL_TASK_CHANNEL = "heybox_oppo";
     private static final String OFFICIAL_TASK_APP = "heybox";
@@ -119,48 +121,53 @@ final class ApiClient {
     }
 
     void get(String path, Map<String, String> extra, Callback callback) {
-        if (closed) return;
-        executor.execute(() -> request("GET", path, extra, null,
+        enqueue(callback, () -> request("GET", path, extra, null,
                 HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback));
     }
 
     void getSigned(String path, Map<String, String> extra,
                    HeyboxSigner.Algorithm algorithm, RequestProfile profile,
                    Callback callback) {
-        if (closed) return;
-        executor.execute(() -> request("GET", path, extra, null, algorithm, profile, callback));
+        enqueue(callback, () -> request("GET", path, extra, null, algorithm, profile, callback));
     }
 
     void postForm(String path, Map<String, String> body, Callback callback) {
-        if (closed) return;
-        executor.execute(() -> request("POST", path, new LinkedHashMap<>(), body,
+        enqueue(callback, () -> request("POST", path, new LinkedHashMap<>(), body,
                 HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback));
     }
 
     void postForm(String path, Map<String, String> queryExtra,
                   Map<String, String> body, Callback callback) {
-        if (closed) return;
-        executor.execute(() -> request("POST", path, queryExtra, body,
+        enqueue(callback, () -> request("POST", path, queryExtra, body,
                 HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback));
     }
 
     void postSigned(String path, Map<String, String> queryExtra,
                     Map<String, String> body, HeyboxSigner.Algorithm algorithm,
                     RequestProfile profile, Callback callback) {
-        if (closed) return;
-        executor.execute(() -> request("POST", path, queryExtra, body,
+        enqueue(callback, () -> request("POST", path, queryExtra, body,
                 algorithm, profile, callback));
     }
 
     void postSignedQueryOnly(String path, Map<String, String> queryExtra,
                              Map<String, String> body, HeyboxSigner.Algorithm algorithm,
                              RequestProfile profile, Callback callback) {
-        if (closed) return;
         Map<String, String> query = new LinkedHashMap<>();
         if (queryExtra != null) query.putAll(queryExtra);
         if (body != null) query.putAll(body);
-        executor.execute(() -> request("POST", path, query, new LinkedHashMap<>(),
+        enqueue(callback, () -> request("POST", path, query, new LinkedHashMap<>(),
                 algorithm, profile, callback));
+    }
+
+    private void enqueue(Callback callback, Runnable task) {
+        if (closed) return;
+        try {
+            executor.execute(task);
+        } catch (RejectedExecutionException error) {
+            // close() may win the race after the initial closed check. Do not
+            // let that executor race escape to the caller thread.
+            if (!closed) postError(callback, "请求已关闭");
+        }
     }
 
     void close() {
@@ -468,16 +475,22 @@ final class ApiClient {
         return query.toString();
     }
 
-    private static String read(InputStream stream) throws Exception {
+    private static String read(InputStream stream) throws IOException {
         if (stream == null) return "";
-        StringBuilder result = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(stream, "UTF-8"))) {
-            char[] buffer = new char[4096];
+        try (InputStream input = stream;
+             ByteArrayOutputStream result = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int total = 0;
             int count;
-            while ((count = reader.read(buffer)) >= 0) result.append(buffer, 0, count);
+            while ((count = input.read(buffer)) != -1) {
+                total += count;
+                if (total > MAX_RESPONSE_BYTES) {
+                    throw new IOException("响应内容过大");
+                }
+                result.write(buffer, 0, count);
+            }
+            return result.toString("UTF-8");
         }
-        return result.toString();
     }
 
     private static String first(String a, String b, String fallback) {

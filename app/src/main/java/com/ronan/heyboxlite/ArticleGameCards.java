@@ -40,6 +40,7 @@ final class ArticleGameCards {
                 existing.add(block.value.trim());
             }
         }
+        ArticleGameCardOrdering.merge(source, result, existing);
         for (GameEntry entry : entries) {
             String id = entry.appId.trim();
             if (id.isEmpty() || !existing.add(id)) continue;
@@ -388,7 +389,7 @@ final class ArticleGameCards {
      * content parser tries both forms; the card scanner must do the same or it
      * will incorrectly decide that the article has no web components.
      */
-    private static Object parseStructured(String raw) {
+    static Object parseStructured(String raw) {
         if (raw == null) return null;
         String[] candidates = {RichTransportDecoder.decodeJson(raw),
                 RichTransportDecoder.decode(raw), raw};
