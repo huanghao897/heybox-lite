@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -16,6 +17,15 @@ final class GameCardView extends FrameLayout {
     private final ThemeTokens tokens;
     private final boolean roundLayout;
     private final float uiScale;
+    private final ImageView cover;
+    private final TextView coverPlaceholder;
+    private final TextView nameView;
+    private final TextView stateView;
+    private final TextView metadataView;
+    private final LinearLayout priceRow;
+    private final TextView currentPriceView;
+    private final TextView originalPriceView;
+    private final TextView discountView;
 
     private GameCardView(Activity activity, SessionStore session,
                          ThemeTokens tokens, boolean roundLayout) {
@@ -28,23 +38,72 @@ final class GameCardView extends FrameLayout {
         setMinimumHeight(dp(roundLayout ? 68 : 78));
         setPadding(dp(7), dp(7), dp(8), dp(7));
         Compat.setBackground(this, UiComponents.card(activity, tokens, uiScale));
+
+        LinearLayout content = row();
+        int coverWidth = dp(roundLayout ? 58 : 72);
+        int coverHeight = dp(roundLayout ? 54 : 64);
+        FrameLayout coverFrame = new FrameLayout(activity);
+        this.cover = new ImageView(activity);
+        this.cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        Compat.setBackground(this.cover, UiComponents.round(activity,
+                placeholderColor(), 6, uiScale));
+        Compat.clipToOutline(this.cover);
+        coverFrame.addView(this.cover, new FrameLayout.LayoutParams(-1, -1));
+        this.coverPlaceholder = text("游戏", 10.0f, tokens.muted);
+        this.coverPlaceholder.setGravity(Gravity.CENTER);
+        Compat.setBackground(this.coverPlaceholder, UiComponents.round(activity,
+                placeholderColor(), 6, uiScale));
+        coverFrame.addView(this.coverPlaceholder,
+                new FrameLayout.LayoutParams(-1, -1));
+        content.addView(coverFrame,
+                new LinearLayout.LayoutParams(coverWidth, coverHeight));
+
+        LinearLayout copy = column();
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(
+                0, -2, 1.0f);
+        copyParams.leftMargin = dp(8);
+        content.addView(copy, copyParams);
+
+        this.nameView = text("游戏", roundLayout ? 12.0f : 12.5f, tokens.text);
+        this.nameView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        this.nameView.setMaxLines(2);
+        this.nameView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        copy.addView(this.nameView);
+
+        this.stateView = text("", 10.0f, tokens.muted);
+        copy.addView(this.stateView, topParams(3));
+
+        this.metadataView = text("", 9.5f, tokens.muted);
+        this.metadataView.setSingleLine(true);
+        this.metadataView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        copy.addView(this.metadataView, topParams(3));
+
+        this.priceRow = new LinearLayout(activity);
+        this.priceRow.setGravity(Gravity.CENTER_VERTICAL);
+        copy.addView(this.priceRow, topParams(3));
+        this.currentPriceView = text("", 11.5f, tokens.text);
+        this.currentPriceView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        this.priceRow.addView(this.currentPriceView);
+        this.originalPriceView = text("", 9.5f, tokens.muted);
+        this.originalPriceView.setPaintFlags(this.originalPriceView.getPaintFlags()
+                | Paint.STRIKE_THRU_TEXT_FLAG);
+        LinearLayout.LayoutParams originalParams = topParams(0);
+        originalParams.leftMargin = dp(5);
+        this.priceRow.addView(this.originalPriceView, originalParams);
+        this.discountView = text("", 9.0f, tokens.secondary);
+        LinearLayout.LayoutParams discountParams = topParams(0);
+        discountParams.leftMargin = dp(5);
+        this.priceRow.addView(this.discountView, discountParams);
+
+        addView(content, new FrameLayout.LayoutParams(-1, -2));
+        showLoading("游戏");
     }
 
     static GameCardView loading(Activity activity, SessionStore session,
                                 ThemeTokens tokens, boolean roundLayout,
                                 String title) {
         GameCardView card = new GameCardView(activity, session, tokens, roundLayout);
-        LinearLayout row = card.row();
-        TextView label = card.text(title.isEmpty() ? "游戏" : title, 12.5f, tokens.text);
-        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        label.setMaxLines(2);
-        label.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        TextView state = card.text("正在获取游戏信息", 10.0f, tokens.muted);
-        LinearLayout copy = card.column();
-        copy.addView(label);
-        copy.addView(state, card.topParams(3));
-        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.0f));
-        card.addView(row, new FrameLayout.LayoutParams(-1, -2));
+        card.showLoading(title);
         return card;
     }
 
@@ -53,104 +112,80 @@ final class GameCardView extends FrameLayout {
             showUnavailable("");
             return;
         }
-        removeAllViews();
-        LinearLayout row = row();
-        if (!data.coverUrl.isEmpty() && !session.noImage()) {
-            ImageView cover = new ImageView(activity);
-            cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            Compat.setBackground(cover, UiComponents.round(activity,
-                    placeholderColor(), 6, uiScale));
-            Compat.clipToOutline(cover);
-            int width = dp(roundLayout ? 58 : 72);
-            int height = dp(roundLayout ? 54 : 64);
-            row.addView(cover, new LinearLayout.LayoutParams(width, height));
-            ImageLoader.intoMeasuredRevealStable(cover, data.coverUrl,
-                    Math.max(180, width * 3), null);
-        } else {
-            TextView placeholder = text("游戏", 10.0f, tokens.muted);
-            placeholder.setGravity(Gravity.CENTER);
-            Compat.setBackground(placeholder, UiComponents.round(activity,
-                    placeholderColor(), 6, uiScale));
-            int width = dp(roundLayout ? 58 : 72);
-            row.addView(placeholder, new LinearLayout.LayoutParams(width,
-                    dp(roundLayout ? 54 : 64)));
-        }
 
-        LinearLayout copy = column();
-        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(
-                0, -2, 1.0f);
-        copyParams.leftMargin = dp(8);
-        row.addView(copy, copyParams);
-
-        TextView name = text(data.name.isEmpty() ? "游戏" : data.name,
-                roundLayout ? 12.0f : 12.5f, tokens.text);
-        name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        name.setMaxLines(2);
-        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        copy.addView(name);
-
+        this.nameView.setText(data.name.isEmpty() ? "游戏" : data.name);
+        this.stateView.setVisibility(View.GONE);
         String info = join(data.platforms, data.score.isEmpty()
                 ? "" : "评分 " + data.score, data.followers.isEmpty()
                 ? "" : "关注 " + data.followers);
-        if (!info.isEmpty()) {
-            TextView metadata = text(info, 9.5f, tokens.muted);
-            metadata.setSingleLine(true);
-            metadata.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            copy.addView(metadata, topParams(3));
-        }
+        setMetadata(info);
+        setPrice(data);
 
-        String current = data.free ? "免费" : price(data.currentPrice);
-        if (!current.isEmpty() || !data.discount.isEmpty()) {
-            LinearLayout priceRow = new LinearLayout(activity);
-            priceRow.setGravity(Gravity.CENTER_VERTICAL);
-            TextView currentView = text(current, 11.5f, tokens.text);
-            currentView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            priceRow.addView(currentView);
-            if (!data.originalPrice.isEmpty()
-                    && !data.originalPrice.equals(data.currentPrice)) {
-                TextView original = text(price(data.originalPrice), 9.5f, tokens.muted);
-                original.setPaintFlags(original.getPaintFlags()
-                        | Paint.STRIKE_THRU_TEXT_FLAG);
-                LinearLayout.LayoutParams originalParams = topParams(0);
-                originalParams.leftMargin = dp(5);
-                priceRow.addView(original, originalParams);
-            }
-            if (!data.discount.isEmpty() && !"0".equals(data.discount)) {
-                TextView discount = text("-" + data.discount + "%", 9.0f,
-                        tokens.secondary);
-                LinearLayout.LayoutParams discountParams = topParams(0);
-                discountParams.leftMargin = dp(5);
-                priceRow.addView(discount, discountParams);
-            }
-            copy.addView(priceRow, topParams(3));
+        this.cover.setTag(null);
+        this.cover.setImageDrawable(null);
+        if (!data.coverUrl.isEmpty() && !session.noImage()) {
+            this.cover.setVisibility(View.VISIBLE);
+            this.coverPlaceholder.setVisibility(View.VISIBLE);
+            ImageLoader.intoMeasuredStable(this.cover, data.coverUrl,
+                    Math.max(180, dp(roundLayout ? 58 : 72) * 3),
+                    (success, bitmap) -> {
+                        if (success && bitmap != null) {
+                            this.coverPlaceholder.setVisibility(View.GONE);
+                        }
+                    });
+        } else {
+            this.cover.setVisibility(View.GONE);
+            this.coverPlaceholder.setVisibility(View.VISIBLE);
         }
-        addView(row, new FrameLayout.LayoutParams(-1, -2));
+    }
+
+    private void setMetadata(String info) {
+        this.metadataView.setText(info);
+        this.metadataView.setVisibility(info.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    private void setPrice(GameCardData data) {
+        String current = data.free ? "免费" : price(data.currentPrice);
+        this.currentPriceView.setText(current);
+        String original = !data.originalPrice.isEmpty()
+                && !data.originalPrice.equals(data.currentPrice)
+                ? price(data.originalPrice) : "";
+        this.originalPriceView.setText(original);
+        String discount = !data.discount.isEmpty() && !"0".equals(data.discount)
+                ? "-" + data.discount + "%" : "";
+        this.discountView.setText(discount);
+        boolean visible = !current.isEmpty() || !original.isEmpty() || !discount.isEmpty();
+        this.priceRow.setVisibility(visible ? View.VISIBLE : View.GONE);
+        this.originalPriceView.setVisibility(original.isEmpty() ? View.GONE : View.VISIBLE);
+        this.discountView.setVisibility(discount.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
     void showUnavailable(String appId) {
-        removeAllViews();
-        LinearLayout row = row();
-        TextView placeholder = text("游戏", 10.0f, tokens.muted);
-        placeholder.setGravity(Gravity.CENTER);
-        Compat.setBackground(placeholder, UiComponents.round(activity,
-                placeholderColor(), 6, uiScale));
-        row.addView(placeholder, new LinearLayout.LayoutParams(
-                dp(roundLayout ? 58 : 72), dp(roundLayout ? 52 : 62)));
-
-        LinearLayout copy = column();
-        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(
-                0, -2, 1.0f);
-        copyParams.leftMargin = dp(8);
-        row.addView(copy, copyParams);
-        TextView title = text("游戏信息暂不可用", roundLayout ? 12.0f : 12.5f,
-                tokens.text);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        copy.addView(title);
+        this.nameView.setText("游戏信息暂不可用");
+        this.stateView.setVisibility(View.GONE);
+        setMetadata("");
+        this.priceRow.setVisibility(View.GONE);
+        this.cover.setTag(null);
+        this.cover.setImageDrawable(null);
+        this.cover.setVisibility(View.GONE);
+        this.coverPlaceholder.setVisibility(View.VISIBLE);
         String id = appId == null ? "" : appId.trim();
         if (!id.isEmpty()) {
-            copy.addView(text("ID " + id, 9.5f, tokens.muted), topParams(3));
+            setMetadata("ID " + id);
         }
-        addView(row, new FrameLayout.LayoutParams(-1, -2));
+    }
+
+    private void showLoading(String title) {
+        this.nameView.setText(title == null || title.trim().isEmpty()
+                ? "游戏" : title.trim());
+        this.stateView.setText("正在获取游戏信息");
+        this.stateView.setVisibility(View.VISIBLE);
+        setMetadata("");
+        this.priceRow.setVisibility(View.GONE);
+        this.cover.setTag(null);
+        this.cover.setImageDrawable(null);
+        this.cover.setVisibility(View.GONE);
+        this.coverPlaceholder.setVisibility(View.VISIBLE);
     }
 
     private LinearLayout row() {

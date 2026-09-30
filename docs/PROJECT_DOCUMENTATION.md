@@ -1,6 +1,6 @@
 # heybox Lite 工程文档
 
-面向后续维护、构建、发布与排查的工程说明。目标是让接手者能快速理解项目结构、核心流程与风险点，少踩坑。所有内容以仓库当前代码为准（版本 `2.16` / versionCode `219`）。
+面向后续维护、构建、发布与排查的工程说明。目标是让接手者能快速理解项目结构、核心流程与风险点，少踩坑。所有内容以仓库当前代码为准（版本 `2.17` / versionCode `220`）。
 
 > 本文尽量只描述**项目本身**，不写入任何本机绝对路径、keystore 密码或服务器内部路径。这类信息属于各自环境的私有配置，请勿写进公开仓库。
 
@@ -21,7 +21,7 @@ heybox Lite 是面向 **Android 手表和小屏设备**的小黑盒（HeyBox）�
 | 语言 / UI | Java，原生 View（无 Compose） |
 | `applicationId` | `com.ronan.heyboxlite.preview` |
 | `namespace` / 包名 | `com.ronan.heyboxlite` |
-| `versionName` / `versionCode` | `2.16` / `219` |
+| `versionName` / `versionCode` | `2.17` / `220` |
 | `minSdk` / `targetSdk` / `compileSdk` | `14` / `35` / `36` |
 | JDK | 17 |
 | 第三方依赖 | 仅 `com.google.zxing:core:3.3.3`（二维码登录） |
