@@ -84,12 +84,24 @@ public final class UpdateApkProvider extends ContentProvider {
             return null;
         }
         try {
-            File root = new File(getContext().getCacheDir(), "updates").getCanonicalFile();
-            File file = new File(root, name).getCanonicalFile();
-            if (!file.getPath().startsWith(root.getPath())) return null;
-            return file;
+            File cacheRoot = new File(getContext().getCacheDir(), "updates");
+            File cacheFile = fileUnder(cacheRoot, name);
+            if (cacheFile != null) return cacheFile;
+
+            File externalRoot = getContext().getExternalFilesDir(
+                    android.os.Environment.DIRECTORY_DOWNLOADS);
+            return externalRoot == null ? null
+                    : fileUnder(new File(externalRoot, "heyboxlite"), name);
         } catch (IOException | SecurityException ignored) {
             return null;
         }
+    }
+
+    private File fileUnder(File root, String name) throws IOException {
+        File canonicalRoot = root.getCanonicalFile();
+        File file = new File(canonicalRoot, name).getCanonicalFile();
+        String rootPath = canonicalRoot.getPath();
+        if (!rootPath.endsWith(File.separator)) rootPath += File.separator;
+        return file.getPath().startsWith(rootPath) ? file : null;
     }
 }

@@ -90,16 +90,24 @@ final class UpdateChecker {
             String latest = latestVersion(payload);
             String title = firstNonEmpty(payload.optString("title"), payload.optString("name"));
             String notes = cleanNotes(notes(payload));
-            String releaseUrl = trustedUrlOrEmpty(firstNonEmpty(payload.optString("releaseUrl"),
+            String releaseUrl = trustedUrlOrEmpty(firstNonEmpty(
+                    payload.optString("releaseUrl"), payload.optString("release_url"),
+                    payload.optString("releasePageUrl"), payload.optString("release_page_url"),
                     payload.optString("html_url"), BuildConfig.UPDATE_FALLBACK_URL));
-            String downloadUrl = trustedUrlOrEmpty(firstNonEmpty(payload.optString("downloadUrl"),
-                    payload.optString("apkUrl"), payload.optString("latestApkUrl"),
+            String downloadUrl = trustedUrlOrEmpty(firstNonEmpty(
+                    payload.optString("downloadUrl"), payload.optString("download_url"),
+                    payload.optString("apkUrl"), payload.optString("apk_url"),
+                    payload.optString("latestApkUrl"), payload.optString("latest_apk_url"),
                     githubAssetUrl(payload)));
             if (releaseUrl.isEmpty()) releaseUrl = requireTrustedUrl(BuildConfig.UPDATE_FALLBACK_URL);
 
             Result result = new Result(isUpdateAvailable(payload, latest, currentVersion),
                     latest, title, notes, releaseUrl, downloadUrl,
-                    payload.optInt("id", 0), payload.optString("channel", "stable"));
+                    UpdateVersionPolicy.firstPositiveInt(payload,
+                            "id", "releaseId", "release_id"),
+                    firstNonEmpty(payload.optString("channel"),
+                            payload.optString("releaseChannel"),
+                            payload.optString("release_channel"), "stable"));
             if (result.updateAvailable && downloadUrl.isEmpty()) {
                 throw new IllegalStateException("未找到匹配的 APK 资源，可打开备用地址手动下载。");
             }
@@ -133,14 +141,9 @@ final class UpdateChecker {
         return result;
     }
 
-    private static boolean isUpdateAvailable(JSONObject payload, String latest,
-                                             String currentVersion) {
-        if (payload.has("hasUpdate")) return payload.optBoolean("hasUpdate", false);
-        if (payload.has("updateAvailable")) return payload.optBoolean("updateAvailable", false);
-        int latestCode = payload.optInt("versionCode", 0);
-        if (latestCode <= 0) latestCode = payload.optInt("version_code", 0);
-        if (latestCode > 0) return latestCode > BuildConfig.VERSION_CODE;
-        return compare(latest, normalize(currentVersion)) > 0;
+    static boolean isUpdateAvailable(JSONObject payload, String latest, String currentVersion) {
+        return UpdateVersionPolicy.isUpdateAvailable(
+                payload, latest, currentVersion, BuildConfig.VERSION_CODE);
     }
 
     private static String read(InputStream stream) throws Exception {
@@ -155,9 +158,8 @@ final class UpdateChecker {
         return result.toString();
     }
 
-    private static String latestVersion(JSONObject payload) {
-        return normalize(firstNonEmpty(payload.optString("versionName"),
-                payload.optString("version"), payload.optString("tag_name")));
+    static String latestVersion(JSONObject payload) {
+        return UpdateVersionPolicy.latestVersion(payload);
     }
 
     private static String notes(JSONObject payload) {
@@ -200,34 +202,6 @@ final class UpdateChecker {
         String value = notes.replace("\r\n", "\n").replace('\r', '\n').trim();
         while (value.contains("\n\n\n")) value = value.replace("\n\n\n", "\n\n");
         return value;
-    }
-
-    private static String normalize(String version) {
-        if (version == null) return "0";
-        String value = version.trim();
-        if (value.startsWith("v") || value.startsWith("V")) value = value.substring(1);
-        int dash = value.indexOf('-');
-        return dash < 0 ? value : value.substring(0, dash);
-    }
-
-    private static int compare(String left, String right) {
-        String[] a = left.split("\\.");
-        String[] b = right.split("\\.");
-        int count = Math.max(a.length, b.length);
-        for (int i = 0; i < count; i++) {
-            int av = i < a.length ? number(a[i]) : 0;
-            int bv = i < b.length ? number(b[i]) : 0;
-            if (av != bv) return av < bv ? -1 : 1;
-        }
-        return 0;
-    }
-
-    private static int number(String value) {
-        try {
-            return Integer.parseInt(value.replaceAll("[^0-9]", ""));
-        } catch (Exception ignored) {
-            return 0;
-        }
     }
 
     private static String firstNonEmpty(String... values) {

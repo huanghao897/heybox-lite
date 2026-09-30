@@ -4,6 +4,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -67,7 +69,12 @@ final class ArticleGameMarkupScanner {
             String id = openings.group(2);
             result.add(new GameMarker(openings.start(), openings.end(), id, ""));
         }
-        result.sort((left, right) -> Integer.compare(left.start, right.start));
+        Collections.sort(result, new Comparator<GameMarker>() {
+            @Override
+            public int compare(GameMarker left, GameMarker right) {
+                return Integer.compare(left.start, right.start);
+            }
+        });
         return result;
     }
 

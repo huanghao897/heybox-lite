@@ -65,16 +65,6 @@ final class UpdateInstaller {
     }
 
     private void startDownload(String url) {
-        if (Build.VERSION.SDK_INT >= 26
-                && !this.activity.getPackageManager().canRequestPackageInstalls()) {
-            this.dialogs.show("需要安装权限",
-                    "为了在 App 内完成更新，需要先允许 heybox Lite 安装未知来源应用。"
-                            + "授权后请回到 App 再点一次下载。",
-                    "去授权", this::openUnknownSourcesSettings,
-                    "取消", null, null, null);
-            return;
-        }
-
         LinearLayout box = new LinearLayout(this.activity);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(16), dp(14), dp(16), dp(14));
@@ -98,7 +88,8 @@ final class UpdateInstaller {
         LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(-1, dp(8));
         barParams.topMargin = dp(12);
         box.addView(progress, barParams);
-        TextView hint = text("下载完成后会打开系统安装器", 11.0f, this.tokens.muted);
+        TextView hint = text("下载完成后会尝试打开安装器，也可交给其他应用安装",
+                11.0f, this.tokens.muted);
         hint.setGravity(Gravity.CENTER);
         addTop(box, hint, 10);
 
@@ -132,9 +123,9 @@ final class UpdateInstaller {
                 if (this.activity.isFinishing()) return;
                 progress.setIndeterminate(false);
                 progress.setProgress(100);
-                state.setText("下载完成，正在打开安装器...");
+                state.setText("下载完成，正在准备安装...");
                 if (dialog.isShowing()) dialog.dismiss();
-                install(ready);
+                install(ready, url);
             });
         } catch (IOException | RuntimeException error) {
             String message = error.getMessage() == null
@@ -150,7 +141,7 @@ final class UpdateInstaller {
         }
     }
 
-    private void install(File apk) {
+    private void install(File apk, String sourceUrl) {
         if (apk == null || !apk.isFile()) {
             this.host.showToast("安装包不存在");
             return;
@@ -163,25 +154,59 @@ final class UpdateInstaller {
                     "知道了", null, null, null, null, null);
             return;
         }
+
+        if (!canInstallFromThisApp()) {
+            showDownloadedChoices(apk, sourceUrl, true);
+            return;
+        }
+
         try {
-            Uri uri = UpdateApkProvider.uriFor(apk);
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setDataAndType(uri, "application/vnd.android.package-archive");
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-                intent.setClipData(ClipData.newUri(
-                        this.activity.getContentResolver(), apk.getName(), uri));
-            }
-            this.activity.startActivity(intent);
+            openApk(apk, false);
         } catch (ActivityNotFoundException | SecurityException
                  | IllegalArgumentException error) {
             this.localCache.log("update install failed: "
                     + error.getClass().getSimpleName() + " " + error.getMessage());
-            this.dialogs.show("无法打开安装器",
-                    "安装包已经下载完成，但系统安装器没有响应。可以改用浏览器下载后手动安装",
-                    "知道了", null, null, null, null, null);
+            showDownloadedChoices(apk, sourceUrl, false);
         }
+    }
+
+    private boolean canInstallFromThisApp() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O
+                || this.activity.getPackageManager().canRequestPackageInstalls();
+    }
+
+    private void openApk(File apk, boolean chooser) {
+        Uri uri = UpdateApkProvider.uriFor(apk);
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, "application/vnd.android.package-archive");
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            intent.setClipData(ClipData.newUri(
+                    this.activity.getContentResolver(), apk.getName(), uri));
+        }
+        this.activity.startActivity(chooser
+                ? Intent.createChooser(intent, "选择安装器") : intent);
+    }
+
+    private void showDownloadedChoices(File apk, String sourceUrl, boolean permissionBlocked) {
+        String message = permissionBlocked
+                ? "安装包已经下载并校验完成。当前系统不允许 heybox Lite 直接安装，"
+                        + "可以交给其他安装器打开，或先授予本应用安装权限。"
+                : "安装包已经下载并校验完成，但系统安装器没有响应。"
+                        + "可以交给其他安装器打开，或用浏览器重新下载。";
+        this.dialogs.show("安装包已下载", message,
+                "用其他应用打开", () -> {
+                    try {
+                        openApk(apk, true);
+                    } catch (ActivityNotFoundException | SecurityException
+                             | IllegalArgumentException error) {
+                        this.host.showToast("没有可用的安装器");
+                    }
+                },
+                permissionBlocked ? "去授权" : "知道了",
+                permissionBlocked ? this::openUnknownSourcesSettings : null,
+                "浏览器下载", () -> openExternal(sourceUrl));
     }
 
     private void openUnknownSourcesSettings() {

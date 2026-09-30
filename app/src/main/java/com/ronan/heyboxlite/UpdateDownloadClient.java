@@ -1,6 +1,7 @@
 package com.ronan.heyboxlite;
 
 import android.content.Context;
+import android.os.Environment;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -33,9 +34,12 @@ final class UpdateDownloadClient {
                 throw new IllegalStateException("下载失败，HTTP " + status);
             }
 
-            File directory = new File(context.getCacheDir(), "updates");
+            File directory = downloadDirectory(context);
             if (!directory.exists() && !directory.mkdirs()) {
-                throw new IllegalStateException("无法创建更新缓存目录");
+                directory = new File(context.getCacheDir(), "updates");
+                if (!directory.exists() && !directory.mkdirs()) {
+                    throw new IllegalStateException("无法创建更新下载目录");
+                }
             }
             output = new File(directory, "heybox-Lite-update-" + version + "-"
                     + System.currentTimeMillis() + ".apk");
@@ -73,5 +77,11 @@ final class UpdateDownloadClient {
             }
         }
         return written;
+    }
+
+    private static File downloadDirectory(Context context) {
+        File external = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        if (external != null) return new File(external, "heyboxlite");
+        return new File(context.getCacheDir(), "updates");
     }
 }
