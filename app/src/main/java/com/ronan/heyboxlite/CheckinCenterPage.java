@@ -14,8 +14,6 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.util.Locale;
-
 final class CheckinCenterPage {
     interface Host {
         void closePage();
@@ -52,9 +50,13 @@ final class CheckinCenterPage {
     private final float scale;
     private final FrameLayout root;
     private final SettingsUi settingsUi;
+    private final CheckinHistoryView historyView;
     private final boolean roundLayout;
     private State state;
     private CheckinCenterClient.Status status;
+    private CheckinHistory history;
+    private boolean historyLoading;
+    private String historyError = "";
     private String errorMessage = "";
     private CheckinPaymentPage paymentPage;
     private boolean closed;
@@ -76,6 +78,7 @@ final class CheckinCenterPage {
                 ? RoundLayoutMetrics.headerInnerInset(screenWidth) : 0;
         this.settingsUi = new SettingsUi(activity, session, tokens, roundLayout,
                 roundHeaderInset, handler, this::navigateBack);
+        this.historyView = new CheckinHistoryView(settingsUi);
         this.accountForms = new CheckinAccountForms(activity, session, tokens, ui,
                 settingsUi, roundLayout);
         this.mobileLogin = new CheckinMobileLoginFlow(coordinator,
@@ -286,11 +289,17 @@ final class CheckinCenterPage {
             clearPairingState();
             state = State.UNPAIRED;
             status = null;
+            history = null;
+            historyLoading = false;
+            historyError = "";
             errorMessage = "";
             render();
             return;
         }
         state = State.SYNCING;
+        history = null;
+        historyLoading = false;
+        historyError = "";
         errorMessage = "";
         render();
         loadStatus();
@@ -352,13 +361,57 @@ final class CheckinCenterPage {
             public void onSuccess(CheckinCenterClient.Status value) {
                 status = value;
                 state = State.CONNECTED;
+                history = null;
+                historyError = "";
+                historyLoading = "connected".equalsIgnoreCase(value.account.state);
                 errorMessage = warning == null ? "" : warning;
                 render();
+                if (historyLoading) loadHistory();
             }
 
             @Override
             public void onError(CheckinCenterClient.ApiError error) {
                 showError(error.getMessage());
+            }
+        });
+    }
+
+    private void loadHistory() {
+        if (closed || !coordinator.paired() || status == null
+                || !"connected".equalsIgnoreCase(status.account.state)) {
+            historyLoading = false;
+            return;
+        }
+        coordinator.getHistory(new CheckinCenterClient.Callback<CheckinHistory>() {
+            @Override
+            public void onSuccess(CheckinHistory value) {
+                if (closed || status == null) return;
+                history = value;
+                historyLoading = false;
+                historyError = "";
+                render(false);
+            }
+
+            @Override
+            public void onError(CheckinCenterClient.ApiError error) {
+                if (closed || status == null) return;
+                if (error.authorizationInvalid()) {
+                    showError(error.getMessage());
+                    return;
+                }
+                if (error.operation == CheckinCenterClient.Operation.HISTORY
+                        && error.statusCode == 404 && status.lastRun != null) {
+                    // Older CheckinCenter deployments do not expose the history route
+                    // yet, but status still carries the latest real execution result.
+                    history = CheckinHistory.fromLastRun(status.lastRun);
+                    historyLoading = false;
+                    historyError = "";
+                    render(false);
+                    return;
+                }
+                historyLoading = false;
+                historyError = error.getMessage();
+                render(false);
             }
         });
     }
@@ -390,6 +443,9 @@ final class CheckinCenterPage {
                 @Override
                 public void onSuccess(Boolean value) {
                     status = null;
+                    history = null;
+                    historyLoading = false;
+                    historyError = "";
                     clearPairingState();
                     state = State.UNPAIRED;
                     errorMessage = "";
@@ -458,6 +514,10 @@ final class CheckinCenterPage {
     }
 
     private void render() {
+        render(true);
+    }
+
+    private void render(boolean animate) {
         if (closed) return;
         Motions.resetTree(root);
         root.removeAllViews();
@@ -466,11 +526,12 @@ final class CheckinCenterPage {
             return;
         }
         if (state == State.MOBILE_LOGIN) {
-            renderMobileLogin();
+            present(accountForms.mobile(mobileLogin, accountActions()), animate);
+            mobileLogin.bindView();
             return;
         }
         if (state == State.BILLING && paymentPage != null) {
-            present(paymentPage.view());
+            present(paymentPage.view(), animate);
             return;
         }
         ScrollView scroll = new ScrollView(activity);
@@ -490,7 +551,7 @@ final class CheckinCenterPage {
         } else {
             renderConnected(page);
         }
-        present(scroll);
+        present(scroll, animate);
     }
 
     private void renderUnpaired(LinearLayout page) {
@@ -576,19 +637,7 @@ final class CheckinCenterPage {
                 R.drawable.il_person, this::openMobileLogin);
         page.addView(management);
 
-        settingsUi.addSection(page, "最近签到");
-        LinearLayout latest = settingsUi.list();
-        if (status.lastRun == null) {
-            settingsUi.addInfoEntry(latest, "暂无记录", null, null,
-                    R.drawable.il_history);
-        } else {
-            String reward = rewardLabel(status.lastRun.checkIn);
-            String result = runStatusLabel(status.lastRun);
-            if (!reward.isEmpty()) result += " · " + reward;
-            settingsUi.addInfoEntry(latest, result, runSummary(status.lastRun),
-                    runTime(status.lastRun), R.drawable.il_history);
-        }
-        page.addView(latest);
+        historyView.addTo(page, history, historyLoading, historyError, this::loadHistory);
 
         Button revoke = quietButton("撤销此设备");
         revoke.setEnabled(state != State.RUNNING);
@@ -655,11 +704,6 @@ final class CheckinCenterPage {
                     R.drawable.ic_logout, this::requestRevoke);
         }
         page.addView(actions);
-    }
-
-    private void renderMobileLogin() {
-        present(accountForms.mobile(mobileLogin, accountActions()));
-        mobileLogin.bindView();
     }
 
     private void renderPairing() {
@@ -766,8 +810,12 @@ final class CheckinCenterPage {
     }
 
     private void present(View view) {
+        present(view, true);
+    }
+
+    private void present(View view, boolean animate) {
         root.addView(view, match());
-        if (contentPresented) Motions.enter(view, dp(roundLayout ? 6 : 10));
+        if (contentPresented && animate) Motions.enter(view, dp(roundLayout ? 6 : 10));
         contentPresented = true;
     }
 
@@ -789,26 +837,6 @@ final class CheckinCenterPage {
         time.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         time.setSingleLine(true);
         row.addView(time, new LinearLayout.LayoutParams(-2, -2));
-        return row;
-    }
-
-    private LinearLayout infoRow(String label, String value) {
-        LinearLayout row = new LinearLayout(activity);
-        row.setOrientation(roundLayout ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.TOP);
-        TextView left = body(label, tokens.muted);
-        row.addView(left, roundLayout
-                ? new LinearLayout.LayoutParams(-1, -2)
-                : new LinearLayout.LayoutParams(0, -2, 0.44f));
-        TextView right = body(value, tokens.text);
-        right.setGravity(roundLayout ? Gravity.START : Gravity.END);
-        right.setMaxLines(3);
-        LinearLayout.LayoutParams rightParams = roundLayout
-                ? new LinearLayout.LayoutParams(-1, -2)
-                : new LinearLayout.LayoutParams(0, -2, 0.56f);
-        if (roundLayout) rightParams.topMargin = dp(2);
-        else rightParams.leftMargin = dp(8);
-        row.addView(right, rightParams);
         return row;
     }
 
@@ -836,10 +864,6 @@ final class CheckinCenterPage {
         return ui.primaryButton(value);
     }
 
-    private Button ghostButton(String value) {
-        return ui.ghostButton(value);
-    }
-
     private Button quietButton(String value) {
         return ui.quietButton(value);
     }
@@ -864,24 +888,6 @@ final class CheckinCenterPage {
         return task.windowStart + " - " + task.windowEnd;
     }
 
-    private String runTime(CheckinCenterClient.LastRun run) {
-        String value = run.finishedAt.isEmpty() ? run.startedAt : run.finishedAt;
-        if (value.length() >= 16 && value.charAt(10) == 'T') {
-            return value.substring(5, 10) + " " + value.substring(11, 16);
-        }
-        return value.isEmpty() ? "未知" : value;
-    }
-
-    private String runStatusLabel(CheckinCenterClient.LastRun run) {
-        if (run.checkIn.checkedIn) return "已签到";
-        String value = run.status;
-        if ("ok".equalsIgnoreCase(value) || "completed".equalsIgnoreCase(value)) return "成功";
-        if ("running".equalsIgnoreCase(value)) return "执行中";
-        if ("skipped".equalsIgnoreCase(value)) return "未执行";
-        if ("failed".equalsIgnoreCase(value) || "error".equalsIgnoreCase(value)) return "失败";
-        return value.isEmpty() ? "未知" : value;
-    }
-
     private String runMessage(CheckinCenterClient.RunResult result) {
         if (result.checkIn.checkedIn) {
             String reward = rewardLabel(result.checkIn);
@@ -890,13 +896,6 @@ final class CheckinCenterPage {
         if ("ok".equalsIgnoreCase(result.status)) return "小黑盒签到任务已完成";
         if ("skipped".equalsIgnoreCase(result.status)) return "今日没有需要执行的签到任务";
         return "签到任务已返回结果";
-    }
-
-    private String runSummary(CheckinCenterClient.LastRun run) {
-        if (run.checkIn.checkedIn) {
-            return run.checkIn.newlySigned ? "今日签到已完成" : "今日已签到";
-        }
-        return run.summary;
     }
 
     private String rewardLabel(CheckinCenterClient.CheckinResult result) {

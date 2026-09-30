@@ -23,13 +23,22 @@ final class RichTransportDecoder {
                 .replace("\\u003e", ">")
                 .replace("\\u003E", ">")
                 .replace("\\u0026", "&")
+                .replace("\\u0022", "\"")
+                .replace("\\u005b", "[")
+                .replace("\\u005B", "[")
+                .replace("\\u005d", "]")
+                .replace("\\u005D", "]")
+                .replace("\\u007b", "{")
+                .replace("\\u007B", "{")
+                .replace("\\u007d", "}")
+                .replace("\\u007D", "}")
                 .replace("\\/", "/");
         if (unescapeQuotes) decoded = decoded.replace("\\\"", "\"");
         for (int i = 0; i < 2; i++) {
             String lower = decoded.toLowerCase(Locale.ROOT);
             if (containsMarkup(lower)) break;
             if (!lower.contains("%3c") && !lower.contains("%5b")
-                    && !lower.contains("%7b")) break;
+                    && !lower.contains("%7b") && !lower.contains("%22")) break;
             try {
                 String next = URLDecoder.decode(decoded.replace("+", "%2B"), "UTF-8");
                 if (next.equals(decoded)) break;

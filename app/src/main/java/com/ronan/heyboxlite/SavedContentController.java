@@ -13,7 +13,6 @@ import android.widget.AbsListView;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -322,7 +321,7 @@ final class SavedContentController {
     private void renderFavoritePosts(FrameLayout pane, List<FeedItem> items) {
         pane.removeAllViews();
         if (items.isEmpty()) renderPaneMessage(pane, EMPTY_CONTENT_MESSAGE);
-        else pane.addView(feedList(items), match());
+        else pane.addView(feedList(items, true), match());
     }
 
     private void renderFavoriteFolders(FrameLayout pane, List<JSONObject> folders) {
@@ -412,7 +411,7 @@ final class SavedContentController {
             empty.setGravity(Gravity.CENTER);
             page.addView(empty, new LinearLayout.LayoutParams(-1, 0, 1.0f));
         } else {
-            ListView list = feedList(items);
+            ListView list = feedList(items, true);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, 0, 1.0f);
             params.topMargin = dp(4);
             page.addView(list, params);
@@ -450,11 +449,10 @@ final class SavedContentController {
         this.searchBars.prepare(search, contentTop);
 
         List<FeedItem> filtered = new ArrayList<>(allItems);
-        FeedAdapter adapter = this.host.createFeedAdapter(filtered);
-        ListView list = feedList(filtered);
+        ListView list = feedList(filtered, false);
+        FeedAdapter adapter = (FeedAdapter) list.getAdapter();
         list.setPadding(0, contentTop, 0, dp(4));
         list.setClipToPadding(false);
-        list.setAdapter((ListAdapter) adapter);
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(AbsListView view, int state) {
@@ -523,12 +521,14 @@ final class SavedContentController {
         return title + "_" + path;
     }
 
-    private ListView feedList(List<FeedItem> items) {
+    private ListView feedList(List<FeedItem> items, boolean parentAlreadyInset) {
         ListView list = new ListView(this.activity);
         list.setBackgroundColor(this.tokens.background);
         list.setDivider(new ColorDrawable(0));
         list.setDividerHeight(dp(2));
-        list.setAdapter((ListAdapter) this.host.createFeedAdapter(items));
+        FeedAdapter adapter = this.host.createFeedAdapter(items);
+        adapter.setParentAlreadyInset(parentAlreadyInset);
+        list.setAdapter(adapter);
         return list;
     }
 

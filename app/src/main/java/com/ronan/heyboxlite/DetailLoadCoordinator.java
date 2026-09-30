@@ -70,7 +70,7 @@ final class DetailLoadCoordinator {
             });
             return;
         }
-        api.get(EndpointProvider.linkTreeV2(),
+        api.get(EndpointProvider.linkTree(),
                 OfficialRequestParams.detail(item.id, item.hsrc, item.video),
                 new ApiClient.Callback() {
                     @Override
@@ -135,6 +135,7 @@ final class DetailLoadCoordinator {
 
     private void cacheAndRender(FeedItem item, JSONObject body, int token) {
         JSONObject normalized = DetailResponseNormalizer.normalize(body);
+        DetailResponseNormalizer.mergePreloadedContent(normalized, item.toJson());
         DetailResponseNormalizer.mergeVideoFallback(normalized, item.toJson());
         cache.saveDetail(item.id, normalized);
         if (cache.isWatchLater(item.id)) {
@@ -142,6 +143,42 @@ final class DetailLoadCoordinator {
         }
         pendingBody = normalized;
         renderAfterEntry(item, token);
+        if (ArticleGameCards.shouldLoadWeb(normalized, item)) {
+            api.get(EndpointProvider.linkWebView(),
+                    OfficialRequestParams.articleWebView(item.id, item.hsrc),
+                    new ApiClient.Callback() {
+                        @Override
+                        public void onSuccess(JSONObject webBody) {
+                            if (!current(item, token)) return;
+                            JSONObject result = normalized.optJSONObject("result");
+                            JSONObject link = result == null ? null
+                                    : result.optJSONObject("link");
+                            int beforeCards = ArticleGameCards.count(link);
+                            cache.log("article web shape link=" + item.id + " "
+                                    + ArticleGameResponseSummary.describe(webBody));
+                            DetailResponseNormalizer.mergeArticleWebContent(normalized, webBody);
+                            cache.saveDetail(item.id, normalized);
+                            int afterCards = ArticleGameCards.count(link);
+                            cache.log("article web content loaded link=" + item.id
+                                    + " gameCards=" + afterCards
+                                    + " " + ArticleGameCards.fieldSummary(link));
+                            if (afterCards > beforeCards) {
+                                pendingBody = normalized;
+                                renderAfterEntry(item, token);
+                            } else {
+                                cache.log("article web content unchanged link=" + item.id
+                                        + " reason=no_new_game_cards");
+                            }
+                        }
+
+                        @Override
+                        public void onError(String message) {
+                            if (!current(item, token)) return;
+                            cache.log("article web content unavailable link=" + item.id
+                                    + " reason=" + message);
+                        }
+                    });
+        }
     }
 
     private void renderAfterEntry(FeedItem item, int token) {

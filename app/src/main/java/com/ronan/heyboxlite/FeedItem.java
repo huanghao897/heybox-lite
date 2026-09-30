@@ -36,6 +36,7 @@ final class FeedItem {
     final boolean video;
     final List<VideoData> videos;
     final boolean pinned;
+    final JSONObject contentPreload;
     boolean liked;
     boolean following;
     boolean followPending;
@@ -45,7 +46,8 @@ final class FeedItem {
                      FeedMetadata.Section section, String image, long createdAt,
                      int comments, int clicks, int likes,
                      boolean article, boolean video, List<VideoData> videos, boolean liked,
-                     boolean pinned, boolean following, String hsrc, String[] images) {
+                     boolean pinned, boolean following, String hsrc, String[] images,
+                     JSONObject contentPreload) {
         this.id = id;
         this.hsrc = hsrc;
         this.title = title;
@@ -67,6 +69,7 @@ final class FeedItem {
                 ? Collections.emptyList()
                 : Collections.unmodifiableList(new ArrayList<>(videos));
         this.pinned = pinned;
+        this.contentPreload = contentPreload;
         this.liked = liked;
         this.following = following;
     }
@@ -119,7 +122,8 @@ final class FeedItem {
                 pinned(json),
                 FollowStatus.follows(json, user),
                 hsrc(json),
-                detailImages
+                detailImages,
+                contentPreload(json)
         );
     }
 
@@ -155,6 +159,9 @@ final class FeedItem {
             json.put("link_award_num", likes);
             json.put("is_article", article ? 1 : 0);
             json.put("has_video", video ? 1 : 0);
+            if (!compact && contentPreload != null) {
+                json.put("communityPostPreload", contentPreload);
+            }
             if (!videos.isEmpty()) {
                 VideoData firstVideo = videos.get(0);
                 if (!firstVideo.url.isEmpty()) json.put("video_url", firstVideo.url);
@@ -193,6 +200,31 @@ final class FeedItem {
 
     static boolean isArticleJson(JSONObject json) {
         return FeedMetadata.isArticle(json);
+    }
+
+    private static JSONObject contentPreload(JSONObject json) {
+        if (json == null) return null;
+        JSONObject value = firstObject(json, "communityPostPreload",
+                "community_post_preload", "post_content_section", "postContentSection");
+        if (value == null) return null;
+        return value;
+    }
+
+    private static JSONObject firstObject(JSONObject json, String... keys) {
+        for (String key : keys) {
+            Object raw = json.opt(key);
+            if (raw instanceof JSONObject) return (JSONObject) raw;
+            if (raw instanceof String) {
+                String value = ((String) raw).trim();
+                if (value.startsWith("{")) {
+                    try {
+                        return new JSONObject(value);
+                    } catch (JSONException ignored) {
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private static String hsrc(JSONObject json) {

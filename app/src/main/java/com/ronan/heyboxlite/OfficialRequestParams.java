@@ -36,8 +36,22 @@ final class OfficialRequestParams {
         params.put("page", "1");
         params.put("limit", "20");
         params.put("is_first", "1");
+        params.put("sort_filter", "hot");
         params.put("owner_only", "0");
+        params.put("hide_cy", "0");
+        params.put("check_commented", "0");
         if (hasVideo) params.put("has_video", "1");
+        return params;
+    }
+
+    static Map<String, String> articleWebView(String linkId, String hsrc) {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("link_id", linkId);
+        params.put("return_json", "1");
+        // PostWebNewsFragmentV2 sends this for ordinary article links. It
+        // selects the topic/article content tree that contains game cards.
+        params.put("in_topic", "1");
+        putIfPresent(params, "h_src", hsrc);
         return params;
     }
 

@@ -1,6 +1,7 @@
 package com.ronan.heyboxlite;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -32,5 +33,19 @@ public class RichLinkClassifierTest {
                 "xhh://route?protocol_type=open_game_detail&app_id=42&game_type=pc"));
         assertFalse(RichLinkClassifier.isGameHref(
                 "heybox://%7B%22protocol_type%22%3A%22openUserProfile%22%7D"));
+    }
+
+    @Test
+    public void extractsOfficialGameReferenceWithoutLowercasingHsrc() {
+        String href = "heybox://%7B%22protocol_type%22%3A%22openGameDetail%22%2C"
+                + "%22app_id%22%3A%2242%22%2C%22h_src%22%3A%22AbC123%22%7D";
+
+        RichLinkClassifier.GameLinkInfo info =
+                RichLinkClassifier.gameLinkInfo("data-link-type=\"game\" "
+                        + "data-game-id=\"42\" href=\"" + href + "\"");
+
+        assertEquals("42", info.appId);
+        assertEquals("pc", info.gameType);
+        assertEquals("AbC123", info.hsrc);
     }
 }

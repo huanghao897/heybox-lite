@@ -1252,7 +1252,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         });
         this.title.setText(R.string.title_post_body);
         this.action.setVisibility(4);
-        transitionTo(detailLoadingPage());
+        showDetailLoadingOverlay();
         this.detailLoader.load(item);
     }
 
@@ -1317,6 +1317,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             if (this.detailReturnView != null) {
                 pager.setReturnView(this.detailReturnView);
             }
+            removeViewWithTag("detail_loading");
             transitionTo(root);
         } else {
             this.pageTransitions.finishNow();
@@ -2155,10 +2156,19 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         return page;
     }
 
+    private void showDetailLoadingOverlay() {
+        removeViewWithTag("detail_loading");
+        this.content.addView(detailLoadingPage(), match());
+    }
     private void hideLoading() {
-        View loading = this.content.findViewWithTag("loading");
-        if (loading != null) {
-            this.content.removeView(loading);
+        removeViewWithTag("loading");
+    }
+
+    private void removeViewWithTag(String tag) {
+        if (tag == null || this.content == null) return;
+        for (int index = this.content.getChildCount() - 1; index >= 0; index--) {
+            View child = this.content.getChildAt(index);
+            if (tag.equals(child.getTag())) this.content.removeViewAt(index);
         }
     }
 

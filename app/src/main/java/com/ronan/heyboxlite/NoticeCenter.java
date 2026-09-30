@@ -49,6 +49,8 @@ final class NoticeCenter {
     private final ThemeTokens tokens;
     private final boolean roundLayout;
     private final Host host;
+    private final AnnouncementPolicy announcementPolicy;
+    private boolean launchAnnouncementsChecked;
 
     NoticeCenter(Activity activity, SessionStore session, LocalCache localCache,
                  SettingsUi settingsUi,
@@ -62,6 +64,7 @@ final class NoticeCenter {
         this.tokens = tokens;
         this.roundLayout = roundLayout;
         this.host = host;
+        this.announcementPolicy = new AnnouncementPolicy(activity);
     }
 
     void checkUpdateOnLaunch() {
@@ -91,17 +94,18 @@ final class NoticeCenter {
     }
 
     void checkAnnouncementOnLaunch() {
-        AnnouncementChecker.Item welcome = welcomeAnnouncement();
-        if (shouldShowWelcome(welcome)) {
-            markSeen(welcome);
-            showAnnouncement(welcome);
-            return;
-        }
+        if (launchAnnouncementsChecked) return;
+        launchAnnouncementsChecked = true;
         AnnouncementChecker.load(new AnnouncementChecker.Callback() {
             @Override
             public void onResult(List<AnnouncementChecker.Item> items) {
-                AnnouncementChecker.Item item = firstUnseen(items);
-                if (!activityUnavailable() && item != null) showAnnouncement(item);
+                List<AnnouncementChecker.Item> queue = new ArrayList<>();
+                AnnouncementChecker.Item welcome = welcomeAnnouncement();
+                if (shouldShowWelcome(welcome)) queue.add(welcome);
+                for (AnnouncementChecker.Item item : items) {
+                    if (item.enabled && !announcementPolicy.suppressed(item.id)) queue.add(item);
+                }
+                showNextAnnouncement(queue, 0);
             }
 
             @Override
@@ -338,30 +342,25 @@ final class NoticeCenter {
                 "normal", appVersion(), true, true);
     }
 
-    private AnnouncementChecker.Item firstUnseen(List<AnnouncementChecker.Item> items) {
-        if (items == null) return null;
-        for (AnnouncementChecker.Item item : items) {
-            if (item == null || !item.enabled
-                    || item.title.isEmpty() && item.content.isEmpty()) continue;
-            if (!item.onceOnly || item.id.isEmpty()
-                    || !this.session.isAnnouncementSeen(item.id)) return item;
-        }
-        return null;
+    private void showNextAnnouncement(List<AnnouncementChecker.Item> queue, int index) {
+        if (activityUnavailable() || index >= queue.size()) return;
+        AlertDialog dialog = announcementDialog(queue.get(index));
+        if (dialog != null) dialog.setOnDismissListener(ignored ->
+                showNextAnnouncement(queue, index + 1));
     }
 
     private void showAnnouncement(AnnouncementChecker.Item item) {
-        if (item == null || activityUnavailable()) return;
-        String title = TextUtils.isEmpty(item.title) ? "公告" : item.title;
-        Runnable acknowledge = () -> {
-            if (item.onceOnly) markSeen(item);
-        };
-        String neutralText = WELCOME_ID.equals(item.id) ? "群二维码" : null;
-        Runnable neutralAction = neutralText == null ? null : () -> {
-            acknowledge.run();
-            showFeedbackGroupQr();
-        };
-        this.dialogs.show(title, item.content == null ? "" : item.content,
-                "知道了", acknowledge, null, null, neutralText, neutralAction);
+        announcementDialog(item);
+    }
+
+    private AlertDialog announcementDialog(AnnouncementChecker.Item item) {
+        if (item == null || activityUnavailable()) return null;
+        Runnable acknowledge = WELCOME_ID.equals(item.id) ? () -> markSeen(item) : null;
+        return this.dialogs.show(item.title, item.content == null ? "" : item.content,
+                "知道了", acknowledge, "不再提醒", () -> {
+                    announcementPolicy.suppress(item.id);
+                    if (WELCOME_ID.equals(item.id)) markSeen(item);
+                }, null, null);
     }
 
     private void markSeen(AnnouncementChecker.Item item) {

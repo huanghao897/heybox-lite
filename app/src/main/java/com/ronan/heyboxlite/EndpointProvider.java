@@ -4,7 +4,9 @@ final class EndpointProvider {
     private EndpointProvider() {}
 
     static String feeds() { return "/bbs/app/feeds"; }
-    static String linkTreeV2() { return "/bbs/app/link/tree/v2"; }
+    static String linkTree() { return "/bbs/app/link/tree/v2"; }
+    // Official article pages preload their component tree through this route.
+    static String linkWebView() { return "/bbs/app/link/web/view"; }
     static String qrUrl() { return "/account/get_qrcode_url/"; }
     static String qrState() { return "/account/qr_state/"; }
     static String subComments() { return "/bbs/app/comment/sub/comments"; }

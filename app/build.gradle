@@ -18,8 +18,8 @@ android {
         minSdk 14
         targetSdk 35
         testInstrumentationRunner "com.ronan.heyboxlite.CheckinCenterDeviceTestRunner"
-        versionCode 218
-        versionName "2.15"
+        versionCode 219
+        versionName "2.16"
         buildConfigField "String", "RELEASE_CERT_SHA256",
                 "\"7b163883d570408505d820174fb9565471efde8d863508fd390e4f4eb1645eb8\""
         buildConfigField "String", "UPDATE_CERT_SHA256",
@@ -245,7 +245,7 @@ private String certificateSha256(File apk) {
         standardOutput = output
     }
     String text = output.toString("UTF-8")
-    def matcher = text =~ /Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]+)/
+    def matcher = text =~ /(?:Signer #1|V2 Signer:)\s*(?:certificate\s+)?SHA-256 digest:\s*([0-9a-fA-F]+)/
     if (!matcher.find()) {
         throw new GradleException("No signing certificate found in APK")
     }

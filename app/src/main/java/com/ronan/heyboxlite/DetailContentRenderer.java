@@ -17,7 +17,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 final class DetailContentRenderer {
     interface ImageOpener {
@@ -32,9 +34,10 @@ final class DetailContentRenderer {
     private final float textScale;
     private final ImageOpener imageOpener;
     private final DetailContentParser parser = new DetailContentParser();
+    private final GameDetailClient gameDetailClient;
 
     DetailContentRenderer(Activity activity, SessionStore session,
-                          ThemeTokens tokens, boolean roundLayout,
+                          ThemeTokens tokens, boolean roundLayout, ApiClient api,
                           ImageOpener imageOpener) {
         this.activity = activity;
         this.session = session;
@@ -43,6 +46,7 @@ final class DetailContentRenderer {
         this.uiScale = session.uiScale() / 100.0f;
         this.textScale = session.textScale() / 100.0f;
         this.imageOpener = imageOpener;
+        this.gameDetailClient = new GameDetailClient(api);
     }
 
     DetailContentParser.Result resolve(JSONObject link, String fallback,
@@ -105,6 +109,10 @@ final class DetailContentRenderer {
                             Toast.LENGTH_SHORT).show();
                 }
             });
+            card.setOnLongClickListener(view -> {
+                VideoSettingsDialog.show(this.activity, this.session, this.tokens);
+                return true;
+            });
             parent.addView(card, cardParams);
         }
     }
@@ -124,6 +132,8 @@ final class DetailContentRenderer {
         int imageCount = 0;
         boolean bodyStarted = false;
         boolean lastWasImage = false;
+        List<PendingGameCard> pendingGames = new ArrayList<>();
+        Set<String> seenGameIds = new HashSet<>();
         int index = 0;
         while (index < blocks.size()) {
             RichContent.Block block = blocks.get(index);
@@ -152,7 +162,11 @@ final class DetailContentRenderer {
                 continue;
             }
             index++;
-            if (block.kind == RichContent.Block.HEADING) {
+            if (RichGameCardParser.isCard(block)) {
+                addGameCard(parent, block, pendingGames, seenGameIds, bodyStarted);
+                bodyStarted = true;
+                lastWasImage = false;
+            } else if (block.kind == RichContent.Block.HEADING) {
                 addHeading(parent, block.value, bodyStarted);
                 bodyStarted = true;
                 lastWasImage = false;
@@ -168,6 +182,7 @@ final class DetailContentRenderer {
                 lastWasImage = false;
             }
         }
+        loadPendingGameCards(pendingGames);
     }
 
     private void addHeading(LinearLayout parent, String source,
@@ -255,6 +270,78 @@ final class DetailContentRenderer {
         copy.setPadding(dp(10), 0, 0, 0);
         quote.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.0f));
         addTop(parent, quote, bodyStarted ? 10 : 14);
+    }
+
+    private void addGameCard(LinearLayout parent, RichContent.Block block,
+                             List<PendingGameCard> pending, Set<String> seenGameIds,
+                             boolean bodyStarted) {
+        GameCardData embedded = GameCardData.fromEmbedded(block.gameObject, block.value);
+        String title = embedded == null ? "游戏" : embedded.name;
+        GameCardView card = GameCardView.loading(this.activity, this.session,
+                this.tokens, this.roundLayout, title);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = dp(bodyStarted ? 8 : 14);
+        parent.addView(card, params);
+        if (embedded != null && embedded.hasVisibleDetails()) {
+            card.bind(embedded);
+            return;
+        }
+        String appId = block.value == null ? "" : block.value.trim();
+        if (appId.isEmpty()) {
+            card.showUnavailable("");
+        } else {
+            pending.add(new PendingGameCard(appId, card));
+        }
+    }
+
+    private void loadPendingGameCards(List<PendingGameCard> pending) {
+        if (pending.isEmpty()) return;
+        List<RichLinkClassifier.GameLinkInfo> references = new ArrayList<>();
+        java.util.HashSet<String> seen = new java.util.HashSet<>();
+        for (PendingGameCard item : pending) {
+            if (seen.add(item.appId)) {
+                references.add(new RichLinkClassifier.GameLinkInfo(
+                        item.appId, "pc", "", ""));
+            }
+        }
+        this.gameDetailClient.loadBatch(references, new GameDetailClient.BatchCallback() {
+            @Override
+            public void onBatch(java.util.Map<String, GameCardData> data) {
+                bindPendingGameCards(pending, data, false);
+            }
+
+            @Override
+            public void onComplete(java.util.Map<String, GameCardData> data) {
+                bindPendingGameCards(pending, data, true);
+            }
+        });
+    }
+
+    private void bindPendingGameCards(List<PendingGameCard> pending,
+                                      java.util.Map<String, GameCardData> data,
+                                      boolean finalBatch) {
+        for (PendingGameCard item : pending) {
+            if (item.view.getWindowToken() == null) continue;
+            GameCardData cardData = data.get(item.appId);
+            if (cardData != null && !item.resolved) {
+                item.view.bind(cardData);
+                item.resolved = true;
+            } else if (finalBatch && !item.resolved) {
+                item.view.showUnavailable(item.appId);
+                item.resolved = true;
+            }
+        }
+    }
+
+    private static final class PendingGameCard {
+        final String appId;
+        final GameCardView view;
+        boolean resolved;
+
+        PendingGameCard(String appId, GameCardView view) {
+            this.appId = appId;
+            this.view = view;
+        }
     }
 
     private void addImagePager(LinearLayout parent, List<String> urls) {

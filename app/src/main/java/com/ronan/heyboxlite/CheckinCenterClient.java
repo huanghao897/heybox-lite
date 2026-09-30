@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ConnectException;
-import java.net.IDN;
 import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -48,6 +47,9 @@ final class CheckinCenterClient {
         STATUS,
         LEADERBOARD,
         TASK_SETTINGS,
+        HISTORY,
+        RECOVERY_EMAIL,
+        RECOVERY_COMPLETE,
         RUN_NOW,
         REVOKE,
         BILLING_CREATE,
@@ -225,10 +227,11 @@ final class CheckinCenterClient {
         final String windowEnd;
         final boolean platformBlocked;
         final boolean signBlocked;
+        final CheckinSharing sharing;
 
         Task(boolean enabled, boolean sign, String scheduleTime, int offsetMinutes,
              String windowStart, String windowEnd, boolean platformBlocked,
-             boolean signBlocked) {
+             boolean signBlocked, CheckinSharing sharing) {
             this.enabled = enabled;
             this.sign = sign;
             this.scheduleTime = scheduleTime;
@@ -237,6 +240,7 @@ final class CheckinCenterClient {
             this.windowEnd = windowEnd;
             this.platformBlocked = platformBlocked;
             this.signBlocked = signBlocked;
+            this.sharing = sharing;
         }
 
         boolean active() {
@@ -298,7 +302,7 @@ final class CheckinCenterClient {
         T execute() throws ApiError;
     }
 
-    private interface Parser<T> {
+    interface Parser<T> {
         T parse(JSONObject value) throws JSONException, ApiError;
     }
 
@@ -585,7 +589,8 @@ final class CheckinCenterClient {
     }
 
     void updateTaskSettings(String deviceToken, boolean enabled, String scheduleTime,
-                            int offsetMinutes, Callback<Task> callback) {
+                            int offsetMinutes, String shareAction, Boolean shareEnabled,
+                            Callback<Task> callback) {
         final String token;
         try {
             token = requirePrefix(deviceToken, "ccdevice1_", Operation.TASK_SETTINGS);
@@ -605,6 +610,7 @@ final class CheckinCenterClient {
             body.put("enabled", enabled);
             body.put("schedule_time", time);
             body.put("offset_minutes", offsetMinutes);
+            CheckinSharing.putChange(body, shareAction, shareEnabled);
         } catch (JSONException impossible) {
             deliverError(callback, protocolError(Operation.TASK_SETTINGS));
             return;
@@ -930,7 +936,7 @@ final class CheckinCenterClient {
                 taskJson.optInt("offset_minutes", 0), taskJson.optString("window_start", ""),
                 taskJson.optString("window_end", ""),
                 taskJson.optBoolean("platform_blocked", false),
-                taskJson.optBoolean("sign_blocked", false));
+                taskJson.optBoolean("sign_blocked", false), CheckinSharing.parse(taskJson));
     }
 
     private static RunResult parseRunResult(JSONObject value) throws ApiError {
@@ -1093,6 +1099,8 @@ final class CheckinCenterClient {
                     message = "赞助记录不存在";
                 } else if (operation == Operation.LEADERBOARD) {
                     message = "排行榜暂不可用";
+                } else if (operation == Operation.HISTORY) {
+                    message = "签到历史记录暂不可用";
                 } else {
                     message = "签到任务尚未配置";
                 }
@@ -1233,33 +1241,7 @@ final class CheckinCenterClient {
     }
 
     static boolean validRegistrationEmail(String value) {
-        String normalized = value == null ? "" : value.trim();
-        if (normalized.isEmpty() || normalized.length() > 254
-                || normalized.indexOf('@') != normalized.lastIndexOf('@')) return false;
-        int separator = normalized.lastIndexOf('@');
-        if (separator <= 0 || separator == normalized.length() - 1) return false;
-        for (int index = 0; index < normalized.length(); index++) {
-            if (Character.isWhitespace(normalized.charAt(index))) return false;
-        }
-        String local = normalized.substring(0, separator);
-        if (local.length() > 64 || local.startsWith(".") || local.endsWith(".")
-                || local.contains("..")
-                || !local.matches("[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+")) return false;
-        final String asciiDomain;
-        try {
-            asciiDomain = IDN.toASCII(normalized.substring(separator + 1));
-        } catch (IllegalArgumentException ignored) {
-            return false;
-        }
-        if (asciiDomain.length() > 253) return false;
-        String[] labels = asciiDomain.split("\\.", -1);
-        if (labels.length < 2) return false;
-        for (String label : labels) {
-            if (!label.matches("[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")) {
-                return false;
-            }
-        }
-        return true;
+        return CheckinServiceValidation.email(value);
     }
 
     static boolean validRegistrationChallengeId(String value) {
@@ -1271,21 +1253,12 @@ final class CheckinCenterClient {
     }
 
     static boolean validServicePassword(String value) {
-        if (value == null || value.length() < 12 || value.length() > 128
-                || !value.trim().equals(value)) return false;
-        boolean lower = false;
-        boolean upper = false;
-        boolean digit = false;
-        boolean symbol = false;
-        for (int index = 0; index < value.length(); index++) {
-            char character = value.charAt(index);
-            if (character >= 'a' && character <= 'z') lower = true;
-            else if (character >= 'A' && character <= 'Z') upper = true;
-            else if (character >= '0' && character <= '9') digit = true;
-            else if (!Character.isWhitespace(character)) symbol = true;
-        }
-        return (lower ? 1 : 0) + (upper ? 1 : 0) + (digit ? 1 : 0)
-                + (symbol ? 1 : 0) >= 3;
+        return CheckinServiceValidation.password(value);
+    }
+
+    <T> void accountRequest(Operation operation, String method, String path, String token,
+                            JSONObject body, Parser<T> parser, Callback<T> callback) {
+        submit(callback, () -> request(operation, method, path, token, body, parser));
     }
 
     private <T> void submit(Callback<T> callback, Call<T> call) {

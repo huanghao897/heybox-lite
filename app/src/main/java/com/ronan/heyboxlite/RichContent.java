@@ -2,11 +2,9 @@ package com.ronan.heyboxlite;
 
 import android.text.Html;
 import android.os.Build;
-
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -25,15 +23,26 @@ final class RichContent {
         static final int HEADING = 2;
         static final int CAPTION = 3;
         static final int QUOTE = 4;
+        static final int GAME_CARD = 5;
 
         final boolean image;
         final int kind;
         final String value;
+        final JSONObject gameObject;
 
         private Block(int kind, String value) {
+            this(kind, value, null);
+        }
+
+        private Block(int kind, String value, JSONObject gameObject) {
             this.kind = kind;
             this.image = kind == IMAGE;
             this.value = value;
+            this.gameObject = gameObject;
+        }
+
+        static Block gameCard(JSONObject object, String appId) {
+            return new Block(GAME_CARD, appId == null ? "" : appId, object);
         }
     }
 
@@ -66,7 +75,7 @@ final class RichContent {
             "ops", "blocks", "children", "child", "items", "list", "nodes",
             "paragraphs", "spans", "elements", "attrs", "models", "model",
             "content", "contents", "data", "content_attrs", "contentAttrs",
-            "content_attr", "contentAttr", "raw_content", "rawContent"
+            "content_attr", "contentAttr", "raw_content", "rawContent", "games"
     };
     private static final String[] TEXT_KEYS = {
             "commentText", "comment_text", "text", "content", "html", "value", "caption",
@@ -110,6 +119,7 @@ final class RichContent {
                     .append(" blocks=").append(candidate.blocks.size())
                     .append(" textBlocks=").append(textCount(candidate.blocks))
                     .append(" images=").append(imageCount(candidate.blocks))
+                    .append(" games=").append(RichContentSupport.gameCount(candidate.blocks))
                     .append(" readable=").append(readableLength(candidate.blocks))
                     .append(" score=").append(bodyScore(candidate, key, articleMode))
                     .append('\n');
@@ -124,6 +134,7 @@ final class RichContent {
                 .append("blocks=").append(finalBlocks.size())
                 .append(" textBlocks=").append(textCount(finalBlocks))
                 .append(" images=").append(imageCount(finalBlocks))
+                .append(" games=").append(RichContentSupport.gameCount(finalBlocks))
                 .append(" readable=").append(readableLength(finalBlocks))
                 .append(" trailingImageRun=").append(trailingImageRun(finalBlocks))
                 .append('\n');
@@ -148,6 +159,8 @@ final class RichContent {
                     return candidate.blocks;
                 }
                 int score = bodyScore(candidate, key, articleMode);
+                // Prefer typed game-card streams when feed metadata is wrong.
+                if (RichContentSupport.hasGameCards(candidate.blocks)) score += 10000;
                 if (score > bestScore) {
                     bestReadable = candidate;
                     bestScore = score;
@@ -203,7 +216,7 @@ final class RichContent {
     private static int textCount(List<Block> blocks) {
         if (blocks == null) return 0;
         int count = 0;
-        for (Block block : blocks) if (!block.image) count++;
+        for (Block block : blocks) if (RichContentSupport.isReadableBlock(block)) count++;
         return count;
     }
 
@@ -214,20 +227,7 @@ final class RichContent {
             String raw = (String) value;
             String jsonText = RichTransportDecoder.decodeJson(raw).trim();
             if (jsonText.isEmpty()) return result;
-            try {
-                addDetailArray(result, new JSONArray(jsonText), articleMode, 0);
-                return result;
-            } catch (JSONException ignored) {
-            } catch (StackOverflowError error) {
-                return result;
-            }
-            try {
-                addDetailObject(result, new JSONObject(jsonText), articleMode, 0);
-                return result;
-            } catch (JSONException ignored) {
-            } catch (StackOverflowError error) {
-                return result;
-            }
+            if (addJsonContainer(result, jsonText, articleMode)) return result;
             if (addStructured(result.blocks, result.imageUrls, jsonText)
                     && !result.blocks.isEmpty()) {
                 return result;
@@ -248,7 +248,27 @@ final class RichContent {
         }
         return result;
     }
-
+    private static boolean addJsonContainer(ParseResult result, String value,
+                                            boolean articleMode) {
+        String candidate = value;
+        for (int pass = 0; pass < 2; pass++) {
+            try {
+                if (candidate.startsWith("[")) {
+                    addDetailArray(result, new JSONArray(candidate), articleMode, 0);
+                    return true;
+                }
+                if (candidate.startsWith("{")) {
+                    addDetailObject(result, new JSONObject(candidate), articleMode, 0);
+                    return true;
+                }
+            } catch (JSONException ignored) {
+            } catch (StackOverflowError error) {
+                return true;
+            }
+            candidate = candidate.replace("\\\"", "\"");
+        }
+        return false;
+    }
     private static void addDetailArray(ParseResult result, JSONArray array,
                                        boolean articleMode, int depth) {
         if (depth > MAX_JSON_DEPTH) return;
@@ -263,11 +283,17 @@ final class RichContent {
             }
         }
     }
-
     private static void addDetailObject(ParseResult result, JSONObject item,
                                         boolean articleMode, int depth) {
         if (depth > MAX_JSON_DEPTH) return;
         String type = item.optString("type").toLowerCase(Locale.ROOT);
+        // `cpt=game` is a web component, not a native typed-text card. It is
+        // parsed by ArticleGameCards where the surrounding article payload is
+        // available; accepting it here turns platform descriptors into cards.
+        if (RichGameCardParser.isGameNode(item)) {
+            result.blocks.add(RichGameCardParser.block(item));
+            return;
+        }
         if (isImageType(type)) {
             addImage(result.blocks, result.imageUrls, detailImage(item));
             addCaption(result.blocks, imageCaption(item));
@@ -289,6 +315,8 @@ final class RichContent {
             return;
         }
         if (!text.isEmpty()) {
+            String nested = RichTransportDecoder.decodeJson(text).trim();
+            if ((nested.startsWith("[") || nested.startsWith("{")) && addJsonContainer(result, nested, articleMode)) return;
             addArticleHtml(result.blocks, result.imageUrls, text);
         }
         if (hasText && isSelfContainedTextType(type)) return;
@@ -305,15 +333,17 @@ final class RichContent {
             }
         }
     }
-
     private static boolean hasReadableBody(ParseResult result) {
-        return result != null && hasReadableText(result.blocks);
+        return result != null && (hasReadableText(result.blocks)
+                || RichContentSupport.hasGameCards(result.blocks));
     }
-
     static boolean hasReadableText(List<Block> blocks) {
         return readableLength(blocks) >= 4;
     }
 
+    static boolean hasGameCards(List<Block> blocks) {
+        return RichContentSupport.hasGameCards(blocks);
+    }
     private static void addFallbackImagesIfNeeded(ParseResult result,
                                                   JSONArray fallbackImages,
                                                   boolean allowWithText) {
@@ -322,11 +352,11 @@ final class RichContent {
             addFallbackImages(result.blocks, result.imageUrls, fallbackImages);
         }
     }
-
     private static void mergeBlocks(ParseResult target, ParseResult extra) {
         if (extra == null) return;
         for (Block block : extra.blocks) {
             if (block.image) addImage(target.blocks, target.imageUrls, block.value);
+            else if (RichGameCardParser.isCard(block)) target.blocks.add(block);
             else addTextBlock(target, block.value);
         }
     }
@@ -334,7 +364,8 @@ final class RichContent {
     private static void addTextBlock(ParseResult result, String value) {
         if (value == null || value.trim().isEmpty()) return;
         for (Block block : result.blocks) {
-            if (!block.image && value.equals(block.value)) return;
+            if (!block.image && !RichGameCardParser.isCard(block)
+                    && value.equals(block.value)) return;
         }
         result.blocks.add(new Block(Block.TEXT, value));
     }
@@ -350,7 +381,7 @@ final class RichContent {
         if (blocks == null) return 0;
         int length = 0;
         for (Block block : blocks) {
-            if (!block.image) {
+            if (RichContentSupport.isReadableBlock(block)) {
                 length += WHITESPACE.matcher(block.value).replaceAll("").length();
             }
         }
@@ -458,12 +489,18 @@ final class RichContent {
     private static void addObject(List<Block> blocks, Set<String> imageUrls, JSONObject item,
                                   int depth) {
         if (depth > MAX_JSON_DEPTH) return;
+        String type = item.optString("type").toLowerCase(Locale.ROOT);
+        // Keep web `cpt=game` components out of the generic text parser. The
+        // article parser handles them with their surrounding metadata.
+        if (RichGameCardParser.isGameNode(item)) {
+            blocks.add(RichGameCardParser.block(item));
+            return;
+        }
         Object insert = item.opt("insert");
         if (insert != null) {
             addInsert(blocks, imageUrls, insert, depth + 1);
         }
 
-        String type = item.optString("type").toLowerCase(Locale.ROOT);
         if (type.contains("video")) return;
         String image = firstImage(item);
         if (!image.isEmpty() && (isImageType(type) || !hasReadableContent(item))) {
@@ -546,6 +583,11 @@ final class RichContent {
             addHtml(blocks, imageUrls, (String) insert);
         } else if (insert instanceof JSONObject) {
             JSONObject object = (JSONObject) insert;
+            if (RichGameCardParser.isGameContainer(object)
+                    || RichGameCardParser.isGameNode(object)) {
+                addObject(blocks, imageUrls, object, depth + 1);
+                return;
+            }
             String image = firstImage(object);
             if (!image.isEmpty()) {
                 addImage(blocks, imageUrls, image);
@@ -680,14 +722,16 @@ final class RichContent {
         if (found) {
             String suffix = source.substring(lastEnd).trim();
             addReadableFragment(blocks, imageUrls, suffix);
-            if (imageCount(blocks) == imagesBefore) {
+            if (imageCount(blocks) == imagesBefore
+                    && !RichContentSupport.hasGameCards(blocks)) {
                 addLooseImages(blocks, imageUrls, source);
             }
             return true;
         }
         if (looksStructured(source)) {
             addReadableFragment(blocks, imageUrls, source);
-            if (imageCount(blocks) == imagesBefore) {
+            if (imageCount(blocks) == imagesBefore
+                    && !RichContentSupport.hasGameCards(blocks)) {
                 addLooseImages(blocks, imageUrls, source);
             }
             return true;
@@ -756,7 +800,7 @@ final class RichContent {
         List<Block> blocks = parse(source, null);
         StringBuilder value = new StringBuilder();
         for (Block block : blocks) {
-            if (block.image || block.value.isEmpty()) continue;
+            if (!RichContentSupport.isReadableBlock(block) || block.value.isEmpty()) continue;
             if (value.length() > 0) value.append('\n');
             value.append(block.value);
         }
@@ -787,7 +831,7 @@ final class RichContent {
         List<Block> blocks = parse(source, null);
         StringBuilder value = new StringBuilder();
         for (Block block : blocks) {
-            if (block.image || block.value.isEmpty()) continue;
+            if (!RichContentSupport.isReadableBlock(block) || block.value.isEmpty()) continue;
             if (value.length() > 0) value.append(' ');
             value.append(block.value);
         }
@@ -810,10 +854,10 @@ final class RichContent {
     private static void addHtml(List<Block> blocks, Set<String> imageUrls, String html) {
         addArticleHtml(blocks, imageUrls, html);
     }
-
     private static void addArticleHtml(List<Block> blocks, Set<String> imageUrls,
                                        String html) {
         if (html == null || html.isEmpty()) return;
+        html = ArticleGameMarkupScanner.replaceGameMarkers(html);
         html = normalizeInlineEmojis(html);
         Matcher matcher = IMAGE.matcher(html);
         int start = 0;
@@ -825,7 +869,6 @@ final class RichContent {
         }
         addArticleSegment(blocks, html.substring(start));
     }
-
     /** 先拆 blockquote（引用块），再拆 h1-h6 / figcaption，保留正文层级。 */
     private static void addArticleSegment(List<Block> blocks, String html) {
         if (html == null || html.isEmpty()) return;
@@ -838,7 +881,6 @@ final class RichContent {
         }
         addHeadingSegment(blocks, html.substring(start));
     }
-
     private static void addHeadingSegment(List<Block> blocks, String html) {
         if (html == null || html.isEmpty()) return;
         Matcher matcher = HEADING_TAG.matcher(html);
@@ -856,7 +898,6 @@ final class RichContent {
         }
         addArticleText(blocks, html.substring(start));
     }
-
     /** 引用块：保留内部换行，剥掉其余标签，渲染端显示为左竖线灰字。 */
     private static void addQuote(List<Block> blocks, String html) {
         if (html == null || html.isEmpty()) return;
@@ -873,7 +914,6 @@ final class RichContent {
         if (value.isEmpty() || isStructuredNoise(value)) return;
         blocks.add(new Block(Block.QUOTE, value));
     }
-
     /** 图片标签上直接携带的图注（编辑器写入的描述属性）。 */
     private static String captionFromTag(String tag) {
         if (tag == null || tag.isEmpty()) return "";
@@ -884,7 +924,6 @@ final class RichContent {
                 attribute(attrs, "data-caption"),
                 attribute(attrs, "caption"));
     }
-
     private static String imageFromTag(String tag) {
         if (tag == null || tag.isEmpty()) return "";
         String attrs = tag.replaceFirst("(?is)^\\s*<img\\b", "")
@@ -913,9 +952,21 @@ final class RichContent {
         }
         return "";
     }
-
     private static void addArticleText(List<Block> blocks, String html) {
         if (html == null || html.isEmpty()) return;
+        html = ArticleGameMarkupScanner.replaceGameMarkers(html);
+        List<String> parts = ArticleGameMarkupScanner.splitGameTokens(html);
+        if (parts.size() > 1 || ArticleGameMarkupScanner.isGameToken(parts.get(0))) {
+            for (String part : parts) {
+                if (ArticleGameMarkupScanner.isGameToken(part)) {
+                    blocks.add(ArticleGameMarkupScanner.block(
+                            ArticleGameMarkupScanner.gameTokenId(part)));
+                } else {
+                    addArticleText(blocks, part);
+                }
+            }
+            return;
+        }
         String value = html
                 .replaceAll("(?is)<br\\s*/?>", "\n")
                 .replaceAll("(?is)<li\\b[^>]*>", "\n- ")
@@ -1029,7 +1080,6 @@ final class RichContent {
         if (dot > 0) name = name.substring(0, dot);
         return name.matches("(?i)(cube|heygirl)[-_].+") ? name : "";
     }
-
     private static boolean looksImageUrl(String url) {
         if (url == null) return false;
         String value = url.toLowerCase(Locale.ROOT);
@@ -1083,10 +1133,12 @@ final class RichContent {
         if (isStructuredNoise(value)) return;
         if (value.isEmpty()) return;
         for (Block block : blocks) {
-            if (!block.image && value.equals(block.value)) return;
+            if (!block.image && !RichGameCardParser.isCard(block)
+                    && value.equals(block.value)) return;
         }
         blocks.add(new Block(Block.TEXT, value));
     }
+
 
     /** 文章小标题（h1-h6 / 富文本 header 类型），渲染端会加粗放大显示。 */
     private static void addHeading(List<Block> blocks, String value) {
@@ -1155,7 +1207,6 @@ final class RichContent {
                 || (compact.startsWith("https://") && compact.contains("imgheybox")
                 && compact.contains("/thumb."));
     }
-
     private static void addImage(List<Block> blocks, Set<String> imageUrls, String url) {
         if (url == null) return;
         String value = decodeHtml(url).replace("\\/", "/").trim();
@@ -1165,7 +1216,6 @@ final class RichContent {
         if (!value.startsWith("https://")) return;
         if (imageUrls.add(imageKey(value))) blocks.add(new Block(Block.IMAGE, value));
     }
-
     private static String imageKey(String value) {
         if (value == null) return "";
         String key = value.trim().replace("\\/", "/");
@@ -1249,6 +1299,8 @@ final class RichContent {
             if (block.image) {
                 out.append("IMG key=").append(brief(imageKey(block.value), 180))
                         .append(" url=").append(brief(block.value, 220));
+            } else if (RichGameCardParser.isCard(block)) {
+                out.append("GAME appid=").append(brief(block.value, 80));
             } else {
                 String label = block.kind == Block.HEADING ? "HEAD"
                         : block.kind == Block.CAPTION ? "CAP"

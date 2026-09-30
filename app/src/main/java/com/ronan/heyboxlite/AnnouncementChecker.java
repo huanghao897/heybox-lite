@@ -98,25 +98,27 @@ final class AnnouncementChecker {
                 JSONObject object = array.optJSONObject(i);
                 if (object == null) continue;
                 Item item = parseItem(object, i);
-                if (!item.content.isEmpty() || !item.title.isEmpty()) items.add(item);
+                if (item.enabled && (!item.content.isEmpty() || !item.title.isEmpty())) items.add(item);
             }
             return items;
         }
         Item item = parseItem(payload, 0);
-        if (!item.content.isEmpty() || !item.title.isEmpty()) items.add(item);
+        if (item.enabled && (!item.content.isEmpty() || !item.title.isEmpty())) items.add(item);
         return items;
     }
 
     private static Item parseItem(JSONObject object, int index) {
         String title = firstNonEmpty(object.optString("title"),
-                object.optString("name"), "公告");
+                object.optString("name"));
         String content = firstNonEmpty(object.optString("content"),
                 object.optString("message"), object.optString("body"));
         String updatedAt = firstNonEmpty(object.optString("updatedAt"),
                 object.optString("updated_at"), object.optString("time"));
         String id = firstNonEmpty(object.optString("id"), updatedAt, title + "-" + index);
         String level = firstNonEmpty(object.optString("level"), "normal");
-        boolean enabled = object.optBoolean("enabled", true);
+        boolean enabled = AnnouncementPolicy.active(object.optBoolean("enabled", true),
+                object.optLong("startsAt", 0), object.optLong("endsAt", 0),
+                System.currentTimeMillis());
         boolean onceOnly = object.optBoolean("onceOnly", true);
         return new Item(id, title, content, level, updatedAt, enabled, onceOnly);
     }

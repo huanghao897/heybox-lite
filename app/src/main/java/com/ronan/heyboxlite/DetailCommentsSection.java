@@ -73,24 +73,35 @@ final class DetailCommentsSection {
         heading.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = text("评论 " + count(comments), 14.0f, this.tokens.text);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        heading.addView(title, new LinearLayout.LayoutParams(0, dp(32), 1.0f));
-        TextView sort = text("热门", 11.0f, this.tokens.muted);
-        sort.setGravity(Gravity.CENTER);
-        setSortIcon(sort);
-        heading.addView(sort, new LinearLayout.LayoutParams(dp(60), dp(32)));
+        heading.addView(title, new LinearLayout.LayoutParams(0, dp(28), 1.0f));
+        LinearLayout tabs = new LinearLayout(this.activity);
+        tabs.setGravity(Gravity.CENTER_VERTICAL);
+        tabs.setPadding(dp(2), dp(2), dp(2), dp(2));
+        Compat.setBackground(tabs, UiComponents.round(this.activity,
+                this.tokens.panelElevated, 7, this.session.uiScale() / 100f));
+        TextView hot = sortTab("热门");
+        TextView recent = sortTab("最新");
+        tabs.addView(hot, new LinearLayout.LayoutParams(dp(34), dp(22)));
+        tabs.addView(recent, new LinearLayout.LayoutParams(dp(34), dp(22)));
+        heading.addView(tabs, new LinearLayout.LayoutParams(-2, dp(26)));
         surface.addView(heading);
-
         LinearLayout list = vertical();
         surface.addView(list);
         boolean[] latest = {false};
         render(list, comments, false, rendered);
-        sort.setOnClickListener(view -> {
-            latest[0] = !latest[0];
-            sort.setText(latest[0] ? "最新" : "热门");
-            setSortIcon(sort);
-            UiComponents.press(sort);
+        selectTab(hot, true);
+        selectTab(recent, false);
+        android.view.View.OnClickListener select = view -> {
+            boolean next = view == recent;
+            if (next == latest[0]) return;
+            latest[0] = next;
+            selectTab(hot, !next);
+            selectTab(recent, next);
+            UiComponents.press(view);
             render(list, comments, latest[0], null);
-        });
+        };
+        hot.setOnClickListener(select);
+        recent.setOnClickListener(select);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.topMargin = dp(10);
         page.addView(surface, params);
@@ -129,13 +140,22 @@ final class DetailCommentsSection {
         }
     }
 
-    private void setSortIcon(TextView view) {
-        android.graphics.drawable.Drawable icon = Compat.tintedDrawable(
-                this.activity, R.drawable.ic_sort, this.tokens.muted);
-        if (icon == null) return;
-        icon.setBounds(0, 0, dp(11), dp(11));
-        view.setCompoundDrawables(icon, null, null, null);
-        view.setCompoundDrawablePadding(dp(4));
+    private TextView sortTab(String label) {
+        TextView view = text(label, 10.5f, this.tokens.text);
+        view.setGravity(Gravity.CENTER);
+        view.setMinWidth(0);
+        view.setMinimumWidth(0);
+        view.setSingleLine(true);
+        return view;
+    }
+
+    private void selectTab(TextView view, boolean selected) {
+        view.setSelected(selected);
+        view.setTextColor(selected ? ThemeTokens.contrast(this.tokens.text) : this.tokens.muted);
+        view.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        Compat.setBackground(view, UiComponents.round(this.activity,
+                selected ? this.tokens.text : android.graphics.Color.TRANSPARENT,
+                6, this.session.uiScale() / 100f));
     }
 
     private static int count(JSONArray comments) {

@@ -28,10 +28,24 @@ final class CheckinTaskSettingsFlow {
     }
 
     void save(boolean enabled, String scheduleTime, int offsetMinutes) {
+        save(enabled, scheduleTime, offsetMinutes, null, null);
+    }
+
+    void share(String action, boolean enabled) {
+        if (host.status() == null) return;
+        CheckinCenterClient.Task task = host.status().task;
+        if (!task.sharing.available) return;
+        save(task.enabled, CheckinTaskSettingsView.normalizedTime(task), task.offsetMinutes,
+                action, enabled);
+    }
+
+    private void save(boolean enabled, String scheduleTime, int offsetMinutes,
+                      String shareAction, Boolean shareEnabled) {
         if (closed || requestInFlight || host.status() == null) return;
         requestInFlight = true;
         host.setControlsEnabled(false);
         coordinator.updateTaskSettings(enabled, scheduleTime, offsetMinutes,
+                shareAction, shareEnabled,
                 new CheckinCenterClient.Callback<CheckinCenterClient.Task>() {
                     @Override
                     public void onSuccess(CheckinCenterClient.Task value) {

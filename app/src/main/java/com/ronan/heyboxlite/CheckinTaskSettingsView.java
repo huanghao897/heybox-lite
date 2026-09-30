@@ -26,6 +26,7 @@ final class CheckinTaskSettingsView {
     private View timeButton;
     private Button offsetMinus;
     private Button offsetPlus;
+    private LinearLayout shareSettings;
 
     CheckinTaskSettingsView(Activity activity, SessionStore session, ThemeTokens tokens,
                             SettingsUi settingsUi, CheckinCenterUi ui,
@@ -62,6 +63,21 @@ final class CheckinTaskSettingsView {
             settings.addView(warning);
         }
         page.addView(settings);
+        settingsUi.addSection(page, "分享任务");
+        shareSettings = settingsUi.list();
+        CheckinSharing sharing = task.sharing;
+        if (sharing.available) {
+            shareSettings.addView(settingsUi.toggle("分享帖子", null, null, sharing.post,
+                    checked -> flow.share("share_post", checked)));
+            shareSettings.addView(settingsUi.toggle("分享游戏", null, null, sharing.game,
+                    checked -> flow.share("share_game", checked)));
+            shareSettings.addView(settingsUi.toggle("分享评价", null, null, sharing.review,
+                    checked -> flow.share("share_review", checked)));
+        } else {
+            settingsUi.addInfoEntry(shareSettings, "暂未开放", null, null, R.drawable.il_info);
+        }
+        setEnabledTree(shareSettings, sharing.available && !flow.requestInFlight());
+        page.addView(shareSettings);
     }
 
     void setControlsEnabled(boolean enabled) {
@@ -69,6 +85,7 @@ final class CheckinTaskSettingsView {
         if (timeButton != null) timeButton.setEnabled(enabled);
         if (offsetMinus != null) offsetMinus.setEnabled(enabled);
         if (offsetPlus != null) offsetPlus.setEnabled(enabled);
+        setEnabledTree(shareSettings, enabled);
     }
 
     void clear() {
@@ -76,6 +93,7 @@ final class CheckinTaskSettingsView {
         timeButton = null;
         offsetMinus = null;
         offsetPlus = null;
+        shareSettings = null;
     }
 
     private void showTimePicker(CheckinCenterClient.Task task) {
@@ -105,26 +123,32 @@ final class CheckinTaskSettingsView {
 
         TextView title = ui.label("随机偏移", 15f, tokens.text);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        row.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout group = ui.column(android.graphics.Color.TRANSPARENT);
+        group.addView(title);
+        row.addView(group, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout stepper = new LinearLayout(activity);
+        stepper.setGravity(Gravity.CENTER_VERTICAL);
+        ui.addTop(group, stepper, 6);
+        title.setTextSize(13f * session.textScale() / 100f);
 
         offsetMinus = ui.compactButton("-");
         offsetMinus.setContentDescription("减少随机偏移");
         offsetMinus.setEnabled(!flow.requestInFlight() && task.offsetMinutes > 0);
         offsetMinus.setOnClickListener(view -> flow.save(task.enabled,
                 normalizedTime(task), Math.max(0, task.offsetMinutes - 30)));
-        row.addView(offsetMinus, new LinearLayout.LayoutParams(dp(32), dp(32)));
+        stepper.addView(offsetMinus, new LinearLayout.LayoutParams(dp(32), dp(32)));
 
         TextView value = ui.body(offsetLabel(task.offsetMinutes), tokens.text);
         value.setGravity(Gravity.CENTER);
         value.setSingleLine(true);
-        row.addView(value, new LinearLayout.LayoutParams(dp(roundLayout ? 58 : 66), dp(32)));
+        stepper.addView(value, new LinearLayout.LayoutParams(0, dp(32), 1f));
 
         offsetPlus = ui.compactButton("+");
         offsetPlus.setContentDescription("增加随机偏移");
         offsetPlus.setEnabled(!flow.requestInFlight() && task.offsetMinutes < 720);
         offsetPlus.setOnClickListener(view -> flow.save(task.enabled,
                 normalizedTime(task), Math.min(720, task.offsetMinutes + 30)));
-        row.addView(offsetPlus, new LinearLayout.LayoutParams(dp(32), dp(32)));
+        stepper.addView(offsetPlus, new LinearLayout.LayoutParams(dp(32), dp(32)));
         return row;
     }
 

@@ -289,9 +289,8 @@ final class PostActionController {
 
     void updateFollowView(TextView view, boolean following) {
         view.setTag(following);
-        view.setText(this.roundLayout
-                ? following ? "✓" : "+"
-                : following ? "已关注" : "+ 关注");
+        view.setText(following ? "已关注" : "+ 关注");
+        view.setContentDescription(following ? "取消关注" : "关注");
         view.setTextColor(this.tokens.accent);
         GradientDrawable drawable = UiComponents.round(this.activity,
                 following ? this.tokens.softAccent() : Color.TRANSPARENT,

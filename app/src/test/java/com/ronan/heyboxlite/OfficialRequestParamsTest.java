@@ -53,7 +53,10 @@ public class OfficialRequestParamsTest {
         assertEquals("1", params.get("page"));
         assertEquals("20", params.get("limit"));
         assertEquals("1", params.get("is_first"));
+        assertEquals("hot", params.get("sort_filter"));
         assertEquals("0", params.get("owner_only"));
+        assertEquals("0", params.get("hide_cy"));
+        assertEquals("0", params.get("check_commented"));
         assertFalse(params.containsKey("index"));
     }
 
@@ -64,6 +67,16 @@ public class OfficialRequestParamsTest {
 
         assertEquals("1", video.get("has_video"));
         assertFalse(post.containsKey("has_video"));
+    }
+
+    @Test
+    public void articleWebViewUsesOfficialPreloadParameters() {
+        Map<String, String> params = OfficialRequestParams.articleWebView("42", "feed");
+
+        assertEquals("42", params.get("link_id"));
+        assertEquals("1", params.get("return_json"));
+        assertEquals("1", params.get("in_topic"));
+        assertEquals("feed", params.get("h_src"));
     }
 
     @Test
@@ -109,7 +122,8 @@ public class OfficialRequestParamsTest {
     @Test
     public void endpointPathsMatchOfficialRetrofitDeclarations() {
         assertEquals("/bbs/app/feeds", EndpointProvider.feeds());
-        assertEquals("/bbs/app/link/tree/v2", EndpointProvider.linkTreeV2());
+        assertEquals("/bbs/app/link/tree/v2", EndpointProvider.linkTree());
+        assertEquals("/bbs/app/link/web/view", EndpointProvider.linkWebView());
         assertEquals("/bbs/app/comment/sub/comments", EndpointProvider.subComments());
         assertEquals("/bbs/app/api/general/search/v1", EndpointProvider.search());
         assertEquals("/bbs/app/profile/user/link/list", EndpointProvider.profileUserLinks());

@@ -132,6 +132,7 @@ final class CheckinCenterCoordinator {
     }
 
     void updateTaskSettings(boolean enabled, String scheduleTime, int offsetMinutes,
+                            String shareAction, Boolean shareEnabled,
                             CheckinCenterClient.Callback<CheckinCenterClient.Task> callback) {
         String token = store.deviceToken();
         if (token.isEmpty()) {
@@ -140,7 +141,21 @@ final class CheckinCenterCoordinator {
             return;
         }
         client.updateTaskSettings(token, enabled, scheduleTime, offsetMinutes,
+                shareAction, shareEnabled,
                 authorizationAware(callback));
+    }
+
+    void getHistory(CheckinCenterClient.Callback<CheckinHistory> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.HISTORY, "尚未连接签到服务");
+            return;
+        }
+        new CheckinAccountApi(client).history(token, authorizationAware(callback));
+    }
+
+    CheckinAccountApi accountApi() {
+        return new CheckinAccountApi(client);
     }
 
     void runNow(CheckinCenterClient.Callback<CheckinCenterClient.RunResult> callback) {

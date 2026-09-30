@@ -11,7 +11,17 @@ final class DetailResponseNormalizer {
     private static final String[] LINK_SECTIONS = {
             "body", "stats", "access", "config", "share_info",
             "bbs_link_content", "game_comment_content", "web_content",
-            "roll_room_content"
+            "roll_room_content", "post_content_section", "postContentSection"
+    };
+    private static final String[] PRELOAD_KEYS = {
+            "communityPostPreload", "community_post_preload",
+            "post_content_section", "postContentSection",
+            "content_section", "contentSection", "preload_web_json_content",
+            "preloadWebJsonContent"
+    };
+    private static final String[] GAME_KEYS = {
+            "game", "game_details", "gameDetails", "game_tag_appids", "gameTagAppids",
+            "game_info", "gameInfo", "games"
     };
 
     private DetailResponseNormalizer() {}
@@ -25,8 +35,10 @@ final class DetailResponseNormalizer {
             JSONObject link = result.optJSONObject("link");
             if (link != null && link.optJSONObject("body") != null) {
                 JSONObject flattened = copy(link);
+                JSONObject body = link.optJSONObject("body");
                 for (String section : LINK_SECTIONS) {
-                    mergeMissing(flattened, link.optJSONObject(section));
+                    mergeMissingValues(flattened, link.opt(section));
+                    mergeMissingValues(flattened, body.opt(section));
                 }
                 result.put("link", flattened);
             }
@@ -66,6 +78,60 @@ final class DetailResponseNormalizer {
         }
     }
 
+    static void mergePreloadedContent(JSONObject response, JSONObject fallback) {
+        if (response == null) return;
+        JSONObject result = response.optJSONObject("result");
+        JSONObject link = result == null ? null : result.optJSONObject("link");
+        if (link == null) return;
+
+        Object preload = firstPresent(fallback, PRELOAD_KEYS);
+        if (preload == null) preload = firstPresent(result, PRELOAD_KEYS);
+        if (preload == null) preload = firstPresent(link, PRELOAD_KEYS);
+        if (preload != null && !link.has("_community_post_preload")) {
+            try {
+                link.put("_community_post_preload", preload);
+            } catch (JSONException exception) {
+                throw new IllegalStateException("Unable to merge post preload", exception);
+            }
+        }
+        mergeGameFields(link, result);
+        mergeGameFields(link, fallback);
+    }
+
+    static void mergeArticleWebContent(JSONObject response, JSONObject webResponse) {
+        if (response == null || webResponse == null) return;
+        JSONObject result = response.optJSONObject("result");
+        JSONObject link = result == null ? null : result.optJSONObject("link");
+        if (link == null) return;
+        try {
+            link.put("_article_web_view", webResponse);
+        } catch (JSONException exception) {
+            throw new IllegalStateException("Unable to merge article web content", exception);
+        }
+    }
+
+    private static Object firstPresent(JSONObject object, String... keys) {
+        if (object == null) return null;
+        for (String key : keys) {
+            Object value = object.opt(key);
+            if (value != null && value != JSONObject.NULL) return value;
+        }
+        return null;
+    }
+
+    private static void mergeGameFields(JSONObject target, JSONObject source) {
+        if (target == null || source == null) return;
+        try {
+            for (String key : GAME_KEYS) {
+                Object value = source.opt(key);
+                if (value == null || value == JSONObject.NULL) continue;
+                if (!target.has(key) || target.isNull(key)) target.put(key, value);
+            }
+        } catch (JSONException exception) {
+            throw new IllegalStateException("Unable to merge game fields", exception);
+        }
+    }
+
     private static JSONObject copy(JSONObject source) throws JSONException {
         JSONObject target = new JSONObject();
         Iterator<String> keys = source.keys();
@@ -83,6 +149,18 @@ final class DetailResponseNormalizer {
             String key = keys.next();
             if (!target.has(key) || target.isNull(key)) {
                 target.put(key, source.get(key));
+            }
+        }
+    }
+
+    private static void mergeMissingValues(JSONObject target, Object source) throws JSONException {
+        if (!(source instanceof JSONObject)) return;
+        JSONObject object = (JSONObject) source;
+        Iterator<String> keys = object.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (!target.has(key) || target.isNull(key)) {
+                target.put(key, object.get(key));
             }
         }
     }

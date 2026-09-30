@@ -51,7 +51,7 @@ final class FeedAdapter extends BaseAdapter {
     private final float textScale;
     private final boolean darkMode;
     private final boolean roundLayout;
-    private final int roundHorizontalPaddingPx;
+    private int roundHorizontalPaddingPx;
     private final int textColor;
     private final int mutedColor;
     private final int cardColor;
@@ -115,10 +115,11 @@ final class FeedAdapter extends BaseAdapter {
         coverTargetPx = dp(roundLayout ? 76 : compactScreen ? 88 : 104);
         if (!EmojiStore.isLoaded()) EmojiStore.whenReady(this::notifyDataSetChanged);
     }
-
     @Override public int getCount() { return items.size(); }
     @Override public FeedItem getItem(int position) { return items.get(position); }
     @Override public long getItemId(int position) { return position; }
+
+    void setParentAlreadyInset(boolean parentAlreadyInset) { if (roundLayout && parentAlreadyInset) roundHorizontalPaddingPx = 0; }
 
     @Override public void notifyDataSetChanged() {
         this.items = new ArrayList<>(this.sourceItems);
@@ -184,13 +185,17 @@ final class FeedAdapter extends BaseAdapter {
             Compat.setBackground(badge, UiComponents.softPill(context, tokens, uiScale));
             authorRow.addView(badge, new LinearLayout.LayoutParams(-2, dp(20)));
 
-            TextView follow = label(18, textColor);
+            TextView follow = label(roundLayout ? 10.5f : 18, textColor);
             follow.setGravity(Gravity.CENTER);
-            follow.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+            follow.setIncludeFontPadding(false);
+            follow.setSingleLine(true);
+            follow.setTypeface(Typeface.DEFAULT, roundLayout
+                    ? Typeface.BOLD : Typeface.NORMAL);
             follow.setContentDescription("关注");
             LinearLayout.LayoutParams followParams =
-                    new LinearLayout.LayoutParams(dp(30), dp(26));
-            followParams.leftMargin = dp(7);
+                    new LinearLayout.LayoutParams(dp(roundLayout ? 54 : 30),
+                            dp(roundLayout ? 28 : 26));
+            followParams.leftMargin = dp(roundLayout ? 5 : 7);
             authorRow.addView(follow, followParams);
 
             LinearLayout body = new LinearLayout(context);
@@ -240,11 +245,16 @@ final class FeedAdapter extends BaseAdapter {
             card.addView(actions, actionsParams);
 
             TextView topic = label(9.5f, mutedColor);
-            topic.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
+            topic.setGravity(Gravity.CENTER);
             topic.setSingleLine(true);
             topic.setEllipsize(TextUtils.TruncateAt.END);
-            topic.setPadding(0, 0, dp(6), 0);
-            actions.addView(topic, new LinearLayout.LayoutParams(0, dp(20), 1f));
+            topic.setMaxWidth(dp(roundLayout ? 76 : 110));
+            topic.setPadding(dp(roundLayout ? 5 : 7), 0,
+                    dp(roundLayout ? 5 : 7), 0);
+            Compat.setBackground(topic, UiComponents.softPill(context, tokens, uiScale));
+            actions.addView(topic, new LinearLayout.LayoutParams(-2, dp(20)));
+            actions.addView(new View(context),
+                    new LinearLayout.LayoutParams(0, 1, 1f));
             TextView likes = stat(R.drawable.official_comment_like_line);
             LinearLayout.LayoutParams likesParams =
                     new LinearLayout.LayoutParams(-2, dp(24));
@@ -355,14 +365,23 @@ final class FeedAdapter extends BaseAdapter {
                 && !item.authorId.equals(currentUserId);
         view.setVisibility(visible ? View.VISIBLE : View.GONE);
         if (!visible) return;
-        view.setText(item.following ? "✓" : "+");
-        view.setTextColor(item.following ? tokens.muted : textColor);
+        if (roundLayout) {
+            view.setText(item.following ? "已关注" : "+ 关注");
+            view.setTextColor(tokens.accent);
+            GradientDrawable background = round(
+                    item.following ? tokens.softAccent() : Color.TRANSPARENT, 14);
+            background.setStroke(Math.max(1, dp(1)), tokens.accent);
+            Compat.setBackground(view, background);
+        } else {
+            view.setText(item.following ? "✓" : "+");
+            view.setTextColor(item.following ? tokens.muted : textColor);
+            GradientDrawable background = round(tokens.panelElevated, 13);
+            background.setStroke(Math.max(1, dp(1)), tokens.hairline);
+            Compat.setBackground(view, background);
+        }
         view.setAlpha(item.followPending ? 0.55f : 1f);
         view.setEnabled(!item.followPending);
         view.setContentDescription(item.following ? "取消关注" : "关注");
-        GradientDrawable background = round(tokens.panelElevated, 13);
-        background.setStroke(Math.max(1, dp(1)), tokens.hairline);
-        Compat.setBackground(view, background);
     }
 
     private static final class PlainCopy {

@@ -28,10 +28,10 @@ final class LiteDialogPresenter {
         this.tokens = tokens;
     }
 
-    void show(String title, String message, String positiveText, Runnable positiveAction,
+    AlertDialog show(String title, String message, String positiveText, Runnable positiveAction,
               String negativeText, Runnable negativeAction,
               String neutralText, Runnable neutralAction) {
-        if (this.activity.isFinishing()) return;
+        if (this.activity.isFinishing()) return null;
 
         LinearLayout content = new LinearLayout(this.activity);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -44,7 +44,9 @@ final class LiteDialogPresenter {
         TextView titleView = text(title, 17.0f, this.tokens.text);
         titleView.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         titleView.setLineSpacing(0.0f, 1.08f);
-        content.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
+        if (!TextUtils.isEmpty(title)) {
+            content.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
+        }
 
         MaxHeightScrollView scroll = new MaxHeightScrollView(this.activity);
         scroll.setFillViewport(false);
@@ -52,7 +54,7 @@ final class LiteDialogPresenter {
         TextView body = text(message, 13.0f, this.tokens.text);
         body.setLineSpacing(dp(2), 1.18f);
         body.setTextIsSelectable(true);
-        body.setPadding(0, dp(10), 0, dp(2));
+        body.setPadding(0, TextUtils.isEmpty(title) ? 0 : dp(10), 0, dp(2));
         int availableHeight = this.activity.getResources().getDisplayMetrics().heightPixels - dp(230);
         scroll.setMaxHeight(Math.max(dp(96), Math.min(availableHeight, dp(330))));
         scroll.addView(body, new android.widget.FrameLayout.LayoutParams(-1, -2));
@@ -75,6 +77,7 @@ final class LiteDialogPresenter {
             dialog.getWindow().setLayout(dialogWidth(), -2);
         }
         Motions.dialogIn(content);
+        return dialog;
     }
 
     private void addAction(List<TextView> actions, String label, boolean primary,

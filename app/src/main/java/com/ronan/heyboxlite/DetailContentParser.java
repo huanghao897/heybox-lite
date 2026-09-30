@@ -43,7 +43,11 @@ final class DetailContentParser {
         List<RichContent.Block> blocks = link == null
                 ? RichContent.parse(fallback, fallbackImages)
                 : parseCached(link, fallbackImages);
-        if (!RichContent.hasReadableText(blocks) && fallback != null && !fallback.isEmpty()) {
+        if (link != null && ArticleGameCards.count(link) > 0) {
+            blocks = ArticleGameCards.merge(link, blocks);
+        }
+        if (!RichContent.hasReadableText(blocks) && !RichContent.hasGameCards(blocks)
+                && fallback != null && !fallback.isEmpty()) {
             List<RichContent.Block> fallbackBlocks =
                     RichContent.parse(fallback, (JSONArray) null);
             if (RichContent.hasReadableText(fallbackBlocks)) {

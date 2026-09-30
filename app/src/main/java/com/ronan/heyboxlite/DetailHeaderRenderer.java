@@ -92,14 +92,14 @@ final class DetailHeaderRenderer {
         copyParams.leftMargin = dp(this.roundLayout ? 8 : 9);
         row.addView(copy, copyParams);
 
-        int followBackground = this.session.darkMode()
-                ? ThemeTokens.blend(this.tokens.panel, this.tokens.text, 0.12f)
-                : ThemeTokens.blend(this.tokens.panel, this.tokens.text, 0.06f);
-        TextView follow = text(this.roundLayout ? "+" : "+ 关注",
-                this.roundLayout ? 17.0f : 11.0f, this.tokens.text);
+        TextView follow = text("+ 关注", 11.0f, this.tokens.text);
+        follow.setSingleLine(true);
+        follow.setIncludeFontPadding(false);
         follow.setGravity(Gravity.CENTER);
         follow.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        Compat.setBackground(follow, round(followBackground, 5));
+        follow.setPadding(dp(8), dp(6), dp(8), dp(6));
+        follow.setMinWidth(dp(this.roundLayout ? 56 : 62));
+        follow.setMinHeight(dp(32));
         String targetUserId = this.postActions.authorUserId(link, user);
         View.OnClickListener openUser = view ->
                 this.host.openUser(targetUserId, nameValue, avatarUrl);
@@ -107,8 +107,9 @@ final class DetailHeaderRenderer {
         copy.setOnClickListener(openUser);
         this.postActions.updateFollowView(follow,
                 this.postActions.isFollowing(link, user));
-        row.addView(follow, new LinearLayout.LayoutParams(
-                dp(this.roundLayout ? 38 : 62), dp(30)));
+        LinearLayout.LayoutParams followParams = new LinearLayout.LayoutParams(-2, -2);
+        followParams.leftMargin = dp(6);
+        row.addView(follow, followParams);
         follow.setOnClickListener(view ->
                 this.postActions.toggleFollow(follow, link, user, targetUserId));
         addTop(article, row, article.getChildCount() == 0 ? 0 : 14);
@@ -119,43 +120,60 @@ final class DetailHeaderRenderer {
         String section = metadata.name.isEmpty() ? fallback.topicName : metadata.name;
         String icon = metadata.icon.isEmpty() && section.equals(fallback.topicName)
                 ? fallback.topicIcon : metadata.icon;
-        if (!section.isEmpty()) {
-            LinearLayout sectionRow = new LinearLayout(this.activity);
-            sectionRow.setGravity(Gravity.CENTER_VERTICAL);
-            sectionRow.setPadding(dp(8), dp(6), dp(8), dp(6));
-            Compat.setBackground(sectionRow, round(this.tokens.panel, 6));
-            ImageView image = new ImageView(this.activity);
-            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            Compat.setBackground(image, round(this.tokens.panelElevated, 4));
-            Compat.clipToOutline(image);
-            sectionRow.addView(image, new LinearLayout.LayoutParams(dp(24), dp(24)));
-            if (!this.session.noImage() && !icon.isEmpty()) {
-                ImageLoader.intoPlain(image, icon, dp(24));
-            } else {
-                image.setImageDrawable(Compat.tintedDrawable(
-                        this.activity, R.drawable.il_globe, this.tokens.muted));
-            }
-            TextView name = text(section, 11.5f, this.tokens.text);
-            name.setMaxLines(2);
-            name.setEllipsize(TextUtils.TruncateAt.END);
-            LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, -2, 1f);
-            nameParams.leftMargin = dp(7);
-            sectionRow.addView(name, nameParams);
-            addTop(article, sectionRow, 9);
-        }
-
         List<String> tags = FeedMetadata.tags(link);
         tags.remove(section);
-        if (!tags.isEmpty()) {
-            StringBuilder copy = new StringBuilder();
-            for (String tag : tags) {
-                if (copy.length() > 0) copy.append("  ");
-                copy.append(tag.startsWith("#") ? tag : "#" + tag);
+        if (!section.isEmpty() || !tags.isEmpty()) {
+            LinearLayout tagRow = new LinearLayout(this.activity);
+            tagRow.setGravity(Gravity.CENTER_VERTICAL);
+            tagRow.setClipChildren(false);
+            if (!section.isEmpty()) addSectionChip(tagRow, section, icon);
+            if (!tags.isEmpty()) {
+                StringBuilder copy = new StringBuilder();
+                for (String tag : tags) {
+                    if (copy.length() > 0) copy.append("  ");
+                    copy.append(tag.startsWith("#") ? tag : "#" + tag);
+                }
+                TextView labels = text(copy.toString(), 10.5f, this.tokens.muted);
+                labels.setMaxLines(2);
+                labels.setEllipsize(TextUtils.TruncateAt.END);
+                labels.setLineSpacing(dp(3), 1f);
+                LinearLayout.LayoutParams labelParams =
+                        new LinearLayout.LayoutParams(0, -2, 1f);
+                if (!section.isEmpty()) labelParams.leftMargin = dp(6);
+                tagRow.addView(labels, labelParams);
             }
-            TextView tagRow = text(copy.toString(), 10.5f, this.tokens.muted);
-            tagRow.setLineSpacing(dp(3), 1f);
-            addTop(article, tagRow, 7);
+            addTop(article, tagRow, 9);
         }
+    }
+
+    private void addSectionChip(LinearLayout row, String section, String icon) {
+        LinearLayout chip = new LinearLayout(this.activity);
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setPadding(dp(5), 0, dp(9), 0);
+        Compat.setBackground(chip, UiComponents.softPill(
+                this.activity, this.tokens, this.session.uiScale() / 100.0f));
+
+        ImageView image = new ImageView(this.activity);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        Compat.setBackground(image, round(this.tokens.panelElevated, 4));
+        Compat.clipToOutline(image);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                dp(16), dp(16));
+        imageParams.rightMargin = dp(5);
+        chip.addView(image, imageParams);
+        if (!this.session.noImage() && !icon.isEmpty()) {
+            ImageLoader.intoPlain(image, icon, dp(16));
+        } else {
+            image.setImageDrawable(Compat.tintedDrawable(
+                    this.activity, R.drawable.il_globe, this.tokens.muted));
+        }
+
+        TextView label = text(section, 10.5f, this.tokens.text);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.END);
+        label.setMaxWidth(dp(this.roundLayout ? 84 : 120));
+        chip.addView(label, new LinearLayout.LayoutParams(-2, -2));
+        row.addView(chip, new LinearLayout.LayoutParams(-2, dp(26)));
     }
 
     String firstTopicName(JSONObject link, String fallbackName) {

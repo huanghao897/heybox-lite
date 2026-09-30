@@ -7,6 +7,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
 
+import java.util.List;
+
 public class DetailResponseNormalizerTest {
     @Test
     public void preservesLegacyFlattenedResponse() throws Exception {
@@ -78,6 +80,29 @@ public class DetailResponseNormalizerTest {
     }
 
     @Test
+    public void preservesOfficialTypedGameCardFromV2BodyText() throws Exception {
+        JSONArray typedText = new JSONArray()
+                .put(new JSONObject().put("type", "text").put("text", "荒野大镖客：救赎2"))
+                .put(new JSONObject().put("type", "game_card").put("appid", "1174180"));
+        JSONObject nestedLink = new JSONObject()
+                .put("body", new JSONObject()
+                        .put("link_id", "185016578")
+                        .put("title", "夏促推荐")
+                        .put("is_article", 1)
+                        .put("text", typedText.toString()));
+        JSONObject response = new JSONObject().put("result", new JSONObject()
+                .put("link", nestedLink));
+
+        JSONObject normalized = DetailResponseNormalizer.normalize(response);
+        JSONObject link = normalized.getJSONObject("result").getJSONObject("link");
+        List<RichContent.Block> blocks = ArticleGameCards.merge(link,
+                new java.util.ArrayList<RichContent.Block>());
+
+        assertEquals(1, cardCount(blocks));
+        assertEquals("1174180", card(blocks).value);
+    }
+
+    @Test
     public void movesVideoDetailCommentVariantsIntoRendererField() throws Exception {
         JSONArray comments = new JSONArray().put(new JSONObject()
                 .put("comment", new JSONArray().put(new JSONObject()
@@ -134,5 +159,20 @@ public class DetailResponseNormalizerTest {
         return new JSONObject().put("result", new JSONObject()
                 .put("link", link)
                 .put("comments", comments));
+    }
+
+    private static int cardCount(java.util.List<RichContent.Block> blocks) {
+        int count = 0;
+        for (RichContent.Block block : blocks) {
+            if (RichGameCardParser.isCard(block)) count++;
+        }
+        return count;
+    }
+
+    private static RichContent.Block card(java.util.List<RichContent.Block> blocks) {
+        for (RichContent.Block block : blocks) {
+            if (RichGameCardParser.isCard(block)) return block;
+        }
+        return null;
     }
 }

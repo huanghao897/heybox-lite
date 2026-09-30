@@ -98,13 +98,13 @@ final class CommentRenderer {
                     group.optInt("child_num"));
             if (!replies.isEmpty() || expected > 0) {
                 LinearLayout replySection = vertical(Color.TRANSPARENT);
-                replySection.setPadding(dp(8), dp(3), dp(8), dp(3));
-                Compat.setBackground(replySection, roundStroke(
-                        this.tokens.faintAccent(), 12, this.tokens.hairline, 1));
+                replySection.setPadding(dp(this.roundLayout ? 5 : 8), dp(3),
+                        dp(this.roundLayout ? 5 : 8), dp(3));
+                Compat.setBackground(replySection, round(this.tokens.faintAccent(), 6));
                 LinearLayout.LayoutParams sectionParams =
                         new LinearLayout.LayoutParams(-1, -2);
                 sectionParams.topMargin = dp(5);
-                sectionParams.leftMargin = dp(44);
+                sectionParams.leftMargin = dp(this.roundLayout ? 6 : 44);
                 card.addView(replySection, sectionParams);
                 LinearLayout replyList = vertical(Color.TRANSPARENT);
                 replySection.addView(replyList,
@@ -216,6 +216,7 @@ final class CommentRenderer {
     private void addComment(LinearLayout parent, JSONObject comment,
                             boolean reply, String rootCommentId) {
         LinearLayout row = new LinearLayout(this.activity);
+        LinearLayout container = vertical(Color.TRANSPARENT);
         row.setGravity(Gravity.TOP);
         int verticalPadding = reply ? 2 : (this.roundLayout ? 6 : 8);
         row.setPadding(0, dp(verticalPadding), 0, dp(verticalPadding));
@@ -236,6 +237,7 @@ final class CommentRenderer {
                 comment.optString("html"), comment.optString("description"),
                 comment.optString("desc_extra"), comment.optString("rich_text"),
                 comment.optString("hb_rich_texts"));
+        LinearLayout body = this.roundLayout && !reply ? container : block;
         if (reply) {
             addCompactReply(block, comment, author, target, visibleComment, created);
         } else {
@@ -244,12 +246,6 @@ final class CommentRenderer {
             String meta = commentMeta(comment, created);
             if (!meta.isEmpty()) addTop(block,
                     text(meta, 10.5f, this.tokens.muted), 1);
-            addCommentBody(block, comment, visibleComment);
-        }
-
-        List<CommentData.CommentImage> images = CommentData.commentImages(comment);
-        if (!this.session.noImage() && !images.isEmpty()) {
-            addImages(block, images, reply);
         }
         if (!reply) {
             LikeControl likes = createLikeControl();
@@ -262,14 +258,20 @@ final class CommentRenderer {
             likeParams.leftMargin = dp(3);
             row.addView(likes.root, likeParams);
         }
+        container.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        if (!reply) addCommentBody(body, comment, visibleComment);
+        List<CommentData.CommentImage> images = CommentData.commentImages(comment);
+        if (!this.session.noImage() && !images.isEmpty()) addImages(body, images, reply);
         View.OnLongClickListener copy = view -> {
             this.host.copy(RichInlineRenderer.plainText(visibleComment));
             return true;
         };
         block.setOnLongClickListener(copy);
         row.setOnLongClickListener(copy);
+        container.setOnLongClickListener(copy);
         attachReplyGesture(row, comment);
-        parent.addView(row);
+        attachReplyGesture(container, comment);
+        parent.addView(container, new LinearLayout.LayoutParams(-1, -2));
         if (reply) {
             View divider = new View(this.activity);
             divider.setBackgroundColor(ThemeTokens.blend(
@@ -399,9 +401,11 @@ final class CommentRenderer {
             span.setSpan(new StyleSpan(Typeface.BOLD),
                     0, nameEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             if (!authorBadge.isEmpty()) {
-                applyInlineBadge(span, authorBadgeStart,
-                        authorBadgeStart + authorBadge.length(),
-                        R.drawable.official_author_badge, 13);
+                Drawable badge = new AuthorBadgeDrawable(this.tokens);
+                badge.setBounds(0, 0, dp(25), dp(13));
+                span.setSpan(new CenteredImageSpan(badge), authorBadgeStart + 1,
+                        authorBadgeStart + authorBadge.length() - 1,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             if (hasTarget) {
                 span.setSpan(new ForegroundColorSpan(this.tokens.secondary),
@@ -425,6 +429,7 @@ final class CommentRenderer {
                                  boolean postAuthor) {
         LinearLayout row = new LinearLayout(this.activity);
         row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setClipChildren(true);
         row.addView(nameText(author), new LinearLayout.LayoutParams(-2, -2));
         if (postAuthor) addAuthorBadge(row);
         addLevelBadge(row, user);
@@ -443,11 +448,11 @@ final class CommentRenderer {
 
     private void addAuthorBadge(LinearLayout row) {
         ImageView badge = new ImageView(this.activity);
-        badge.setImageResource(R.drawable.official_author_badge);
+        badge.setImageDrawable(new AuthorBadgeDrawable(this.tokens));
         badge.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams params =
                 new LinearLayout.LayoutParams(dp(28), dp(15));
-        params.leftMargin = dp(2);
+        params.leftMargin = dp(3);
         row.addView(badge, params);
     }
 
@@ -464,8 +469,7 @@ final class CommentRenderer {
                 this.session.darkMode() ? 0.30f : 0.14f), 4));
         LinearLayout.LayoutParams params =
                 new LinearLayout.LayoutParams(-2, dp(15));
-        params.leftMargin = dp(4);
-        params.rightMargin = dp(4);
+        params.leftMargin = dp(3);
         row.addView(badge, params);
     }
 
@@ -558,14 +562,6 @@ final class CommentRenderer {
 
     private Drawable round(int color, int radius) {
         return UiComponents.round(this.activity, color, radius, this.uiScale);
-    }
-
-    private Drawable roundStroke(int color, int radius,
-                                 int strokeColor, int strokeWidth) {
-        android.graphics.drawable.GradientDrawable drawable =
-                UiComponents.round(this.activity, color, radius, this.uiScale);
-        drawable.setStroke(Math.max(1, dp(strokeWidth)), strokeColor);
-        return drawable;
     }
 
     private int dp(int value) {

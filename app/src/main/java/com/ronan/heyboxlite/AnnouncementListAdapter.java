@@ -127,7 +127,8 @@ final class AnnouncementListAdapter extends BaseAdapter {
             holder = (Holder) reusable.getTag();
         }
 
-        holder.title.setText(TextUtils.isEmpty(item.title) ? "公告" : item.title);
+        holder.title.setText(item.title);
+        holder.title.setVisibility(TextUtils.isEmpty(item.title) ? View.GONE : View.VISIBLE);
         String updatedAt = Format.announcementTime(item.updatedAt);
         holder.date.setText(updatedAt);
         holder.date.setVisibility(updatedAt.isEmpty() ? View.GONE : View.VISIBLE);
