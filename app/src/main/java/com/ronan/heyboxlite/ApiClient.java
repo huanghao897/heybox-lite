@@ -702,7 +702,7 @@ final class ApiClient {
                 }
             }
             return out.length() == 0 ? "empty" : out.toString();
-        } catch (Throwable error) {
+        } catch (RuntimeException error) {
             return "unavailable:" + error.getClass().getSimpleName();
         }
     }
