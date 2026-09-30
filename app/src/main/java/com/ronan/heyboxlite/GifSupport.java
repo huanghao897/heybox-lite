@@ -36,7 +36,7 @@ final class GifSupport {
 
     /** 后台线程解码，返回可直接 setImageDrawable 的对象；失败返回 null。 */
     static Drawable decode(byte[] bytes) {
-        if (bytes == null || bytes.length == 0 || bytes.length > MAX_GIF_BYTES) {
+        if (bytes == null || bytes.length == 0 || bytes.length > maxGifBytes()) {
             return null;
         }
         if (Build.VERSION.SDK_INT >= 28) {
@@ -81,8 +81,9 @@ final class GifSupport {
             return ImageDecoder.decodeDrawable(source, (decoder, info, src) -> {
                 decoder.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);
                 int side = Math.max(info.getSize().getWidth(), info.getSize().getHeight());
-                if (side > MAX_MOVIE_SIDE) {
-                    float scale = MAX_MOVIE_SIDE / (float) side;
+                int maxSide = maxMovieSide();
+                if (side > maxSide) {
+                    float scale = maxSide / (float) side;
                     decoder.setTargetSize(
                             Math.max(1, Math.round(info.getSize().getWidth() * scale)),
                             Math.max(1, Math.round(info.getSize().getHeight() * scale)));
@@ -98,7 +99,7 @@ final class GifSupport {
             Movie movie = Movie.decodeByteArray(bytes, 0, bytes.length);
             if (movie == null || movie.width() <= 0 || movie.height() <= 0
                     || movie.duration() <= 0
-                    || Math.max(movie.width(), movie.height()) > MAX_MOVIE_SIDE) {
+                    || Math.max(movie.width(), movie.height()) > maxMovieSide()) {
                 return null;
             }
             return new MovieDrawable(movie);
@@ -166,5 +167,15 @@ final class GifSupport {
         public int getOpacity() {
             return PixelFormat.TRANSLUCENT;
         }
+    }
+
+    private static int maxGifBytes() {
+        return Runtime.getRuntime().maxMemory() <= 128L * 1024L * 1024L
+                ? 2 * 1024 * 1024 : MAX_GIF_BYTES;
+    }
+
+    private static int maxMovieSide() {
+        return Runtime.getRuntime().maxMemory() <= 128L * 1024L * 1024L
+                ? 640 : MAX_MOVIE_SIDE;
     }
 }

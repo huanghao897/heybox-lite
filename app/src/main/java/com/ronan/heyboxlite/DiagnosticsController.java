@@ -25,12 +25,14 @@ final class DiagnosticsController {
         final String screen;
         final int feedCount;
         final boolean feedCursorPresent;
-        final int feedLastPull;
+        // A feed has no cursor before its first response. Keep that state nullable
+        // instead of letting a diagnostics click auto-unbox it on the UI thread.
+        final Integer feedLastPull;
         final boolean feedNoMore;
         final String detailDiagnostics;
 
         RuntimeState(String currentLinkId, String currentLinkHsrc, String screen,
-                     int feedCount, boolean feedCursorPresent, int feedLastPull,
+                     int feedCount, boolean feedCursorPresent, Integer feedLastPull,
                      boolean feedNoMore, String detailDiagnostics) {
             this.currentLinkId = currentLinkId;
             this.currentLinkHsrc = currentLinkHsrc;
@@ -117,7 +119,8 @@ final class DiagnosticsController {
         out.append("loggedIn: ").append(this.session.isLoggedIn()).append('\n');
         out.append("feedCount: ").append(state.feedCount).append('\n');
         out.append("feedLastvalPresent: ").append(state.feedCursorPresent).append('\n');
-        out.append("feedLastPull: ").append(state.feedLastPull).append('\n');
+        out.append("feedLastPull: ").append(feedLastPullValue(state.feedLastPull))
+                .append('\n');
         out.append("feedNoMore: ").append(state.feedNoMore).append('\n');
         out.append("offlineFeedSavedAt: ").append(this.localCache.feedSavedAt()).append('\n');
         out.append("offlineBytes: ").append(this.localCache.offlineBytes()).append('\n');
@@ -145,6 +148,10 @@ final class DiagnosticsController {
         }
         out.append('\n').append(title).append(":\n").append(content);
         if (!content.endsWith("\n")) out.append('\n');
+    }
+
+    static String feedLastPullValue(Integer value) {
+        return value == null ? "none" : String.valueOf(value);
     }
 
     private void share(File file) {

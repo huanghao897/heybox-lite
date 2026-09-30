@@ -66,7 +66,7 @@ final class ImageLoader {
     private static final long MAX_HEAP_BYTES = Runtime.getRuntime().maxMemory();
     private static final int CACHE_KB = memoryCacheKb(MAX_HEAP_BYTES);
     private static final int MAX_DECODE_BYTES = 10 * 1024 * 1024;
-    private static final int MAX_BITMAP_PIXELS = ImageMemoryBudget.bitmapPixels(MAX_HEAP_BYTES);
+    private static final int MAX_BITMAP_PIXELS = ImageMemoryBudget.decodePixels(MAX_HEAP_BYTES);
     private static final int MAX_BITMAP_SIDE = 2400;
     private static final Object SMALL_DECODE_LOCK = new Object();
     private static final Object LARGE_DECODE_LOCK = new Object();
@@ -79,7 +79,7 @@ final class ImageLoader {
                 }
             };
     private static final LruCache<String, byte[]> GIF_BYTES =
-            new LruCache<String, byte[]>(2048) {
+            new LruCache<String, byte[]>(gifCacheKb(MAX_HEAP_BYTES)) {
                 @Override protected int sizeOf(String key, byte[] value) {
                     return Math.max(1, value.length / 1024);
                 }
@@ -369,7 +369,8 @@ final class ImageLoader {
                 if (width <= 0 || height <= width * 3) {
                     return;
                 }
-                int target = Math.max(240, targetWidthPx);
+                int target = Math.max(240,
+                        ImageMemoryBudget.decodeTargetPx(MAX_HEAP_BYTES, targetWidthPx));
                 int sample = 1;
                 while (width / sample > Math.round(target * 1.25f)) sample *= 2;
                 int sourceTileHeight = Math.max(sample,
@@ -726,9 +727,13 @@ final class ImageLoader {
     private static int memoryCacheKb(long maxHeapBytes) {
         long maxHeapKb = Math.max(1L, maxHeapBytes / 1024L);
         if (maxHeapBytes <= 128L * 1024L * 1024L) {
-            return (int) Math.max(1536L, Math.min(3L * 1024L, maxHeapKb / 16L));
+            return (int) Math.max(768L, Math.min(1536L, maxHeapKb / 32L));
         }
         return (int) Math.max(3L * 1024L, Math.min(8L * 1024L, maxHeapKb / 12L));
+    }
+
+    private static int gifCacheKb(long maxHeapBytes) {
+        return maxHeapBytes <= 128L * 1024L * 1024L ? 512 : 2048;
     }
 
     private static int decodeThreadCount(long maxHeapBytes) {
@@ -768,15 +773,15 @@ final class ImageLoader {
     }
 
     private static int safeTarget(int target) {
-        if (target <= 0) return 720;
-        return Math.max(96, Math.min(target, MAX_BITMAP_SIDE));
+        return ImageMemoryBudget.decodeTargetPx(MAX_HEAP_BYTES, target);
     }
 
     private static String thumbnailUrl(String source, int targetPx) {
         String original = originalUrl(source);
         if (original.isEmpty()) return "";
+        int requested = safeTarget(targetPx);
         return original + "?imageMogr2/auto-orient/ignore-error/1/thumbnail/"
-                + targetPx + "x/format/jpg";
+                + requested + "x/format/jpg";
     }
 
     static String originalUrl(String source) {
