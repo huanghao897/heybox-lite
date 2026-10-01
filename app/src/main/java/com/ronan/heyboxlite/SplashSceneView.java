@@ -73,21 +73,25 @@ final class SplashSceneView extends FrameLayout {
         Motions.resetTree(this);
         if (Motions.off()) return;
         this.mark.setAlpha(0.0f);
-        float markStartScale = Motions.full() ? 0.94f : 0.96f;
+        float markStartScale = Motions.full() ? 0.90f : 0.93f;
         this.mark.setScaleX(markStartScale);
         this.mark.setScaleY(markStartScale);
         this.message.setAlpha(0.0f);
-        this.message.setTranslationY(dp(Motions.full() ? 8 : 5));
+        this.message.setTranslationY(dp(Motions.full() ? 14 : 10));
+        float messageStartScale = Motions.full() ? 0.97f : 0.985f;
+        this.message.setScaleX(messageStartScale);
+        this.message.setScaleY(messageStartScale);
         this.hint.setAlpha(0.0f);
 
         long iconDuration = Motions.full() ? MotionSpec.ENTER_MS : MotionSpec.ENTER_LITE_MS;
-        long messageDelay = Motions.full() ? 90L : 65L;
-        long messageDuration = Motions.full() ? MotionSpec.ENTER_MS : 140L;
+        long messageDelay = Motions.full() ? 205L : 155L;
+        long messageDuration = Motions.full() ? 150L : 140L;
         this.mark.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
                 .setDuration(iconDuration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
                 .start();
         this.message.animate().alpha(1.0f).translationY(0.0f)
+                .scaleX(1.0f).scaleY(1.0f)
                 .setStartDelay(messageDelay)
                 .setDuration(messageDuration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
