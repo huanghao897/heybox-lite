@@ -1,6 +1,6 @@
 # heybox Lite — Android 项目
 
-小黑盒手表端第三方客户端，Java View 体系，面向 Android 7.0+。当前版本 `2.17`（versionCode `220`）。
+小黑盒手表端第三方客户端，Java View 体系，面向 Android 7.0+。当前版本 `2.18`（versionCode `221`）。
 
 ## 构建
 
