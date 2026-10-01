@@ -18,8 +18,17 @@ public class SplashAnimationWiringTest {
         assertTrue(source.contains("new SplashSceneView"));
         assertTrue(source.contains("scene.fadeOut(this::openMain)"));
         assertTrue(source.contains("overridePendingTransition(0, 0)"));
+        assertTrue(source.contains("getWindow().setBackgroundDrawable"));
         assertFalse(source.contains("animateText"));
         assertFalse(source.contains("splash_logo"));
+    }
+
+    @Test
+    public void mainActivityInitialWindowMatchesThemeSurface() throws Exception {
+        String source = readMain("MainActivity.java");
+
+        assertTrue(source.contains("getWindow().setBackgroundDrawable"));
+        assertTrue(source.contains("Color.rgb(244, 244, 246)"));
     }
 
     @Test

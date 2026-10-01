@@ -144,6 +144,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             return;
         }
         this.session = new SessionStore(this);
+        getWindow().setBackgroundDrawable(new ColorDrawable(this.session.darkMode()
+                ? Color.rgb(11, 11, 12) : Color.rgb(244, 244, 246)));
         this.layout = new MainActivityLayout(this, this.session);
         this.shellScreenNavigator = new ShellScreenNavigator(this);
         this.crownInput = new CrownInputHandler(this, this.session,

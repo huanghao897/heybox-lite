@@ -2,6 +2,7 @@ package com.ronan.heyboxlite;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -22,15 +23,16 @@ public final class SplashActivity extends Activity {
             openMain();
             return;
         }
+        int background = session.darkMode()
+                ? android.graphics.Color.rgb(11, 11, 12)
+                : android.graphics.Color.rgb(244, 244, 246);
+        getWindow().setBackgroundDrawable(new ColorDrawable(background));
+        Compat.colorSystemBars(getWindow(), background);
         startedAt = System.currentTimeMillis();
         this.scene = new SplashSceneView(this, session.splashText(),
                 session.darkMode(), session.uiScale() / 100.0f,
                 session.textScale() / 100.0f, false);
-        int background = session.darkMode()
-                ? android.graphics.Color.rgb(11, 11, 12)
-                : android.graphics.Color.rgb(244, 244, 246);
         setContentView(this.scene);
-        Compat.colorSystemBars(getWindow(), background);
         this.scene.playEntrance();
         long remaining = session.splashDuration()
                 - (System.currentTimeMillis() - startedAt)
