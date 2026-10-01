@@ -2,7 +2,7 @@ package com.ronan.heyboxlite;
 
 final class CrownScrollController {
     static final int MIN_SPEED_PERCENT = 5;
-    static final int MAX_SPEED_PERCENT = 200;
+    static final int SLIDER_MAX_SPEED_PERCENT = 200;
     static final int DEFAULT_SPEED_PERCENT = 80;
     static final float MAX_AXIS_VALUE = 1.0f;
 
@@ -52,7 +52,7 @@ final class CrownScrollController {
     }
 
     static int clampSpeed(int value) {
-        return Math.max(MIN_SPEED_PERCENT, Math.min(MAX_SPEED_PERCENT, value));
+        return Math.max(MIN_SPEED_PERCENT, value);
     }
 
     static int coalesceBounded(int current, int addition, int limit) {

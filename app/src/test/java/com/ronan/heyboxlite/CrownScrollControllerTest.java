@@ -16,10 +16,12 @@ public class CrownScrollControllerTest {
     }
 
     @Test
-    public void clampsSpeedToSupportedRange() {
+    public void keepsSpeedAboveSliderRange() {
         assertEquals(5, CrownScrollController.clampSpeed(1));
         assertEquals(125, CrownScrollController.clampSpeed(125));
-        assertEquals(200, CrownScrollController.clampSpeed(500));
+        assertEquals(500, CrownScrollController.clampSpeed(500));
+        assertEquals(Integer.MAX_VALUE,
+                CrownScrollController.clampSpeed(Integer.MAX_VALUE));
     }
 
     @Test

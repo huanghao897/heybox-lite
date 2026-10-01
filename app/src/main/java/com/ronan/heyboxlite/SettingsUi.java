@@ -50,6 +50,7 @@ final class SettingsUi {
     private final float textScale;
     private final Handler handler;
     private final Runnable backAction;
+    private final NumericSettingDialog numericDialog;
 
     SettingsUi(Activity activity, SessionStore session, ThemeTokens tokens,
                boolean roundLayout, int roundHeaderInset, Handler handler,
@@ -63,6 +64,8 @@ final class SettingsUi {
         this.textScale = session.textScale() / 100.0f;
         this.handler = handler;
         this.backAction = backAction;
+        this.numericDialog = new NumericSettingDialog(
+                activity, session, tokens, this.uiScale, this.textScale, handler);
     }
 
     LinearLayout list() {
@@ -248,13 +251,31 @@ final class SettingsUi {
     Entry addRangeEntry(LinearLayout parent, String label, String unit, int icon,
                         int min, int max, int step, int current,
                         IntListener listener, Runnable afterDismiss) {
+        return addRangeEntry(parent, label, unit, icon, min, max, step, current,
+                false, listener, afterDismiss);
+    }
+
+    Entry addUnboundedRangeEntry(LinearLayout parent, String label, String unit, int icon,
+                                int min, int sliderMax, int step, int current,
+                                IntListener listener, Runnable afterDismiss) {
+        return addRangeEntry(parent, label, unit, icon, min, sliderMax, step, current,
+                true, listener, afterDismiss);
+    }
+
+    private Entry addRangeEntry(LinearLayout parent, String label, String unit, int icon,
+                                int min, int max, int step, int current,
+                                boolean allowAboveSliderMax, IntListener listener,
+                                Runnable afterDismiss) {
         int lower = Math.min(min, max);
         int upper = Math.max(min, max);
-        int selectedValue = Math.max(lower, Math.min(upper, current));
+        int selectedValue = allowAboveSliderMax
+                ? Math.max(lower, current)
+                : Math.max(lower, Math.min(upper, current));
         Entry[] entry = new Entry[1];
         int[] selected = {selectedValue};
         entry[0] = addEntry(parent, label, null, formatValue(selectedValue, unit), icon, () ->
-                showRangeDialog(label, unit, lower, upper, step, selected[0], value -> {
+                numericDialog.show(label, unit, lower, upper, step, selected[0],
+                        allowAboveSliderMax, value -> {
                     selected[0] = value;
                     listener.onChanged(value);
                     entry[0].value.setText(formatValue(value, unit));
@@ -309,51 +330,6 @@ final class SettingsUi {
                     Math.max(dp(220), Math.min(width - dp(24), dp(340))), -2);
         }
         Motions.dialogIn(content);
-    }
-
-    private void showRangeDialog(String title, String unit, int min, int max,
-                                 int step, int current, IntListener listener,
-                                 Runnable afterDismiss) {
-        LinearLayout box = dialogPanel(title);
-        LinearLayout valueRow = new LinearLayout(activity);
-        valueRow.setGravity(Gravity.CENTER_VERTICAL);
-        valueRow.addView(text("拖动调整", 11.0f, tokens.muted),
-                new LinearLayout.LayoutParams(0, -2, 1.0f));
-        TextView valueView = text(formatValue(current, unit), 19.0f, tokens.text);
-        valueView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        valueRow.addView(valueView, new LinearLayout.LayoutParams(-2, -2));
-        addTop(box, valueRow, 6);
-
-        SettingRangeView range = new SettingRangeView(activity, tokens,
-                min, max, step, current);
-        LinearLayout.LayoutParams rangeParams = new LinearLayout.LayoutParams(-1, dp(52));
-        rangeParams.topMargin = dp(6);
-        box.addView(range, rangeParams);
-        LinearLayout limits = new LinearLayout(activity);
-        limits.setGravity(Gravity.CENTER_VERTICAL);
-        limits.addView(text(formatValue(min, unit), 10.0f, tokens.muted),
-                new LinearLayout.LayoutParams(0, -2, 1.0f));
-        TextView upper = text(formatValue(max, unit), 10.0f, tokens.muted);
-        upper.setGravity(Gravity.RIGHT);
-        limits.addView(upper, new LinearLayout.LayoutParams(0, -2, 1.0f));
-        addTop(box, limits, 0);
-
-        boolean[] changed = {false};
-        range.setListener(value -> {
-            changed[0] = true;
-            valueView.setText(formatValue(value, unit));
-            listener.onChanged(value);
-        });
-        AlertDialog dialog = new AlertDialog.Builder(activity).setView(box).create();
-        TextView done = dialogAction("确定", dialog);
-        addDialogAction(box, done);
-        dialog.setCanceledOnTouchOutside(true);
-        dialog.setOnDismissListener(value -> {
-            if (changed[0] && afterDismiss != null && !activity.isFinishing()) {
-                handler.post(afterDismiss);
-            }
-        });
-        present(dialog, box);
     }
 
     private void showChoiceDialog(String title, String[] options, int selected,

@@ -37,7 +37,9 @@ final class CrownScrollDispatcher {
                 && Integer.signum(this.pendingDistance) != Integer.signum(distance)) {
             this.pendingDistance = 0;
         }
-        int backlogLimit = this.pendingLimit * 3;
+        long expandedLimit = (long) this.pendingLimit * 3L;
+        int backlogLimit = expandedLimit >= Integer.MAX_VALUE
+                ? Integer.MAX_VALUE : (int) expandedLimit;
         this.pendingDistance = CrownScrollController.coalesceBounded(
                 this.pendingDistance, distance, backlogLimit);
         if (!this.posted) {

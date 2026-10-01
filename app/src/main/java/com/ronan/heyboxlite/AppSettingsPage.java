@@ -69,9 +69,9 @@ final class AppSettingsPage {
             this.session.setCrownScrollEnabled(value);
             if (!value) this.crownScrollController.reset();
         }), 0);
-        this.settingsUi.addRangeEntry(panel, "滚动速度", "%", R.drawable.il_scroll,
+        this.settingsUi.addUnboundedRangeEntry(panel, "滚动速度", "%", R.drawable.il_scroll,
                 CrownScrollController.MIN_SPEED_PERCENT,
-                CrownScrollController.MAX_SPEED_PERCENT, 5,
+                CrownScrollController.SLIDER_MAX_SPEED_PERCENT, 5,
                 this.session.crownScrollSpeed(), this.session::setCrownScrollSpeed, null);
         addTop(panel, toggle("表冠触感", this.session.crownHapticsEnabled(),
                 this.session::setCrownHapticsEnabled), 0);
