@@ -73,25 +73,28 @@ final class SplashSceneView extends FrameLayout {
         Motions.resetTree(this);
         if (Motions.off()) return;
         this.mark.setAlpha(0.0f);
-        this.mark.setScaleX(0.96f);
-        this.mark.setScaleY(0.96f);
+        float markStartScale = Motions.full() ? 0.94f : 0.96f;
+        this.mark.setScaleX(markStartScale);
+        this.mark.setScaleY(markStartScale);
         this.message.setAlpha(0.0f);
-        this.message.setTranslationY(dp(Motions.full() ? 5 : 3));
+        this.message.setTranslationY(dp(Motions.full() ? 8 : 5));
         this.hint.setAlpha(0.0f);
 
-        long duration = Motions.full() ? MotionSpec.ENTER_MS : MotionSpec.ENTER_LITE_MS;
+        long iconDuration = Motions.full() ? MotionSpec.ENTER_MS : MotionSpec.ENTER_LITE_MS;
+        long messageDelay = Motions.full() ? 90L : 65L;
+        long messageDuration = Motions.full() ? MotionSpec.ENTER_MS : 140L;
         this.mark.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
-                .setDuration(duration)
+                .setDuration(iconDuration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
                 .start();
         this.message.animate().alpha(1.0f).translationY(0.0f)
-                .setStartDelay(Motions.full() ? 35L : 18L)
-                .setDuration(duration)
+                .setStartDelay(messageDelay)
+                .setDuration(messageDuration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
                 .start();
         if (this.hint.getVisibility() == View.VISIBLE) {
             this.hint.animate().alpha(1.0f)
-                    .setStartDelay(duration + 20L)
+                    .setStartDelay(messageDelay + messageDuration + 20L)
                     .setDuration(100L)
                     .setInterpolator(MotionSpec.EASE_OUT)
                     .start();

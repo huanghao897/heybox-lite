@@ -40,6 +40,8 @@ public class SplashAnimationWiringTest {
         assertTrue(settings.contains("overlay.playEntrance()"));
         assertTrue(scene.contains("about_app_mark"));
         assertTrue(scene.contains("Motions.full()"));
+        assertTrue(scene.contains("long messageDelay"));
+        assertTrue(scene.contains("setStartDelay(messageDelay)"));
         assertFalse(scene.contains("MONOSPACE"));
         assertFalse(scene.contains("substring("));
     }
