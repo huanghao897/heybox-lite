@@ -6,6 +6,8 @@ import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.view.animation.Interpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -13,6 +15,8 @@ import android.widget.TextView;
 
 /** Shared launch scene used by the real splash and its settings preview. */
 final class SplashSceneView extends FrameLayout {
+    private static final Interpolator SPLASH_INTERPOLATOR =
+            new AccelerateDecelerateInterpolator();
     private final float uiScale;
     private final ImageView mark;
     private final TextView message;
@@ -73,7 +77,7 @@ final class SplashSceneView extends FrameLayout {
         Motions.resetTree(this);
         if (Motions.off()) return;
         this.mark.setAlpha(0.0f);
-        float markStartScale = Motions.full() ? 0.90f : 0.93f;
+        float markStartScale = Motions.full() ? 0.92f : 0.94f;
         this.mark.setScaleX(markStartScale);
         this.mark.setScaleY(markStartScale);
         this.message.setAlpha(0.0f);
@@ -83,18 +87,18 @@ final class SplashSceneView extends FrameLayout {
         this.message.setScaleY(messageStartScale);
         this.hint.setAlpha(0.0f);
 
-        long iconDuration = Motions.full() ? MotionSpec.ENTER_MS : MotionSpec.ENTER_LITE_MS;
-        long messageDelay = Motions.full() ? 205L : 155L;
-        long messageDuration = Motions.full() ? 150L : 140L;
+        long iconDuration = Motions.full() ? 260L : 210L;
+        long messageDelay = Motions.full() ? 300L : 245L;
+        long messageDuration = Motions.full() ? 330L : 280L;
         this.mark.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
                 .setDuration(iconDuration)
-                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
+                .setInterpolator(SPLASH_INTERPOLATOR)
                 .start();
         this.message.animate().alpha(1.0f).translationY(0.0f)
                 .scaleX(1.0f).scaleY(1.0f)
                 .setStartDelay(messageDelay)
                 .setDuration(messageDuration)
-                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
+                .setInterpolator(SPLASH_INTERPOLATOR)
                 .start();
         if (this.hint.getVisibility() == View.VISIBLE) {
             this.hint.animate().alpha(1.0f)
