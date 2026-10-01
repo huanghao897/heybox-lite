@@ -3,6 +3,7 @@ package com.ronan.heyboxlite;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
@@ -24,8 +25,7 @@ final class ImageViewerLauncher {
         int currentIndex = Math.max(0, Math.min(urls.length - 1, index));
         String current = urls.length == 0 ? "" : urls[currentIndex];
         Drawable drawable = source.getDrawable();
-        Bitmap preview = drawable instanceof BitmapDrawable
-                ? ((BitmapDrawable) drawable).getBitmap() : null;
+        Bitmap preview = previewBitmap(source, drawable);
         long previewId = ImageViewerActivity.preparePreview(current, preview, source);
 
         Intent intent = new Intent(activity, ImageViewerActivity.class);
@@ -44,5 +44,31 @@ final class ImageViewerLauncher {
         intent.putExtra(ImageViewerActivity.EXTRA_ORIGIN_HEIGHT, bounds.height());
         activity.startActivity(intent);
         activity.overridePendingTransition(0, 0);
+    }
+
+    private static Bitmap previewBitmap(ImageView source, Drawable drawable) {
+        if (drawable instanceof BitmapDrawable) {
+            return ((BitmapDrawable) drawable).getBitmap();
+        }
+        if (source == null || drawable == null) return null;
+        Rect bounds = ImageTransitionSource.visibleBoundsOnScreen(source);
+        int width = bounds.width() > 0 ? bounds.width() : source.getWidth();
+        int height = bounds.height() > 0 ? bounds.height() : source.getHeight();
+        if (width <= 0 || height <= 0) return null;
+        int longest = Math.max(width, height);
+        if (longest > 768) {
+            float scale = 768.0f / longest;
+            width = Math.max(1, Math.round(width * scale));
+            height = Math.max(1, Math.round(height * scale));
+        }
+        Bitmap preview = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Rect originalBounds = new Rect(drawable.getBounds());
+        try {
+            drawable.setBounds(0, 0, width, height);
+            drawable.draw(new Canvas(preview));
+            return preview;
+        } finally {
+            drawable.setBounds(originalBounds);
+        }
     }
 }

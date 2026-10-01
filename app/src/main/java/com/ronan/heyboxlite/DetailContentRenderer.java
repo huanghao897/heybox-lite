@@ -35,6 +35,7 @@ final class DetailContentRenderer {
     private final ImageOpener imageOpener;
     private final DetailContentParser parser = new DetailContentParser();
     private final GameDetailClient gameDetailClient;
+    private long gameCardRenderGeneration;
 
     DetailContentRenderer(Activity activity, SessionStore session,
                           ThemeTokens tokens, boolean roundLayout, ApiClient api,
@@ -60,8 +61,9 @@ final class DetailContentRenderer {
     }
 
     void add(LinearLayout parent, DetailContentParser.Result content) {
+        long generation = ++this.gameCardRenderGeneration;
         addVideos(parent, content.videos);
-        addBlocks(parent, content.blocks, content.useImagePager);
+        addBlocks(parent, content.blocks, content.useImagePager, generation);
     }
 
     private void addVideos(LinearLayout parent, List<VideoData> videos) {
@@ -124,7 +126,7 @@ final class DetailContentRenderer {
     }
 
     private void addBlocks(LinearLayout parent, List<RichContent.Block> blocks,
-                           boolean usePager) {
+                           boolean usePager, long generation) {
         if (blocks.isEmpty()) {
             addTop(parent, text("正文为空", 13.0f, this.tokens.muted), 9);
             return;
@@ -182,7 +184,7 @@ final class DetailContentRenderer {
                 lastWasImage = false;
             }
         }
-        loadPendingGameCards(pendingGames);
+        loadPendingGameCards(pendingGames, generation);
     }
 
     private void addHeading(LinearLayout parent, String source,
@@ -294,7 +296,7 @@ final class DetailContentRenderer {
         }
     }
 
-    private void loadPendingGameCards(List<PendingGameCard> pending) {
+    private void loadPendingGameCards(List<PendingGameCard> pending, long generation) {
         if (pending.isEmpty()) return;
         List<RichLinkClassifier.GameLinkInfo> references = new ArrayList<>();
         java.util.HashSet<String> seen = new java.util.HashSet<>();
@@ -307,29 +309,39 @@ final class DetailContentRenderer {
         this.gameDetailClient.loadBatch(references, new GameDetailClient.BatchCallback() {
             @Override
             public void onBatch(java.util.Map<String, GameCardData> data) {
-                bindPendingGameCards(pending, data, false);
+                bindPendingGameCards(pending, data, false, generation);
             }
 
             @Override
             public void onComplete(java.util.Map<String, GameCardData> data) {
-                bindPendingGameCards(pending, data, true);
+                bindPendingGameCards(pending, data, true, generation);
             }
         });
     }
 
     private void bindPendingGameCards(List<PendingGameCard> pending,
                                       java.util.Map<String, GameCardData> data,
-                                      boolean finalBatch) {
+                                      boolean finalBatch, long generation) {
+        if (generation != this.gameCardRenderGeneration) return;
         for (PendingGameCard item : pending) {
-            if (item.view.getWindowToken() == null) continue;
-            GameCardData cardData = data.get(item.appId);
-            if (cardData != null && !item.resolved) {
-                item.view.bind(cardData);
-                item.resolved = true;
-            } else if (finalBatch && !item.resolved) {
-                item.view.showUnavailable(item.appId);
-                item.resolved = true;
-            }
+            item.view.post(() -> {
+                // A cached game-info hit can call back while the detail tree is
+                // still being assembled. Posting to the card lets Android run
+                // the binding after the new root is attached, while the
+                // generation and window checks discard stale detail trees.
+                if (generation != this.gameCardRenderGeneration
+                        || item.resolved || item.view.getWindowToken() == null) {
+                    return;
+                }
+                GameCardData cardData = data.get(item.appId);
+                if (cardData != null) {
+                    item.view.bind(cardData);
+                    item.resolved = true;
+                } else if (finalBatch) {
+                    item.view.showUnavailable(item.appId);
+                    item.resolved = true;
+                }
+            });
         }
     }
 

@@ -238,7 +238,10 @@ public final class ImageViewerActivity extends Activity {
             setChromeAlpha(1.0f);
             return;
         }
-        backdrop.setAlpha(sharedPreviewReady ? 0.0f : 1.0f);
+        // Keep the translucent activity over the source page until the first
+        // viewer bitmap is ready. Painting the black backdrop before that
+        // callback creates a one-frame flash on cache misses.
+        backdrop.setAlpha(0.0f);
         root.post(() -> {
             if (destroyed || isFinishing()) return;
             long duration = Motions.full() ? 240L : 205L;
@@ -287,6 +290,8 @@ public final class ImageViewerActivity extends Activity {
                 .translationX(0.0f).translationY(0.0f)
                 .setDuration(duration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
+        backdrop.animate().alpha(1.0f).setDuration(duration)
+                .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE).start();
         attachAnimationEndAction(image, duration, () -> resetImageTransform(image));
         image.animate().start();
     }

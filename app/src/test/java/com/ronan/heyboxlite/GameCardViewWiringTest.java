@@ -20,9 +20,25 @@ public class GameCardViewWiringTest {
         assertFalse(source.contains("ImageLoader.intoMeasuredRevealStable"));
     }
 
+    @Test
+    public void cachedDetailsBindAfterTheNewDetailRootIsAttached() throws Exception {
+        String source = new String(Files.readAllBytes(rendererSourceFile().toPath()),
+                StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("gameCardRenderGeneration"));
+        assertTrue(source.contains("item.view.post(() ->"));
+        assertFalse(source.contains("if (item.view.getWindowToken() == null) continue;"));
+    }
+
     private static File sourceFile() {
         File direct = new File("src/main/java/com/ronan/heyboxlite/GameCardView.java");
         if (direct.isFile()) return direct;
         return new File("app/src/main/java/com/ronan/heyboxlite/GameCardView.java");
+    }
+
+    private static File rendererSourceFile() {
+        File direct = new File("src/main/java/com/ronan/heyboxlite/DetailContentRenderer.java");
+        if (direct.isFile()) return direct;
+        return new File("app/src/main/java/com/ronan/heyboxlite/DetailContentRenderer.java");
     }
 }
