@@ -184,59 +184,23 @@ final class AppSettingsPage {
                 500, 2600, 50, this.session.splashDuration(),
                 this.session::setSplashDuration, null);
         addEntry(panel, "预览开屏动画", null, R.drawable.il_eye,
-                () -> showSplashPreview(this.session.splashText(),
-                        this.session.splashDuration()));
+                () -> showSplashPreview(this.session.splashText()));
         page.addView(panel);
     }
 
-    private void showSplashPreview(String value, int duration) {
+    private void showSplashPreview(String value) {
         String previewText = value == null || value.isEmpty()
                 ? "方寸之间，看见热爱" : value;
-        FrameLayout overlay = new FrameLayout(this.activity);
+        SplashSceneView overlay = new SplashSceneView(this.activity, previewText,
+                this.session.darkMode(), uiScale(),
+                this.session.textScale() / 100.0f, true);
         overlay.setTag("splash_preview");
-        boolean dark = this.session.darkMode();
-        overlay.setBackgroundColor(dark
-                ? Color.rgb(14, 15, 16) : Color.rgb(246, 247, 249));
-        if (!dark) {
-            ImageView mark = new ImageView(this.activity);
-            mark.setImageResource(R.drawable.splash_logo);
-            mark.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                    dp(96), dp(96), Gravity.CENTER);
-            params.bottomMargin = dp(54);
-            overlay.addView(mark, params);
-        }
-        TextView message = text("", 14.0f, this.tokens.text);
-        message.setTypeface(Typeface.MONOSPACE);
-        message.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams messageParams = new FrameLayout.LayoutParams(
-                -1, dp(52), Gravity.CENTER);
-        messageParams.topMargin = dp(dark ? 0 : 58);
-        messageParams.leftMargin = dp(18);
-        messageParams.rightMargin = dp(18);
-        overlay.addView(message, messageParams);
-        TextView close = text("点击任意位置退出预览", 10.0f, this.tokens.muted);
-        close.setGravity(Gravity.CENTER);
-        overlay.addView(close, new FrameLayout.LayoutParams(-1, dp(34), Gravity.BOTTOM));
-        overlay.setOnClickListener(view -> this.host.content().removeView(overlay));
+        overlay.setOnClickListener(view -> {
+            overlay.cancelMotion();
+            this.host.content().removeView(overlay);
+        });
         this.host.content().addView(overlay, new FrameLayout.LayoutParams(-1, -1));
-
-        int[] frame = {0};
-        Runnable animation = new Runnable() {
-            @Override
-            public void run() {
-                if (overlay.getParent() == null) return;
-                int count = Math.min(frame[0], previewText.length());
-                message.setText(previewText.substring(0, count)
-                        + (count < previewText.length() ? "_" : ""));
-                frame[0]++;
-                if (count < previewText.length()) {
-                    message.postDelayed(this,
-                            Math.max(28, duration / Math.max(1, previewText.length() + 4)));
-                }
-            }
-        };
-        animation.run();
+        overlay.playEntrance();
     }
 
     private void setNetworkMode(int mode) {
