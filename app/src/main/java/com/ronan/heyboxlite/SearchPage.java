@@ -63,7 +63,7 @@ final class SearchPage {
         this.host = host;
     }
 
-    View create(boolean restoreResults, View header, ThemeTokens tokens,
+    View create(boolean restoreResults, ThemeTokens tokens,
                 boolean roundLayout, int horizontalPadding,
                 int subpageTopPadding, int roundSearchInset) {
         this.tokens = tokens;
@@ -72,11 +72,9 @@ final class SearchPage {
 
         FrameLayout root = new FrameLayout(this.activity);
         root.setBackgroundColor(tokens.background);
-        int headerHeight = dp(roundLayout ? 40 : 44);
-        int searchHeight = dp(roundLayout ? 35 : 42);
-        int headerTop = roundLayout ? subpageTopPadding : dp(5);
-        int searchTop = headerTop + headerHeight + dp(4);
-        int contentTop = searchTop + searchHeight + dp(8);
+        int searchHeight = dp(roundLayout ? 35 : 40);
+        int searchTop = roundLayout ? subpageTopPadding : dp(4);
+        int contentTop = searchTop + searchHeight + dp(6);
         int searchHorizontal = roundLayout ? roundSearchInset : horizontalPadding;
 
         SearchBar controls = searchBar(searchHeight, roundLayout);
@@ -92,8 +90,8 @@ final class SearchPage {
         results.addView(hint, match());
 
         FrameLayout.LayoutParams recentParams = new FrameLayout.LayoutParams(-1, -2);
-        recentParams.leftMargin = horizontalPadding;
-        recentParams.rightMargin = horizontalPadding;
+        recentParams.leftMargin = searchHorizontal;
+        recentParams.rightMargin = searchHorizontal;
         recentParams.topMargin = contentTop;
         root.addView(recent, recentParams);
 
@@ -103,13 +101,6 @@ final class SearchPage {
         searchParams.rightMargin = searchHorizontal;
         searchParams.topMargin = searchTop;
         root.addView(searchBar, searchParams);
-
-        FrameLayout.LayoutParams headerParams = new FrameLayout.LayoutParams(
-                -1, headerHeight, Gravity.TOP);
-        headerParams.leftMargin = horizontalPadding;
-        headerParams.rightMargin = horizontalPadding;
-        headerParams.topMargin = headerTop;
-        root.addView(header, headerParams);
         this.searchBars.prepare(searchBar, contentTop);
 
         Runnable search = () -> {
@@ -175,16 +166,17 @@ final class SearchPage {
     private SearchBar searchBar(int searchHeight, boolean roundLayout) {
         LinearLayout bar = new LinearLayout(this.activity);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(10), 0, dp(5), 0);
-        Compat.setBackground(bar, UiComponents.groupCard(
+        bar.setPadding(dp(roundLayout ? 9 : 10), 0, dp(roundLayout ? 3 : 4), 0);
+        Compat.setBackground(bar, UiComponents.searchSurface(
                 this.activity, this.tokens, this.uiScale));
 
         ImageView glyph = new ImageView(this.activity);
         glyph.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         Drawable glyphIcon = Compat.tintedDrawable(
-                this.activity, R.drawable.il_search, this.tokens.muted);
+                this.activity, R.drawable.ic_search, this.tokens.muted);
         if (glyphIcon != null) glyph.setImageDrawable(glyphIcon);
-        bar.addView(glyph, new LinearLayout.LayoutParams(dp(20), dp(20)));
+        bar.addView(glyph, new LinearLayout.LayoutParams(dp(roundLayout ? 18 : 19),
+                dp(roundLayout ? 18 : 19)));
 
         EditText input = new EditText(this.activity);
         input.setHint("搜索帖子、作者或关键词");
@@ -192,14 +184,15 @@ final class SearchPage {
         input.setTextColor(this.tokens.text);
         input.setSingleLine(true);
         input.setTextSize(sp(13.0f));
-        input.setPadding(dp(8), 0, dp(4), 0);
+        input.setIncludeFontPadding(false);
+        input.setPadding(dp(6), 0, dp(3), 0);
         Compat.setBackground(input, null);
         bar.addView(input, new LinearLayout.LayoutParams(0, searchHeight, 1.0f));
 
         ImageView submit = new ImageView(this.activity);
         submit.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         Drawable submitIcon = Compat.tintedDrawable(
-                this.activity, R.drawable.il_search, this.tokens.text);
+                this.activity, R.drawable.ic_search, this.tokens.text);
         if (submitIcon != null) submit.setImageDrawable(submitIcon);
         int padding = dp(roundLayout ? 7 : 8);
         submit.setPadding(padding, padding, padding, padding);

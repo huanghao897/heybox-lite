@@ -31,6 +31,18 @@ final class UiComponents {
         return round(context, tokens.panel, 10, scale);
     }
 
+    static GradientDrawable searchSurface(Context context, ThemeTokens tokens, float scale) {
+        int fill = tokens.dark
+                ? Color.argb(224, 32, 32, 35)
+                : Color.argb(224, 255, 255, 255);
+        int stroke = Color.argb(tokens.dark ? 82 : 96,
+                Color.red(tokens.hairline), Color.green(tokens.hairline),
+                Color.blue(tokens.hairline));
+        GradientDrawable drawable = round(context, fill, 12, scale);
+        drawable.setStroke(Math.max(1, dp(context, 1, scale)), stroke);
+        return drawable;
+    }
+
     static GradientDrawable dock(Context context, ThemeTokens tokens, float scale) {
         return round(context, tokens.dockSurface(), 28, scale);
     }

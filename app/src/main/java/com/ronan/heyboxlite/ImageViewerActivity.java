@@ -557,11 +557,12 @@ public final class ImageViewerActivity extends Activity {
 
     private void requestImmediateOriginal(int index) {
         if (!loadOriginalImmediately || index != current || originalLoaded[index]) return;
+        long delay = Motions.off() ? 0L : (Motions.full() ? 280L : 245L);
         imagePages[index].postDelayed(() -> {
             if (!destroyed && !isFinishing() && current == index) {
                 loadOriginal(index, true);
             }
-        }, Motions.off() ? 0L : 120L);
+        }, delay);
     }
 
     private void preloadNeighbors(int index) {
@@ -834,12 +835,14 @@ public final class ImageViewerActivity extends Activity {
         original.setEnabled(false);
         original.setText("加载中");
         final LoadingSpinnerView spinner = spinners[index];
-        spinner.setAlpha(1f);
-        spinner.setVisibility(View.VISIBLE);
+        if (!automatic) {
+            spinner.setAlpha(1f);
+            spinner.setVisibility(View.VISIBLE);
+        }
         final ZoomImageView view = images[index];
         ImageLoader.loadOriginal(urls[index], 2400, bitmap -> {
             if (destroyed || isFinishing()) return;
-            spinner.setVisibility(View.GONE);
+            if (!automatic) spinner.setVisibility(View.GONE);
             if (bitmap == null) {
                 if (index == current) {
                     original.setVisibility(View.VISIBLE);

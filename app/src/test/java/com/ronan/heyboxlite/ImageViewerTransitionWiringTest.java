@@ -27,6 +27,15 @@ public class ImageViewerTransitionWiringTest {
         assertTrue(source.contains("drawable.draw(new Canvas(preview))"));
     }
 
+    @Test
+    public void automaticCommentOriginalLoadingDoesNotFlashTheSpinner() throws Exception {
+        String source = read("ImageViewerActivity.java");
+
+        assertTrue(source.contains("long delay = Motions.off() ? 0L"));
+        assertTrue(source.contains("if (!automatic) spinner.setVisibility(View.GONE)"));
+        assertTrue(source.contains("if (!automatic) {\n            spinner.setAlpha(1f)"));
+    }
+
     private static String read(String name) throws Exception {
         File direct = new File("src/main/java/com/ronan/heyboxlite/" + name);
         File file = direct.isFile() ? direct

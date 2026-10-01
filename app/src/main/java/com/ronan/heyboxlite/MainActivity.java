@@ -1207,9 +1207,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         int searchHorizontal = roundLayout
                 ? roundHorizontalInset(RoundLayoutMetrics.SEARCH_HORIZONTAL_RATIO, 6)
                 : horizontalPadding;
-        View page = this.searchPage.create(restoreResults,
-                settingsTopCard(getString(R.string.title_search)),
-                this.themeTokens, roundLayout, horizontalPadding,
+        View page = this.searchPage.create(restoreResults, this.themeTokens,
+                roundLayout, horizontalPadding,
                 subpageTopPadding(), searchHorizontal);
         transitionTo(page);
     }
@@ -1287,6 +1286,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if (!detail.authCode.isEmpty()) this.currentAuthCode = detail.authCode;
         this.lastDetailDiagnostics = detail.diagnostics;
         this.detailPager = detail.pager;
+        int savedScroll = this.session.rememberDetailScroll()
+                ? this.localCache.scroll(this.currentLinkId) : 0;
         installDetailRoot(detail.root, detail.pager, replacing, previousArticleScroll,
                 previousCommentScroll, previousComments,
                 detail.articleScroll, detail.commentScroll);
@@ -1294,18 +1295,15 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 detail.pager, 72L, detail.articleScroll, previousArticleScroll);
         this.detailCommentsSection.populate(detail.commentPageHost, detail.comments,
                 detail.pager, 140L, detail.commentScroll, previousCommentScroll);
+        if (!replacing && savedScroll > 0) {
+            DetailScrollRestorer.beforeFirstDraw(detail.articleScroll, savedScroll);
+        }
         this.detailLoader.markRendered();
         if (this.activityResumed && this.readingTimeTracker != null) {
             this.readingTimeTracker.start(fallback.article, fallback.id);
         }
         this.detailScroll = detail.articleScroll;
         this.detailCommentScroll = detail.commentScroll;
-        int savedScroll = this.session.rememberDetailScroll()
-                ? this.localCache.scroll(this.currentLinkId) : 0;
-        if (!replacing && savedScroll > 0) {
-            detail.articleScroll.postDelayed(
-                    () -> detail.articleScroll.scrollTo(0, savedScroll), 80L);
-        }
     }
 
     private void installDetailRoot(FrameLayout root, DetailPager pager,
