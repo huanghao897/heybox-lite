@@ -32,8 +32,18 @@ public class ImageViewerTransitionWiringTest {
         String source = read("ImageViewerActivity.java");
 
         assertTrue(source.contains("long delay = Motions.off() ? 0L"));
+        assertTrue(source.contains("spinner.setVisibility(View.GONE)"));
         assertTrue(source.contains("if (!automatic) spinner.setVisibility(View.GONE)"));
         assertTrue(source.contains("if (!automatic) {\n            spinner.setAlpha(1f)"));
+    }
+
+    @Test
+    public void originalBitmapReplacementFitsBeforeTheNextFrame() throws Exception {
+        String source = read("ImageViewerActivity.java");
+
+        assertTrue(source.contains("private void applyLoadedBitmap(ZoomImageView view, Bitmap bitmap)"));
+        assertTrue(source.contains("view.setImageBitmap(bitmap);\n        if (view.getWidth() > 0"));
+        assertFalse(source.contains("view.animate().cancel();\n            view.setImageBitmap(bitmap)"));
     }
 
     private static String read(String name) throws Exception {

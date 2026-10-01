@@ -130,6 +130,9 @@ public final class ImageViewerActivity extends Activity {
             page.addView(view, new FrameLayout.LayoutParams(-1, -1));
             LoadingSpinnerView spinner = new LoadingSpinnerView(this);
             spinner.setColor(Color.argb(210, 235, 238, 241));
+            // The preview is normally already available for comment images.
+            // Keep the spinner opt-in so it cannot flash during the first draw.
+            spinner.setVisibility(View.GONE);
             page.addView(spinner, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
             pager.addView(page, new ViewGroup.LayoutParams(-1, -1));
             imagePages[i] = page;
@@ -853,15 +856,23 @@ public final class ImageViewerActivity extends Activity {
                 return;
             }
             originalLoaded[index] = true;
-            view.animate().cancel();
-            view.setImageBitmap(bitmap);
-            view.post(view::fitImage);
+            applyLoadedBitmap(view, bitmap);
             updateLongCandidate(index, bitmap);
             if (index == current) {
                 if (automatic) original.setVisibility(View.GONE);
                 refreshOriginalLabel();
             }
         });
+    }
+
+    private void applyLoadedBitmap(ZoomImageView view, Bitmap bitmap) {
+        if (view == null || bitmap == null || bitmap.isRecycled()) return;
+        view.setImageBitmap(bitmap);
+        if (view.getWidth() > 0 && view.getHeight() > 0) {
+            view.fitImage();
+        } else {
+            view.post(view::fitImage);
+        }
     }
 
     private void saveImage() {
