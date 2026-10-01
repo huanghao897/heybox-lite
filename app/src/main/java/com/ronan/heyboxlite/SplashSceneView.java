@@ -21,6 +21,7 @@ final class SplashSceneView extends FrameLayout {
     private final ImageView mark;
     private final TextView message;
     private final TextView hint;
+    private long entranceDuration;
 
     SplashSceneView(Context context, String value, boolean dark,
                     float uiScale, float textScale, boolean showHint) {
@@ -75,7 +76,10 @@ final class SplashSceneView extends FrameLayout {
 
     void playEntrance() {
         Motions.resetTree(this);
-        if (Motions.off()) return;
+        if (Motions.off()) {
+            this.entranceDuration = 0L;
+            return;
+        }
         this.mark.setAlpha(0.0f);
         float markStartScale = Motions.full() ? 0.92f : 0.94f;
         this.mark.setScaleX(markStartScale);
@@ -90,6 +94,7 @@ final class SplashSceneView extends FrameLayout {
         long iconDuration = Motions.full() ? 260L : 210L;
         long messageDelay = Motions.full() ? 300L : 245L;
         long messageDuration = Motions.full() ? 330L : 280L;
+        this.entranceDuration = messageDelay + messageDuration;
         this.mark.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
                 .setDuration(iconDuration)
                 .setInterpolator(SPLASH_INTERPOLATOR)
@@ -126,6 +131,10 @@ final class SplashSceneView extends FrameLayout {
 
     long fadeOutDuration() {
         return Motions.off() ? 0L : (Motions.full() ? 160L : 120L);
+    }
+
+    long entranceDuration() {
+        return this.entranceDuration;
     }
 
     void cancelMotion() {

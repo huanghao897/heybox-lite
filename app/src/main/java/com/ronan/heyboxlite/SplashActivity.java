@@ -37,7 +37,10 @@ public final class SplashActivity extends Activity {
         long remaining = session.splashDuration()
                 - (System.currentTimeMillis() - startedAt)
                 - this.scene.fadeOutDuration();
-        handler.postDelayed(this::startExit, Math.max(120L, remaining));
+        long entranceRemaining = this.scene.entranceDuration()
+                - (System.currentTimeMillis() - startedAt);
+        handler.postDelayed(this::startExit,
+                Math.max(120L, Math.max(remaining, entranceRemaining)));
     }
 
     private void startExit() {
