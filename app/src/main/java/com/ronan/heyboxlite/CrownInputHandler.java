@@ -16,6 +16,8 @@ final class CrownInputHandler {
         View contentRoot();
     }
 
+    /** Android rotary encoder source bit; kept as a literal for minSdk 14 builds. */
+    private static final int SOURCE_ROTARY_ENCODER = 0x00400000;
     private static final int AXIS_ROTARY_SCROLL = 26;
 
     private final Activity activity;
@@ -37,8 +39,7 @@ final class CrownInputHandler {
 
     boolean handle(MotionEvent event) {
         if (event == null || event.getActionMasked() != MotionEvent.ACTION_SCROLL) return false;
-        float axis = event.getAxisValue(AXIS_ROTARY_SCROLL);
-        if (axis == 0f) axis = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+        float axis = rotaryAxis(event);
         if (axis == 0f) return false;
         if (!session.crownScrollEnabled()) {
             reset();
@@ -52,6 +53,30 @@ final class CrownInputHandler {
             dispatcher.enqueue(distance, scrollController.frameLimit(baseStep, speed, axisGain));
         }
         return true;
+    }
+
+    /**
+     * Wear OS normally reports the crown/bezel on AXIS_SCROLL. Some Samsung
+     * firmware exposes the same rotary source through VSCROLL or HSCROLL,
+     * matching the generic Android rotary contract. Read the source-specific
+     * axis first and keep the legacy scroll-wheel fallback for older watches.
+     */
+    private static float rotaryAxis(MotionEvent event) {
+        boolean rotarySource = (event.getSource() & SOURCE_ROTARY_ENCODER)
+                == SOURCE_ROTARY_ENCODER;
+        if (rotarySource) {
+            float axis = event.getAxisValue(AXIS_ROTARY_SCROLL);
+            if (axis != 0f) return axis;
+            axis = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            if (axis != 0f) return axis;
+            return event.getAxisValue(MotionEvent.AXIS_HSCROLL);
+        }
+
+        float axis = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+        if (axis != 0f) return axis;
+        axis = event.getAxisValue(AXIS_ROTARY_SCROLL);
+        if (axis != 0f) return axis;
+        return event.getAxisValue(MotionEvent.AXIS_HSCROLL);
     }
 
     CrownScrollController scrollController() {

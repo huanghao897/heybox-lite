@@ -26,6 +26,7 @@ final class GameCardView extends FrameLayout {
     private final TextView currentPriceView;
     private final TextView originalPriceView;
     private final TextView discountView;
+    private int coverGeneration;
 
     private GameCardView(Activity activity, SessionStore session,
                          ThemeTokens tokens, boolean roundLayout) {
@@ -112,6 +113,7 @@ final class GameCardView extends FrameLayout {
             showUnavailable("");
             return;
         }
+        final int generation = ++this.coverGeneration;
 
         this.nameView.setText(data.name.isEmpty() ? "游戏" : data.name);
         this.stateView.setVisibility(View.GONE);
@@ -126,13 +128,17 @@ final class GameCardView extends FrameLayout {
         if (!data.coverUrl.isEmpty() && !session.noImage()) {
             this.cover.setVisibility(View.VISIBLE);
             this.coverPlaceholder.setVisibility(View.VISIBLE);
-            ImageLoader.intoMeasuredStable(this.cover, data.coverUrl,
-                    Math.max(180, dp(roundLayout ? 58 : 72) * 3),
-                    (success, bitmap) -> {
-                        if (success && bitmap != null) {
-                            this.coverPlaceholder.setVisibility(View.GONE);
-                        }
-                    });
+            LazyImageBinder.bind(this.cover, () -> {
+                if (generation != this.coverGeneration) return;
+                ImageLoader.intoMeasuredStable(this.cover, data.coverUrl,
+                        Math.max(180, dp(roundLayout ? 58 : 72) * 3),
+                        (success, bitmap) -> {
+                            if (generation == this.coverGeneration
+                                    && success && bitmap != null) {
+                                this.coverPlaceholder.setVisibility(View.GONE);
+                            }
+                        });
+            });
         } else {
             this.cover.setVisibility(View.GONE);
             this.coverPlaceholder.setVisibility(View.VISIBLE);
@@ -161,6 +167,7 @@ final class GameCardView extends FrameLayout {
     }
 
     void showUnavailable(String appId) {
+        this.coverGeneration++;
         this.nameView.setText("游戏信息暂不可用");
         this.stateView.setVisibility(View.GONE);
         setMetadata("");

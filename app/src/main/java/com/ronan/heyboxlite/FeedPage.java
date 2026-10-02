@@ -175,8 +175,9 @@ final class FeedPage {
         int position = Math.max(0, Math.min(this.firstVisible, maxPosition));
         int top = this.firstTop;
         this.listView.post(() -> {
-            this.listView.setSelectionFromTop(position, top);
-            this.listView.post(() -> this.listView.setSelectionFromTop(position, top));
+            if (this.listView != null && this.listView.getParent() != null) {
+                this.listView.setSelectionFromTop(position, top);
+            }
         });
     }
 

@@ -352,8 +352,8 @@ final class CommentRenderer {
         Compat.clipToOutline(image);
         image.setOnClickListener(view ->
                 this.host.openOriginalImage(image, source.originalUrl));
-        ImageLoader.intoMeasuredRevealStable(image, source.previewUrl,
-                Math.max(96, dp(sizeDp)), (success, bitmap) -> {
+        LazyImageBinder.bind(image, () -> ImageLoader.intoMeasuredRevealStable(image,
+                source.previewUrl, Math.max(96, dp(sizeDp)), (success, bitmap) -> {
                     if (success && this.session.playGif()
                             && (source.animated || GifSupport.isGifUrl(source.originalUrl))) {
                         ImageLoader.intoGif(image, source.originalUrl, animated ->
@@ -364,7 +364,7 @@ final class CommentRenderer {
                                 R.drawable.il_image, this.tokens.muted));
                         image.setPadding(dp(18), dp(18), dp(18), dp(18));
                     }
-                });
+                }));
         return image;
     }
 

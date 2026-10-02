@@ -35,6 +35,7 @@ final class DetailLoadCoordinator {
     }
 
     private static final String OFFLINE_CACHE_MESSAGE = "已显示离线缓存";
+    private static final long ENTRY_LAYOUT_DELAY_MS = 24L;
 
     private final Context context;
     private final ApiClient api;
@@ -134,40 +135,50 @@ final class DetailLoadCoordinator {
     }
 
     private void cacheAndRender(FeedItem item, JSONObject body, int token) {
-        JSONObject normalized = DetailResponseNormalizer.normalize(body);
-        DetailResponseNormalizer.mergePreloadedContent(normalized, item.toJson());
-        DetailResponseNormalizer.mergeVideoFallback(normalized, item.toJson());
-        cache.saveDetail(item.id, normalized);
-        if (cache.isWatchLater(item.id)) {
-            host.refreshOffline(item, normalized);
-        }
-        pendingBody = normalized;
-        renderAfterEntry(item, token);
-        if (ArticleGameCards.shouldLoadWeb(normalized, item)) {
-            api.get(EndpointProvider.linkWebView(),
-                    OfficialRequestParams.articleWebView(item.id, item.hsrc),
-                    new ApiClient.Callback() {
+        try {
+            JSONObject normalized = DetailResponseNormalizer.normalize(body);
+            DetailResponseNormalizer.mergePreloadedContent(normalized, item.toJson());
+            DetailResponseNormalizer.mergeVideoFallback(normalized, item.toJson());
+            cache.saveDetail(item.id, normalized);
+            if (cache.isWatchLater(item.id)) {
+                host.refreshOffline(item, normalized);
+            }
+            pendingBody = normalized;
+            renderAfterEntry(item, token);
+            if (ArticleGameCards.shouldLoadWeb(normalized, item)) {
+                api.get(EndpointProvider.linkWebView(),
+                        OfficialRequestParams.articleWebView(item.id, item.hsrc),
+                        new ApiClient.Callback() {
                         @Override
                         public void onSuccess(JSONObject webBody) {
                             if (!current(item, token)) return;
-                            JSONObject result = normalized.optJSONObject("result");
-                            JSONObject link = result == null ? null
-                                    : result.optJSONObject("link");
-                            int beforeCards = ArticleGameCards.count(link);
-                            cache.log("article web shape link=" + item.id + " "
-                                    + ArticleGameResponseSummary.describe(webBody));
-                            DetailResponseNormalizer.mergeArticleWebContent(normalized, webBody);
-                            cache.saveDetail(item.id, normalized);
-                            int afterCards = ArticleGameCards.count(link);
-                            cache.log("article web content loaded link=" + item.id
-                                    + " gameCards=" + afterCards
-                                    + " " + ArticleGameCards.fieldSummary(link));
-                            if (afterCards > beforeCards) {
-                                pendingBody = normalized;
-                                renderAfterEntry(item, token);
-                            } else {
-                                cache.log("article web content unchanged link=" + item.id
-                                        + " reason=no_new_game_cards");
+                            try {
+                                JSONObject result = normalized.optJSONObject("result");
+                                JSONObject link = result == null ? null
+                                        : result.optJSONObject("link");
+                                int beforeCards = ArticleGameCards.count(link);
+                                cache.log("article web shape link=" + item.id + " "
+                                        + ArticleGameResponseSummary.describe(webBody));
+                                DetailResponseNormalizer.mergeArticleWebContent(normalized,
+                                        webBody);
+                                cache.saveDetail(item.id, normalized);
+                                int afterCards = ArticleGameCards.count(link);
+                                cache.log("article web content loaded link=" + item.id
+                                        + " gameCards=" + afterCards
+                                        + " " + ArticleGameCards.fieldSummary(link));
+                                if (afterCards > beforeCards) {
+                                    pendingBody = normalized;
+                                    renderAfterEntry(item, token);
+                                } else {
+                                    cache.log("article web content unchanged link=" + item.id
+                                            + " reason=no_new_game_cards");
+                                }
+                            } catch (RuntimeException error) {
+                                cache.log("article web content rejected link=" + item.id
+                                        + " type=" + error.getClass().getSimpleName());
+                                if (rendered) {
+                                    host.toast("详情更新失败，已保留当前内容");
+                                }
                             }
                         }
 
@@ -177,7 +188,12 @@ final class DetailLoadCoordinator {
                             cache.log("article web content unavailable link=" + item.id
                                     + " reason=" + message);
                         }
-                    });
+                        });
+            }
+        } catch (RuntimeException error) {
+            cache.log("detail response rejected link=" + item.id
+                    + " type=" + error.getClass().getSimpleName());
+            handleFailureAfterEntry(item, token, "详情内容解析失败");
         }
     }
 
@@ -187,14 +203,26 @@ final class DetailLoadCoordinator {
             JSONObject body = pendingBody;
             pendingBody = null;
             if (body == null && !rendered) body = initialBody(item);
-            if (body != null) host.renderDetail(body, item);
+            if (body != null) renderSafely(body, item);
         });
     }
 
     private void afterEntry(Runnable action) {
-        long elapsed = Math.max(0L, SystemClock.elapsedRealtime() - loadStartedAt);
-        long delay = Math.max(0L, MotionSpec.TRANSITION_FULL_MS - elapsed);
-        handler.postDelayed(action, delay);
+        handler.postDelayed(action, ENTRY_LAYOUT_DELAY_MS);
+    }
+
+    private void renderSafely(JSONObject body, FeedItem item) {
+        try {
+            host.renderDetail(body, item);
+        } catch (RuntimeException error) {
+            cache.log("detail render rejected link=" + item.id
+                    + " type=" + error.getClass().getSimpleName());
+            if (rendered) {
+                host.toast("详情更新失败，已保留当前内容");
+            } else {
+                host.showMessage("帖子内容暂时无法显示，请稍后重试");
+            }
+        }
     }
 
     private JSONObject initialBody(FeedItem item) {
@@ -225,7 +253,7 @@ final class DetailLoadCoordinator {
         JSONObject cached = cache.detail(item.id);
         if (cached != null && blockedMessage(cached).isEmpty() && hasLink(cached)) {
             host.toast(OFFLINE_CACHE_MESSAGE);
-            host.renderDetail(cached, item);
+            renderSafely(cached, item);
         } else if (!renderFallback(item, message)) {
             host.showMessage("详情加载失败\n" + message);
         }
@@ -252,7 +280,7 @@ final class DetailLoadCoordinator {
             JSONObject body = new JSONObject();
             body.put("result", result);
             body.put("_fallback_notice", notice);
-            host.renderDetail(body, item);
+            renderSafely(body, item);
             return true;
         } catch (JSONException error) {
             return false;

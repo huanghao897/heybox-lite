@@ -80,7 +80,9 @@ final class DetailContentRenderer {
                 ImageView cover = new ImageView(this.activity);
                 cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
                 card.addView(cover, match());
-                ImageLoader.intoMeasuredRevealStable(cover, video.cover, imageTargetPx(), null);
+                LazyImageBinder.bind(cover, () ->
+                        ImageLoader.intoMeasuredRevealStable(cover, video.cover,
+                                imageTargetPx(), null));
             }
 
             if (video.playable() || !video.cover.isEmpty()) {
@@ -374,8 +376,8 @@ final class DetailContentRenderer {
         frame.addView(image, match());
         image.setOnClickListener(view ->
                 this.imageOpener.open(image, new String[]{url}, 0));
-        ImageLoader.intoMeasuredRevealStable(image, url, targetPx,
-                (success, bitmap) -> {
+        LazyImageBinder.bind(image, () -> ImageLoader.intoMeasuredRevealStable(image, url,
+                targetPx, (success, bitmap) -> {
                     if (success && bitmap != null) {
                         frame.setImageSize(bitmap.getWidth(), bitmap.getHeight());
                         if (this.session.playGif() && GifSupport.isGifUrl(url)) {
@@ -387,7 +389,7 @@ final class DetailContentRenderer {
                         failed.setGravity(Gravity.CENTER);
                         frame.addView(failed, match());
                     }
-                });
+                }));
         return frame;
     }
 

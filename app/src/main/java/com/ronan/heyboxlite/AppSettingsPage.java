@@ -62,9 +62,6 @@ final class AppSettingsPage {
             this.session.setNoImage(value);
             this.host.reloadFeed(false);
         }), 0);
-        this.settingsUi.addChoiceEntry(panel, "网络模式", R.drawable.il_globe,
-                new String[]{"省流量", "标准", "原图"}, this.session.networkMode(),
-                this::setNetworkMode, null);
         addTop(panel, toggle("表冠滚动", this.session.crownScrollEnabled(), value -> {
             this.session.setCrownScrollEnabled(value);
             if (!value) this.crownScrollController.reset();
@@ -201,18 +198,6 @@ final class AppSettingsPage {
         });
         this.host.content().addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         overlay.playEntrance();
-    }
-
-    private void setNetworkMode(int mode) {
-        boolean changed = this.session.networkMode() != mode;
-        this.session.setNetworkMode(mode);
-        if (changed) this.host.reloadFeed(false);
-        this.host.showToast("已切换为" + networkModeLabel());
-    }
-
-    private String networkModeLabel() {
-        int mode = this.session.networkMode();
-        return mode == 0 ? "省流量" : mode == 2 ? "原图" : "标准";
     }
 
     private LinearLayout toggle(String label, boolean initial,

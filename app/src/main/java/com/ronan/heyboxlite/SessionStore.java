@@ -69,7 +69,6 @@ final class SessionStore {
     private static final String AUTO_OFFLINE_CLEANUP = "auto_offline_cleanup";
     private static final String DOUBLE_TAP_COMMENT_REPLY = "double_tap_comment_reply";
     private static final String PLAY_GIF = "play_gif";
-    private static final String NETWORK_MODE = "network_mode";
     private static final String VIDEO_AUTOPLAY = "video_autoplay";
     private static final String VIDEO_LOOP = "video_loop";
     private static final String VIDEO_MUTED = "video_muted";
@@ -507,19 +506,6 @@ final class SessionStore {
 
     void setVideoDisplayMode(int value) {
         prefs.edit().putInt(VIDEO_DISPLAY_MODE, Math.max(0, Math.min(1, value))).apply();
-    }
-
-    int networkMode() {
-        return Math.max(0, Math.min(2, prefs.getInt(NETWORK_MODE, 1)));
-    }
-
-    void setNetworkMode(int value) {
-        int mode = Math.max(0, Math.min(2, value));
-        prefs.edit()
-                .putInt(NETWORK_MODE, mode)
-                .putBoolean(ORIGINAL_IMAGES, mode == 2)
-                .putBoolean(PLAY_GIF, mode != 0)
-                .apply();
     }
 
     int testReleaseId() {

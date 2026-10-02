@@ -1156,9 +1156,9 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     }
 
     private void showFeed() {
+        if ("profile".equals(this.screen)) this.pendingLateralPush = true;
         this.feedPage.show();
     }
-
     private void updateReadingTimeEntry() {
         if (this.profilePage != null) this.profilePage.updateReadingSummary();
     }
