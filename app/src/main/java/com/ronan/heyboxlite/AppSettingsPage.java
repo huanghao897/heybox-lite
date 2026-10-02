@@ -62,6 +62,11 @@ final class AppSettingsPage {
             this.session.setNoImage(value);
             this.host.reloadFeed(false);
         }), 0);
+        addTop(panel, toggle("游戏卡片无图", this.session.gameCardNoImage(),
+                value -> {
+                    this.session.setGameCardNoImage(value);
+                    this.host.reloadFeed(false);
+                }), 0);
         addTop(panel, toggle("表冠滚动", this.session.crownScrollEnabled(), value -> {
             this.session.setCrownScrollEnabled(value);
             if (!value) this.crownScrollController.reset();
@@ -74,6 +79,8 @@ final class AppSettingsPage {
                 this.session::setCrownHapticsEnabled), 0);
         addTop(panel, toggle("右滑返回上一级", this.session.shellBackSwipe(),
                 this.session::setShellBackSwipe), 0);
+        addTop(panel, toggle("主页右滑退出", this.session.homeSwipeExit(),
+                this.session::setHomeSwipeExit), 0);
         addTop(panel, toggle("退出确认", this.session.confirmExitOnBack(),
                 this.session::setConfirmExitOnBack), 0);
         addTop(panel, toggle("记住帖子阅读位置", this.session.rememberDetailScroll(),

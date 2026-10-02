@@ -13,6 +13,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -71,6 +73,7 @@ public final class ImageViewerActivity extends Activity {
     private boolean sourcePreviewHidden;
     private boolean loadOriginalImmediately;
     private SessionStore session;
+    private OnBackInvokedCallback systemBackCallback;
     static long preparePreview(String sourceUrl, Bitmap bitmap, ImageView source) {
         return ImagePreviewStore.prepare(sourceUrl, bitmap, source);
     }
@@ -82,6 +85,7 @@ public final class ImageViewerActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
         session = new SessionStore(this);
         Motions.setLevel(session.motionLevel());
+        registerSystemBackCallback();
         roundDisplay = session.usesRoundLayout();
         loadOriginalImmediately = getIntent().getBooleanExtra(
                 EXTRA_LOAD_ORIGINAL_IMMEDIATELY, false);
@@ -1009,12 +1013,38 @@ public final class ImageViewerActivity extends Activity {
         overridePendingTransition(0, 0);
     }
 
-    @Override public void onBackPressed() {
+    private void registerSystemBackCallback() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        this.systemBackCallback = this::handleBackRequest;
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT, this.systemBackCallback);
+    }
+
+    private void unregisterSystemBackCallback() {
+        if (Build.VERSION.SDK_INT < 33 || this.systemBackCallback == null) return;
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(
+                this.systemBackCallback);
+        this.systemBackCallback = null;
+    }
+
+    private void handleBackRequest() {
+        if (this.images != null && this.current >= 0
+                && this.current < this.images.length
+                && this.images[this.current].isZoomed()) {
+            this.images[this.current].fitImage();
+            setChromeAlpha(1.0f);
+            return;
+        }
         closeViewer();
+    }
+
+    @Override public void onBackPressed() {
+        handleBackRequest();
     }
 
     @Override protected void onDestroy() {
         destroyed = true;
+        unregisterSystemBackCallback();
         cancelViewerAnimationCallbacks();
         restoreSourcePreview();
         if (root != null) root.animate().cancel();

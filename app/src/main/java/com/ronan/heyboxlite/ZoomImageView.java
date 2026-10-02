@@ -1,5 +1,4 @@
 package com.ronan.heyboxlite;
-
 import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -12,7 +11,6 @@ import android.view.ScaleGestureDetector;
 import android.view.ViewConfiguration;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
-
 final class ZoomImageView extends ImageView {
     private static final int INVALID_POINTER_ID = -1;
     private static final long PHONE_DOUBLE_TAP_TIMEOUT_MS = 340L;
@@ -163,6 +161,8 @@ final class ZoomImageView extends ImageView {
     boolean isZoomed() {
         return tapZoomLevel > 0 || scale > 1.01f;
     }
+
+    @Override public boolean canScrollHorizontally(int direction) { return isZoomed(); }
 
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);

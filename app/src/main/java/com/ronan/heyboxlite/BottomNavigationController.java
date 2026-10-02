@@ -32,7 +32,8 @@ final class BottomNavigationController {
         this.pressFeedback = pressFeedback;
         int width = activity.getResources().getDisplayMetrics().widthPixels;
         int height = activity.getResources().getDisplayMetrics().heightPixels;
-        this.dimensions = ResponsiveDock.fromScreen(width, height, roundLayout);
+        this.dimensions = ResponsiveDock.fromScreen(width, height, roundLayout,
+                session.uiScale() / 100.0f);
         this.view = new LinearLayout(activity);
         this.view.setGravity(17);
         this.view.setPadding(dimensions.paddingHorizontal, dimensions.paddingVertical,

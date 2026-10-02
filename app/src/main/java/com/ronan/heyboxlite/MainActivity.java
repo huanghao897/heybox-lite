@@ -1,5 +1,4 @@
 package com.ronan.heyboxlite;
-
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -40,7 +39,6 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 import org.json.JSONObject;
 
 @SuppressLint("WrongConstant")
@@ -1069,6 +1067,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         if (index < 0) {
             return this.session.shellBackSwipe() && canHeaderBack() && distanceX > 0.0f;
         }
+        if (index == 0 && distanceX > 0.0f && this.session.homeSwipeExit()) return true;
         int next = index + (distanceX < 0.0f ? 1 : -1);
         return next >= 0 && next <= 1;
     }
@@ -1133,7 +1132,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         ImageView guard = topLevel ? null
                 : installFullScreenTransitionOverlay(fullScreenSnapshot(targetKey));
         if (topLevel) {
-            showTopLevel(topLevelIndex() + direction);
+            if (targetKey.isEmpty()) onBackPressed();
+            else showTopLevel(topLevelIndex() + direction);
         } else {
             onBackPressed();
         }

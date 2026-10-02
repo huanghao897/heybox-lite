@@ -46,10 +46,27 @@ public class ImageViewerTransitionWiringTest {
         assertFalse(source.contains("view.animate().cancel();\n            view.setImageBitmap(bitmap)"));
     }
 
+    @Test
+    public void zoomedImagesClaimHorizontalGesturesFromWearDismiss() throws Exception {
+        String imageSource = read("ZoomImageView.java");
+        String styleSource = readResource("values-v20/styles.xml");
+
+        assertTrue(imageSource.contains("canScrollHorizontally(int direction)"));
+        assertTrue(imageSource.contains("return isZoomed();"));
+        assertTrue(styleSource.contains("android:windowSwipeToDismiss"));
+        assertTrue(styleSource.contains(">false</item>"));
+    }
+
     private static String read(String name) throws Exception {
         File direct = new File("src/main/java/com/ronan/heyboxlite/" + name);
         File file = direct.isFile() ? direct
                 : new File("app/src/main/java/com/ronan/heyboxlite/" + name);
+        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+    }
+
+    private static String readResource(String name) throws Exception {
+        File direct = new File("src/main/res/" + name);
+        File file = direct.isFile() ? direct : new File("app/src/main/res/" + name);
         return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
     }
 }

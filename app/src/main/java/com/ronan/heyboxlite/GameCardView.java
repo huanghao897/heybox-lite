@@ -125,7 +125,8 @@ final class GameCardView extends FrameLayout {
 
         this.cover.setTag(null);
         this.cover.setImageDrawable(null);
-        if (!data.coverUrl.isEmpty() && !session.noImage()) {
+        if (!data.coverUrl.isEmpty() && !session.noImage()
+                && !session.gameCardNoImage()) {
             this.cover.setVisibility(View.VISIBLE);
             this.coverPlaceholder.setVisibility(View.VISIBLE);
             LazyImageBinder.bind(this.cover, () -> {

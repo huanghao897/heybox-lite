@@ -59,6 +59,7 @@ final class SessionStore {
     private static final String CROWN_SCROLL_ENABLED = "crown_scroll_enabled";
     private static final String CROWN_SCROLL_SPEED = "crown_scroll_speed";
     private static final String CROWN_HAPTICS_ENABLED = "crown_haptics_enabled";
+    private static final String HOME_SWIPE_EXIT = "home_swipe_exit";
     private static final String AUTO_UPDATE_CHECK = "auto_update_check";
     private static final String SPLASH_ENABLED = "splash_enabled";
     private static final String SPLASH_TEXT = "splash_text";
@@ -69,6 +70,7 @@ final class SessionStore {
     private static final String AUTO_OFFLINE_CLEANUP = "auto_offline_cleanup";
     private static final String DOUBLE_TAP_COMMENT_REPLY = "double_tap_comment_reply";
     private static final String PLAY_GIF = "play_gif";
+    private static final String GAME_CARD_NO_IMAGE = "game_card_no_image";
     private static final String VIDEO_AUTOPLAY = "video_autoplay";
     private static final String VIDEO_LOOP = "video_loop";
     private static final String VIDEO_MUTED = "video_muted";
@@ -385,6 +387,14 @@ final class SessionStore {
         prefs.edit().putBoolean(CROWN_HAPTICS_ENABLED, value).apply();
     }
 
+    boolean homeSwipeExit() {
+        return prefs.getBoolean(HOME_SWIPE_EXIT, false);
+    }
+
+    void setHomeSwipeExit(boolean value) {
+        prefs.edit().putBoolean(HOME_SWIPE_EXIT, value).apply();
+    }
+
     boolean autoUpdateCheck() {
         return prefs.getBoolean(AUTO_UPDATE_CHECK, true);
     }
@@ -458,6 +468,14 @@ final class SessionStore {
 
     void setPlayGif(boolean value) {
         prefs.edit().putBoolean(PLAY_GIF, value).apply();
+    }
+
+    boolean gameCardNoImage() {
+        return prefs.getBoolean(GAME_CARD_NO_IMAGE, false);
+    }
+
+    void setGameCardNoImage(boolean value) {
+        prefs.edit().putBoolean(GAME_CARD_NO_IMAGE, value).apply();
     }
 
     boolean videoAutoplay() {
