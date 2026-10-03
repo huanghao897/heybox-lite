@@ -12,6 +12,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -136,6 +138,41 @@ final class PostActionController {
                 host.showToast("点赞失败" + writeErrorMessage("点赞", message));
             }
         });
+    }
+
+    void toggleFeedFavorite(FeedItem item) {
+        if (!canWrite("收藏", item)) return;
+        boolean before = item.favorited;
+        boolean next = !before;
+        item.favorited = next;
+        this.writeActions.favorite(item.id, hsrcFor(item), next, new ApiClient.Callback() {
+            @Override
+            public void onSuccess(JSONObject body) {
+                host.showToast(next ? "已收藏" : "已取消收藏");
+            }
+
+            @Override
+            public void onError(String message) {
+                item.favorited = before;
+                host.showToast("收藏操作失败" + writeErrorMessage("收藏", message));
+            }
+        });
+    }
+
+    void toggleFeedCache(FeedItem item) {
+        if (item == null || item.id.isEmpty()) return;
+        if (localCache.isWatchLater(item.id)) {
+            localCache.removeWatchLater(item.id);
+            host.showToast("已从稍后看移除");
+            return;
+        }
+        localCache.addWatchLater(item);
+        ArrayList<String> images = new ArrayList<>();
+        if (item.image != null && !item.image.isEmpty()) images.add(item.image);
+        Collections.addAll(images, item.images);
+        localCache.updateWatchLater(item, images);
+        if (!images.isEmpty()) ImageLoader.prefetchOffline(this.activity, images, 260, null);
+        host.showToast("已加入稍后看");
     }
 
     void toggleFeedLike(FeedItem item) {

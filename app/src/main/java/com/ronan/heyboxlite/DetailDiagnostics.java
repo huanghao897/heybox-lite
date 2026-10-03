@@ -6,6 +6,7 @@ import org.json.JSONObject;
 import java.util.Iterator;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 final class DetailDiagnostics {
     private static final int COMMENT_LIMIT = 5;
@@ -138,7 +139,7 @@ final class DetailDiagnostics {
         if (raw instanceof JSONObject) {
             JSONObject object = (JSONObject) raw;
             summary.objects++;
-            String type = object.optString("type", "").trim().toLowerCase();
+            String type = object.optString("type", "").trim().toLowerCase(Locale.ROOT);
             if (!type.isEmpty()) {
                 summary.typed++;
                 if ("game".equals(type)) summary.game++;

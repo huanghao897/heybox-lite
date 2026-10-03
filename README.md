@@ -5,8 +5,8 @@
 heybox Lite 不追求把手机端小黑盒完整搬到手表上，而是把「刷社区、看帖子、看图、看评论、做常用互动」这些真正高频的事，重新裁剪进腕上的尺寸里：少一点装饰，多一点可读内容；能滑动解决的地方，就少塞按钮。项目最早参考了 [HeyWear](https://github.com/m16a4666/HeyWear) 的方向，之后围绕方屏、圆屏和低性能手表做了大量自己的取舍。
 
 - **当前版本**：`2.18`（versionCode `221`）
-- **形态**：单个 Activity 为主的原生 Java View 应用，无 Jetpack Compose、无重量级 UI 框架
-- **兼容**：`minSdk 14`，实际体验以 Android 7.0+ 为准；APK 体积约 1.7 MB
+- **形态**：单个 Activity 承载的 Compose 主界面，Java 负责业务、网络、缓存和设备兼容层
+- **兼容**：迁移分支 `minSdk 21`，实际体验以 Android 7.0+ 为准；原生 View 分支保留为回退基线
 - **面向设备**：方屏 / 圆屏手表优先，同时兼顾旧安卓与低内存机型
 
 > 详细的架构、模块、接口与排查说明见 [`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.md)。
@@ -78,7 +78,8 @@ HeyBoxCommunity/
 │  ├─ proguard-rules.pro
 │  └─ src/main/
 │     ├─ AndroidManifest.xml
-│     ├─ java/com/ronan/heyboxlite/   # Java View、流程协调器、网络与解析组件
+│     ├─ java/com/ronan/heyboxlite/   # Java 业务、网络、缓存、媒体与兼容组件
+│     ├─ kotlin/com/ronan/heyboxlite/ # Compose 页面、主题、控制器与状态模型
 │     └─ res/                                 # 矢量图标、主题、网络安全配置
 ├─ dist/                        # 构建产物（不入库）
 ├─ docs/PROJECT_DOCUMENTATION.md # 工程详细文档
@@ -89,7 +90,10 @@ HeyBoxCommunity/
 
 | 模块 | 职责 |
 |------|------|
-| `MainActivity` | 页面 View、导航状态与生命周期协调 |
+| `MainActivity` / `ComposeAppHost` | Activity 生命周期、Compose 导航与回退状态协调 |
+| `ComposeFeed*` / `ComposeSearch*` / `ComposeProfile*` | 信息流、搜索、我的和个人动态页面及其控制器 |
+| `ComposeSettings*` / `ComposeCheckin*` | 设置、签到、排行榜和相关表单页面 |
+| `ComposeDetail*` / `ComposeReadingStats` | 帖子详情、评论、游戏卡片、阅读中心 |
 | `QrLoginController` / `WriteActionClient` | 二维码登录轮询、写操作节流与请求编排 |
 | `SavedPostParser` | 收藏、历史等不稳定响应结构的纯 JSON 解析 |
 | `FeedCollection` / `SearchState` | 帖子响应解析、关键词过滤、去重与搜索分页状态 |
@@ -103,7 +107,7 @@ HeyBoxCommunity/
 | `CheckinCenter*` | 云端签到连接、账号登录、任务设置和日志展示 |
 | `NativeSignBridge` / `NativeSignService` | 官方请求安全参数兼容层，独立进程运行 |
 
-主界面仍在 Java View 体系，不切 Compose —— 手表 ROM、低性能设备和旧安卓对包体积、兼容性与渲染开销更敏感，轻量 View 更合适。
+`feature/compose-migration` 已将主壳、底部导航、信息流、搜索、我的、设置、签到、阅读中心和帖子详情迁移到 Compose；页面状态和网络工作由独立控制器管理，避免把请求和磁盘 IO 放进组合函数。图片查看器、视频播放器、验证码 WebView 以及少数旧 ROM 兼容页仍保留 Java View 兼容层，因为它们依赖现有媒体手势、WebView 生命周期或设备特性，后续会在真机验证后逐项替换。原 `feature/ui-v2-native-view` 分支作为可回退基线保留。
 
 ---
 

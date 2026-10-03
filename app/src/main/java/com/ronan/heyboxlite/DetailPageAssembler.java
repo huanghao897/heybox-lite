@@ -11,6 +11,8 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.List;
+
 final class DetailPageAssembler {
     interface LayoutHost {
         int dp(int value);
@@ -36,6 +38,8 @@ final class DetailPageAssembler {
         final LinearLayout articleCommentHost;
         final LinearLayout commentPageHost;
         final JSONArray comments;
+        final List<RichContent.Block> contentBlocks;
+        final List<VideoData> videos;
         final int pagePadding;
         final int roundHeaderTop;
 
@@ -43,7 +47,8 @@ final class DetailPageAssembler {
                DetailPager pager, ScrollView articleScroll, ScrollView commentScroll,
                FrameLayout root, LinearLayout articleCommentHost,
                LinearLayout commentPageHost, JSONArray comments, int pagePadding,
-               int roundHeaderTop) {
+               int roundHeaderTop, List<RichContent.Block> contentBlocks,
+               List<VideoData> videos) {
             this.body = body;
             this.hsrc = hsrc;
             this.authCode = authCode;
@@ -55,6 +60,8 @@ final class DetailPageAssembler {
             this.articleCommentHost = articleCommentHost;
             this.commentPageHost = commentPageHost;
             this.comments = comments;
+            this.contentBlocks = contentBlocks;
+            this.videos = videos;
             this.pagePadding = pagePadding;
             this.roundHeaderTop = roundHeaderTop;
         }
@@ -163,7 +170,7 @@ final class DetailPageAssembler {
         root.addView(layout.backButton(), backParams);
         return new Result(body, hsrc, authCode, diagnostics, pager, articleScroll,
                 commentScroll, root, articleComments, commentPageHost, comments,
-                pagePadding, roundHeaderTop);
+                pagePadding, roundHeaderTop, content.blocks, content.videos);
     }
 
     private void addFallbackNotice(LinearLayout article, String notice) {

@@ -1,5 +1,7 @@
 plugins {
     id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "org.jetbrains.kotlin.plugin.compose"
 }
 
 def signingProperties = new Properties()
@@ -15,7 +17,7 @@ android {
 
     defaultConfig {
         applicationId "com.ronan.heyboxlite.preview"
-        minSdk 14
+        minSdk 21
         targetSdk 35
         testInstrumentationRunner "com.ronan.heyboxlite.CheckinCenterDeviceTestRunner"
         versionCode 221
@@ -40,6 +42,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        compose = true
     }
 
     signingConfigs {
@@ -161,6 +164,14 @@ tasks.withType(JavaCompile).configureEach {
 dependencies {
     implementation project(":cnwearoverlay-runtime")
     implementation "com.google.zxing:core:3.3.3"
+    implementation platform("androidx.compose:compose-bom:2024.12.01")
+    implementation "androidx.compose.animation:animation"
+    implementation "androidx.compose.foundation:foundation"
+    implementation "androidx.compose.material3:material3"
+    implementation "androidx.compose.ui:ui"
+    implementation "androidx.compose.ui:ui-graphics"
+    implementation "androidx.compose.ui:ui-tooling-preview"
+    debugImplementation "androidx.compose.ui:ui-tooling"
 
     // 本地单测（纯逻辑回归网，不进 APK）：真 org.json 覆盖 android.jar 的桩实现
     testImplementation "junit:junit:4.13.2"

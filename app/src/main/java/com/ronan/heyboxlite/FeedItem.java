@@ -38,6 +38,7 @@ final class FeedItem {
     final boolean pinned;
     final JSONObject contentPreload;
     boolean liked;
+    boolean favorited;
     boolean following;
     boolean followPending;
 
@@ -99,7 +100,7 @@ final class FeedItem {
         }
         String authorId = first(userId(user), userId(json));
         String authorAvatar = user == null ? "" : user.optString("avatar", user.optString("avartar"));
-        return new FeedItem(
+        FeedItem item = new FeedItem(
                 json.optString("linkid", json.optString("link_id")),
                 title,
                 description,
@@ -125,6 +126,9 @@ final class FeedItem {
                 detailImages,
                 contentPreload(json)
         );
+        item.favorited = Json.truthy(json, "is_favour", "is_favor", "is_fav",
+                "favored", "has_favour", "has_favor");
+        return item;
     }
 
     JSONObject toJson() {
@@ -171,6 +175,7 @@ final class FeedItem {
             }
             json.put("is_top", pinned);
             json.put("is_liked", liked);
+            json.put("is_favour", favorited);
             JSONObject user = new JSONObject();
             user.put("username", author);
             user.put("userid", authorId);

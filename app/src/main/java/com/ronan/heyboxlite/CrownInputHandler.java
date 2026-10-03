@@ -14,6 +14,7 @@ final class CrownInputHandler {
         View feedScrollTarget();
         View searchScrollTarget();
         View contentRoot();
+        boolean scrollCompose(int distance);
     }
 
     /** Android rotary encoder source bit; kept as a literal for minSdk 14 builds. */
@@ -50,7 +51,11 @@ final class CrownInputHandler {
         int speed = session.crownScrollSpeed();
         int distance = scrollController.distance(axis, baseStep, speed, axisGain);
         if (distance != 0) {
-            dispatcher.enqueue(distance, scrollController.frameLimit(baseStep, speed, axisGain));
+            if (host.scrollCompose(distance)) {
+                hapticProvider.performScrollTick(host.contentRoot());
+            } else {
+                dispatcher.enqueue(distance, scrollController.frameLimit(baseStep, speed, axisGain));
+            }
         }
         return true;
     }

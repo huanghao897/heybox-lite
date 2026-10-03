@@ -124,60 +124,12 @@ final class DisplaySettingsPage {
     void showPreview() {
         LinearLayout page = this.host.openPage(
                 "display_preview", "界面预览", this::showSettings);
-        TextView hint = text("预览使用当前已保存的显示参数", 10.0f, this.tokens.muted);
-        hint.setGravity(Gravity.CENTER);
-        page.addView(hint, new LinearLayout.LayoutParams(-1, dp(28)));
-
-        LinearLayout feedCard = card();
-        TextView articleBadge = text("文章", 9.0f, ThemeTokens.contrast(this.tokens.accent));
-        articleBadge.setGravity(Gravity.CENTER);
-        Compat.setBackground(articleBadge, UiComponents.round(
-                this.activity, this.tokens.accent, 4, uiScale()));
-        feedCard.addView(articleBadge, new LinearLayout.LayoutParams(dp(42), dp(20)));
-        TextView title = boldText("方屏上的社区，也可以清晰又从容", 15.0f, this.tokens.text);
-        addTop(feedCard, title, 6);
-        TextView summary = text("这是一条帖子列表摘要，用来观察整体字号、卡片间距和主题颜色",
-                11.0f, this.tokens.muted);
-        summary.setLineSpacing(0.0f, 1.12f);
-        addTop(feedCard, summary, 5);
-        addTop(feedCard, text("Ronan   👍 128   评论 36", 10.0f, this.tokens.accent), 7);
-        page.addView(feedCard);
-
-        LinearLayout detail = card();
-        detail.addView(boldText("帖子正文预览", 16.0f, this.tokens.text));
-        TextView body = text("这是正文第一段，用于预览文字大小、字间距与行距。\n\n"
-                        + "这是正文第二段。调整设置后保存，再回到这里就能查看最终效果",
-                14.0f * this.session.bodyTextScale() / 100.0f, this.tokens.text);
-        body.setLineSpacing(0.0f, this.session.bodyLineSpacing() / 100.0f);
-        Compat.setLetterSpacing(body, this.session.bodyLetterSpacing() / 200.0f);
-        if (this.session.bodyBold()) {
-            body.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        }
-        addTop(detail, body, this.session.bodyParagraphSpacing());
-        addTop(page, detail, 7);
-
-        LinearLayout comments = card();
-        comments.addView(boldText("评论层级预览", 14.0f, this.tokens.text));
-        TextView first = boldText("一级评论会稍微加粗，方便快速浏览主要观点",
-                13.0f, this.tokens.text);
-        first.setLineSpacing(0.0f, this.session.bodyLineSpacing() / 100.0f);
-        addTop(comments, first, 7);
-        LinearLayout reply = new LinearLayout(this.activity);
-        View rail = new View(this.activity);
-        rail.setBackgroundColor(this.tokens.accent);
-        LinearLayout.LayoutParams railParams = new LinearLayout.LayoutParams(dp(2), -1);
-        railParams.rightMargin = dp(8);
-        reply.addView(rail, railParams);
-        TextView second = text("二级评论使用稍轻的字重，并通过主题色竖线建立层级",
-                12.0f, this.tokens.muted);
-        second.setLineSpacing(0.0f, 1.16f);
-        reply.addView(second, new LinearLayout.LayoutParams(0, -2, 1.0f));
-        addTop(comments, reply, 7);
-        addTop(page, comments, 7);
-
-        Button back = commandButton("返回继续调整", R.drawable.ic_arrow_back);
-        back.setOnClickListener(view -> showSettings());
-        addTop(page, back, 9);
+        ComposePageHost.mountDisplayPreview(page, this.tokens.dark,
+                this.tokens.background, this.tokens.panel, this.tokens.panelElevated,
+                this.tokens.text, this.tokens.muted, this.tokens.subtle,
+                this.tokens.hairline, this.tokens.accent, this.tokens.link,
+                this.tokens.onPrimary, uiScale(), this.session.textScale() / 100.0f,
+                this.roundLayout);
     }
 
     private void showThemePicker() {

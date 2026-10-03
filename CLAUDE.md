@@ -1,6 +1,6 @@
 # heybox Lite — Android 项目
 
-小黑盒手表端第三方客户端，Java View 体系，面向 Android 7.0+。当前版本 `2.18`（versionCode `221`）。
+小黑盒手表端第三方客户端。`feature/compose-migration` 使用 Jetpack Compose 承载主界面，Java 保留业务、网络、缓存、媒体和设备兼容层，面向 Android 7.0+。当前版本 `2.18`（versionCode `221`）。原 `feature/ui-v2-native-view` 分支是可回退的原生 View 基线。
 
 ## 构建
 
@@ -21,7 +21,9 @@
 - 只有用户明确说“先别传”或“不用上传”时，才暂停 GitHub 提交与推送。
 - 发布到应用更新服务器仍需用户明确授权，不能因为已推送 GitHub 而自动发布。
 
-## 关键模块（`app/src/main/java/com/ronan/heyboxlite/`）
+## 关键模块
+
+Compose 页面位于 `app/src/main/kotlin/com/ronan/heyboxlite/`，控制器负责异步数据加载和生命周期取消；Java 页面与服务位于 `app/src/main/java/com/ronan/heyboxlite/`，其中媒体查看器、播放器和验证码仍属于兼容层。
 
 | 类 | 职责 |
 |----|------|
