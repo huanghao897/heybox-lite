@@ -105,6 +105,7 @@ internal class ComposeNavigationState {
             "feed" -> ""
             "profile", "search" -> "feed"
             "favorites", "leaderboard" -> "profile"
+            "favorite_folder" -> "favorites"
             "watch_later", "reading_history", "reading_stats" -> "reading_center"
             "login" -> "profile"
             "user_space" -> userSpaceReturnRoute.value.ifBlank { "profile" }

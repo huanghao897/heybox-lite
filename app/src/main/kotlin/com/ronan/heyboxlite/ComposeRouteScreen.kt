@@ -31,16 +31,7 @@ internal fun ComposeRouteScreen(
                 onRefresh = host.feed::refresh,
                 onLoadMore = host.feed::loadMore,
                 onSearch = { host.navigate("search") },
-                onAction = { item, action ->
-                    val code = when (action) {
-                        FeedAction.LIKE -> ComposeAppCallbacks.ACTION_LIKE
-                        FeedAction.FAVORITE -> ComposeAppCallbacks.ACTION_FAVORITE
-                        FeedAction.CACHE -> ComposeAppCallbacks.ACTION_CACHE
-                        FeedAction.FOLLOW -> ComposeAppCallbacks.ACTION_FOLLOW
-                        FeedAction.COMMENT -> ComposeAppCallbacks.ACTION_COMMENT
-                    }
-                    host.callbacks.feedAction(item, code)
-                },
+                onAction = host::feedAction,
                 listState = listState,
                 observeLoadMore = active,
                 interactive = active,
@@ -114,8 +105,8 @@ internal fun ComposeRouteScreen(
             services, host::navigate, { host.handleBack() },
         )
         "reading_center" -> ComposeReadingCenterScreen(
-            state = host.readingState.value,
-            loading = host.readingLoading.value,
+            state = host.readingCenter.state.value,
+            loading = host.readingCenter.loading.value,
             services = services,
             onOpen = host::openDetail,
             onReadingStats = { host.navigate("reading_stats") },
@@ -123,44 +114,61 @@ internal fun ComposeRouteScreen(
             onHistory = { host.navigate("reading_history") },
             onBack = { host.handleBack() },
         )
-        "favorites" -> ComposeFavoritesScreen(
-            items = host.saved.favoriteItems.value,
-            folders = host.saved.favoriteFolders.value,
-            selectedTab = host.saved.favoriteTab.value,
-            loading = host.saved.favoriteLoading.value,
-            services = services,
-            onTabChange = host.saved::selectFavoriteTab,
-            onOpen = host::openDetail,
-            onOpenFolder = host.saved::openFolder,
-            onAction = { item, action ->
-                val code = when (action) {
-                    FeedAction.LIKE -> ComposeAppCallbacks.ACTION_LIKE
-                    FeedAction.FAVORITE -> ComposeAppCallbacks.ACTION_FAVORITE
-                    FeedAction.CACHE -> ComposeAppCallbacks.ACTION_CACHE
-                    FeedAction.FOLLOW -> ComposeAppCallbacks.ACTION_FOLLOW
-                    FeedAction.COMMENT -> ComposeAppCallbacks.ACTION_COMMENT
-                }
-                host.callbacks.feedAction(item, code)
-            },
-            onBack = { host.handleBack() },
-            listState = listState,
-        )
+        "favorites" -> {
+            host.feedRevision.value
+            ComposeFavoritesScreen(
+                state = host.saved.favorites.state.value,
+                folders = host.saved.favoriteFolders.value,
+                selectedTab = host.saved.favoriteTab.value,
+                foldersLoading = host.saved.favoriteFoldersLoading.value,
+                foldersError = host.saved.favoriteFoldersError.value,
+                services = services,
+                onTabChange = host.saved::selectFavoriteTab,
+                onOpen = host::openDetail,
+                onOpenFolder = { host.navigate(it.route()) },
+                onAction = host::feedAction,
+                onRetry = host.saved::retryFavorites,
+                onRetryFolders = { host.saved.loadFavoriteFolders(force = true) },
+                onBack = { host.handleBack() },
+                listState = listState,
+            )
+        }
+        "favorite_folder" -> {
+            host.feedRevision.value
+            ComposeFavoriteFolderScreen(
+                title = host.saved.selectedFolder.value?.name.orEmpty(),
+                state = host.saved.folderPosts.state.value,
+                services = services,
+                onOpen = host::openDetail,
+                onAction = host::feedAction,
+                onRetry = host.saved::retryFolder,
+                onBack = { host.handleBack() },
+                listState = listState,
+            )
+        }
         "watch_later" -> ComposeWatchLaterScreen(
-            entries = host.saved.watchLaterItems.value,
+            state = host.saved.watchLater.state.value,
             services = services,
             onOpen = host::openDetail,
-            onRemove = host.saved::removeWatchLater,
+            onRemove = host.saved.watchLater::remove,
+            onRetry = host.saved.watchLater::refresh,
             onBack = { host.handleBack() },
             listState = listState,
         )
-        "reading_history" -> ComposeHistoryScreen(
-            items = host.saved.historyItems.value,
-            loading = host.saved.historyLoading.value,
-            services = services,
-            onOpen = host::openDetail,
-            onBack = { host.handleBack() },
-            listState = listState,
-        )
+        "reading_history" -> {
+            host.feedRevision.value
+            ComposeHistoryScreen(
+                state = host.saved.history.state.value,
+                query = host.saved.historyQuery.value,
+                onQueryChange = { host.saved.historyQuery.value = it },
+                services = services,
+                onOpen = host::openDetail,
+                onAction = host::feedAction,
+                onRetry = host.saved::retryHistory,
+                onBack = { host.handleBack() },
+                listState = listState,
+            )
+        }
         "reading_stats" -> ComposeReadingStatsScreen(
             services = services,
             onBack = { host.handleBack() },

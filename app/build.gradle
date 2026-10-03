@@ -50,6 +50,13 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            maxHeapSize = "1g"
+        }
+    }
+
     signingConfigs {
         release {
             def envStoreFile = System.getenv("HEYBOX_RELEASE_STORE_FILE")
@@ -101,9 +108,10 @@ tasks.register("verifyTextEncoding") {
     doLast {
         def roots = [
                 file("src/main/java"),
+                file("src/main/kotlin"),
                 file("src/main/res")
         ]
-        def extensions = [".java", ".xml", ".txt", ".json", ".properties"]
+        def extensions = [".java", ".kt", ".xml", ".txt", ".json", ".properties"]
         def markers = [
                 "\uFFFD", "锟斤拷", "鍥", "瑙", "鐢", "绛", "缇", "閬", "杩",
                 "鍘", "鐑", "鎵", "鈥", "鈫", "虏", "锟",
@@ -166,6 +174,25 @@ tasks.withType(JavaCompile).configureEach {
     dependsOn("verifyJavaClassSize")
 }
 
+tasks.register("verifyKotlinSourceSize") {
+    group = "verification"
+    description = "Keep Compose pages and controllers below the same new-component size limit."
+    doLast {
+        def offenders = fileTree("src/main/kotlin").matching {
+            include "**/*.kt"
+        }.files.findAll { it.readLines("UTF-8").size() > 500 }
+        if (!offenders.isEmpty()) {
+            throw new GradleException("Kotlin source size limits exceeded (500 lines):\n"
+                    + offenders.collect { rootProject.relativePath(it) }.sort().join("\n")
+                    + "\nExtract a focused page, controller or state model instead of raising the limit.")
+        }
+    }
+}
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    dependsOn("verifyTextEncoding", "verifyKotlinSourceSize")
+}
+
 dependencies {
     implementation project(":cnwearoverlay-runtime")
     implementation "com.google.zxing:core:3.3.3"
@@ -178,10 +205,13 @@ dependencies {
     implementation "androidx.compose.ui:ui-graphics"
     implementation "androidx.compose.ui:ui-tooling-preview"
     debugImplementation "androidx.compose.ui:ui-tooling"
+    debugImplementation "androidx.compose.ui:ui-test-manifest"
 
     // 本地单测（纯逻辑回归网，不进 APK）：真 org.json 覆盖 android.jar 的桩实现
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.json:json:20180813"
+    testImplementation "org.robolectric:robolectric:4.17"
+    testImplementation "androidx.compose.ui:ui-test-junit4"
 }
 
 tasks.register("copyReleaseApkToDist") {

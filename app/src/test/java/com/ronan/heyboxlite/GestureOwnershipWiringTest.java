@@ -112,6 +112,7 @@ public class GestureOwnershipWiringTest {
         int openStart = host.indexOf("internal fun openDetail(item: FeedItem)");
         int openEnd = host.indexOf("internal fun detailAction", openStart);
         assertFalse(host.substring(openStart, openEnd).contains("navigation.showDetailLoading(item)"));
+        assertTrue(bridge.contains("if (activity.composeAppHost != null) activity.composeAppHost.close();"));
     }
 
     private static String source(String path) throws Exception {

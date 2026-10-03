@@ -46,6 +46,7 @@ native-sign*.txt
 
 # Local Gradle cache (kept out of the repo; the wrapper itself stays tracked)
 .gradle-local/
+.kotlin/
 
 # Playwright / browser test residue (profiles, crash dumps, temp data)
 output/

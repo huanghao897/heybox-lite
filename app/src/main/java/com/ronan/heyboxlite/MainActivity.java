@@ -599,7 +599,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
             }
             @Override public void loginCompleted() {
                 feedPage.clearItems();
-                profilePage.invalidate();
+                profilePage.invalidate(); if (composeAppHost != null) composeAppHost.invalidateProfile();
                 toast("登录成功");
                 EmojiStore.load(api, () -> { });
                 showFeed();
@@ -608,7 +608,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                 RemoteConfig.load(session, () ->
                         applyAccessStatus(RemoteConfig.accessStatus()));
             }
-            @Override public void feedChanged() { feedPage.notifyItemsChanged(); }
+            @Override public void feedChanged() { feedPage.notifyItemsChanged(); if (composeAppHost != null) composeAppHost.invalidateFeed(); }
             @Override public void setFeedRefreshBusy(boolean busy) {
                 action.setEnabled(!busy);
                 action.setAlpha(busy ? 0.45f : 1f);

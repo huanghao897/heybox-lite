@@ -145,15 +145,18 @@ final class PostActionController {
         boolean before = item.favorited;
         boolean next = !before;
         item.favorited = next;
+        this.host.feedChanged();
         this.writeActions.favorite(item.id, hsrcFor(item), next, new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
+                host.feedChanged();
                 host.showToast(next ? "已收藏" : "已取消收藏");
             }
 
             @Override
             public void onError(String message) {
                 item.favorited = before;
+                host.feedChanged();
                 host.showToast("收藏操作失败" + writeErrorMessage("收藏", message));
             }
         });

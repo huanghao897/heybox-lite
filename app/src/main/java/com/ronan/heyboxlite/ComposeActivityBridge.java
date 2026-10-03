@@ -20,6 +20,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     void mount(FrameLayout body) {
+        if (activity.composeAppHost != null) activity.composeAppHost.close();
         activity.content = new BackSwipeFrameLayout(activity, activity);
         body.addView(activity.content, new FrameLayout.LayoutParams(-1, -1));
         activity.composeLayer = new FrameLayout(activity);

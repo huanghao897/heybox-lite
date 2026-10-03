@@ -50,6 +50,14 @@ public class ComposeSwipePresentationTest {
         assertEquals(-320f, ComposeSwipePolicy.dragOffset(-800f, -1, 320f), 0f);
     }
 
+    @Test public void parameterizedTargetsUseTheScreenKeyDuringLiveHandoff() {
+        assertEquals(Arrays.asList("profile", "favorite_folder"),
+                ComposeSwipePresentation.routes("profile", "favorite_folder?folder=42&name=games"));
+        assertEquals(-224f, position("favorite_folder", "favorite_folder?folder=42", 1, 96f), 0f);
+        assertEquals(Collections.singletonList("favorite_folder"),
+                ComposeSwipePresentation.routes("favorite_folder", "favorite_folder?folder=42"));
+    }
+
     private static float position(String page, String target, int direction, float drag) {
         return ComposeSwipePresentation.translation(page, target, direction, drag, 320f);
     }

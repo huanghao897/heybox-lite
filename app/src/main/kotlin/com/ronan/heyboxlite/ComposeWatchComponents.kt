@@ -89,47 +89,13 @@ internal fun WatchPage(
             .fillMaxSize()
             .background(state.background),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = watchDp(if (state.roundScreen) 14 else 10),
-                    end = watchDp(8),
-                    top = watchDp(4),
-                    bottom = watchDp(2),
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (onBack != null) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.size(watchDp(34)),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_arrow_back),
-                        contentDescription = "返回",
-                        tint = state.text,
-                    )
-                }
-            } else {
-                Spacer(modifier = Modifier.size(watchDp(8)))
-            }
-            Text(
-                text = title,
-                modifier = Modifier.weight(1f),
-                color = state.text,
-                fontSize = watchSp(17f),
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        ComposePageHeader(title, onBack)
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
                 .watchHorizontalPadding()
-                .padding(bottom = watchDp(14)),
+                .padding(bottom = watchListEndPadding()),
             verticalArrangement = Arrangement.spacedBy(watchDp(9)),
             content = content,
         )

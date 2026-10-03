@@ -1,10 +1,11 @@
 package com.ronan.heyboxlite
 
-import android.app.Activity
 import android.graphics.Bitmap
+import android.os.Bundle
 import android.os.Handler
 import android.view.View
 import android.widget.FrameLayout
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,7 +22,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
  * route state plus screen state required for progressive rendering.
  */
 internal class ComposeAppHost(
-    activity: Activity,
+    activity: ComponentActivity,
     parent: FrameLayout,
     session: SessionStore,
     api: ApiClient,
@@ -48,9 +49,17 @@ internal class ComposeAppHost(
     internal val search = ComposeSearchController(session, api, cache, handler)
     internal val saved = ComposeSavedController(servicesState.value)
     private val readingLoader = ReadingCenterLoader(activity, cache)
-    internal val readingState = mutableStateOf<ComposeReadingCenterState?>(null)
-    internal val readingLoading = mutableStateOf(false)
-    private var readingStarted = false
+    internal val readingCenter = ComposeReadingCenterController(
+        loadSnapshot = readingLoader::load,
+        mapSnapshot = { snapshot ->
+            val current = servicesState.value
+            val stats = current.reading.stats()
+            ComposeReadingCenterState.from(snapshot,
+                "${Format.readingDuration(stats.todayMs())} · 累计 ${Format.readingDuration(stats.totalMs())}",
+                snapshot.recent != null && current.cache.scroll(snapshot.recent.id) > 0)
+        },
+        closeLoader = readingLoader::close,
+    )
     private val transitionSnapshots = TransitionSnapshotStore()
     internal val callbacks = callbacks
     private val view = ComposeView(activity)
@@ -62,8 +71,19 @@ internal class ComposeAppHost(
     private var mounted = true
     private var suppressNextTransitionSnapshot = false
     private val surfaceActive = mutableStateOf(true)
+    private val savedStateRegistry = activity.savedStateRegistry
 
     init {
+        val restored = savedStateRegistry.consumeRestoredStateForKey("heybox.compose.saved-query")
+        if (restored?.getString("account") == session.userId()) {
+            saved.historyQuery.value = restored.getString("history", "")
+        }
+        savedStateRegistry.registerSavedStateProvider("heybox.compose.saved-query") {
+            Bundle().apply {
+                putString("account", session.userId())
+                putString("history", saved.historyQuery.value)
+            }
+        }
         // The content layer moves during a back gesture. Keep the host view
         // painted so the exposed strip never reveals the hidden legacy layer.
         view.setBackgroundColor(tokens.background)
@@ -75,18 +95,12 @@ internal class ComposeAppHost(
     }
 
     fun setRoute(route: String) {
-        val normalized = route.ifBlank { "feed" }.substringBefore('?').ifBlank { "feed" }
         captureCurrentTransitionSnapshot()
         servicesState.value = servicesState.value.copy(
             theme = servicesState.value.theme.copy(rotaryRequest = null),
         )
         navigation.setRoute(route)
-        when (normalized) {
-            "favorites" -> saved.openFavorites()
-            "watch_later" -> saved.refreshWatchLater()
-            "reading_history" -> saved.openHistory()
-            "reading_center" -> loadReadingCenter()
-        }
+        prepareSavedRoute(route)
     }
 
     /**
@@ -187,7 +201,9 @@ internal class ComposeAppHost(
     }
 
     internal fun listState(route: String): LazyListState =
-        listStates.getOrPut(route) { LazyListState() }
+        listStates.getOrPut(if (route == "favorite_folder") {
+            "favorite_folder:${saved.selectedFolder.value?.id.orEmpty()}"
+        } else route) { LazyListState() }
 
     fun updateTheme(tokens: ThemeTokens, roundScreen: Boolean, uiScale: Float, textScale: Float) {
         view.setBackgroundColor(tokens.background)
@@ -220,6 +236,7 @@ internal class ComposeAppHost(
 
     fun invalidateProfile() {
         profile.invalidate()
+        saved.invalidateAccount()
         profileRevision.value++
     }
 
@@ -236,41 +253,27 @@ internal class ComposeAppHost(
     }
 
     fun close() {
+        if (!mounted) return
         mounted = false
+        savedStateRegistry.unregisterSavedStateProvider("heybox.compose.saved-query")
         navigation.clearSavedState()
         feed.close()
         profile.close()
         search.close()
         saved.close()
-        readingLoader.close()
+        readingCenter.close()
         transitionSnapshots.releaseAll()
         view.disposeComposition()
     }
 
-    private fun loadReadingCenter() {
-        if (readingLoading.value && readingStarted) return
-        readingStarted = true
-        readingLoading.value = true
-        readingLoader.load(object : ReadingCenterLoader.Callback {
-            override fun onLoaded(snapshot: ReadingCenterLoader.Snapshot) {
-                val services = servicesState.value
-                val recent = snapshot.recent
-                val hasPosition = recent != null && services.cache.scroll(recent.id) > 0
-                val stats = services.reading.stats()
-                val today = Format.readingDuration(stats.todayArticleMs + stats.todayPostMs)
-                val total = Format.readingDuration(stats.totalArticleMs + stats.totalPostMs)
-                readingState.value = ComposeReadingCenterState.from(
-                    snapshot,
-                    "$today · 累计 $total",
-                    hasPosition,
-                )
-                readingLoading.value = false
-            }
-
-            override fun onError() {
-                readingLoading.value = false
-            }
-        })
+    private fun prepareSavedRoute(route: String) {
+        when (route.substringBefore('?')) {
+            "favorites" -> saved.openFavorites()
+            "favorite_folder" -> saved.openFolder(ComposeFavoriteFolder.fromRoute(route))
+            "watch_later" -> saved.watchLater.refresh()
+            "reading_history" -> saved.openHistory()
+            "reading_center" -> readingCenter.open()
+        }
     }
 
     fun showDetailLoading(item: FeedItem) {
@@ -309,6 +312,11 @@ internal class ComposeAppHost(
 
     internal fun navigate(route: String) {
         val key = route.substringBefore('?')
+        if ((key == "favorites" || key == "reading_history" || key == "favorite_folder")
+            && !servicesState.value.session.isLoggedIn()) {
+            navigate("login")
+            return
+        }
         when (key) {
             "cache_prune", "cache_clear", "diagnostics_export", "diagnostics_upload",
             "crash_test", "logout", "open_url", "update_download" -> {
@@ -320,12 +328,7 @@ internal class ComposeAppHost(
                     theme = servicesState.value.theme.copy(rotaryRequest = null),
                 )
                 navigation.navigate(route)
-                when (key) {
-                    "favorites" -> saved.openFavorites()
-                    "watch_later" -> saved.refreshWatchLater()
-                    "reading_history" -> saved.openHistory()
-                    "reading_center" -> loadReadingCenter()
-                }
+                prepareSavedRoute(route)
                 callbacks.navigate(route)
             }
         }
@@ -336,6 +339,16 @@ internal class ComposeAppHost(
             theme = servicesState.value.theme.copy(rotaryRequest = null),
         )
         callbacks.openDetail(item)
+    }
+
+    internal fun feedAction(item: FeedItem, action: FeedAction) {
+        callbacks.feedAction(item, when (action) {
+            FeedAction.LIKE -> ComposeAppCallbacks.ACTION_LIKE
+            FeedAction.FAVORITE -> ComposeAppCallbacks.ACTION_FAVORITE
+            FeedAction.CACHE -> ComposeAppCallbacks.ACTION_CACHE
+            FeedAction.FOLLOW -> ComposeAppCallbacks.ACTION_FOLLOW
+            FeedAction.COMMENT -> ComposeAppCallbacks.ACTION_COMMENT
+        })
     }
 
     internal fun detailAction(action: ComposeDetailAction) {
