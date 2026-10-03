@@ -35,7 +35,12 @@ internal class ComposeSearchController(
             noMore.value = false
             return
         }
-        val task = Runnable { search(keyword) }
+        val task = Runnable {
+            // A delayed callback can race with the text field clearing or
+            // changing again. Never let that stale keyword start a request.
+            delayed = null
+            if (query.value.trim() == keyword) search(keyword)
+        }
         delayed = task
         handler.postDelayed(task, 420L)
     }

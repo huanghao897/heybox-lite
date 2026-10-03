@@ -9,6 +9,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 
@@ -38,6 +39,7 @@ final class DetailPager extends FrameLayout {
     private View returnPreview;
     private boolean realReturnView;
     private ValueAnimator settleAnimator;
+    private int gestureAxis = GestureAxisLock.NONE;
 
     DetailPager(Context context, Dp dimensions, boolean compactMotion, Listener listener) {
         super(context);
@@ -48,6 +50,7 @@ final class DetailPager extends FrameLayout {
     }
 
     void setPages(View preview, View article, View comments) {
+        cancelSettle();
         removeAllViews();
         this.returnPreview = preview;
         this.realReturnView = false;
@@ -98,7 +101,13 @@ final class DetailPager extends FrameLayout {
         if (this.returnPreview != null) this.returnPreview.layout(-width, 0, 0, height);
         if (getChildCount() > PAGE_COMMENTS) getChildAt(PAGE_COMMENTS).layout(0, 0, width, height);
         if (getChildCount() > 2) getChildAt(2).layout(width, 0, width * 2, height);
-        if (changed) post(() -> scrollTo(pageScrollX(this.currentPage), 0));
+        if (changed && !this.dragging && this.settleAnimator == null) {
+            post(() -> {
+                if (!this.dragging && this.settleAnimator == null) {
+                    scrollTo(pageScrollX(this.currentPage), 0);
+                }
+            });
+        }
     }
 
     @Override
@@ -112,23 +121,37 @@ final class DetailPager extends FrameLayout {
                 this.startScrollX = getScrollX();
                 this.dragging = false;
                 this.returning = false;
+                this.gestureAxis = GestureAxisLock.NONE;
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 this.dragging = false;
                 this.returning = false;
+                this.gestureAxis = GestureAxisLock.NONE;
+                requestParentTouch(false);
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                this.gestureAxis = GestureAxisLock.MULTI_TOUCH;
+                if (this.dragging) settleToPage(this.currentPage, true);
+                this.dragging = false;
+                this.returning = false;
+                requestParentTouch(false);
                 break;
             case MotionEvent.ACTION_MOVE:
                 float dx = event.getX() - this.startX;
                 float dy = event.getY() - this.startY;
+                this.gestureAxis = GestureAxisLock.resolve(this.gestureAxis, dx, dy,
+                        this.touchSlop * (this.compactMotion
+                                ? MotionSpec.WATCH_TOUCH_SLOP_MULTIPLIER : 2),
+                        this.touchSlop * 2,
+                        this.compactMotion ? MotionSpec.WATCH_AXIS_RATIO : 1.15f,
+                        false);
+                if (this.gestureAxis != GestureAxisLock.HORIZONTAL) break;
                 if ((this.currentPage != PAGE_ARTICLE || dx <= 0.0f || this.listener.canSwipeBack())
                         && Math.abs(dx) > this.touchSlop * (this.compactMotion
-                        ? MotionSpec.WATCH_TOUCH_SLOP_MULTIPLIER : 2)
-                        && Math.abs(dx) > Math.abs(dy) * (this.compactMotion
-                        ? MotionSpec.WATCH_AXIS_RATIO : 1.15f)
-                        && (!this.compactMotion || safeOrigin(dx))) {
+                        ? MotionSpec.WATCH_TOUCH_SLOP_MULTIPLIER : 2)) {
                     this.dragging = true;
-                    getParent().requestDisallowInterceptTouchEvent(true);
+                    requestParentTouch(true);
                 }
                 break;
             default:
@@ -146,22 +169,36 @@ final class DetailPager extends FrameLayout {
                 this.startY = event.getY();
                 this.startTime = event.getEventTime();
                 this.startScrollX = getScrollX();
-                this.dragging = !this.compactMotion;
+                this.dragging = false;
                 this.returning = false;
+                this.gestureAxis = GestureAxisLock.NONE;
                 break;
             case MotionEvent.ACTION_UP:
                 if (this.dragging) finishHorizontalDrag(event);
+                requestParentTouch(false);
                 performClick();
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                this.gestureAxis = GestureAxisLock.MULTI_TOUCH;
+                if (this.dragging) settleToPage(this.currentPage, true);
+                this.dragging = false;
+                this.returning = false;
+                requestParentTouch(false);
                 break;
             case MotionEvent.ACTION_MOVE:
                 float dx = event.getX() - this.startX;
                 float dy = event.getY() - this.startY;
-                if (!this.dragging && this.compactMotion
-                        && Math.abs(dx) > this.touchSlop * MotionSpec.WATCH_TOUCH_SLOP_MULTIPLIER
-                        && Math.abs(dx) > Math.abs(dy) * MotionSpec.WATCH_AXIS_RATIO
-                        && safeOrigin(dx)) {
+                if (!this.dragging) {
+                    this.gestureAxis = GestureAxisLock.resolve(this.gestureAxis, dx, dy,
+                            this.touchSlop * (this.compactMotion
+                                    ? MotionSpec.WATCH_TOUCH_SLOP_MULTIPLIER : 2),
+                            this.touchSlop * 2,
+                            this.compactMotion ? MotionSpec.WATCH_AXIS_RATIO : 1.15f,
+                            false);
+                }
+                if (!this.dragging && this.gestureAxis == GestureAxisLock.HORIZONTAL) {
                     this.dragging = true;
-                    getParent().requestDisallowInterceptTouchEvent(true);
+                    requestParentTouch(true);
                 }
                 if (this.dragging) dragTo(dx);
                 break;
@@ -169,6 +206,8 @@ final class DetailPager extends FrameLayout {
                 if (this.dragging) settleToPage(this.currentPage, true);
                 this.dragging = false;
                 this.returning = false;
+                this.gestureAxis = GestureAxisLock.NONE;
+                requestParentTouch(false);
                 break;
             default:
                 break;
@@ -233,6 +272,11 @@ final class DetailPager extends FrameLayout {
                 : Math.max(160, Math.min(300, distance / 3)));
         this.settleAnimator.setInterpolator(new DecelerateInterpolator());
         this.settleAnimator.addUpdateListener(value -> scrollTo((Integer) value.getAnimatedValue(), 0));
+        this.settleAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator animation) {
+                if (settleAnimator == animation) settleAnimator = null;
+            }
+        });
         this.settleAnimator.start();
     }
 
@@ -273,22 +317,30 @@ final class DetailPager extends FrameLayout {
     }
 
     private void cancelSettle() {
-        if (this.settleAnimator == null) return;
-        this.returning = false;
-        this.settleAnimator.cancel();
+        ValueAnimator animator = this.settleAnimator;
         this.settleAnimator = null;
+        this.returning = false;
+        if (animator != null) animator.cancel();
+        requestParentTouch(false);
     }
 
-    private boolean safeOrigin(float dx) {
-        if (currentPage == PAGE_ARTICLE && dx > 0.0f) {
-            return startX <= Math.max(dimensions.dp(30), getWidth() * 0.40f);
-        }
-        return currentPage != PAGE_ARTICLE || startX >= getWidth() * 0.40f;
+    private void requestParentTouch(boolean disallow) {
+        ViewParent parent = getParent();
+        if (parent != null) parent.requestDisallowInterceptTouchEvent(disallow);
     }
 
     void cancelMotion() {
         cancelSettle();
+        this.dragging = false;
+        this.returning = false;
+        this.gestureAxis = GestureAxisLock.NONE;
+        requestParentTouch(false);
         scrollTo(pageScrollX(this.currentPage), 0);
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        cancelMotion();
+        super.onDetachedFromWindow();
     }
 
     @Override

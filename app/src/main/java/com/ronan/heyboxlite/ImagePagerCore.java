@@ -30,6 +30,7 @@ final class ImagePagerCore extends ViewGroup {
     private boolean dragging;
     private boolean ignoring;
     private boolean preservingSecondTap;
+    private int gestureAxis = GestureAxisLock.NONE;
     private ValueAnimator settleAnimator;
 
     ImagePagerCore(Context context, Dp dp, PagerListener listener) {
@@ -87,17 +88,25 @@ final class ImagePagerCore extends ViewGroup {
                 this.startScrollX = getScrollX();
                 this.dragging = false;
                 this.ignoring = false;
+                this.gestureAxis = GestureAxisLock.NONE;
                 this.preservingSecondTap = this.gestureGuard != null
                         && this.gestureGuard.preserveSecondTap(
                         event.getX(), event.getY(), event.getEventTime());
-                // 先声明占用，判定为垂直手势后再交还给正文滚动
-                getParent().requestDisallowInterceptTouchEvent(true);
+                // Do not block the shell on ACTION_DOWN. The outer back
+                // gesture needs to see the stream until this pager has
+                // positively identified a horizontal page drag.
+                requestParentTouch(false);
                 break;
             case 1:
             case 3:
-                if (!this.dragging) {
-                    getParent().requestDisallowInterceptTouchEvent(false);
-                }
+                this.gestureAxis = GestureAxisLock.NONE;
+                requestParentTouch(false);
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                this.gestureAxis = GestureAxisLock.MULTI_TOUCH;
+                this.ignoring = true;
+                this.dragging = false;
+                requestParentTouch(false);
                 break;
             case 2:
                 if (this.ignoring) {
@@ -107,21 +116,31 @@ final class ImagePagerCore extends ViewGroup {
                         || (this.gestureGuard != null
                         && this.gestureGuard.pagingBlocked())) {
                     this.ignoring = true;
-                    getParent().requestDisallowInterceptTouchEvent(false);
+                    requestParentTouch(false);
                     break;
                 }
                 float dx = event.getX() - this.startX;
                 float dy = event.getY() - this.startY;
+                this.gestureAxis = GestureAxisLock.resolve(this.gestureAxis, dx, dy,
+                        this.touchSlop, this.touchSlop, 1.12f,
+                        event.getPointerCount() > 1);
+                if (this.gestureAxis == GestureAxisLock.VERTICAL
+                        || this.gestureAxis == GestureAxisLock.MULTI_TOUCH) {
+                    this.ignoring = true;
+                    this.dragging = false;
+                    requestParentTouch(false);
+                    break;
+                }
                 if (!this.dragging) {
                     if (Math.abs(dy) > this.touchSlop && Math.abs(dy) > Math.abs(dx)) {
                         this.ignoring = true;
-                        getParent().requestDisallowInterceptTouchEvent(false);
+                        requestParentTouch(false);
                     } else if (Math.abs(dx) > this.touchSlop && Math.abs(dx) > Math.abs(dy)) {
                         this.dragging = true;
                         this.startX = event.getX();
                         this.startTime = event.getEventTime();
                         this.startScrollX = getScrollX();
-                        getParent().requestDisallowInterceptTouchEvent(true);
+                        requestParentTouch(true);
                     }
                 }
                 break;
@@ -138,18 +157,58 @@ final class ImagePagerCore extends ViewGroup {
                 this.startY = event.getY();
                 this.startTime = event.getEventTime();
                 this.startScrollX = getScrollX();
-                this.dragging = true;
+                this.dragging = false;
+                this.ignoring = false;
+                this.gestureAxis = GestureAxisLock.NONE;
+                requestParentTouch(false);
                 break;
             case 1:
-                finishDrag(event);
+                if (this.dragging && !this.ignoring
+                        && this.gestureAxis == GestureAxisLock.HORIZONTAL) {
+                    finishDrag(event);
+                } else {
+                    this.dragging = false;
+                    settleTo(this.page, true);
+                }
+                this.ignoring = false;
+                this.gestureAxis = GestureAxisLock.NONE;
+                requestParentTouch(false);
                 performClick();
                 break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                this.gestureAxis = GestureAxisLock.MULTI_TOUCH;
+                this.dragging = false;
+                this.ignoring = true;
+                requestParentTouch(false);
+                break;
             case 2:
-                dragTo(event.getX() - this.startX);
+                if (this.ignoring) break;
+                float dx = event.getX() - this.startX;
+                float dy = event.getY() - this.startY;
+                this.gestureAxis = GestureAxisLock.resolve(this.gestureAxis, dx, dy,
+                        this.touchSlop, this.touchSlop, 1.12f,
+                        event.getPointerCount() > 1);
+                if (this.gestureAxis == GestureAxisLock.VERTICAL
+                        || this.gestureAxis == GestureAxisLock.MULTI_TOUCH) {
+                    this.ignoring = true;
+                    this.dragging = false;
+                    requestParentTouch(false);
+                    break;
+                }
+                if (!this.dragging && this.gestureAxis == GestureAxisLock.HORIZONTAL) {
+                    this.dragging = true;
+                    requestParentTouch(true);
+                }
+                if (this.dragging) {
+                    dragTo(dx);
+                }
                 break;
             case 3:
                 this.dragging = false;
+                this.ignoring = true;
+                this.gestureAxis = GestureAxisLock.NONE;
                 settleTo(this.page, true);
+                requestParentTouch(false);
                 break;
         }
         return true;
@@ -202,13 +261,32 @@ final class ImagePagerCore extends ViewGroup {
         this.settleAnimator.addUpdateListener(value -> {
             scrollTo(((Integer) value.getAnimatedValue()).intValue(), 0);
         });
+        this.settleAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (settleAnimator == animation) settleAnimator = null;
+            }
+        });
         this.settleAnimator.start();
     }
 
     void cancelSettle() {
-        if (this.settleAnimator != null) {
-            this.settleAnimator.cancel();
-            this.settleAnimator = null;
-        }
+        ValueAnimator animator = this.settleAnimator;
+        this.settleAnimator = null;
+        if (animator != null) animator.cancel();
+        requestParentTouch(false);
+    }
+
+    private void requestParentTouch(boolean disallow) {
+        ViewGroup parent = getParent() instanceof ViewGroup
+                ? (ViewGroup) getParent() : null;
+        if (parent != null) parent.requestDisallowInterceptTouchEvent(disallow);
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        this.dragging = false;
+        this.ignoring = true;
+        this.gestureAxis = GestureAxisLock.NONE;
+        cancelSettle();
+        super.onDetachedFromWindow();
     }
 }

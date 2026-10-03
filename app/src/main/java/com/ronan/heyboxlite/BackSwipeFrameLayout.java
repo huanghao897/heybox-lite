@@ -8,6 +8,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 
@@ -74,6 +75,7 @@ final class BackSwipeFrameLayout extends FrameLayout {
     private String displayedScreenKey = "";
     private ValueAnimator swipeAnimator;
     private boolean shellInterceptionCandidate;
+    private int gestureAxis = GestureAxisLock.NONE;
 
     BackSwipeFrameLayout(Context context, Host host) {
         super(context);
@@ -99,7 +101,9 @@ final class BackSwipeFrameLayout extends FrameLayout {
 
     @Override
     public void requestDisallowInterceptTouchEvent(boolean disallowIntercept) {
-        if (disallowIntercept && shellInterceptionCandidate) return;
+        // Child controls (sliders, pagers and zoomable images) own the stream
+        // once they have claimed it. The shell only starts a back gesture
+        // after the child leaves a clear horizontal stream for it.
         super.requestDisallowInterceptTouchEvent(disallowIntercept);
     }
 
@@ -112,9 +116,22 @@ final class BackSwipeFrameLayout extends FrameLayout {
                 return false;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
+                if (event.getActionMasked() == MotionEvent.ACTION_CANCEL && dragging) {
+                    dragging = false;
+                    tracking = false;
+                    shellInterceptionCandidate = false;
+                    gestureAxis = GestureAxisLock.NONE;
+                    settleShellDrag(0.0f, this::resetShellDrag);
+                    return false;
+                }
                 tracking = false;
                 dragging = false;
                 shellInterceptionCandidate = false;
+                gestureAxis = GestureAxisLock.NONE;
+                requestParentTouch(false);
+                return false;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                cancelShellDragForMultiTouch();
                 return false;
             case MotionEvent.ACTION_MOVE:
                 if (!tracking) return false;
@@ -122,7 +139,7 @@ final class BackSwipeFrameLayout extends FrameLayout {
                 float dy = event.getY() - startY;
                 if (!startShellDragIfReady(dx, dy)) return false;
                 dragShellTo(dx);
-                getParent().requestDisallowInterceptTouchEvent(true);
+                requestParentTouch(true);
                 return true;
             default:
                 return false;
@@ -137,22 +154,39 @@ final class BackSwipeFrameLayout extends FrameLayout {
                 beginTracking(event);
                 break;
             case MotionEvent.ACTION_UP:
-                if (dragging) finishShellSwipe(event);
-                else performClick();
+                if (gestureAxis == GestureAxisLock.MULTI_TOUCH) {
+                    if (dragging) cancelShellDragForMultiTouch();
+                } else if (dragging) {
+                    finishShellSwipe(event);
+                } else {
+                    performClick();
+                }
                 tracking = false;
                 dragging = false;
                 shellInterceptionCandidate = false;
+                gestureAxis = GestureAxisLock.NONE;
+                requestParentTouch(false);
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                cancelShellDragForMultiTouch();
                 break;
             case MotionEvent.ACTION_MOVE:
                 float dx = event.getX() - startX;
                 float dy = event.getY() - startY;
-                if (dragging || startShellDragIfReady(dx, dy)) dragShellTo(dx);
+                if (dragging || startShellDragIfReady(dx, dy)) {
+                    requestParentTouch(true);
+                    dragShellTo(dx);
+                }
                 break;
             case MotionEvent.ACTION_CANCEL:
-                if (dragging) settleShellDrag(0.0f, this::resetShellDrag);
+                if (dragging) {
+                    dragging = false;
+                    settleShellDrag(0.0f, this::resetShellDrag);
+                }
                 tracking = false;
-                dragging = false;
                 shellInterceptionCandidate = false;
+                gestureAxis = GestureAxisLock.NONE;
+                requestParentTouch(false);
                 break;
             default:
                 break;
@@ -169,26 +203,32 @@ final class BackSwipeFrameLayout extends FrameLayout {
         dragging = false;
         gestureMode = MODE_NONE;
         dragChild = null;
+        gestureAxis = GestureAxisLock.NONE;
         shellInterceptionCandidate = host.canStartShellSwipe();
         super.requestDisallowInterceptTouchEvent(false);
     }
 
     private boolean startShellDragIfReady(float dx, float dy) {
         if (!tracking) return false;
-        if (Math.abs(dy) > touchSlop * 2 && Math.abs(dy) > Math.abs(dx)) {
+        boolean compact = host.compactShellMotion();
+        gestureAxis = GestureAxisLock.resolve(gestureAxis, dx, dy,
+                touchSlop * (compact ? MotionSpec.WATCH_TOUCH_SLOP_MULTIPLIER : 2),
+                touchSlop * 2,
+                compact ? MotionSpec.WATCH_AXIS_RATIO : 1.18f, false);
+        if (gestureAxis == GestureAxisLock.VERTICAL
+                || gestureAxis == GestureAxisLock.MULTI_TOUCH) {
             tracking = false;
             shellInterceptionCandidate = false;
+            requestParentTouch(false);
             return false;
         }
-        boolean compact = host.compactShellMotion();
-        if (Math.abs(dx) <= touchSlop * (compact
-                ? MotionSpec.WATCH_TOUCH_SLOP_MULTIPLIER : 2)
-                || Math.abs(dx) <= Math.abs(dy) * (compact
-                ? MotionSpec.WATCH_AXIS_RATIO : 1.18f)
-                || !host.hasShellSwipeTarget(dx)) {
+        if (gestureAxis != GestureAxisLock.HORIZONTAL) return false;
+        if (!host.hasShellSwipeTarget(dx) || (compact && !isSafeSwipeOrigin(dx))) {
+            tracking = false;
+            shellInterceptionCandidate = false;
+            requestParentTouch(false);
             return false;
         }
-        if (compact && !isSafeSwipeOrigin(dx)) return false;
         gestureMode = host.shellTopLevelIndex() >= 0 ? MODE_TOP_LEVEL : MODE_BACK;
         gestureDirection = gestureMode == MODE_BACK || dx >= 0.0f ? -1 : 1;
         dragChild = currentShellChild();
@@ -292,10 +332,11 @@ final class BackSwipeFrameLayout extends FrameLayout {
                 ? Math.max((int) MotionSpec.WATCH_SETTLE_MIN_MS,
                 Math.min((int) MotionSpec.WATCH_SETTLE_MAX_MS, distance / 2))
                 : Math.max(120, Math.min(260, distance / 3));
-        swipeAnimator = ValueAnimator.ofFloat(fromX, targetX);
-        swipeAnimator.setDuration(duration);
-        swipeAnimator.setInterpolator(MotionSpec.EASE_OUT);
-        swipeAnimator.addUpdateListener(value -> {
+        final ValueAnimator animator = ValueAnimator.ofFloat(fromX, targetX);
+        swipeAnimator = animator;
+        animator.setDuration(duration);
+        animator.setInterpolator(MotionSpec.EASE_OUT);
+        animator.addUpdateListener(value -> {
             float x = (Float) value.getAnimatedValue();
             int width = Math.max(1, getWidth());
             if (dragChild != null) {
@@ -307,14 +348,15 @@ final class BackSwipeFrameLayout extends FrameLayout {
                 previewChild.setAlpha(1.0f);
             }
         });
-        swipeAnimator.addListener(new AnimatorListenerAdapter() {
+        animator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
+                if (swipeAnimator != animator) return;
                 swipeAnimator = null;
                 end.run();
             }
         });
-        swipeAnimator.start();
+        animator.start();
     }
 
     private void completeShellSwipe() {
@@ -354,7 +396,11 @@ final class BackSwipeFrameLayout extends FrameLayout {
         gestureMode = MODE_NONE;
         gestureDirection = 0;
         dragging = false;
+        tracking = false;
+        shellInterceptionCandidate = false;
+        gestureAxis = GestureAxisLock.NONE;
         host.setShellGestureActive(false);
+        requestParentTouch(false);
     }
 
     private void resetShellDrag() {
@@ -368,14 +414,30 @@ final class BackSwipeFrameLayout extends FrameLayout {
         gestureMode = MODE_NONE;
         gestureDirection = 0;
         dragging = false;
+        tracking = false;
+        shellInterceptionCandidate = false;
+        gestureAxis = GestureAxisLock.NONE;
         host.setShellGestureActive(false);
+        requestParentTouch(false);
     }
 
     private void cancelSwipeAnimator() {
-        if (swipeAnimator == null) return;
-        swipeAnimator.removeAllListeners();
-        swipeAnimator.cancel();
+        ValueAnimator animator = swipeAnimator;
         swipeAnimator = null;
+        if (animator == null) return;
+        animator.removeAllListeners();
+        animator.cancel();
+    }
+
+    private void cancelShellDragForMultiTouch() {
+        gestureAxis = GestureAxisLock.MULTI_TOUCH;
+        tracking = false;
+        shellInterceptionCandidate = false;
+        if (dragging) {
+            dragging = false;
+            settleShellDrag(0.0f, this::resetShellDrag);
+        }
+        requestParentTouch(false);
     }
 
     private boolean isSafeSwipeOrigin(float dx) {
@@ -386,11 +448,22 @@ final class BackSwipeFrameLayout extends FrameLayout {
         return startX <= width * 0.46f;
     }
 
+    private void requestParentTouch(boolean disallow) {
+        ViewParent parent = getParent();
+        if (parent != null) parent.requestDisallowInterceptTouchEvent(disallow);
+    }
+
     void cancelMotion() {
         tracking = false;
         dragging = false;
         shellInterceptionCandidate = false;
         resetShellDrag();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        cancelMotion();
+        super.onDetachedFromWindow();
     }
 
     @Override

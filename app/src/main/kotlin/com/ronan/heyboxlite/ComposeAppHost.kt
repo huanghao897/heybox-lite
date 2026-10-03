@@ -4,8 +4,6 @@ import android.app.Activity
 import android.os.Handler
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,11 +28,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,7 +40,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlin.math.abs
 
 /**
  * Owns the Compose surface mounted above the legacy shell.  It deliberately
@@ -242,9 +239,11 @@ internal class ComposeAppHost(
         val current = routeState.value
         if (current == "feed") return false
         if (current == "detail") {
+            val targetSpec = detailReturnRouteSpec()
+            val target = targetSpec.substringBefore('?').ifBlank { "feed" }
             detail.value = null
-            callbacks.backTo(detailReturnRoute.value)
-            routeState.value = detailReturnRoute.value
+            callbacks.backTo(targetSpec)
+            routeState.value = target
             return true
         }
         val target = when {
@@ -331,55 +330,35 @@ internal class ComposeAppHost(
             }
         }
         HeyboxComposeTheme(services.theme) {
+            val swipeOffset = remember { mutableStateOf(0f) }
+            val density = LocalDensity.current
+            val touchSlop = LocalViewConfiguration.current.touchSlop
+            val backSwipeEnabled = if (route == "feed") services.session.homeSwipeExit()
+            else services.session.shellBackSwipe()
+            LaunchedEffect(route, backSwipeEnabled) {
+                swipeOffset.value = 0f
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(
-                        route,
-                        services.theme.roundScreen,
-                        services.theme.uiScale,
-                    ) {
-                        val edgePx = 28.dp.toPx() * services.theme.uiScale
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            val swipeEnabled = if (route == "feed") {
-                                services.session.homeSwipeExit()
-                            } else {
-                                services.session.shellBackSwipe()
-                            }
-                            val edgeArmed = swipeEnabled && ComposeSwipePolicy.canArm(
-                                route, down.position.x, edgePx,
-                            )
-                            var totalX = 0f
-                            var totalY = 0f
-                            var decided = false
-                            var accepted = false
-                            val touchSlop = viewConfiguration.touchSlop
-                            while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                val change = event.changes.firstOrNull() ?: break
-                                if (!change.pressed) break
-                                val delta = change.positionChangeIgnoreConsumed()
-                                totalX += delta.x
-                                totalY += delta.y
-                                if (!decided && maxOf(abs(totalX), abs(totalY)) >= touchSlop) {
-                                    decided = true
-                                    accepted = edgeArmed && totalX > 0f
-                                            && abs(totalX) > abs(totalY)
-                                    if (!accepted) break
-                                }
-                                if (accepted) change.consume()
-                            }
-                            val threshold = 44.dp.toPx() * services.theme.uiScale
-                            if (accepted && totalX > threshold) {
-                                if (route == "feed") {
-                                    host.callbacks.back()
-                                } else if (services.session.shellBackSwipe()) {
-                                    host.handleBack()
-                                }
-                            }
-                        }
-                    },
+                    .graphicsLayer {
+                        // Keep the gesture visible on a watch without
+                        // changing layout or remeasuring the current page.
+                        translationX = swipeOffset.value * 0.72f
+                    }
+                    .composeBackSwipe(
+                        route = route,
+                        enabled = backSwipeEnabled,
+                        edgePx = 0f,
+                        thresholdPx = with(density) { 44.dp.toPx() * services.theme.uiScale },
+                        touchSlopPx = touchSlop,
+                        onProgress = { swipeOffset.value = it },
+                        onCancel = { swipeOffset.value = 0f },
+                        onComplete = {
+                            swipeOffset.value = 0f
+                            if (route == "feed") host.callbacks.back() else host.handleBack()
+                        },
+                    ),
             ) {
                 when (route) {
                 "feed" -> {

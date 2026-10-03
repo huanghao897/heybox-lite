@@ -20,6 +20,7 @@ internal class ComposeSavedController(
     val watchLaterItems: MutableState<List<LocalCache.OfflineItem>> = mutableStateOf(emptyList())
 
     private var favoriteRequest = 0
+    private var selectedFolderId: String? = null
     private var historyRequest = 0
     private var watchRequest = 0
     private val io = Executors.newSingleThreadExecutor { runnable ->
@@ -27,18 +28,19 @@ internal class ComposeSavedController(
     }
 
     fun openFavorites(folderId: String? = null) {
+        selectedFolderId = folderId
         favoriteTab.value = ComposeFavoriteTab.POSTS
-        loadFavoriteFolders(folderId)
+        loadFavoriteFolders()
     }
 
     fun selectFavoriteTab(tab: ComposeFavoriteTab) {
         favoriteTab.value = tab
         if (tab == ComposeFavoriteTab.POSTS && favoriteItems.value.isEmpty()) {
-            loadFavoritePosts(null)
+            loadFavoritePosts(selectedFolderId)
         }
     }
 
-    fun loadFavoriteFolders(folderId: String? = null) {
+    fun loadFavoriteFolders() {
         val request = ++favoriteRequest
         favoriteLoading.value = true
         favoriteError.value = ""
@@ -55,7 +57,7 @@ internal class ComposeSavedController(
                             SavedPostParser.favoriteFolderCount(folder),
                         )
                     }
-                    loadFavoritePosts(folderId, request)
+                    loadFavoritePosts(selectedFolderId, request)
                 }
 
                 override fun onError(message: String) {
@@ -69,8 +71,12 @@ internal class ComposeSavedController(
     }
 
     fun openFolder(folder: ComposeFavoriteFolder) {
+        selectedFolderId = folder.id
         favoriteTab.value = ComposeFavoriteTab.POSTS
-        loadFavoritePosts(folder.id)
+        val request = ++favoriteRequest
+        favoriteLoading.value = true
+        favoriteError.value = ""
+        loadFavoritePosts(folder.id, request)
     }
 
     private fun loadFavoritePosts(folderId: String?, parentRequest: Int = favoriteRequest) {
@@ -138,6 +144,7 @@ internal class ComposeSavedController(
 
     fun close() {
         favoriteRequest++
+        selectedFolderId = null
         historyRequest++
         watchRequest++
         favoriteLoading.value = false

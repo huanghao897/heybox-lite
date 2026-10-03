@@ -92,6 +92,8 @@ final class DismissibleImageScrollView extends ScrollView {
         boolean dismiss = !cancelled
                 && ImageDismissPolicy.shouldDismiss(distance, getHeight());
         pulling = false;
+        ViewParent parent = getParent();
+        if (parent != null) parent.requestDisallowInterceptTouchEvent(false);
         if (pullListener != null) pullListener.onPullEnd(dismiss);
     }
 
@@ -100,5 +102,12 @@ final class DismissibleImageScrollView extends ScrollView {
         cancel.setAction(MotionEvent.ACTION_CANCEL);
         super.dispatchTouchEvent(cancel);
         cancel.recycle();
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        pulling = false;
+        ViewParent parent = getParent();
+        if (parent != null) parent.requestDisallowInterceptTouchEvent(false);
+        super.onDetachedFromWindow();
     }
 }

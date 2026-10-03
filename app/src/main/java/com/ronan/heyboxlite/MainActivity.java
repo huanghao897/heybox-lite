@@ -1350,8 +1350,11 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                 18, this.session.uiScale() / 100.0f));
         if (Build.VERSION.SDK_INT >= 21) back.setElevation(dp(6));
         back.setContentDescription(getString(R.string.action_back));
-        back.setOnClickListener(view ->
-                runWithPressFeedback(back, this::returnFromDetailSmooth));
+        back.setOnClickListener(view -> runWithPressFeedback(back, () -> {
+            if (this.composeBridge != null && this.composeBridge.isLegacyDetailActive())
+                this.composeBridge.returnFromNativeDetail(false);
+            else returnFromDetailSmooth();
+        }));
         return back;
     }
 
@@ -1848,12 +1851,11 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.detailPager = state.pager;
         this.detailScroll = state.articleScroll;
         this.detailCommentScroll = state.commentScroll;
-        this.screen = "detail";
+        this.screen = "detail"; if (this.composeBridge != null) this.composeBridge.clearLegacyDetailOwnership();
         if (this.shellBar != null) this.shellBar.setVisibility(View.GONE);
         setBottomNavVisible(false, false);
         this.leading.setVisibility(View.VISIBLE);
-        this.leading.setOnClickListener(view -> returnFromDetailSmooth());
-        this.action.setVisibility(View.INVISIBLE);
+        this.leading.setOnClickListener(view -> returnFromDetailSmooth()); this.action.setVisibility(View.INVISIBLE);
         updateDetailPagerTitle();
         Motions.resetTree(state.root);
         if (!alreadyAttached) {

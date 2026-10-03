@@ -47,17 +47,30 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
 
     boolean isLegacyDetailActive() { return legacyDetailActive; }
 
+    void clearLegacyDetailOwnership() { legacyDetailActive = false; }
+
     boolean showUserSpace(String userId, String name, String avatar) {
+        // A native fallback page owns its own history. Do not replace it with
+        // a Compose route while the Compose layer is hidden.
+        if (!isComposeSurfaceVisible()) return false;
         return showRouteIfMounted("user_space?user=" + Uri.encode(userId)
                 + "&name=" + Uri.encode(name == null ? "" : name)
                 + "&avatar=" + Uri.encode(avatar == null ? "" : avatar));
     }
 
     boolean handleBack() {
-        if (legacyDetailActive) {
+        if (legacyDetailActive && "detail".equals(activity.screen)) {
+            if (activity.detailPager != null && activity.detailPager.showingComments()) {
+                activity.detailPager.showArticle(true);
+                return true;
+            }
             returnFromLegacyDetail();
             return true;
         }
+        // A native fallback page can coexist with this host while the Compose
+        // layer is hidden. Do not consume its back event with a stale route.
+        if (activity.composeLayer == null
+                || activity.composeLayer.getVisibility() != View.VISIBLE) return false;
         return activity.composeAppHost != null && activity.composeAppHost.isMounted()
                 && activity.composeAppHost.handleBack();
     }
@@ -89,6 +102,13 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         // its normal detail setup exactly once.
         if (openingLegacyDetail || activity.composeAppHost == null
                 || !activity.composeAppHost.isMounted()) return false;
+        if (!isComposeSurfaceVisible()) {
+            // A post opened from a native user page/detail page must remain in
+            // the native history. Clear the root marker so its back gesture
+            // returns to that native page instead of skipping it.
+            legacyDetailActive = false;
+            return false;
+        }
         if (!legacyDetailActive) {
             legacyDetailActive = true;
             legacyReturnRoute = nativeReturnRoute();
@@ -181,7 +201,17 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     private void returnFromLegacyDetail(boolean gestureOwned) {
         String route = legacyReturnRoute;
         activity.returnFromDetailForCompose(gestureOwned);
+        // Returning a nested native detail restored a native user page. Keep
+        // that page visible; the root Compose route is restored only after the
+        // user backs out of the native chain.
+        if ("user_space".equals(activity.screen) && activity.composeLayer != null
+                && activity.composeLayer.getVisibility() != View.VISIBLE) return;
         if (route != null && !route.isEmpty()) showRoute(route);
+    }
+
+    private boolean isComposeSurfaceVisible() {
+        return activity.composeLayer != null
+                && activity.composeLayer.getVisibility() == View.VISIBLE;
     }
 
     private String nativeReturnRoute() {
