@@ -80,8 +80,14 @@ final class UpdateDownloadClient {
     }
 
     private static File downloadDirectory(Context context) {
+        File internal = new File(context.getFilesDir(), "updates");
+        if (internal.exists() || internal.mkdirs()) return internal;
+
         File external = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
-        if (external != null) return new File(external, "heyboxlite");
+        if (external != null) {
+            File externalUpdates = new File(external, "heyboxlite");
+            if (externalUpdates.exists() || externalUpdates.mkdirs()) return externalUpdates;
+        }
         return new File(context.getCacheDir(), "updates");
     }
 }

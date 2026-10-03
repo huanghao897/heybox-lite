@@ -32,13 +32,14 @@ public final class UpdateApkProvider extends ContentProvider {
         String[] columns = projection == null ? new String[]{
                 OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE
         } : projection;
+        if (file == null) return new MatrixCursor(columns, 0);
         MatrixCursor cursor = new MatrixCursor(columns, 1);
         Object[] values = new Object[columns.length];
         for (int i = 0; i < columns.length; i++) {
             if (OpenableColumns.DISPLAY_NAME.equals(columns[i])) {
-                values[i] = file == null ? "" : file.getName();
+                values[i] = file.getName();
             } else if (OpenableColumns.SIZE.equals(columns[i])) {
-                values[i] = file == null ? 0L : file.length();
+                values[i] = file.length();
             } else {
                 values[i] = null;
             }
@@ -85,6 +86,10 @@ public final class UpdateApkProvider extends ContentProvider {
             return null;
         }
         try {
+            File internalFile = existingFile(
+                    new File(getContext().getFilesDir(), "updates"), name);
+            if (internalFile != null) return internalFile;
+
             File cacheFile = existingFile(new File(getContext().getCacheDir(), "updates"), name);
             if (cacheFile != null) return cacheFile;
 
@@ -94,9 +99,7 @@ public final class UpdateApkProvider extends ContentProvider {
                 File externalFile = existingFile(new File(externalRoot, "heyboxlite"), name);
                 if (externalFile != null) return externalFile;
             }
-
-            File filesRoot = getContext().getFilesDir();
-            return existingFile(new File(filesRoot, "updates"), name);
+            return null;
         } catch (IOException | SecurityException ignored) {
             return null;
         }

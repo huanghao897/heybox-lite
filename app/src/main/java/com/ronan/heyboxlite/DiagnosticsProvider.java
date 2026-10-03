@@ -13,7 +13,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 
 public final class DiagnosticsProvider extends ContentProvider {
-    static final String AUTHORITY = "com.ronan.heyboxlite.preview.diagnostics";
+    private static final String AUTHORITY_SUFFIX = ".diagnostics";
 
     @Override public boolean onCreate() {
         return true;
@@ -29,13 +29,14 @@ public final class DiagnosticsProvider extends ContentProvider {
         String[] columns = projection == null ? new String[]{
                 OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE
         } : projection;
+        if (file == null) return new MatrixCursor(columns, 0);
         MatrixCursor cursor = new MatrixCursor(columns, 1);
         Object[] values = new Object[columns.length];
         for (int i = 0; i < columns.length; i++) {
             if (OpenableColumns.DISPLAY_NAME.equals(columns[i])) {
-                values[i] = file == null ? "" : file.getName();
+                values[i] = file.getName();
             } else if (OpenableColumns.SIZE.equals(columns[i])) {
-                values[i] = file == null ? 0L : file.length();
+                values[i] = file.length();
             } else {
                 values[i] = null;
             }
@@ -64,10 +65,10 @@ public final class DiagnosticsProvider extends ContentProvider {
         return 0;
     }
 
-    static Uri uriFor(File file) {
+    static Uri uriFor(android.content.Context context, File file) {
         return new Uri.Builder()
                 .scheme("content")
-                .authority(AUTHORITY)
+                .authority(context.getPackageName() + AUTHORITY_SUFFIX)
                 .appendPath(file == null ? "" : file.getName())
                 .build();
     }

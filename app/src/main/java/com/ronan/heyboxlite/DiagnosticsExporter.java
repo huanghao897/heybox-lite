@@ -31,7 +31,7 @@ final class DiagnosticsExporter {
 
     static boolean share(Activity activity, File file) {
         if (activity == null || file == null) return false;
-        Uri uri = DiagnosticsProvider.uriFor(file);
+        Uri uri = DiagnosticsProvider.uriFor(activity, file);
         Intent share = new Intent(Intent.ACTION_SEND);
         share.setType("text/plain");
         share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
