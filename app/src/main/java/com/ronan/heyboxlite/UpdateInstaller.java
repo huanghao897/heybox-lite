@@ -13,6 +13,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
+import android.os.ParcelFileDescriptor;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.widget.LinearLayout;
@@ -177,16 +178,27 @@ final class UpdateInstaller {
 
     private void openApk(File apk, boolean chooser) {
         Uri uri = UpdateApkProvider.uriFor(this.activity, apk);
+        try (ParcelFileDescriptor descriptor = this.activity.getContentResolver()
+                .openFileDescriptor(uri, "r")) {
+            if (descriptor == null) throw new IOException("更新包无法读取");
+        } catch (IOException error) {
+            throw new IllegalArgumentException("更新包无法读取", error);
+        }
         Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(uri, "application/vnd.android.package-archive");
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        intent.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
             intent.setClipData(ClipData.newUri(
                     this.activity.getContentResolver(), apk.getName(), uri));
         }
-        this.activity.startActivity(chooser
-                ? Intent.createChooser(intent, "选择安装器") : intent);
+        Intent launch = chooser ? Intent.createChooser(intent, "选择安装器") : intent;
+        launch.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            launch.setClipData(intent.getClipData());
+        }
+        this.activity.startActivity(launch);
     }
 
     private void showDownloadedChoices(File apk, String sourceUrl, boolean permissionBlocked) {

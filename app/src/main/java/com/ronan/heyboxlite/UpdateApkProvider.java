@@ -71,21 +71,31 @@ public final class UpdateApkProvider extends ContentProvider {
     }
 
     static Uri uriFor(android.content.Context context, File file) {
-        return new Uri.Builder()
+        Uri.Builder builder = new Uri.Builder()
                 .scheme("content")
-                .authority(context.getPackageName() + AUTHORITY_SUFFIX)
-                .appendPath(file == null ? "" : file.getName())
-                .build();
+                .authority(context.getPackageName() + AUTHORITY_SUFFIX);
+        String location = locationFor(context, file);
+        if (!location.isEmpty()) builder.appendPath(location);
+        builder.appendPath(file == null ? "" : file.getName());
+        return builder.build();
     }
 
     private File fileFor(Uri uri) {
         if (getContext() == null || uri == null) return null;
-        String name = uri.getLastPathSegment();
+        java.util.List<String> segments = uri.getPathSegments();
+        if (segments == null || segments.isEmpty() || segments.size() > 2) return null;
+        String name = segments.get(segments.size() - 1);
         if (TextUtils.isEmpty(name) || name.contains("/") || name.contains("\\")
                 || name.contains("..") || !isApkName(name)) {
             return null;
         }
         try {
+            if (segments.size() == 2) {
+                File root = rootFor(segments.get(0));
+                return root == null ? null : existingFile(root, name);
+            }
+
+            // Keep accepting one-segment URIs from releases already installed.
             File internalFile = existingFile(
                     new File(getContext().getFilesDir(), "updates"), name);
             if (internalFile != null) return internalFile;
@@ -105,6 +115,45 @@ public final class UpdateApkProvider extends ContentProvider {
         }
     }
 
+    private File rootFor(String location) {
+        if ("files".equals(location)) {
+            return new File(getContext().getFilesDir(), "updates");
+        }
+        if ("cache".equals(location)) {
+            return new File(getContext().getCacheDir(), "updates");
+        }
+        if ("external".equals(location)) {
+            File externalRoot = getContext().getExternalFilesDir(
+                    android.os.Environment.DIRECTORY_DOWNLOADS);
+            return externalRoot == null ? null : new File(externalRoot, "heyboxlite");
+        }
+        return null;
+    }
+
+    private static String locationFor(android.content.Context context, File file) {
+        if (context == null || file == null) return "";
+        try {
+            File candidate = file.getCanonicalFile();
+            if (under(new File(context.getFilesDir(), "updates"), candidate)) return "files";
+            if (under(new File(context.getCacheDir(), "updates"), candidate)) return "cache";
+            File externalRoot = context.getExternalFilesDir(
+                    android.os.Environment.DIRECTORY_DOWNLOADS);
+            if (externalRoot != null
+                    && under(new File(externalRoot, "heyboxlite"), candidate)) {
+                return "external";
+            }
+        } catch (IOException | SecurityException ignored) {
+            // Fall back to the legacy one-segment URI and let fileFor search known roots.
+        }
+        return "";
+    }
+
+    private static boolean under(File root, File candidate) throws IOException {
+        String rootPath = root.getCanonicalFile().getPath();
+        if (!rootPath.endsWith(File.separator)) rootPath += File.separator;
+        return candidate.getPath().startsWith(rootPath);
+    }
+
     private boolean isApkName(String name) {
         return name.length() <= 160
                 && name.toLowerCase(Locale.ROOT).endsWith(".apk");
@@ -116,6 +165,7 @@ public final class UpdateApkProvider extends ContentProvider {
     }
 
     private File fileUnder(File root, String name) throws IOException {
+        if (root == null) return null;
         File canonicalRoot = root.getCanonicalFile();
         File file = new File(canonicalRoot, name).getCanonicalFile();
         String rootPath = canonicalRoot.getPath();

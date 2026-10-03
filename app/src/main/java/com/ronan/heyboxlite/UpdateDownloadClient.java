@@ -23,6 +23,7 @@ final class UpdateDownloadClient {
                          ProgressListener listener) throws IOException {
         HttpURLConnection connection = null;
         File output = null;
+        File partial = null;
         try {
             connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setConnectTimeout(5000);
@@ -43,15 +44,20 @@ final class UpdateDownloadClient {
             }
             output = new File(directory, "heybox-Lite-update-" + version + "-"
                     + System.currentTimeMillis() + ".apk");
+            partial = new File(directory, output.getName() + ".part");
 
             int length = connection.getContentLength();
-            long written = copy(connection, output, length, listener);
+            long written = copy(connection, partial, length, listener);
             if (written < MIN_APK_BYTES) {
                 throw new IllegalStateException("下载内容异常，未得到有效 APK");
+            }
+            if (!partial.renameTo(output)) {
+                throw new IllegalStateException("无法准备更新安装包");
             }
             return output;
         } catch (IOException | RuntimeException error) {
             if (output != null && output.exists()) output.delete();
+            if (partial != null && partial.exists()) partial.delete();
             throw error;
         } finally {
             if (connection != null) connection.disconnect();
