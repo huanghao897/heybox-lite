@@ -321,16 +321,34 @@ internal class ComposeAppHost(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(route, services.theme.roundScreen) {
+                    .pointerInput(
+                        route,
+                        services.theme.roundScreen,
+                        services.theme.uiScale,
+                    ) {
+                        val edgePx = 28.dp.toPx() * services.theme.uiScale
+                        var armed = false
                         var total = 0f
                         detectHorizontalDragGestures(
+                            onDragStart = { offset ->
+                                total = 0f
+                                armed = ComposeSwipePolicy.canArm(route, offset.x, edgePx)
+                            },
                             onHorizontalDrag = { change, amount ->
+                                if (!armed) return@detectHorizontalDragGestures
+                                if (ComposeSwipePolicy.shouldCancelForLeftDrag(
+                                        armed, total, amount,
+                                    )
+                                ) {
+                                    armed = false
+                                    return@detectHorizontalDragGestures
+                                }
                                 total += amount
                                 change.consume()
                             },
                             onDragEnd = {
                                 val threshold = 44f * services.theme.uiScale
-                                if (total > threshold && abs(total) > threshold) {
+                                if (armed && total > threshold && abs(total) > threshold) {
                                     if (route == "feed") {
                                         if (services.session.homeSwipeExit()) host.callbacks.back()
                                     } else if (services.session.shellBackSwipe()) {
@@ -338,8 +356,12 @@ internal class ComposeAppHost(
                                     }
                                 }
                                 total = 0f
+                                armed = false
                             },
-                            onDragCancel = { total = 0f },
+                            onDragCancel = {
+                                total = 0f
+                                armed = false
+                            },
                         )
                     },
             ) {
