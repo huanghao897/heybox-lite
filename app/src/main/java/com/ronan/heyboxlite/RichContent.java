@@ -7,7 +7,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -59,7 +58,7 @@ final class RichContent {
             "(?is)([a-z0-9_-]+)\\s*=\\s*(['\"])(.*?)\\2");
     private static final Pattern JSON_IMAGE = Pattern.compile(
             "(?is)\"(?:url|src|original|origin_url|original_url|image|image_url|img|img_url|pic|pic_url|cover|cover_url)\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
-    private static final String[] DETAIL_BODY_KEYS = {
+    static final String[] DETAIL_BODY_KEYS = {
             "text", "article_text", "articleText",
             "article_content", "articleContent", "content_v2", "contentV2",
             "content_list", "contentList", "rich_text", "richText",
@@ -92,55 +91,7 @@ final class RichContent {
     private RichContent() {}
 
     static String diagnostics(JSONObject source, JSONArray fallbackImages) {
-        StringBuilder out = new StringBuilder();
-        out.append("RichContent diagnostics\n");
-        if (source == null) {
-            out.append("source: null\n");
-            out.append("fallbackImages: ").append(length(fallbackImages)).append('\n');
-            return out.toString();
-        }
-        boolean articleMode = FeedItem.isArticleJson(source);
-        out.append("articleMode: ").append(articleMode).append('\n');
-        out.append("use_concept_type: ").append(source.optInt("use_concept_type", -1)).append('\n');
-        out.append("is_article: ").append(source.opt("is_article")).append('\n');
-        out.append("link_type: ").append(source.opt("link_type")).append('\n');
-        out.append("content_type: ").append(source.opt("content_type")).append('\n');
-        out.append("fallbackImages: ").append(length(fallbackImages)).append('\n');
-        appendFallbackImages(out, fallbackImages);
-        appendSourceKeys(out, source);
-
-        out.append("\nbody candidates:\n");
-        for (String key : DETAIL_BODY_KEYS) {
-            if (!source.has(key)) continue;
-            Object raw = source.opt(key);
-            ParseResult candidate = parseDetailBody(raw, articleMode);
-            out.append("- ").append(key)
-                    .append(" type=").append(typeName(raw))
-                    .append(" rawLen=").append(rawLength(raw))
-                    .append(" blocks=").append(candidate.blocks.size())
-                    .append(" textBlocks=").append(textCount(candidate.blocks))
-                    .append(" images=").append(imageCount(candidate.blocks))
-                    .append(" games=").append(RichContentSupport.gameCount(candidate.blocks))
-                    .append(" readable=").append(readableLength(candidate.blocks))
-                    .append(" score=").append(bodyScore(candidate, key, articleMode))
-                    .append('\n');
-            if (raw instanceof String) {
-                out.append("  rawPreview: ").append(brief((String) raw, 180)).append('\n');
-            }
-            appendBlocks(out, candidate.blocks, 18, "  ");
-        }
-
-        List<Block> finalBlocks = parse(source, fallbackImages);
-        out.append("\nfinal blocks:\n")
-                .append("blocks=").append(finalBlocks.size())
-                .append(" textBlocks=").append(textCount(finalBlocks))
-                .append(" images=").append(imageCount(finalBlocks))
-                .append(" games=").append(RichContentSupport.gameCount(finalBlocks))
-                .append(" readable=").append(readableLength(finalBlocks))
-                .append(" trailingImageRun=").append(trailingImageRun(finalBlocks))
-                .append('\n');
-        appendBlocks(out, finalBlocks, 100, "  ");
-        return out.toString();
+        return RichContentDiagnostics.build(source, fallbackImages);
     }
 
     static List<Block> parse(JSONObject source, JSONArray fallbackImages) {
@@ -195,7 +146,7 @@ final class RichContent {
         return result.blocks;
     }
 
-    private static int bodyScore(ParseResult result, String key, boolean articleMode) {
+    static int bodyScore(ParseResult result, String key, boolean articleMode) {
         int score = Math.min(readableLength(result.blocks), 8000);
         score += result.blocks.size() * 30;
         score += textCount(result.blocks) * 120;
@@ -217,14 +168,14 @@ final class RichContent {
         return score;
     }
 
-    private static int textCount(List<Block> blocks) {
+    static int textCount(List<Block> blocks) {
         if (blocks == null) return 0;
         int count = 0;
         for (Block block : blocks) if (RichContentSupport.isReadableBlock(block)) count++;
         return count;
     }
 
-    private static ParseResult parseDetailBody(Object value, boolean articleMode) {
+    static ParseResult parseDetailBody(Object value, boolean articleMode) {
         ParseResult result = new ParseResult();
         if (value == null || value == JSONObject.NULL) return result;
         if (value instanceof String) {
@@ -369,14 +320,14 @@ final class RichContent {
         result.blocks.add(new Block(Block.TEXT, value));
     }
 
-    private static int imageCount(List<Block> blocks) {
+    static int imageCount(List<Block> blocks) {
         if (blocks == null) return 0;
         int count = 0;
         for (Block block : blocks) if (block.image) count++;
         return count;
     }
 
-    private static int readableLength(List<Block> blocks) {
+    static int readableLength(List<Block> blocks) {
         if (blocks == null) return 0;
         int length = 0;
         for (Block block : blocks) {
@@ -642,11 +593,11 @@ final class RichContent {
         return "";
     }
 
-    private static String firstImage(JSONObject item) {
+    static String firstImage(JSONObject item) {
         return firstImage(item, 0);
     }
 
-    private static String firstImage(JSONObject item, int depth) {
+    static String firstImage(JSONObject item, int depth) {
         if (item == null || depth > MAX_JSON_DEPTH) return "";
         for (String key : IMAGE_KEYS) {
             Object value = item.opt(key);
@@ -1216,7 +1167,7 @@ final class RichContent {
         if (!value.startsWith("https://")) return;
         if (imageUrls.add(imageKey(value))) blocks.add(new Block(Block.IMAGE, value));
     }
-    private static String imageKey(String value) {
+    static String imageKey(String value) {
         if (value == null) return "";
         String key = value.trim().replace("\\/", "/");
         if (key.startsWith("//")) key = "https:" + key;
@@ -1249,109 +1200,6 @@ final class RichContent {
         return "";
     }
 
-    private static int length(JSONArray array) {
-        return array == null ? 0 : array.length();
-    }
-
-    private static void appendFallbackImages(StringBuilder out, JSONArray fallbackImages) {
-        if (fallbackImages == null || fallbackImages.length() == 0) return;
-        int count = Math.min(fallbackImages.length(), 40);
-        for (int i = 0; i < count; i++) {
-            Object value = fallbackImages.opt(i);
-            String url = value instanceof JSONObject
-                    ? firstImage((JSONObject) value) : fallbackImages.optString(i);
-            out.append("  fallback[").append(i).append("] ")
-                    .append(brief(imageKey(url), 180)).append('\n');
-        }
-        if (fallbackImages.length() > count) {
-            out.append("  ... ").append(fallbackImages.length() - count)
-                    .append(" more fallback images\n");
-        }
-    }
-
-    private static void appendSourceKeys(StringBuilder out, JSONObject source) {
-        out.append("sourceKeys:\n");
-        Iterator<String> keys = source.keys();
-        while (keys.hasNext()) {
-            String key = keys.next();
-            Object value = source.opt(key);
-            out.append("  ").append(key)
-                    .append(" type=").append(typeName(value))
-                    .append(" len=").append(rawLength(value));
-            if (value instanceof String) {
-                out.append(" preview=").append(brief((String) value, 80));
-            } else if (value instanceof JSONArray) {
-                out.append(" count=").append(((JSONArray) value).length());
-            } else if (value instanceof JSONObject) {
-                out.append(" keys=").append(((JSONObject) value).length());
-            }
-            out.append('\n');
-        }
-    }
-
-    private static void appendBlocks(StringBuilder out, List<Block> blocks, int limit,
-                                     String prefix) {
-        if (blocks == null || blocks.isEmpty()) return;
-        int count = Math.min(blocks.size(), limit);
-        for (int i = 0; i < count; i++) {
-            Block block = blocks.get(i);
-            out.append(prefix).append('[').append(i).append("] ");
-            if (block.image) {
-                out.append("IMG key=").append(brief(imageKey(block.value), 180))
-                        .append(" url=").append(brief(block.value, 220));
-            } else if (RichGameCardParser.isCard(block)) {
-                out.append("GAME appid=").append(brief(block.value, 80));
-            } else {
-                String label = block.kind == Block.HEADING ? "HEAD"
-                        : block.kind == Block.CAPTION ? "CAP"
-                        : block.kind == Block.QUOTE ? "QUOTE" : "TXT";
-                out.append(label).append(" len=")
-                        .append(block.value == null ? 0 : block.value.length())
-                        .append(" value=").append(brief(block.value, 220));
-            }
-            out.append('\n');
-        }
-        if (blocks.size() > count) {
-            out.append(prefix).append("... ").append(blocks.size() - count)
-                    .append(" more blocks\n");
-        }
-    }
-
-    private static int trailingImageRun(List<Block> blocks) {
-        if (blocks == null || blocks.isEmpty()) return 0;
-        int count = 0;
-        for (int i = blocks.size() - 1; i >= 0; i--) {
-            if (!blocks.get(i).image) break;
-            count++;
-        }
-        return count;
-    }
-
-    private static String typeName(Object value) {
-        if (value == null) return "null";
-        if (value == JSONObject.NULL) return "json-null";
-        if (value instanceof JSONArray) return "array";
-        if (value instanceof JSONObject) return "object";
-        if (value instanceof String) return "string";
-        return value.getClass().getSimpleName();
-    }
-
-    private static int rawLength(Object value) {
-        if (value == null || value == JSONObject.NULL) return 0;
-        if (value instanceof String) return ((String) value).length();
-        if (value instanceof JSONArray) return ((JSONArray) value).length();
-        if (value instanceof JSONObject) return ((JSONObject) value).length();
-        return String.valueOf(value).length();
-    }
-
-    private static String brief(String value, int max) {
-        if (value == null) return "";
-        String clean = value.replace('\n', ' ').replace('\r', ' ')
-                .replaceAll("\\s+", " ").trim();
-        if (clean.length() <= max) return clean;
-        return clean.substring(0, Math.max(0, max)) + "...";
-    }
-
     private static final class EmojiUrls {
         final String light;
         final String dark;
@@ -1366,7 +1214,7 @@ final class RichContent {
         }
     }
 
-    private static final class ParseResult {
+    static final class ParseResult {
         final List<Block> blocks = new ArrayList<>();
         final Set<String> imageUrls = new HashSet<>();
     }
