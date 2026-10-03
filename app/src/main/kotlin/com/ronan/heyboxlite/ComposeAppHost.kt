@@ -4,7 +4,8 @@ import android.app.Activity
 import android.os.Handler
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -327,42 +329,40 @@ internal class ComposeAppHost(
                         services.theme.uiScale,
                     ) {
                         val edgePx = 28.dp.toPx() * services.theme.uiScale
-                        var armed = false
-                        var total = 0f
-                        detectHorizontalDragGestures(
-                            onDragStart = { offset ->
-                                total = 0f
-                                armed = ComposeSwipePolicy.canArm(route, offset.x, edgePx)
-                            },
-                            onHorizontalDrag = { change, amount ->
-                                if (!armed) return@detectHorizontalDragGestures
-                                if (ComposeSwipePolicy.shouldCancelForLeftDrag(
-                                        armed, total, amount,
-                                    )
-                                ) {
-                                    armed = false
-                                    return@detectHorizontalDragGestures
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val edgeArmed = !down.isConsumed && ComposeSwipePolicy.canArm(
+                                route, down.position.x, edgePx,
+                            )
+                            var totalX = 0f
+                            var totalY = 0f
+                            var decided = false
+                            var accepted = false
+                            val touchSlop = viewConfiguration.touchSlop
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                if (!change.pressed) break
+                                if (!decided && change.isConsumed) break
+                                val delta = change.positionChangeIgnoreConsumed()
+                                totalX += delta.x
+                                totalY += delta.y
+                                if (!decided && maxOf(abs(totalX), abs(totalY)) >= touchSlop) {
+                                    decided = true
+                                    accepted = edgeArmed && totalX > 0f
+                                            && abs(totalX) > abs(totalY)
                                 }
-                                total += amount
-                                change.consume()
-                            },
-                            onDragEnd = {
-                                val threshold = 44f * services.theme.uiScale
-                                if (armed && total > threshold && abs(total) > threshold) {
-                                    if (route == "feed") {
-                                        if (services.session.homeSwipeExit()) host.callbacks.back()
-                                    } else if (services.session.shellBackSwipe()) {
-                                        host.handleBack()
-                                    }
+                                if (accepted) change.consume()
+                            }
+                            val threshold = 44f * services.theme.uiScale
+                            if (accepted && totalX > threshold) {
+                                if (route == "feed") {
+                                    if (services.session.homeSwipeExit()) host.callbacks.back()
+                                } else if (services.session.shellBackSwipe()) {
+                                    host.handleBack()
                                 }
-                                total = 0f
-                                armed = false
-                            },
-                            onDragCancel = {
-                                total = 0f
-                                armed = false
-                            },
-                        )
+                            }
+                        }
                     },
             ) {
                 when (route) {

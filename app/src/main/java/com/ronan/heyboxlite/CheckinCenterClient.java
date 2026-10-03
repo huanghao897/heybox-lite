@@ -866,99 +866,41 @@ final class CheckinCenterClient {
 
     static PairingStart parsePairingStart(JSONObject value)
             throws JSONException, ApiError {
-        String deviceCode = required(value, "device_code", Operation.PAIR_START);
-        String userCode = required(value, "user_code", Operation.PAIR_START);
-        String verificationUri = required(value, "verification_uri", Operation.PAIR_START);
-        requireTrustedPairingUri(verificationUri);
-        int expiresIn = positive(value.optInt("expires_in"), Operation.PAIR_START);
-        int interval = positive(value.optInt("interval"), Operation.PAIR_START);
-        return new PairingStart(deviceCode, userCode, expiresIn, interval,
-                value.optBoolean("registration_open", false),
-                value.optBoolean("registration_email_required", false));
+        return CheckinResponseParser.parsePairingStart(value);
     }
 
     static RegistrationEmailSession parseRegistrationEmailSession(JSONObject value)
             throws ApiError {
-        String challengeId = required(value, "challenge_id", Operation.REGISTRATION_EMAIL);
-        if (!validRegistrationChallengeId(challengeId)) {
-            throw protocolError(Operation.REGISTRATION_EMAIL);
-        }
-        int retryAfter = positive(value.optInt("retry_after"), Operation.REGISTRATION_EMAIL);
-        int expiresIn = positive(value.optInt("expires_in"), Operation.REGISTRATION_EMAIL);
-        return new RegistrationEmailSession(challengeId, retryAfter, expiresIn);
+        return CheckinResponseParser.parseRegistrationEmailSession(value);
     }
 
     private static PairingPoll parsePairingPoll(JSONObject value) throws ApiError {
-        String state = value.optString("state", "");
-        if ("pending".equals(state)) return new PairingPoll(state, "");
-        if (!"authorized".equals(state)) throw protocolError(Operation.PAIR_POLL);
-        String token = value.optString("device_token", "");
-        requirePrefix(token, "ccdevice1_", Operation.PAIR_POLL);
-        return new PairingPoll(state, token);
+        return CheckinResponseParser.parsePairingPoll(value);
     }
 
     private static ConnectedAccount parseConnectedAccount(JSONObject value, Operation operation)
             throws ApiError {
-        if (!"connected".equals(value.optString("state", ""))) {
-            throw protocolError(operation);
-        }
-        return new ConnectedAccount(value.optString("display_name", ""),
-                value.optString("external_id_masked", ""),
-                value.optBoolean("task_enabled", false));
+        return CheckinResponseParser.parseConnectedAccount(value, operation);
     }
 
     private static SmsSession parseSmsSession(JSONObject value) throws ApiError {
-        String sessionId = required(value, "session_id", Operation.SMS_SEND);
-        if (sessionId.length() > 128) throw protocolError(Operation.SMS_SEND);
-        int retryAfter = positive(value.optInt("retry_after"), Operation.SMS_SEND);
-        int expiresIn = positive(value.optInt("expires_in"), Operation.SMS_SEND);
-        return new SmsSession(sessionId, retryAfter, expiresIn);
+        return CheckinResponseParser.parseSmsSession(value);
     }
 
     private static Status parseStatus(JSONObject value) throws ApiError {
-        JSONObject accountJson = value.optJSONObject("account");
-        JSONObject taskJson = value.optJSONObject("task");
-        if (accountJson == null || taskJson == null) throw protocolError(Operation.STATUS);
-        Account account = new Account(accountJson.optString("state", ""),
-                nullableString(accountJson, "display_name"),
-                nullableString(accountJson, "external_id_masked"));
-        Task task = parseTask(taskJson);
-        JSONObject runJson = value.optJSONObject("last_run");
-        LastRun run = runJson == null ? null : new LastRun(runJson.optLong("id", 0L),
-                runJson.optString("status", ""), runJson.optString("summary", ""),
-                runJson.optString("started_at", ""), runJson.optString("finished_at", ""),
-                parseCheckinResult(runJson.optJSONObject("check_in")));
-        return new Status(account, task, run, CheckinBilling.parseMembership(value));
+        return CheckinResponseParser.parseStatus(value);
     }
 
     private static Task parseTask(JSONObject taskJson) {
-        return new Task(taskJson.optBoolean("enabled", false),
-                taskJson.optBoolean("sign", false), taskJson.optString("schedule_time", ""),
-                taskJson.optInt("offset_minutes", 0), taskJson.optString("window_start", ""),
-                taskJson.optString("window_end", ""),
-                taskJson.optBoolean("platform_blocked", false),
-                taskJson.optBoolean("sign_blocked", false), CheckinSharing.parse(taskJson));
+        return CheckinResponseParser.parseTask(taskJson);
     }
 
     private static RunResult parseRunResult(JSONObject value) throws ApiError {
-        String status = value.optString("status", "");
-        if (status.isEmpty()) throw protocolError(Operation.RUN_NOW);
-        return new RunResult(status, value.optString("summary", ""),
-                value.optLong("run_id", 0L),
-                parseCheckinResult(value.optJSONObject("check_in")));
+        return CheckinResponseParser.parseRunResult(value);
     }
 
     private static CheckinResult parseCheckinResult(JSONObject value) {
-        if (value == null) return new CheckinResult(false, false, -1, -1, -1);
-        return new CheckinResult(value.optBoolean("checked_in", false),
-                value.optBoolean("newly_signed", false), optionalInt(value, "coin_delta"),
-                optionalInt(value, "experience_delta"), optionalInt(value, "streak_days"));
-    }
-
-    private static int optionalInt(JSONObject value, String key) {
-        if (value.isNull(key) || !value.has(key)) return -1;
-        int result = value.optInt(key, -1);
-        return result >= 0 && result <= 1_000_000 ? result : -1;
+        return CheckinResponseParser.parseCheckinResult(value);
     }
 
     static URI requireTrustedUri(String value, boolean api, Operation operation)
@@ -980,19 +922,7 @@ final class CheckinCenterClient {
         }
     }
 
-    private static String required(JSONObject value, String key, Operation operation)
-            throws ApiError {
-        String result = value.optString(key, "").trim();
-        if (result.isEmpty()) throw protocolError(operation);
-        return result;
-    }
-
-    private static int positive(int value, Operation operation) throws ApiError {
-        if (value <= 0) throw protocolError(operation);
-        return value;
-    }
-
-    private static String requirePrefix(String value, String prefix, Operation operation)
+    static String requirePrefix(String value, String prefix, Operation operation)
             throws ApiError {
         String result = value == null ? "" : value.trim();
         if (!result.startsWith(prefix) || result.length() < prefix.length() + 32
@@ -1011,16 +941,12 @@ final class CheckinCenterClient {
         return result;
     }
 
-    private static String nullableString(JSONObject value, String key) {
-        return value.isNull(key) ? "" : value.optString(key, "");
-    }
-
     private static String clean(String value, String fallback) {
         String result = value == null ? "" : value.trim();
         return result.isEmpty() ? fallback : result;
     }
 
-    private static ApiError protocolError(Operation operation) {
+    static ApiError protocolError(Operation operation) {
         return new ApiError(operation, 0, "签到服务响应异常", ErrorKind.PROTOCOL);
     }
 

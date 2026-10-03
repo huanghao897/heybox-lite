@@ -6,9 +6,4 @@ internal object ComposeSwipePolicy {
     fun canArm(route: String, startX: Float, edgePx: Float): Boolean {
         return route == "feed" || startX <= edgePx
     }
-
-    @JvmStatic
-    fun shouldCancelForLeftDrag(armed: Boolean, totalX: Float, deltaX: Float): Boolean {
-        return armed && totalX <= 0f && deltaX < 0f
-    }
 }
