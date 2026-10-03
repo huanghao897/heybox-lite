@@ -15,12 +15,17 @@ final class DetailReturnPreviewFactory {
 
     static ImageView create(Activity activity, ThemeTokens tokens, String targetKey,
                             SnapshotProvider pageSnapshots,
-                            SnapshotProvider fullScreenSnapshots) {
+                            SnapshotProvider fullScreenSnapshots,
+                            boolean preferFullScreen) {
         ImageView snapshot = new ImageView(activity);
         snapshot.setBackgroundColor(tokens == null ? 0xff202124 : tokens.panel);
         snapshot.setScaleType(ImageView.ScaleType.FIT_XY);
-        Bitmap bitmap = pageSnapshots.get(targetKey);
-        if (bitmap == null || bitmap.isRecycled()) bitmap = fullScreenSnapshots.get(targetKey);
+        Bitmap bitmap = preferFullScreen
+                ? fullScreenSnapshots.get(targetKey) : pageSnapshots.get(targetKey);
+        if (bitmap == null || bitmap.isRecycled()) {
+            bitmap = preferFullScreen ? pageSnapshots.get(targetKey)
+                    : fullScreenSnapshots.get(targetKey);
+        }
         if (bitmap != null && !bitmap.isRecycled()) snapshot.setImageBitmap(bitmap);
         return snapshot;
     }

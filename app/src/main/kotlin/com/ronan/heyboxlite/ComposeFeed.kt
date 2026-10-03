@@ -102,7 +102,6 @@ internal fun ComposeFeedScreen(
             ObserveFeedLoadMore(listState, items.size, loading, noMore, onLoadMore)
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = horizontal)) {
                 FeedToolbar(
-                    title = "信息流",
                     theme = services.theme,
                     onSearch = onSearch,
                 )
@@ -142,6 +141,7 @@ internal fun ComposeFeedScreen(
                                     currentUserId = services.session.userId(),
                                     onOpen = onOpen,
                                     onAction = onAction,
+                                    showSecondaryActions = false,
                                     favorite = item.favorited,
                                     cached = services.cache.isWatchLater(item.id),
                                     gameCardNoImage = services.session.gameCardNoImage(),

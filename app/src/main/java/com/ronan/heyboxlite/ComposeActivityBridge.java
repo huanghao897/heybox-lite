@@ -3,6 +3,7 @@ package com.ronan.heyboxlite;
 import android.net.Uri;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 
 import org.json.JSONObject;
 
@@ -180,6 +181,9 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         if (item == null) return;
         // Compose cards remain the entry point, but comments, emoji, thumbnails,
         // original-image opening and reply actions use the stable native detail host.
+        if (!legacyDetailActive && isComposeSurfaceVisible()) {
+            activity.captureComposeReturnSnapshot();
+        }
         legacyDetailActive = true;
         legacyReturnRoute = nativeReturnRoute();
         openingLegacyDetail = true;
@@ -205,13 +209,25 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
 
     private void returnFromLegacyDetail(boolean gestureOwned) {
         String route = legacyReturnRoute;
-        activity.returnFromDetailForCompose(gestureOwned);
-        // Returning a nested native detail restored a native user page. Keep
-        // that page visible; the root Compose route is restored only after the
-        // user backs out of the native chain.
-        if ("user_space".equals(activity.screen) && activity.composeLayer != null
-                && activity.composeLayer.getVisibility() != View.VISIBLE) return;
-        if (route != null && !route.isEmpty()) showRoute(route);
+        String snapshotKey = route == null ? "" : route.split("\\?", 2)[0];
+        ImageView handoff = gestureOwned
+                ? activity.installFullScreenTransitionOverlay(
+                activity.fullScreenSnapshot(snapshotKey)) : null;
+        try {
+            activity.returnFromDetailForCompose(gestureOwned);
+            // Returning a nested native detail restored a native user page. Keep
+            // that page visible; the root Compose route is restored only after the
+            // user backs out of the native chain.
+            if ("user_space".equals(activity.screen) && activity.composeLayer != null
+                    && activity.composeLayer.getVisibility() != View.VISIBLE) return;
+            if (route != null && !route.isEmpty()
+                    && !route.equals(activity.composeAppHost == null
+                    ? "" : activity.composeAppHost.currentRouteSpec())) {
+                showRoute(route);
+            }
+        } finally {
+            activity.removeFullScreenTransitionOverlayAfterLayout(handoff);
+        }
     }
 
     private boolean isComposeSurfaceVisible() {

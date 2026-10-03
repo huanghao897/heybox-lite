@@ -890,14 +890,14 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         return this.screenSnapshots.get(key);
     }
 
-    private Bitmap fullScreenSnapshot(String key) {
+    Bitmap fullScreenSnapshot(String key) {
         if (key == null || key.isEmpty()) {
             return null;
         }
         return this.fullScreenSnapshots.get(key);
     }
 
-    private ImageView installFullScreenTransitionOverlay(Bitmap bitmap) {
+    ImageView installFullScreenTransitionOverlay(Bitmap bitmap) {
         if (bitmap == null || bitmap.isRecycled()) {
             return null;
         }
@@ -917,7 +917,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         return overlay;
     }
 
-    private void removeFullScreenTransitionOverlayAfterLayout(ImageView overlay) {
+    void removeFullScreenTransitionOverlayAfterLayout(ImageView overlay) {
         if (overlay == null) {
             return;
         }
@@ -1363,8 +1363,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
 
     private View detailReturnPreview() {
         String targetKey = backTargetScreenKey();
-        return DetailReturnPreviewFactory.create(this, this.themeTokens, targetKey,
-                this::screenSnapshot, this::fullScreenSnapshot);
+        return DetailReturnPreviewFactory.create(this, this.themeTokens, targetKey, this::screenSnapshot, this::fullScreenSnapshot, this.composeBridge != null && this.composeBridge.isLegacyDetailActive());
     }
 
     private void updateDetailPagerTitle() {

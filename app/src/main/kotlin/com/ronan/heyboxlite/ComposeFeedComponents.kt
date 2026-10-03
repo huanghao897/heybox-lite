@@ -1,6 +1,7 @@
 package com.ronan.heyboxlite
 
 import android.graphics.Bitmap
+import android.text.TextUtils
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,11 +62,16 @@ internal fun ComposeFeedCard(
     gameCardNoImage: Boolean = false,
     showActions: Boolean = true,
     showFollow: Boolean = true,
+    showSecondaryActions: Boolean = true,
 ) {
     val scale = theme.uiScale
     val shape = RoundedCornerShape((if (theme.roundScreen) 9 else 10).dp)
-    val title = RichContent.plainText(item.title).ifEmpty { "无标题内容" }
-    val description = RichContent.plainText(item.description)
+    val title = RichContent.commentText(item.title).ifEmpty {
+        RichContent.plainText(item.title)
+    }.ifEmpty { "无标题内容" }
+    val description = RichContent.commentText(item.description).ifEmpty {
+        RichContent.plainText(item.description)
+    }
     val type = when {
         item.video -> "视频"
         item.article -> "文章"
@@ -124,17 +131,24 @@ internal fun ComposeFeedCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, color = theme.text,
+                ComposeRichText(
+                    source = title,
+                    darkMode = theme.dark,
+                    textColor = theme.text,
+                    linkColor = theme.link,
                     fontSize = ((if (theme.roundScreen) 14 else 15) * theme.textScale).sp,
-                    fontWeight = FontWeight.Bold,
                     lineHeight = ((if (theme.roundScreen) 18 else 19) * theme.textScale).sp,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    ellipsize = TextUtils.TruncateAt.END,
+                )
                 if (description.isNotEmpty()) {
-                    Text(text = description, color = theme.muted,
-                    fontSize = ((if (theme.roundScreen) 10 else 11) * theme.textScale).sp,
+                    ComposeRichText(source = description, darkMode = theme.dark,
+                        textColor = theme.muted, linkColor = theme.link,
+                        fontSize = ((if (theme.roundScreen) 10 else 11) * theme.textScale).sp,
                         lineHeight = (15 * theme.textScale).sp,
                         maxLines = if (theme.roundScreen) 1 else 2,
-                        overflow = TextOverflow.Ellipsis,
+                        ellipsize = TextUtils.TruncateAt.END,
                         modifier = Modifier.padding(top = (4 * scale).dp))
                 }
             }
@@ -160,11 +174,28 @@ internal fun ComposeFeedCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (item.topicName.isNotEmpty()) {
-                    Text(text = item.topicName, color = theme.muted, fontSize = (9.5f * theme.textScale).sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).clip(RoundedCornerShape((8 * scale).dp))
-                            .background(theme.panelElevated)
-                            .padding(horizontal = (7 * scale).dp, vertical = (4 * scale).dp))
+                    Box(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.align(Alignment.CenterStart)
+                                .widthIn(max = (120 * scale).dp)
+                                .clip(RoundedCornerShape((8 * scale).dp))
+                                .background(theme.panelElevated)
+                                .padding(horizontal = (6 * scale).dp, vertical = (3 * scale).dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (!noImage && item.topicIcon.isNotEmpty()) {
+                                ComposeRemoteImage(
+                                    item.topicIcon, theme, false, (13 * scale).dp,
+                                    CircleShape, "分区图标",
+                                    Modifier.size((13 * scale).dp),
+                                )
+                                Spacer(Modifier.width((4 * scale).dp))
+                            }
+                            Text(text = item.topicName, color = theme.muted,
+                                fontSize = (9.5f * theme.textScale).sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
                 } else {
                     Spacer(modifier = Modifier.weight(1f))
                 }
@@ -173,15 +204,17 @@ internal fun ComposeFeedCard(
                     if (item.liked) "取消点赞" else "点赞", item.liked, theme) {
                     onAction?.invoke(item, FeedAction.LIKE)
                 }
-                ComposeActionButton(
-                    if (favorite) R.drawable.official_favorite_filled else R.drawable.official_favorite_line,
-                    "",
-                    if (favorite) "取消收藏" else "收藏", favorite, theme) {
-                    onAction?.invoke(item, FeedAction.FAVORITE)
-                }
-                ComposeActionButton(R.drawable.ic_download, "",
-                    if (cached) "移除缓存" else "稍后看", cached, theme) {
-                    onAction?.invoke(item, FeedAction.CACHE)
+                if (showSecondaryActions) {
+                    ComposeActionButton(
+                        if (favorite) R.drawable.official_favorite_filled else R.drawable.official_favorite_line,
+                        "",
+                        if (favorite) "取消收藏" else "收藏", favorite, theme) {
+                        onAction?.invoke(item, FeedAction.FAVORITE)
+                    }
+                    ComposeActionButton(R.drawable.ic_download, "",
+                        if (cached) "移除缓存" else "稍后看", cached, theme) {
+                        onAction?.invoke(item, FeedAction.CACHE)
+                    }
                 }
                 ComposeActionButton(R.drawable.official_detail_comment,
                     Format.commentLikeCount(item.comments), "评论",
@@ -289,12 +322,13 @@ private fun ComposeActionButton(
             tint = if (active) theme.accent else theme.muted,
             modifier = Modifier.size((16 * theme.uiScale).dp),
         )
-        if (!theme.roundScreen && label.isNotEmpty()) {
+        if (label.isNotEmpty()) {
             Text(
                 text = label,
                 color = if (active) theme.accent else theme.muted,
-                fontSize = (10 * theme.textScale).sp,
+                fontSize = ((if (theme.roundScreen) 9 else 10) * theme.textScale).sp,
                 maxLines = 1,
+                overflow = TextOverflow.Clip,
                 modifier = Modifier.padding(start = (2 * theme.uiScale).dp),
             )
         }
@@ -303,36 +337,30 @@ private fun ComposeActionButton(
 
 @Composable
 internal fun FeedToolbar(
-    title: String,
     theme: ComposeThemeState,
     onSearch: () -> Unit,
 ) {
-    Row(modifier = Modifier.fillMaxWidth().padding(top = (5 * theme.uiScale).dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Text(text = title, color = theme.text, fontSize = (17 * theme.textScale).sp,
-            fontWeight = FontWeight.SemiBold, maxLines = 1,
-            overflow = TextOverflow.Ellipsis)
-        Spacer(modifier = Modifier.width((8 * theme.uiScale).dp))
-        Row(
-            modifier = Modifier.weight(1f).height((34 * theme.uiScale).dp)
-                .clip(RoundedCornerShape((10 * theme.uiScale).dp))
-                .background(theme.panel.copy(alpha = if (theme.dark) 0.86f else 0.72f))
-                .clickable(onClick = onSearch)
-                .padding(horizontal = (9 * theme.uiScale).dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(androidx.compose.ui.res.painterResource(R.drawable.il_search),
-                contentDescription = "搜索", tint = theme.muted,
-                modifier = Modifier.size((16 * theme.uiScale).dp))
-            Text(
-                text = "搜索帖子、作者或关键词",
-                color = theme.muted,
-                fontSize = (11 * theme.textScale).sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = (5 * theme.uiScale).dp),
-            )
-        }
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .padding(top = (5 * theme.uiScale).dp)
+            .height((34 * theme.uiScale).dp)
+            .clip(RoundedCornerShape((10 * theme.uiScale).dp))
+            .background(theme.panel.copy(alpha = if (theme.dark) 0.86f else 0.72f))
+            .clickable(onClick = onSearch)
+            .padding(horizontal = (9 * theme.uiScale).dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(androidx.compose.ui.res.painterResource(R.drawable.il_search),
+            contentDescription = "搜索", tint = theme.muted,
+            modifier = Modifier.size((16 * theme.uiScale).dp))
+        Text(
+            text = "搜索帖子、作者或关键词",
+            color = theme.muted,
+            fontSize = (11 * theme.textScale).sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = (5 * theme.uiScale).dp),
+        )
     }
 }
 

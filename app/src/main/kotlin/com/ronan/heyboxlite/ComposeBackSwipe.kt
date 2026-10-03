@@ -18,12 +18,13 @@ internal fun Modifier.composeBackSwipe(
     edgePx: Float,
     thresholdPx: Float,
     touchSlopPx: Float,
+    maxDragPx: Float,
     canStart: (direction: Int) -> Boolean,
     onStart: (direction: Int) -> Boolean,
     onProgress: (Float) -> Unit,
     onCancel: () -> Unit,
     onComplete: () -> Unit,
-): Modifier = pointerInput(route, enabled, edgePx, thresholdPx, touchSlopPx) {
+): Modifier = pointerInput(route, enabled, edgePx, thresholdPx, touchSlopPx, maxDragPx) {
     if (!enabled) return@pointerInput
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
@@ -65,7 +66,8 @@ internal fun Modifier.composeBackSwipe(
             }
             if (accepted) {
                 change.consume()
-                onProgress(totalX.coerceIn(-thresholdPx * 2.5f, thresholdPx * 2.5f))
+                val limit = maxDragPx.takeIf { it > 0f }
+                onProgress(if (limit == null) totalX else totalX.coerceIn(-limit, limit))
             }
             if (!change.pressed) break
         }

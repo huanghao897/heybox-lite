@@ -2,6 +2,7 @@ package com.ronan.heyboxlite
 
 import android.graphics.drawable.Drawable
 import android.text.Spannable
+import android.text.TextUtils
 import android.util.TypedValue
 import android.widget.TextView
 import androidx.compose.runtime.Composable
@@ -27,6 +28,8 @@ internal fun ComposeRichText(
     lineHeight: TextUnit = 18.sp,
     fontWeight: FontWeight = FontWeight.Normal,
     cy: Boolean = false,
+    maxLines: Int = Int.MAX_VALUE,
+    ellipsize: TextUtils.TruncateAt? = null,
 ) {
     val context = LocalContext.current
     AndroidView(
@@ -36,9 +39,13 @@ internal fun ComposeRichText(
                 includeFontPadding = false
                 setTextIsSelectable(false)
                 isLongClickable = false
+                setMaxLines(maxLines)
+                setEllipsize(ellipsize)
             }
         },
         update = { view ->
+            view.maxLines = maxLines
+            view.ellipsize = ellipsize
             view.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize.value)
             view.setTextColor(textColor.toArgb())
             view.setLineSpacing(0f, (lineHeight.value / fontSize.value).coerceAtLeast(1f))

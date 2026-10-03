@@ -12,6 +12,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -32,11 +33,14 @@ internal fun ComposeSwipeContainer(
     val swipeDirection = remember { mutableStateOf(0) }
     val previewRoute = remember { mutableStateOf<String?>(null) }
     val pendingTarget = remember { mutableStateOf<String?>(null) }
+    val handoffTarget = remember { mutableStateOf<String?>(null) }
     val settleCommit = remember { mutableStateOf(false) }
     val settleToken = remember { mutableStateOf(0) }
     val density = LocalDensity.current
     val touchSlop = LocalViewConfiguration.current.touchSlop
-    val backEdge = with(density) { (36.dp * services.theme.uiScale).toPx() }
+    val backEdge = with(density) {
+        maxOf(32.dp.toPx(), (52.dp * services.theme.uiScale).toPx())
+    }
     val backSwipeEnabled = host.composeSwipeEnabled(route)
     val edge = if (route == "feed" || route == "profile") 0f else backEdge
 
@@ -60,30 +64,69 @@ internal fun ComposeSwipeContainer(
         ) {
             swipeOffset.value = value
         }
-        if (settleCommit.value) host.completeComposeSwipe(target)
+        if (settleCommit.value) {
+            host.completeComposeSwipe(target)
+            if (target.isEmpty()) {
+                pendingTarget.value = null
+                previewRoute.value = null
+                swipeOffset.value = 0f
+                swipeDirection.value = 0
+                settleCommit.value = false
+                settleToken.value = 0
+            } else {
+                // Keep the target snapshot visible while the real destination
+                // is being recomposed. Clearing this in the same frame as the
+                // route mutation briefly exposed the old/blank layer.
+                handoffTarget.value = target
+                settleCommit.value = false
+                settleToken.value = 0
+            }
+        } else {
+            pendingTarget.value = null
+            previewRoute.value = null
+            swipeOffset.value = 0f
+            swipeDirection.value = 0
+            settleCommit.value = false
+            settleToken.value = 0
+        }
+    }
+
+    LaunchedEffect(route, handoffTarget.value) {
+        val target = handoffTarget.value ?: return@LaunchedEffect
+        if (route != target.substringBefore('?')) return@LaunchedEffect
+        // Let the destination composition commit one frame under the snapshot
+        // before releasing the transition layer.
+        withFrameNanos { }
+        handoffTarget.value = null
         pendingTarget.value = null
         previewRoute.value = null
         swipeOffset.value = 0f
         swipeDirection.value = 0
-        settleCommit.value = false
-        settleToken.value = 0
     }
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(services.theme.background)
-            .composeBackSwipe(
+            .background(services.theme.background),
+    ) {
+        val widthPx = with(density) { maxWidth.toPx() }.coerceAtLeast(1f)
+        val preview = previewRoute.value?.let(host::transitionPreview)
+        val visibleOffset = swipeOffset.value.coerceIn(-widthPx, widthPx)
+        Box(
+            modifier = Modifier.fillMaxSize().composeBackSwipe(
                 route = route,
                 enabled = backSwipeEnabled,
                 edgePx = edge,
                 thresholdPx = with(density) { 44.dp.toPx() * services.theme.uiScale },
                 touchSlopPx = touchSlop,
+                maxDragPx = widthPx,
                 canStart = { direction ->
-                    host.composeSwipeTarget(route, direction) != null
+                    handoffTarget.value == null && host.composeSwipeTarget(route, direction) != null
                 },
                 onStart = { direction ->
-                    if (settleToken.value != 0) return@composeBackSwipe false
+                    if (settleToken.value != 0 || handoffTarget.value != null) {
+                        return@composeBackSwipe false
+                    }
                     val target = host.composeSwipeTarget(route, direction)
                         ?: return@composeBackSwipe false
                     swipeDirection.value = direction
@@ -104,82 +147,81 @@ internal fun ComposeSwipeContainer(
                     settleToken.value++
                 },
             ),
-    ) {
-        val widthPx = with(density) { maxWidth.toPx() }.coerceAtLeast(1f)
-        val preview = previewRoute.value?.let(host::transitionPreview)
-        if (previewRoute.value != null) {
-            val previewTranslation = if (swipeDirection.value > 0) {
-                -widthPx + swipeOffset.value
-            } else {
-                widthPx + swipeOffset.value
-            }
-            if (preview != null && !preview.isRecycled) {
-                Image(
-                    bitmap = preview.asImageBitmap(),
-                    contentDescription = null,
-                    contentScale = ContentScale.FillBounds,
-                    modifier = Modifier.fillMaxSize().graphicsLayer {
-                        translationX = previewTranslation
-                    },
-                )
-            } else if (previewRoute.value == "profile") {
-                Box(
-                    modifier = Modifier.fillMaxSize()
-                        .graphicsLayer { translationX = previewTranslation },
-                ) {
-                    ComposeProfileScreen(services, host::navigate)
+        ) {
+            if (previewRoute.value != null) {
+                val previewTranslation = if (swipeDirection.value > 0) {
+                    -widthPx + visibleOffset
+                } else {
+                    widthPx + visibleOffset
                 }
-            } else if (previewRoute.value == "feed") {
-                Box(
-                    modifier = Modifier.fillMaxSize()
-                        .graphicsLayer { translationX = previewTranslation },
-                ) {
-                    host.feedRevision.value
-                    val items by host.feed.items
-                    val loading by host.feed.loading
-                    val refreshing by host.feed.refreshing
-                    val noMore by host.feed.noMore
-                    ComposeFeedScreen(
-                        items,
-                        loading,
-                        refreshing,
-                        noMore,
-                        services,
-                        onOpen = host::openDetail,
-                        onRefresh = host.feed::refresh,
-                        onLoadMore = host.feed::loadMore,
-                        onSearch = { host.navigate("search") },
-                        onAction = { item, action ->
-                            host.callbacks.feedAction(
-                                item,
-                                when (action) {
-                                    FeedAction.LIKE -> ComposeAppCallbacks.ACTION_LIKE
-                                    FeedAction.FAVORITE -> ComposeAppCallbacks.ACTION_FAVORITE
-                                    FeedAction.CACHE -> ComposeAppCallbacks.ACTION_CACHE
-                                    FeedAction.FOLLOW -> ComposeAppCallbacks.ACTION_FOLLOW
-                                    FeedAction.COMMENT -> ComposeAppCallbacks.ACTION_COMMENT
-                                },
-                            )
+                if (preview != null && !preview.isRecycled) {
+                    Image(
+                        bitmap = preview.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.FillBounds,
+                        modifier = Modifier.fillMaxSize().graphicsLayer {
+                            translationX = previewTranslation
                         },
                     )
+                } else if (previewRoute.value == "profile") {
+                    Box(
+                        modifier = Modifier.fillMaxSize()
+                            .graphicsLayer { translationX = previewTranslation },
+                    ) {
+                        ComposeProfileScreen(services, host::navigate)
+                    }
+                } else if (previewRoute.value == "feed") {
+                    Box(
+                        modifier = Modifier.fillMaxSize()
+                            .graphicsLayer { translationX = previewTranslation },
+                    ) {
+                        host.feedRevision.value
+                        val items by host.feed.items
+                        val loading by host.feed.loading
+                        val refreshing by host.feed.refreshing
+                        val noMore by host.feed.noMore
+                        ComposeFeedScreen(
+                            items,
+                            loading,
+                            refreshing,
+                            noMore,
+                            services,
+                            onOpen = host::openDetail,
+                            onRefresh = host.feed::refresh,
+                            onLoadMore = host.feed::loadMore,
+                            onSearch = { host.navigate("search") },
+                            onAction = { item, action ->
+                                host.callbacks.feedAction(
+                                    item,
+                                    when (action) {
+                                        FeedAction.LIKE -> ComposeAppCallbacks.ACTION_LIKE
+                                        FeedAction.FAVORITE -> ComposeAppCallbacks.ACTION_FAVORITE
+                                        FeedAction.CACHE -> ComposeAppCallbacks.ACTION_CACHE
+                                        FeedAction.FOLLOW -> ComposeAppCallbacks.ACTION_FOLLOW
+                                        FeedAction.COMMENT -> ComposeAppCallbacks.ACTION_COMMENT
+                                    },
+                                )
+                            },
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize()
+                            .background(services.theme.background)
+                            .graphicsLayer { translationX = previewTranslation },
+                    )
                 }
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxSize()
-                        .background(services.theme.background)
-                        .graphicsLayer { translationX = previewTranslation },
-                )
             }
-        }
-        Box(
-            modifier = Modifier.fillMaxSize().graphicsLayer {
-                // The outgoing page follows the finger one-to-one. The
-                // previous page is already underneath it, so there is no
-                // reset-to-zero frame or black strip on commit.
-                translationX = swipeOffset.value
-            },
-        ) {
-            content()
+            Box(
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    // The outgoing page follows the finger one-to-one. The
+                    // previous page is already underneath it, so there is no
+                    // reset-to-zero frame or black strip on commit.
+                    translationX = visibleOffset
+                },
+            ) {
+                content()
+            }
         }
     }
 }
