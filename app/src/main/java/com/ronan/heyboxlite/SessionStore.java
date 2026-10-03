@@ -145,7 +145,7 @@ final class SessionStore {
                     && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 saveCookie(cookie);
             }
-            String normalized = normalizeCookie(cookie);
+            String normalized = SessionCookieCodec.normalize(cookie);
             if (!normalized.equals(cookie)) saveCookie(normalized);
             cachedEncryptedCookie = prefs.getString(
                     SecureStrings.encryptedCookieKey(), encrypted);
@@ -165,7 +165,7 @@ final class SessionStore {
     String userId() {
         String saved = prefs.getString(SecureStrings.userId(), "");
         if (!saved.isEmpty()) return saved;
-        String fromCookie = userIdFromCookie(getCookie());
+        String fromCookie = SessionCookieCodec.userId(getCookie());
         if (!fromCookie.isEmpty()) {
             prefs.edit().putString(SecureStrings.userId(), fromCookie).apply();
         }
@@ -840,30 +840,30 @@ final class SessionStore {
     private String buildOfficialCookie(boolean includeClientKeys,
                                        boolean includeRest, boolean includeRaw) {
         String raw = getCookie();
-        Map<String, String> values = cookieMap(raw);
+        Map<String, String> values = SessionCookieCodec.parse(raw);
         List<String> parts = new ArrayList<>();
         String pkey = officialPkey(values);
-        appendCookiePart(parts, officialPkeyKey(), pkey);
-        if (includeClientKeys) appendCookiePart(parts, SecureStrings.xPkey(), pkey);
-        appendCookiePart(parts, SecureStrings.xXhhTokenId(),
+        SessionCookieCodec.appendPart(parts, com.max.xiaoheihe.utils.p0.M(), pkey);
+        if (includeClientKeys) SessionCookieCodec.appendPart(parts, SecureStrings.xPkey(), pkey);
+        SessionCookieCodec.appendPart(parts, SecureStrings.xXhhTokenId(),
                 values.get(SecureStrings.xXhhTokenId()));
-        if (includeRest) appendRestCookies(parts, values);
-        if (includeRaw) appendRawCookiePart(parts, raw);
+        if (includeRest) SessionCookieCodec.appendRest(parts, values);
+        if (includeRaw) SessionCookieCodec.appendRawPart(parts, raw);
         if (includeClientKeys) {
-            String id = firstCookieValue(values, SecureStrings.xHeyboxId(),
+            String id = SessionCookieCodec.first(values, SecureStrings.xHeyboxId(),
                     SecureStrings.userHeyboxId(), SecureStrings.heyboxId(),
                     SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
-            appendCookiePart(parts, SecureStrings.xHeyboxId(), id);
+            SessionCookieCodec.appendPart(parts, SecureStrings.xHeyboxId(), id);
         }
-        return joinCookieParts(parts);
+        return SessionCookieCodec.joinParts(parts);
     }
 
     String officialBridgeCookie(boolean includeClientKeys) {
         try {
             String raw = getCookie();
-            Map<String, String> values = cookieMap(raw);
+            Map<String, String> values = SessionCookieCodec.parse(raw);
             com.max.xiaoheihe.utils.m0.init(userId(), officialPkey(values));
-            com.max.xiaoheihe.utils.i.init(firstCookieValue(values,
+            com.max.xiaoheihe.utils.i.init(SessionCookieCodec.first(values,
                     SecureStrings.xXhhTokenId()));
             okhttp3.a0 request = new okhttp3.a0.a()
                     .a(SecureStrings.cookieHeader(), raw)
@@ -878,16 +878,16 @@ final class SessionStore {
     }
 
     String officialPkey() {
-        return officialPkey(cookieMap(getCookie()));
+        return officialPkey(SessionCookieCodec.parse(getCookie()));
     }
 
     String officialXhhToken() {
-        Map<String, String> values = cookieMap(getCookie());
-        return firstCookieValue(values, SecureStrings.xXhhTokenId());
+        Map<String, String> values = SessionCookieCodec.parse(getCookie());
+        return SessionCookieCodec.first(values, SecureStrings.xXhhTokenId());
     }
 
     private String officialPkey(Map<String, String> values) {
-        return firstCookieValue(values, officialPkeyKey(),
+        return SessionCookieCodec.first(values, com.max.xiaoheihe.utils.p0.M(),
                 SecureStrings.userPkey(), SecureStrings.xPkey());
     }
 
@@ -904,29 +904,19 @@ final class SessionStore {
     }
 
     String officialMobileCookieKeysForLog(boolean addClientKey) {
-        return cookieKeysForLog(officialMobileCookie(addClientKey));
+        return SessionCookieCodec.keysForLog(officialMobileCookie(addClientKey));
     }
 
     String officialRequestCookieKeysForLog(boolean includeClientKeys) {
-        return cookieKeysForLog(officialRequestCookie(includeClientKeys));
+        return SessionCookieCodec.keysForLog(officialRequestCookie(includeClientKeys));
     }
 
     String officialMinimalCookieKeysForLog(boolean includeClientKeys) {
-        return cookieKeysForLog(officialMinimalCookie(includeClientKeys));
+        return SessionCookieCodec.keysForLog(officialMinimalCookie(includeClientKeys));
     }
 
     String officialBridgeCookieKeysForLog(boolean includeClientKeys) {
-        return cookieKeysForLog(officialBridgeCookie(includeClientKeys));
-    }
-
-    private String cookieKeysForLog(String cookie) {
-        Map<String, String> values = cookieMap(cookie);
-        StringBuilder result = new StringBuilder();
-        for (String key : values.keySet()) {
-            if (result.length() > 0) result.append(',');
-            result.append(key);
-        }
-        return result.length() == 0 ? "none" : result.toString();
+        return SessionCookieCodec.keysForLog(officialBridgeCookie(includeClientKeys));
     }
 
     void saveLogin(JSONObject result) {
@@ -941,7 +931,7 @@ final class SessionStore {
             if (name.isEmpty()) name = account.optString("username", account.optString("nickname"));
             if (avatar.isEmpty()) avatar = account.optString("avatar");
         }
-        if (id.isEmpty()) id = userIdFromCookie(getCookie());
+        if (id.isEmpty()) id = SessionCookieCodec.userId(getCookie());
         SharedPreferences.Editor editor = prefs.edit();
         if (!id.isEmpty()) editor.putString(SecureStrings.userId(), id);
         if (!name.isEmpty()) editor.putString(USER_NAME, name);
@@ -951,7 +941,7 @@ final class SessionStore {
 
     void mergeCookies(List<String> headers) {
         if (headers == null || headers.isEmpty()) return;
-        Map<String, String> values = cookieMap(getCookie());
+        Map<String, String> values = SessionCookieCodec.parse(getCookie());
         for (String header : headers) {
             if (header == null) continue;
             String first = header.split(";", 2)[0];
@@ -962,23 +952,23 @@ final class SessionStore {
             if (value.isEmpty()) values.remove(key);
             else values.put(key, value);
         }
-        normalizeAuthCookies(values);
-        String cookie = joinCookies(values);
+        SessionCookieCodec.normalizeAuth(values);
+        String cookie = SessionCookieCodec.join(values);
         saveCookie(cookie);
         persistUserIdFromCookie(cookie);
     }
 
     boolean hasCookieValue(String key) {
-        return !cookieValue(getCookie(), key).isEmpty();
+        return !SessionCookieCodec.value(getCookie(), key).isEmpty();
     }
 
     void putCookieValue(String key, String value) {
         if (key == null || key.isEmpty()) return;
-        Map<String, String> values = cookieMap(getCookie());
+        Map<String, String> values = SessionCookieCodec.parse(getCookie());
         if (value == null || value.isEmpty()) values.remove(key);
         else values.put(key, value);
-        normalizeAuthCookies(values);
-        String cookie = joinCookies(values);
+        SessionCookieCodec.normalizeAuth(values);
+        String cookie = SessionCookieCodec.join(values);
         saveCookie(cookie);
         persistUserIdFromCookie(cookie);
     }
@@ -989,173 +979,17 @@ final class SessionStore {
 
     private void persistUserIdFromCookie(String cookie) {
         if (!prefs.getString(SecureStrings.userId(), "").isEmpty()) return;
-        String id = userIdFromCookie(cookie);
+        String id = SessionCookieCodec.userId(cookie);
         if (!id.isEmpty()) prefs.edit().putString(SecureStrings.userId(), id).apply();
     }
 
-    private String userIdFromCookie(String cookie) {
-        Map<String, String> values = cookieMap(cookie);
-        String value = firstCookieValue(values, SecureStrings.userHeyboxId(),
-                SecureStrings.xHeyboxId(), "user_" + SecureStrings.heyboxId());
-        if (value.isEmpty()) value = firstCookieValue(values, SecureStrings.heyboxId(),
-                SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
-        return value;
-    }
-
     String authCookieKeysForLog() {
-        Map<String, String> values = cookieMap(getCookie());
-        StringBuilder result = new StringBuilder();
-        appendCookieKey(result, values, SecureStrings.userPkey());
-        appendCookieKey(result, values, SecureStrings.xPkey());
-        appendCookieKey(result, values, SecureStrings.userHeyboxId());
-        appendCookieKey(result, values, SecureStrings.xHeyboxId());
-        appendCookieKey(result, values, SecureStrings.xXhhTokenId());
-        appendCookieKey(result, values, SecureStrings.heyboxId());
-        appendCookieKey(result, values, SecureStrings.userid());
-        return result.length() == 0 ? "none" : result.toString();
-    }
-
-    private void appendCookieKey(StringBuilder result, Map<String, String> values, String key) {
-        if (values == null || key == null || key.isEmpty() || !values.containsKey(key)) return;
-        if (result.length() > 0) result.append(',');
-        result.append(key);
-    }
-
-    private void appendCookiePart(List<String> parts, String key, String value) {
-        if (parts == null || key == null || key.isEmpty()
-                || value == null || value.isEmpty()) return;
-        parts.add(key + "=" + value);
-    }
-
-    private void appendRawCookiePart(List<String> parts, String value) {
-        if (parts == null || value == null) return;
-        String clean = value.trim();
-        if (clean.isEmpty()) return;
-        parts.add(clean);
-    }
-
-    private String joinCookieParts(List<String> parts) {
-        StringBuilder cookie = new StringBuilder();
-        if (parts == null) return "";
-        for (String part : parts) {
-            if (part == null || part.trim().isEmpty()) continue;
-            if (cookie.length() > 0) cookie.append(';');
-            cookie.append(part.trim());
-        }
-        return cookie.toString();
-    }
-
-    private void appendRestCookies(List<String> parts, Map<String, String> values) {
-        if (parts == null || values == null || values.isEmpty()) return;
-        for (Map.Entry<String, String> entry : values.entrySet()) {
-            String key = entry.getKey();
-            String value = entry.getValue();
-            if (key == null || key.isEmpty() || value == null || value.isEmpty()) continue;
-            if (isOfficialAuthCookie(key)) continue;
-            appendCookiePart(parts, key, value);
-        }
-    }
-
-    private boolean isOfficialAuthCookie(String key) {
-        return officialPkeyKey().equals(key)
-                || SecureStrings.userPkey().equals(key)
-                || SecureStrings.xPkey().equals(key)
-                || SecureStrings.userHeyboxId().equals(key)
-                || SecureStrings.xHeyboxId().equals(key)
-                || SecureStrings.xXhhTokenId().equals(key)
-                || SecureStrings.heyboxId().equals(key)
-                || SecureStrings.userid().equals(key)
-                || SecureStrings.userId().equals(key)
-                || "heyboxid".equals(key)
-                || ("user_" + SecureStrings.heyboxId()).equals(key);
-    }
-
-    private String firstCookieValue(Map<String, String> values, String... keys) {
-        if (values == null || keys == null) return "";
-        for (String key : keys) {
-            if (key == null || key.isEmpty()) continue;
-            String value = values.get(key);
-            if (value != null && !value.isEmpty()) return value;
-        }
-        return "";
-    }
-
-    private void normalizeAuthCookies(Map<String, String> values) {
-        if (values == null || values.isEmpty()) return;
-        String pkey = firstCookieValue(values, officialPkeyKey(),
-                SecureStrings.userPkey(), SecureStrings.xPkey());
-        putCookieAliases(values, pkey, officialPkeyKey(),
-                SecureStrings.userPkey(), SecureStrings.xPkey());
-
-        String id = firstCookieValue(values, SecureStrings.userHeyboxId(),
-                SecureStrings.xHeyboxId(), SecureStrings.heyboxId(),
-                SecureStrings.userid(), SecureStrings.userId(), "heyboxid");
-        putCookieAliases(values, id, SecureStrings.userHeyboxId(),
-                SecureStrings.xHeyboxId(), SecureStrings.heyboxId());
-    }
-
-    private void putCookieAliases(Map<String, String> values, String value, String... keys) {
-        if (value == null || value.isEmpty()) return;
-        for (String key : keys) {
-            putCookieIfMissing(values, key, value);
-        }
-    }
-
-    private void mirrorCookie(Map<String, String> values, String from, String to) {
-        String value = values.get(from);
-        if (value != null && !value.isEmpty()) putCookieIfMissing(values, to, value);
-    }
-
-    private void putCookieIfMissing(Map<String, String> values, String key, String value) {
-        if (key == null || key.isEmpty() || value == null || value.isEmpty()) return;
-        String existing = values.get(key);
-        if (existing == null || existing.isEmpty()) values.put(key, value);
-    }
-
-    private static String officialPkeyKey() {
-        return com.max.xiaoheihe.utils.p0.M();
-    }
-
-    private String normalizeCookie(String cookie) {
-        Map<String, String> values = cookieMap(cookie);
-        normalizeAuthCookies(values);
-        return joinCookies(values);
-    }
-
-    private String cookieValue(String cookie, String key) {
-        if (cookie == null || cookie.isEmpty() || key == null || key.isEmpty()) return "";
-        String value = cookieMap(cookie).get(key);
-        return value == null ? "" : value;
-    }
-
-    private Map<String, String> cookieMap(String cookie) {
-        Map<String, String> values = new LinkedHashMap<>();
-        if (cookie == null || cookie.isEmpty()) return values;
-        String[] parts = cookie.split(";");
-        for (String part : parts) {
-            int equals = part.indexOf('=');
-            if (equals <= 0) continue;
-            String name = part.substring(0, equals).trim();
-            String value = part.substring(equals + 1).trim();
-            if (!name.isEmpty() && !value.isEmpty()) values.put(name, value);
-        }
-        return values;
-    }
-
-    private String joinCookies(Map<String, String> values) {
-        StringBuilder merged = new StringBuilder();
-        for (Map.Entry<String, String> entry : values.entrySet()) {
-            if (entry.getKey() == null || entry.getKey().isEmpty()
-                    || entry.getValue() == null || entry.getValue().isEmpty()) continue;
-            if (merged.length() > 0) merged.append("; ");
-            merged.append(entry.getKey()).append('=').append(entry.getValue());
-        }
-        return merged.toString();
+        return SessionCookieCodec.authKeysForLog(getCookie());
     }
 
     void saveCookie(String value) {
         try {
-            String cookie = normalizeCookie(value == null ? "" : value);
+            String cookie = SessionCookieCodec.normalize(value == null ? "" : value);
             String encrypted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                     ? ModernCookieCrypto.encrypt(cookie) : encryptLegacy(cookie);
             prefs.edit().putString(SecureStrings.encryptedCookieKey(),

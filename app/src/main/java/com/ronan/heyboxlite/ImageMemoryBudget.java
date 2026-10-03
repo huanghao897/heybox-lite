@@ -28,4 +28,20 @@ final class ImageMemoryBudget {
         int ceiling = heapBytes <= LOW_MEMORY_HEAP ? 640 : 2400;
         return Math.max(96, Math.min(value, ceiling));
     }
+
+    static int memoryCacheKb(long heapBytes) {
+        long heapKb = Math.max(1L, heapBytes / 1024L);
+        if (heapBytes <= LOW_MEMORY_HEAP) {
+            return (int) Math.max(768L, Math.min(1536L, heapKb / 32L));
+        }
+        return (int) Math.max(3L * 1024L, Math.min(8L * 1024L, heapKb / 12L));
+    }
+
+    static int gifCacheKb(long heapBytes) {
+        return heapBytes <= LOW_MEMORY_HEAP ? 512 : 2048;
+    }
+
+    static int decodeThreadCount(long heapBytes) {
+        return heapBytes <= LOW_MEMORY_HEAP ? 1 : 2;
+    }
 }

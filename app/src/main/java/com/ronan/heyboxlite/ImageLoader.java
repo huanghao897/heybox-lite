@@ -64,7 +64,7 @@ final class ImageLoader {
     }
 
     private static final long MAX_HEAP_BYTES = Runtime.getRuntime().maxMemory();
-    private static final int CACHE_KB = memoryCacheKb(MAX_HEAP_BYTES);
+    private static final int CACHE_KB = ImageMemoryBudget.memoryCacheKb(MAX_HEAP_BYTES);
     private static final int MAX_DECODE_BYTES = 10 * 1024 * 1024;
     private static final int MAX_BITMAP_PIXELS = ImageMemoryBudget.decodePixels(MAX_HEAP_BYTES);
     private static final int MAX_BITMAP_SIDE = 2400;
@@ -79,13 +79,13 @@ final class ImageLoader {
                 }
             };
     private static final LruCache<String, byte[]> GIF_BYTES =
-            new LruCache<String, byte[]>(gifCacheKb(MAX_HEAP_BYTES)) {
+            new LruCache<String, byte[]>(ImageMemoryBudget.gifCacheKb(MAX_HEAP_BYTES)) {
                 @Override protected int sizeOf(String key, byte[] value) {
                     return Math.max(1, value.length / 1024);
                 }
             };
     private static final ExecutorService SMALL_EXECUTOR = Executors.newFixedThreadPool(
-            decodeThreadCount(MAX_HEAP_BYTES));
+            ImageMemoryBudget.decodeThreadCount(MAX_HEAP_BYTES));
     private static final ExecutorService LARGE_EXECUTOR = Executors.newSingleThreadExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final WeakHashMap<ImageView, ValueAnimator> REVEAL_ANIMATORS = new WeakHashMap<>();
@@ -722,22 +722,6 @@ final class ImageLoader {
         options.inPurgeable = true;
         options.inInputShareable = true;
         return options;
-    }
-
-    private static int memoryCacheKb(long maxHeapBytes) {
-        long maxHeapKb = Math.max(1L, maxHeapBytes / 1024L);
-        if (maxHeapBytes <= 128L * 1024L * 1024L) {
-            return (int) Math.max(768L, Math.min(1536L, maxHeapKb / 32L));
-        }
-        return (int) Math.max(3L * 1024L, Math.min(8L * 1024L, maxHeapKb / 12L));
-    }
-
-    private static int gifCacheKb(long maxHeapBytes) {
-        return maxHeapBytes <= 128L * 1024L * 1024L ? 512 : 2048;
-    }
-
-    private static int decodeThreadCount(long maxHeapBytes) {
-        return maxHeapBytes <= 128L * 1024L * 1024L ? 1 : 2;
     }
 
     private static Object decodeLock(byte[] bytes, int targetPx) {

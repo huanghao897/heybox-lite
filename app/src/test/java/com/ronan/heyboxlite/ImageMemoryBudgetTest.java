@@ -28,4 +28,14 @@ public class ImageMemoryBudgetTest {
         assertEquals(2400, ImageMemoryBudget.decodeTargetPx(
                 256L * 1024 * 1024, 4000));
     }
+
+    @Test public void cacheAndExecutorBudgetsFollowHeapClass() {
+        assertEquals(1024, ImageMemoryBudget.memoryCacheKb(32L * 1024 * 1024));
+        assertEquals(1536, ImageMemoryBudget.memoryCacheKb(128L * 1024 * 1024));
+        assertEquals(8192, ImageMemoryBudget.memoryCacheKb(256L * 1024 * 1024));
+        assertEquals(512, ImageMemoryBudget.gifCacheKb(128L * 1024 * 1024));
+        assertEquals(2048, ImageMemoryBudget.gifCacheKb(256L * 1024 * 1024));
+        assertEquals(1, ImageMemoryBudget.decodeThreadCount(128L * 1024 * 1024));
+        assertEquals(2, ImageMemoryBudget.decodeThreadCount(256L * 1024 * 1024));
+    }
 }
