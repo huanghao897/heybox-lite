@@ -39,56 +39,13 @@ import kotlinx.coroutines.delay
 import org.json.JSONObject
 
 @Composable
-internal fun ComposeDetailHeader(
-    item: FeedItem,
-    media: ComposeMediaSettings,
-    onOpenUser: (String, String, String) -> Unit = { _, _, _ -> },
-) {
-    val theme = LocalHeyboxTheme.current
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(RichContent.plainText(item.title).ifBlank { "帖子" },
-            color = theme.text, fontSize = 18.sp,
-            fontWeight = FontWeight.Bold, lineHeight = 24.sp)
-        Row(
-            modifier = Modifier.clickable(enabled = item.authorId.isNotBlank()) {
-                onOpenUser(item.authorId, item.author, item.authorAvatar)
-            },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ComposeMediaImage(item.authorAvatar, media, Modifier.size(30.dp), CircleShape,
-                placeholderLabel = item.author.take(1), ensureTouchTarget = false)
-            Spacer(Modifier.width(7.dp))
-            Column(Modifier.weight(1f)) {
-                Text(item.author.ifBlank { "匿名用户" }, fontSize = 12.sp,
-                    color = theme.text, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                if (item.createdAt > 0) Text(Format.relativeTime(item.createdAt), fontSize = 10.sp,
-                    color = theme.muted)
-            }
-        }
-        val labels = buildList {
-            if (item.topicName.isNotBlank()) add(item.topicName)
-            if (item.pinned) add("置顶")
-            if (item.article) add("文章")
-            if (item.video) add("视频")
-        }
-        if (labels.isNotEmpty()) Text(labels.joinToString(" · "), fontSize = 11.sp,
-            color = theme.accent, lineHeight = 16.sp)
-        if (item.topicName.isNotBlank()) Text(
-            "分区 · ${item.topicName}    标签 · #${item.topicName}",
-            fontSize = 10.sp, color = theme.muted, lineHeight = 15.sp,
-        )
-    }
-}
-
-@Composable
 internal fun ComposeDetailBlock(
     block: RichContent.Block,
     media: ComposeMediaSettings,
     services: ComposeServices?,
     onOpenImage: (String) -> Unit,
 ) {
-    val display = RichContent.plainText(block.value).ifBlank { block.value.trim() }
+    val display = ArticleText.stripMarkdownEmphasis(block.value)
     when (block.kind) {
         RichContent.Block.IMAGE -> if (media.enabled) ComposeMediaImage(
             url = block.value, settings = media,
@@ -99,20 +56,22 @@ internal fun ComposeDetailBlock(
         RichContent.Block.QUOTE -> Row(Modifier.fillMaxWidth()) {
             val theme = LocalHeyboxTheme.current
             Box(Modifier.width(3.dp).height(40.dp).background(theme.hairline))
-            Text(display, Modifier.padding(start = 8.dp), fontSize = 12.sp,
-                color = theme.muted, lineHeight = 18.sp)
+            ComposeRichText(display, theme.dark, theme.muted, theme.link,
+                Modifier.padding(start = 8.dp), fontSize = 12.sp * theme.textScale,
+                lineHeight = 18.sp * theme.textScale)
         }
         else -> {
             val theme = LocalHeyboxTheme.current
-            Text(display,
+            val bodyScale = theme.textScale * (services?.session?.bodyTextScale() ?: 100) / 100f
+            ComposeRichText(display, theme.dark,
+                if (block.kind == RichContent.Block.CAPTION) theme.muted else theme.text, theme.link,
                 fontSize = when (block.kind) {
-                    RichContent.Block.HEADING -> 15.sp
-                    RichContent.Block.CAPTION -> 10.sp
-                    else -> 13.sp
+                    RichContent.Block.HEADING -> 15.sp * bodyScale
+                    RichContent.Block.CAPTION -> 10.sp * bodyScale
+                    else -> 13.sp * bodyScale
                 },
                 fontWeight = if (block.kind == RichContent.Block.HEADING) FontWeight.Bold else FontWeight.Normal,
-                color = if (block.kind == RichContent.Block.CAPTION) theme.muted else theme.text,
-                lineHeight = if (block.kind == RichContent.Block.CAPTION) 15.sp else 20.sp,
+                lineHeight = (if (block.kind == RichContent.Block.CAPTION) 15.sp else 20.sp) * bodyScale,
                 modifier = Modifier.fillMaxWidth())
         }
     }
@@ -181,9 +140,6 @@ internal fun ComposeDetailSortTab(text: String, selected: Boolean, onSelect: () 
             .heightIn(min = 48.dp).padding(horizontal = 9.dp, vertical = 12.dp))
 }
 
-private fun rootComment(group: JSONObject): JSONObject =
-    group.optJSONArray("comment")?.optJSONObject(0) ?: group
-
 private const val REPLY_IDLE = 0
 private const val REPLY_LOADING = 1
 private const val REPLY_FAILED = 2
@@ -199,14 +155,12 @@ internal fun ComposeDetailThread(
     onOpenUser: (String, String, String) -> Unit = { _, _, _ -> },
 ) {
     val theme = LocalHeyboxTheme.current
-    val root = rootComment(group)
-    val rootId = CommentData.commentId(root)
-    val array = group.optJSONArray("comment")
-    val replies = buildList {
-        if (array != null) for (index in 1 until array.length()) array.optJSONObject(index)?.let { add(it) }
-    }.sortedBy { CommentData.commentTime(it) }
-    val expected = maxOf(root.optInt("child_num"), group.optInt("child_num"), replies.size)
-    var shownCount by remember(rootId) { mutableStateOf(minOf(2, replies.size)) }
+    val thread = ComposeCommentThreadData.from(group)
+    val root = thread.root
+    val rootId = thread.rootId
+    val replies = thread.replies
+    val expected = thread.expected
+    var shownCount by remember(rootId) { mutableStateOf(thread.initialVisibleCount) }
     var pendingVisible by remember(rootId) { mutableStateOf(shownCount) }
     var lastReplyCount by remember(rootId) { mutableStateOf(replies.size) }
     var loadState by remember(rootId) { mutableStateOf(REPLY_IDLE) }
@@ -217,7 +171,7 @@ internal fun ComposeDetailThread(
             val appended = replies.size > lastReplyCount
             lastReplyCount = replies.size
             shownCount = minOf(shownCount, replies.size)
-            if (appended && loadState == REPLY_LOADING) {
+            if (appended && loadState != REPLY_IDLE) {
                 shownCount = minOf(replies.size, pendingVisible)
                 loadState = REPLY_IDLE
             }
@@ -234,9 +188,10 @@ internal fun ComposeDetailThread(
         val remoteMore = expected > replies.size
         val next = composeCommentNextVisibleCount(total, shownCount, remoteMore)
         if (next <= shownCount && !remoteMore) return
+        val bufferedReplies = shownCount < replies.size
         pendingVisible = next
         shownCount = minOf(replies.size, next)
-        if (next > replies.size) {
+        if (!bufferedReplies && remoteMore) {
             loadState = REPLY_LOADING
             loadRequest += 1
             onAction(ComposeDetailAction.LoadReplies(root))
@@ -254,7 +209,8 @@ internal fun ComposeDetailThread(
     ) {
         if (CommentData.isPinnedThread(group)) Text("置顶", fontSize = 10.sp,
             color = theme.accent, fontWeight = FontWeight.Bold)
-        ComposeDetailComment(root, item, "", false, media, onOpenImage, onAction, onOpenUser)
+        ComposeDetailComment(root, item, "", false, media, onOpenImage, onAction, onOpenUser,
+            groupCy = thread.cy)
         if (replies.isNotEmpty() || expected > 0) {
             Column(
                 modifier = Modifier.padding(start = if (roundScreen) 7.dp else 34.dp)
@@ -277,10 +233,10 @@ internal fun ComposeDetailThread(
                         modifier = Modifier.clickable { requestMoreReplies() }
                             .padding(vertical = 6.dp))
                 }
-                if (shownCount > minOf(2, replies.size)) Text("收起回复", fontSize = 11.sp,
+                if (shownCount > thread.initialVisibleCount) Text("收起回复", fontSize = 11.sp,
                     color = theme.muted,
                     modifier = Modifier.clickable {
-                        shownCount = minOf(2, replies.size)
+                        shownCount = thread.initialVisibleCount
                         pendingVisible = shownCount
                         loadState = REPLY_IDLE
                     }.padding(vertical = 6.dp))
@@ -300,6 +256,7 @@ private fun ComposeDetailComment(
     onOpenImage: (String) -> Unit,
     onAction: ComposeDetailActionCallback,
     onOpenUser: (String, String, String) -> Unit = { _, _, _ -> },
+    groupCy: Boolean = false,
 ) {
     val theme = LocalHeyboxTheme.current
     val context = LocalContext.current
@@ -309,9 +266,10 @@ private fun ComposeDetailComment(
     val level = CommentData.userLevel(user)
     val target = CommentData.replyTarget(comment, rootId)
     val value = composeCommentText(comment)
-    val cy = CommentData.isCyComment(comment)
+    val cy = groupCy || CommentData.isCyComment(comment)
     val meta = composeCommentMeta(comment, CommentData.commentTime(comment))
-    val isPostAuthor = composeCommentIsPostAuthor(item, user, author)
+    val isPostAuthor = (context as? MainActivity)?.commentController?.isPostAuthor(user, author)
+        ?: composeCommentIsPostAuthor(item, user, author)
     val doubleTapReply = composeCommentDoubleTapReplyEnabled(context)
     val gesture = Modifier.composeCommentGestures(
         context = context,
@@ -378,7 +336,7 @@ private fun ComposeDetailComment(
                         fontSize = 10.sp, maxLines = 1)
                 }
             }
-            if (value.isNotBlank()) ComposeRichText(
+            if (value.isNotBlank() || cy) ComposeRichText(
                 source = value,
                 darkMode = theme.dark,
                 textColor = theme.text,

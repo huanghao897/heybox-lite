@@ -87,6 +87,7 @@ internal fun ComposeRouteScreen(
                     videos = state.videos,
                     comments = state.comments,
                     loading = state.loading,
+                    link = state.link,
                     services = services,
                     onBack = { host.handleBack() },
                     onOpenImage = { host.callbacks.requestImage(it) },

@@ -54,6 +54,9 @@ android {
         unitTests.includeAndroidResources = true
         unitTests.all {
             maxHeapSize = "1g"
+            // Bound Robolectric renderer/frame-clock state retained by one test worker.
+            forkEvery = 10
+            testLogging.exceptionFormat = "full"
         }
     }
 

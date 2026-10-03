@@ -40,6 +40,10 @@ import org.json.JSONObject
 
 internal typealias ComposeDetailActionCallback = (ComposeDetailAction) -> Unit
 
+internal fun composeDetailFallbackText(source: String): String = RichContent.parse(source, null)
+    .filter { RichContentSupport.isReadableBlock(it) }
+    .joinToString("\n") { ArticleText.stripMarkdownEmphasis(it.value) }
+
 /** Host routes these events through its existing Java controllers. */
 internal sealed class ComposeDetailAction {
     data class LikePost(val item: FeedItem) : ComposeDetailAction()
@@ -63,6 +67,7 @@ internal fun ComposeDetailScreen(
     onCommentAction: ComposeDetailActionCallback,
     onOpenUser: (String, String, String) -> Unit = { _, _, _ -> },
     listState: LazyListState = rememberLazyListState(),
+    link: JSONObject? = null,
 ) {
     HeyboxComposeTheme(services.theme) {
         val preview = LocalInspectionMode.current
@@ -78,7 +83,7 @@ internal fun ComposeDetailScreen(
             if (rotary != null) listState.scrollBy(rotary.distance.toFloat())
         }
         ComposeDetailLayout(item, content, videos, comments, loading, settings, onBack, onOpenImage,
-            onOpenVideo, onCommentAction, listState, onOpenUser, services)
+            onOpenVideo, onCommentAction, listState, onOpenUser, services, link)
     }
 }
 
@@ -97,12 +102,13 @@ private fun ComposeDetailLayout(
     listState: LazyListState = rememberLazyListState(),
     onOpenUser: (String, String, String) -> Unit = { _, _, _ -> },
     services: ComposeServices? = null,
+    link: JSONObject? = null,
 ) {
     val theme = LocalHeyboxTheme.current
     val roundScreen = theme.roundScreen
     var latest by remember(item.id) { mutableStateOf(false) }
-    val groups = JSONArray().apply { comments.forEach { put(it) } }
-    val ordered = CommentOrder.sorted(groups, latest)
+    val ordered = remember(comments, latest) { composeOrderedComments(comments, latest) }
+    val commentKeys = remember(ordered) { composeCommentKeys(ordered) }
     val inset = (if (roundScreen) 18.dp else 12.dp) * theme.uiScale
     var postLiked by remember(item.id) { mutableStateOf(item.liked) }
     var postLikes by remember(item.id) { mutableStateOf(item.likes) }
@@ -123,7 +129,7 @@ private fun ComposeDetailLayout(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             state = listState,
         ) {
-            item(key = "header") { ComposeDetailHeader(item, media, onOpenUser) }
+            item(key = "header") { ComposeDetailHeader(item, media, onOpenUser, link) }
             if (loading) item(key = "loading") {
                 Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), Alignment.Center) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
@@ -136,10 +142,11 @@ private fun ComposeDetailLayout(
                 ComposeVideoCard(video, media, onOpenVideo = onOpenVideo)
             }
             if (!loading && content.isEmpty()) item(key = "fallback-body") {
-                val fallback = RichContent.plainText(item.description)
+                val fallback = composeDetailFallbackText(item.description)
+                val bodyScale = theme.textScale * (services?.session?.bodyTextScale() ?: 100) / 100f
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    if (fallback.isNotBlank()) Text(fallback, color = theme.text,
-                        fontSize = 13.sp, lineHeight = 20.sp)
+                    if (fallback.isNotBlank()) ComposeRichText(fallback, theme.dark, theme.text, theme.link,
+                        fontSize = 13.sp * bodyScale, lineHeight = 20.sp * bodyScale)
                     if (media.enabled) item.images.forEach { url ->
                         ComposeMediaImage(url, media, Modifier.fillMaxWidth().height(144.dp),
                             contentDescription = "打开正文图片", onClick = { onOpenImage(url) })
@@ -161,8 +168,8 @@ private fun ComposeDetailLayout(
                     }
                 }
             }
-            itemsIndexed(ordered, key = { index, group ->
-                "comment-${ComposeDetailRootCommentId(group)}-$index"
+            itemsIndexed(ordered, key = { index, _ ->
+                commentKeys[index]
             }) { _, group -> ComposeDetailThread(
                 group, item, roundScreen, media, onOpenImage, onCommentAction, onOpenUser,
             ) }
@@ -190,10 +197,6 @@ private fun ComposeDetailLayout(
 private fun ComposeDetailCommentSortTab(text: String, selected: Boolean, onSelect: () -> Unit) {
     ComposeDetailSortTab(text, selected, onSelect)
 }
-
-private fun ComposeDetailRootCommentId(group: JSONObject): String =
-    group.optJSONArray("comment")?.optJSONObject(0)?.let { CommentData.commentId(it) }
-        ?: CommentData.commentId(group)
 
 @Preview(name = "Detail Square", showBackground = true, widthDp = 240, heightDp = 320)
 @Composable

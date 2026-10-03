@@ -1,11 +1,11 @@
 package com.ronan.heyboxlite
 
-import android.graphics.drawable.ColorDrawable
 import android.widget.ImageView as AndroidImageView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,8 +43,6 @@ internal data class ComposeMediaSettings(
     val gameCardNoImage: Boolean = false,
 )
 
-private const val COMPOSE_MEDIA_BINDING_TAG = 0x7f0b0d01
-
 @Composable
 internal fun ComposeMediaImage(
     url: String,
@@ -55,6 +54,10 @@ internal fun ComposeMediaImage(
     animated: Boolean = false,
     placeholderLabel: String = "图片",
     ensureTouchTarget: Boolean = true,
+    animatedUrl: String = url,
+    retry: Int = 0,
+    requests: ComposeMediaImageRequests = ExistingComposeMediaImageRequests,
+    onLoaded: (Boolean) -> Unit = {},
     onClick: (() -> Unit)? = null,
 ) {
     val theme = LocalHeyboxTheme.current
@@ -69,7 +72,7 @@ internal fun ComposeMediaImage(
     } else {
         Modifier
     }
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .then(targetModifier)
             .clip(shape)
@@ -88,10 +91,17 @@ internal fun ComposeMediaImage(
                 )
             }
         } else {
+            val density = LocalDensity.current
+            val ceiling = settings.imageTargetPx.coerceAtLeast(96)
+            val targetPx = if (constraints.hasBoundedWidth) {
+                with(density) { maxWidth.toPx().toInt() }.coerceIn(96, ceiling)
+            } else ceiling
+            val request = ComposeMediaImageRequest(url, targetPx,
+                if (animated && settings.playGif) animatedUrl else "", retry)
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
-                    AndroidImageView(context).apply {
+                    GifImageView(context).apply {
                         scaleType = if (contentScale == ContentScale.Fit) {
                             AndroidImageView.ScaleType.FIT_CENTER
                         } else {
@@ -101,6 +111,8 @@ internal fun ComposeMediaImage(
                         setBackgroundColor(surface.toArgb())
                     }
                 },
+                onReset = ::resetComposeMediaImage,
+                onRelease = ::resetComposeMediaImage,
                 update = { view ->
                     view.scaleType = if (contentScale == ContentScale.Fit) {
                         AndroidImageView.ScaleType.FIT_CENTER
@@ -108,21 +120,8 @@ internal fun ComposeMediaImage(
                         AndroidImageView.ScaleType.CENTER_CROP
                     }
                     view.contentDescription = contentDescription
-                    val binding = "$url|${settings.imageTargetPx}|$animated"
-                    if (view.getTag(COMPOSE_MEDIA_BINDING_TAG) != binding) {
-                        view.setTag(COMPOSE_MEDIA_BINDING_TAG, binding)
-                        ImageLoader.intoMeasuredRevealStable(
-                            view,
-                            url,
-                            settings.imageTargetPx.coerceAtLeast(96),
-                        ) { success, _ ->
-                            if (success && animated && settings.playGif) {
-                                ImageLoader.intoGif(view, url)
-                            } else if (!success && view.drawable == null) {
-                                view.setImageDrawable(ColorDrawable(surface.toArgb()))
-                            }
-                        }
-                    }
+                    view.setBackgroundColor(surface.toArgb())
+                    bindComposeMediaImage(view, request, requests, onLoaded)
                 },
             )
         }

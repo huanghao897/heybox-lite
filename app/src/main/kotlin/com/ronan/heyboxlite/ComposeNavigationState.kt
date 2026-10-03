@@ -12,6 +12,7 @@ internal data class ComposeDetailState(
     val videos: List<VideoData>,
     val comments: List<JSONObject>,
     val loading: Boolean,
+    val link: JSONObject? = null,
 )
 
 internal class ComposeNavigationState {
@@ -77,6 +78,7 @@ internal class ComposeNavigationState {
             result.videos ?: fallback.videos,
             comments,
             false,
+            result.body?.optJSONObject("result")?.optJSONObject("link"),
         )
     }
 
@@ -86,16 +88,27 @@ internal class ComposeNavigationState {
         val updated = current.comments.map { group ->
             val root = group.optJSONArray("comment")?.optJSONObject(0) ?: group
             if (CommentData.commentId(root) != rootId) return@map group
-            val array = group.optJSONArray("comment") ?: JSONArray().also { group.put("comment", it) }
+            val source = group.optJSONArray("comment")
+            val array = JSONArray()
+            if (source == null) array.put(root) else {
+                for (index in 0 until source.length()) array.put(source.opt(index))
+            }
             val known = HashSet<String>()
             for (index in 0 until array.length()) {
                 array.optJSONObject(index)?.let { known.add(CommentData.commentId(it)) }
             }
+            val previousCount = array.length()
             replies.forEach { reply ->
                 val id = CommentData.commentId(reply)
                 if (id.isEmpty() || known.add(id)) array.put(reply)
             }
-            group
+            if (array.length() == previousCount) return@map group
+            // A new group/array publishes a real snapshot change while retaining
+            // the original root used by the existing comment action controller.
+            JSONObject().apply {
+                group.keys().forEach { key -> if (key != "comment") put(key, group.opt(key)) }
+                put("comment", array)
+            }
         }
         detail.value = current.copy(comments = updated)
     }

@@ -45,6 +45,7 @@ final class VideoPlaybackController implements SurfaceHolder.Callback {
     private boolean wasPlayingBeforeFastForward;
     private boolean nativeFastForward;
     private float playbackSpeedBeforeFastForward = 1.0f;
+    private final Runnable progressTick = this::progressTick;
     private final Runnable fastForwardTick = this::runFallbackFastForward;
 
     VideoPlaybackController(Context context, String url, Listener listener,
@@ -210,6 +211,7 @@ final class VideoPlaybackController implements SurfaceHolder.Callback {
             });
             next.setOnCompletionListener(mediaPlayer -> {
                 if (!isCurrent(mediaPlayer, token)) return;
+                if (this.nativeFastForward) setPlaybackSpeed(this.playbackSpeedBeforeFastForward);
                 this.fastForwarding = false;
                 this.nativeFastForward = false;
                 this.handler.removeCallbacks(this.fastForwardTick);
@@ -263,6 +265,7 @@ final class VideoPlaybackController implements SurfaceHolder.Callback {
         this.fastForwarding = false;
         this.nativeFastForward = false;
         this.handler.removeCallbacks(this.fastForwardTick);
+        this.handler.removeCallbacks(this.progressTick);
         MediaPlayer current = this.player;
         this.player = null;
         this.prepared = false;
@@ -280,8 +283,8 @@ final class VideoPlaybackController implements SurfaceHolder.Callback {
     }
 
     private void scheduleProgress() {
-        this.handler.removeCallbacksAndMessages(null);
-        this.handler.postDelayed(this::progressTick, PROGRESS_INTERVAL_MS);
+        this.handler.removeCallbacks(this.progressTick);
+        this.handler.postDelayed(this.progressTick, PROGRESS_INTERVAL_MS);
     }
 
     private void progressTick() {
