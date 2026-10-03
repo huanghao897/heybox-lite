@@ -133,7 +133,10 @@ internal fun ComposeContentCacheScreen(
                 val enabled = value == 1
                 session.setAutoOfflineCleanup(enabled)
                 changed()
-                if (enabled) onNavigate("cache_prune")
+                if (enabled) {
+                    onNavigate("cache_prune")
+                    cacheStatsVersion++
+                }
             }
             WatchSwitchRow("双击评论回复", doubleTapReply, R.drawable.il_reply) { value ->
                 doubleTapReply = value
@@ -144,42 +147,48 @@ internal fun ComposeContentCacheScreen(
 
         WatchSectionTitle("内容过滤")
         WatchCard {
-            Text(
-                text = "屏蔽关键词，用逗号分隔",
-                color = LocalHeyboxTheme.current.muted,
-                fontSize = watchSp(11f),
-            )
-            Spacer(modifier = Modifier.height(watchDp(6)))
-            BasicTextField(
-                value = filter,
-                onValueChange = { filter = it },
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(watchDp(62))
-                    .background(
-                        LocalHeyboxTheme.current.panelElevated,
-                        RoundedCornerShape(watchDp(9)),
-                    )
-                    .padding(horizontal = watchDp(10), vertical = watchDp(8)),
-                textStyle = TextStyle(
-                    color = LocalHeyboxTheme.current.text,
-                    fontSize = watchSp(12f),
-                ),
-                decorationBox = { field ->
-                    if (filter.isEmpty()) {
-                        Text(
-                            text = "例如：抽奖，广告",
-                            color = LocalHeyboxTheme.current.subtle,
-                            fontSize = watchSp(12f),
+                    .padding(horizontal = watchDp(12), vertical = watchDp(12)),
+            ) {
+                Text(
+                    text = "屏蔽关键词，用逗号分隔",
+                    color = LocalHeyboxTheme.current.muted,
+                    fontSize = watchSp(11f),
+                )
+                Spacer(modifier = Modifier.height(watchDp(6)))
+                BasicTextField(
+                    value = filter,
+                    onValueChange = { filter = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(watchDp(62))
+                        .background(
+                            LocalHeyboxTheme.current.background,
+                            RoundedCornerShape(watchDp(9)),
                         )
-                    }
-                    field()
-                },
-            )
-            WatchActionText("保存内容过滤") {
-                session.setBlockKeywords(filter)
-                changed()
-                services.toast.show("内容过滤已保存")
+                        .padding(horizontal = watchDp(10), vertical = watchDp(8)),
+                    textStyle = TextStyle(
+                        color = LocalHeyboxTheme.current.text,
+                        fontSize = watchSp(12f),
+                    ),
+                    decorationBox = { field ->
+                        if (filter.isEmpty()) {
+                            Text(
+                                text = "例如：抽奖，广告",
+                                color = LocalHeyboxTheme.current.subtle,
+                                fontSize = watchSp(12f),
+                            )
+                        }
+                        field()
+                    },
+                )
+                WatchActionText("保存内容过滤") {
+                    session.setBlockKeywords(filter)
+                    changed()
+                    services.toast.show("内容过滤已保存")
+                }
             }
         }
 
@@ -189,7 +198,10 @@ internal fun ComposeContentCacheScreen(
                 title = "清理过期离线内容",
                 value = "$detailCount 篇",
                 icon = R.drawable.il_cleanup,
-                onClick = { onNavigate("cache_prune") },
+                onClick = {
+                    onNavigate("cache_prune")
+                    cacheStatsVersion++
+                },
             )
             WatchRow(
                 title = "导出日志",

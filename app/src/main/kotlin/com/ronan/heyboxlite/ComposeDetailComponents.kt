@@ -29,11 +29,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 
 @Composable
@@ -182,6 +184,10 @@ internal fun ComposeDetailSortTab(text: String, selected: Boolean, onSelect: () 
 private fun rootComment(group: JSONObject): JSONObject =
     group.optJSONArray("comment")?.optJSONObject(0) ?: group
 
+private const val REPLY_IDLE = 0
+private const val REPLY_LOADING = 1
+private const val REPLY_FAILED = 2
+
 @Composable
 internal fun ComposeDetailThread(
     group: JSONObject,
@@ -193,41 +199,92 @@ internal fun ComposeDetailThread(
     onOpenUser: (String, String, String) -> Unit = { _, _, _ -> },
 ) {
     val theme = LocalHeyboxTheme.current
+    val context = LocalContext.current
     val root = rootComment(group)
     val rootId = CommentData.commentId(root)
     val array = group.optJSONArray("comment")
     val replies = buildList {
         if (array != null) for (index in 1 until array.length()) array.optJSONObject(index)?.let { add(it) }
     }.sortedBy { CommentData.commentTime(it) }
-    var expanded by remember(rootId) { mutableStateOf(false) }
     val expected = maxOf(root.optInt("child_num"), group.optInt("child_num"), replies.size)
-    val shownCount = if (expanded) replies.size else minOf(2, replies.size)
-    val remainingCount = maxOf(0, expected - shownCount)
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    var shownCount by remember(rootId) { mutableStateOf(minOf(2, replies.size)) }
+    var pendingVisible by remember(rootId) { mutableStateOf(shownCount) }
+    var lastReplyCount by remember(rootId) { mutableStateOf(replies.size) }
+    var loadState by remember(rootId) { mutableStateOf(REPLY_IDLE) }
+    var loadRequest by remember(rootId) { mutableStateOf(0) }
+
+    LaunchedEffect(rootId, replies.size) {
+        if (replies.size != lastReplyCount) {
+            val appended = replies.size > lastReplyCount
+            lastReplyCount = replies.size
+            shownCount = minOf(shownCount, replies.size)
+            if (appended && loadState == REPLY_LOADING) {
+                shownCount = minOf(replies.size, pendingVisible)
+                loadState = REPLY_IDLE
+            }
+        }
+    }
+    LaunchedEffect(rootId, loadRequest) {
+        if (loadRequest == 0) return@LaunchedEffect
+        delay(5000L)
+        if (loadState == REPLY_LOADING) loadState = REPLY_FAILED
+    }
+
+    fun requestMoreReplies() {
+        val total = maxOf(expected, replies.size)
+        val remoteMore = expected > replies.size
+        val next = composeCommentNextVisibleCount(total, shownCount, remoteMore)
+        if (next <= shownCount && !remoteMore) return
+        pendingVisible = next
+        shownCount = minOf(replies.size, next)
+        if (next > replies.size) {
+            loadState = REPLY_LOADING
+            loadRequest += 1
+            onAction(ComposeDetailAction.LoadReplies(root))
+        } else {
+            loadState = REPLY_IDLE
+        }
+    }
+
+    val totalReplies = maxOf(expected, replies.size)
+    val remoteMore = expected > replies.size
+    val expansionLabel = composeCommentExpansionLabel(totalReplies, shownCount, remoteMore)
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
         if (CommentData.isPinnedThread(group)) Text("置顶", fontSize = 10.sp,
             color = theme.accent, fontWeight = FontWeight.Bold)
         ComposeDetailComment(root, item, "", false, media, onOpenImage, onAction, onOpenUser)
         if (replies.isNotEmpty() || expected > 0) {
             Column(
-                modifier = Modifier.padding(start = if (roundScreen) 7.dp else 20.dp)
-                    .fillMaxWidth().padding(start = 7.dp),
+                modifier = Modifier.padding(start = if (roundScreen) 7.dp else 34.dp)
+                    .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                replies.take(if (expanded) replies.size else 2).forEach { reply ->
+                replies.take(shownCount).forEach { reply ->
                     ComposeDetailComment(reply, item, rootId, true, media, onOpenImage, onAction,
                         onOpenUser)
                 }
-                if (!expanded && remainingCount > 0) {
-                    Text("展开 ${minOf(5, remainingCount)} 条回复", fontSize = 11.sp,
-                        color = theme.accent,
-                        modifier = Modifier.clickable {
-                            expanded = true
-                            if (expected > replies.size) onAction(ComposeDetailAction.LoadReplies(root))
-                        }.padding(vertical = 10.dp))
+                if (loadState == REPLY_LOADING) {
+                    Text("加载回复中…", fontSize = 11.sp, color = theme.muted,
+                        modifier = Modifier.padding(vertical = 6.dp))
+                } else if (loadState == REPLY_FAILED) {
+                    Text("回复加载失败，重试", fontSize = 11.sp, color = theme.accent,
+                        modifier = Modifier.clickable { requestMoreReplies() }
+                            .padding(vertical = 6.dp))
+                } else if (expansionLabel.isNotBlank()) {
+                    Text(expansionLabel, fontSize = 11.sp, color = theme.accent,
+                        modifier = Modifier.clickable { requestMoreReplies() }
+                            .padding(vertical = 6.dp))
                 }
-                if (expanded && replies.size > 2) Text("收起回复", fontSize = 11.sp,
+                if (shownCount > minOf(2, replies.size)) Text("收起回复", fontSize = 11.sp,
                     color = theme.muted,
-                    modifier = Modifier.clickable { expanded = false }.padding(vertical = 10.dp))
+                    modifier = Modifier.clickable {
+                        shownCount = minOf(2, replies.size)
+                        pendingVisible = shownCount
+                        loadState = REPLY_IDLE
+                    }.padding(vertical = 6.dp))
             }
         }
         HorizontalDivider(color = theme.hairline.copy(alpha = 0.5f))
@@ -246,56 +303,96 @@ private fun ComposeDetailComment(
     onOpenUser: (String, String, String) -> Unit = { _, _, _ -> },
 ) {
     val theme = LocalHeyboxTheme.current
+    val context = LocalContext.current
     val user = comment.optJSONObject("user")
     val author = user?.optString("username", "匿名用户") ?: "匿名用户"
-    val userId = Json.first(
-        user?.optString("userid"), user?.optString("user_id"), user?.optString("id"),
-    )
+    val userId = composeCommentUserId(user)
     val level = CommentData.userLevel(user)
     val target = CommentData.replyTarget(comment, rootId)
-    val value = (if (CommentData.isCyComment(comment)) "Cy " else "") +
-        RichContent.commentText(comment.optString("text"), comment.optString("content"),
-            comment.optString("html"), comment.optString("description"), comment.optString("desc_extra"),
-            comment.optString("rich_text"), comment.optString("hb_rich_texts"))
-    var liked by remember(CommentData.commentId(comment)) { mutableStateOf(CommentData.commentLiked(comment)) }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            modifier = Modifier.clickable(enabled = userId.isNotBlank()) {
-                onOpenUser(userId, author, user?.optString("avatar").orEmpty())
-            },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (!reply) {
-                ComposeMediaImage(user?.optString("avatar") ?: "", media, Modifier.size(26.dp), CircleShape,
-                    placeholderLabel = author.take(1), ensureTouchTarget = false)
+    val value = composeCommentText(comment)
+    val cy = CommentData.isCyComment(comment)
+    val meta = composeCommentMeta(comment, CommentData.commentTime(comment))
+    val isPostAuthor = composeCommentIsPostAuthor(item, user, author)
+    val doubleTapReply = composeCommentDoubleTapReplyEnabled(context)
+    val gesture = Modifier.composeCommentGestures(
+        context = context,
+        doubleTapReplyEnabled = doubleTapReply,
+        copyText = value,
+        onReply = { onAction(ComposeDetailAction.Reply(comment)) },
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+        if (reply) {
+            ComposeCommentReplyText(
+                author = author,
+                postAuthor = isPostAuthor,
+                target = target,
+                text = value,
+                cy = cy,
+                meta = meta,
+                modifier = Modifier.fillMaxWidth().then(gesture),
+            )
+        } else {
+            Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+                ComposeMediaImage(
+                    user?.optString("avatar").orEmpty(), media, Modifier.size(26.dp), CircleShape,
+                    placeholderLabel = author.take(1), ensureTouchTarget = false,
+                    onClick = if (userId.isNotBlank()) {
+                        { onOpenUser(userId, author, user?.optString("avatar").orEmpty()) }
+                    } else null,
+                )
                 Spacer(Modifier.width(6.dp))
+                Column(Modifier.weight(1f).then(gesture)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(author.ifBlank { "匿名用户" },
+                            Modifier.weight(1f, fill = false), fontSize = 11.sp,
+                            color = theme.text, fontWeight = FontWeight.SemiBold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (isPostAuthor) {
+                            Spacer(Modifier.width(2.dp))
+                            ComposeCommentAuthorBadge()
+                        }
+                        if (level > 0) {
+                            Spacer(Modifier.width(2.dp))
+                            ComposeCommentLevelBadge(level)
+                        }
+                    }
+                    if (meta.isNotBlank()) Text(meta, color = theme.muted, fontSize = 9.sp,
+                        lineHeight = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.width(4.dp))
+                val liked = CommentData.commentLiked(comment)
+                Row(
+                    modifier = Modifier.clip(RoundedCornerShape(5.dp)).clickable {
+                        onAction(ComposeDetailAction.LikeComment(comment))
+                    }.height(26.dp).padding(horizontal = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        painterResource(if (liked) R.drawable.official_comment_like_filled
+                        else R.drawable.official_comment_like_line),
+                        "点赞评论",
+                        tint = if (liked) theme.accent else theme.muted,
+                        modifier = Modifier.size(15.dp),
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Text(Format.commentLikeCount(CommentData.commentLikes(comment)
+                        .coerceAtLeast(0)), color = if (liked) theme.accent else theme.muted,
+                        fontSize = 10.sp, maxLines = 1)
+                }
             }
-            Text(author + if (author == item.author) " 作者" else "", Modifier.weight(1f),
-                fontSize = 11.sp, color = theme.text,
-                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (level > 0) Text("Lv.$level", fontSize = 8.sp,
-                color = CommentData.levelBadgeColor(level).asComposeColor(), fontWeight = FontWeight.Bold)
-            if (!reply) IconButton(onClick = {
-                liked = !liked
-                onAction(ComposeDetailAction.LikeComment(comment))
-            },
-                modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(if (liked) R.drawable.official_comment_like_filled
-                    else R.drawable.official_comment_like_line), "点赞评论",
-                    tint = if (liked) theme.accent else theme.muted, modifier = Modifier.size(16.dp))
-            }
+            if (value.isNotBlank()) ComposeRichText(
+                source = value,
+                darkMode = theme.dark,
+                textColor = theme.text,
+                linkColor = theme.link,
+                modifier = Modifier.fillMaxWidth().padding(top = 1.dp).then(gesture),
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.Medium,
+                cy = cy,
+            )
         }
-        Text((if (target.isNotBlank()) "回复 $target: " else "") + value,
-            fontSize = if (reply) 11.sp else 12.sp, lineHeight = if (reply) 17.sp else 18.sp,
-            color = theme.text,
-            modifier = Modifier.fillMaxWidth().clickable { onAction(ComposeDetailAction.Reply(comment)) })
-        val created = CommentData.commentTime(comment)
-        val meta = listOf(if (created > 0) Format.relativeTime(created) else "",
-            CommentData.commentLocation(comment), "${CommentData.commentLikes(comment)} 赞")
-            .filter { it.isNotBlank() }.joinToString(" · ")
-        Text(meta, color = theme.muted, fontSize = 9.sp)
-        ComposeMediaGrid(CommentData.commentImages(comment).map { it.originalUrl }, media,
-            columns = 2, onOpenImage = onOpenImage)
+        ComposeCommentImageGrid(CommentData.commentImages(comment), media, reply, onOpenImage)
     }
 }
 

@@ -9,6 +9,9 @@ import org.json.JSONObject;
 /** Route and action adapter kept outside MainActivity so the Compose shell does not grow it again. */
 final class ComposeActivityBridge implements ComposeAppCallbacks {
     private final MainActivity activity;
+    private boolean openingLegacyDetail;
+    private boolean legacyDetailActive;
+    private String legacyReturnRoute = "feed";
 
     ComposeActivityBridge(MainActivity activity) {
         this.activity = activity;
@@ -49,6 +52,10 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     boolean handleBack() {
+        if (legacyDetailActive) {
+            returnFromLegacyDetail();
+            return true;
+        }
         return activity.composeAppHost != null && activity.composeAppHost.isMounted()
                 && activity.composeAppHost.handleBack();
     }
@@ -74,6 +81,9 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     boolean openComposeDetail(FeedItem item) {
+        // The native detail surface still owns the complete comment/media pipeline.
+        // Keep Compose from stealing the async result until its renderer reaches parity.
+        if (openingLegacyDetail || legacyDetailActive) return false;
         if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()) return false;
         activity.pendingBackTransition = false;
         activity.pageTransitions.finishNow();
@@ -103,6 +113,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     boolean showComposeDetailResult(DetailPageAssembler.Result detail, FeedItem fallback) {
+        if (legacyDetailActive) return false;
         if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()
                 || !"detail".equals(activity.screen)) return false;
         activity.composeAppHost.showDetailResult(detail, fallback);
@@ -116,6 +127,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     void showRoute(String route) {
         if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()) return;
         String key = route == null ? "feed" : route.split("\\?", 2)[0];
+        if (!"detail".equals(key)) legacyDetailActive = false;
         activity.screen = key;
         activity.shellBar.setVisibility(View.GONE);
         activity.content.setVisibility(View.INVISIBLE);
@@ -150,11 +162,31 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     @Override public void openDetail(FeedItem item) {
-        activity.showDetail(item);
+        if (item == null) return;
+        // Compose cards remain the entry point, but comments, emoji, thumbnails,
+        // original-image opening and reply actions use the stable native detail host.
+        legacyDetailActive = true;
+        legacyReturnRoute = activity.composeAppHost != null
+                ? activity.composeAppHost.currentRoute() : activity.screen;
+        openingLegacyDetail = true;
+        if (activity.composeLayer != null) activity.composeLayer.setVisibility(View.INVISIBLE);
+        if (activity.content != null) activity.content.setVisibility(View.VISIBLE);
+        try {
+            activity.showDetail(item);
+            activity.leading.setOnClickListener(view -> returnFromLegacyDetail());
+        } finally {
+            openingLegacyDetail = false;
+        }
     }
 
     @Override public void requestImage(String url) {
         activity.openImage(null, url);
+    }
+
+    private void returnFromLegacyDetail() {
+        String route = legacyReturnRoute;
+        activity.returnFromDetail();
+        if (route != null && !route.isEmpty()) showRoute(route);
     }
 
     @Override public void requestVideo(VideoData video) {
@@ -172,7 +204,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         } else if (action == ComposeAppCallbacks.ACTION_CACHE) {
             activity.postActions.toggleFeedCache(item);
         } else if (action == ComposeAppCallbacks.ACTION_COMMENT) {
-            activity.showDetail(item);
+            openDetail(item);
         }
         if (activity.composeAppHost != null) activity.composeAppHost.invalidateFeed();
     }

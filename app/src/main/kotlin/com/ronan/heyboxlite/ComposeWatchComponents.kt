@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.ronan.heyboxlite
 
 import androidx.annotation.DrawableRes
@@ -13,11 +15,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.scrollBy
@@ -25,11 +28,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -185,15 +192,19 @@ internal fun WatchRow(
             modifier = Modifier.weight(1f),
             color = if (enabled) state.text else state.subtle,
             fontSize = watchSp(13f),
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         if (value.isNotEmpty()) {
             Text(
                 value,
+                modifier = Modifier
+                    .widthIn(max = watchDp(92))
+                    .padding(start = watchDp(6)),
                 color = state.muted,
                 fontSize = watchSp(11f),
-                maxLines = 1,
+                maxLines = 2,
+                textAlign = TextAlign.End,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -214,6 +225,7 @@ internal fun WatchSwitchRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(watchDp(10)))
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .heightIn(min = watchDp(40))
             .padding(horizontal = watchDp(11), vertical = watchDp(7)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -231,15 +243,39 @@ internal fun WatchSwitchRow(
             modifier = Modifier.weight(1f),
             color = if (enabled) state.text else state.subtle,
             fontSize = watchSp(13f),
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Switch(
-            checked = checked,
-            onCheckedChange = if (enabled) onCheckedChange else null,
-            enabled = enabled,
-            modifier = Modifier.size(width = watchDp(42), height = watchDp(26)),
+        val checkedTrack = if (state.dark) Color(0xFF77777D) else Color(0xFFA6A6AB)
+        val uncheckedTrack = if (state.dark) Color(0xFF3A3A3E) else Color(0xFFD1D1D6)
+        val thumb = if (state.dark) Color(0xFFF5F5F7) else Color.White
+        val switchColors = SwitchDefaults.colors(
+            checkedThumbColor = thumb,
+            checkedTrackColor = checkedTrack,
+            checkedBorderColor = checkedTrack,
+            checkedIconColor = state.text,
+            uncheckedThumbColor = thumb,
+            uncheckedTrackColor = uncheckedTrack,
+            uncheckedBorderColor = uncheckedTrack,
+            uncheckedIconColor = state.text,
+            disabledCheckedThumbColor = state.subtle,
+            disabledCheckedTrackColor = checkedTrack.copy(alpha = 0.45f),
+            disabledCheckedBorderColor = checkedTrack.copy(alpha = 0.45f),
+            disabledCheckedIconColor = state.subtle,
+            disabledUncheckedThumbColor = state.subtle,
+            disabledUncheckedTrackColor = uncheckedTrack.copy(alpha = 0.45f),
+            disabledUncheckedBorderColor = uncheckedTrack.copy(alpha = 0.45f),
+            disabledUncheckedIconColor = state.subtle,
         )
+        CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
+            Switch(
+                checked = checked,
+                onCheckedChange = if (enabled) onCheckedChange else null,
+                enabled = enabled,
+                colors = switchColors,
+                modifier = Modifier.size(width = watchDp(42), height = watchDp(26)),
+            )
+        }
     }
 }
 
@@ -274,7 +310,13 @@ internal fun WatchEmptyState(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 internal fun WatchActionText(text: String, onClick: () -> Unit) {
-    TextButton(onClick = onClick, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-        Text(text, color = MaterialTheme.colorScheme.primary, fontSize = watchSp(11f))
+    CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
+        TextButton(
+            onClick = onClick,
+            modifier = Modifier.height(watchDp(36)),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+        ) {
+            Text(text, color = MaterialTheme.colorScheme.primary, fontSize = watchSp(11f))
+        }
     }
 }

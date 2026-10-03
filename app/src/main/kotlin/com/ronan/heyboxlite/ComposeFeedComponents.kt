@@ -81,8 +81,17 @@ internal fun ComposeFeedCard(
             .padding((if (theme.roundScreen) 10 else 12).dp * scale),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            ComposeRemoteImage(item.authorAvatar, theme, noImage, (28 * scale).dp,
-                CircleShape, "作者头像")
+            // Keep the avatar bounded even before the async image loader has a bitmap.
+            // Without an explicit size AndroidView can measure to the source bitmap size.
+            ComposeRemoteImage(
+                item.authorAvatar,
+                theme,
+                noImage,
+                (28 * scale).dp,
+                CircleShape,
+                "作者头像",
+                modifier = Modifier.size((28 * scale).dp),
+            )
             Column(modifier = Modifier.weight(1f).padding(start = (8 * scale).dp)) {
                 Text(text = item.author.ifEmpty { "小黑盒社区" }, color = theme.text,
                     fontSize = (12 * theme.textScale).sp, fontWeight = FontWeight.Bold,
@@ -188,7 +197,9 @@ internal fun ComposeRemoteImage(
     targetDp: Dp,
     shape: Shape,
     contentDescription: String?,
-    modifier: Modifier = Modifier,
+    // targetDp is also the safe fallback layout size; callers can override it
+    // for thumbnails or full-width media with an explicit modifier.
+    modifier: Modifier = Modifier.size(targetDp),
     loader: ComposeImageLoader = ExistingComposeImageLoader,
 ) {
     val targetPx = with(LocalDensity.current) { targetDp.toPx().toInt().coerceAtLeast(1) }

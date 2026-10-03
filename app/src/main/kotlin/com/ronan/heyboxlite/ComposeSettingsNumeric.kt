@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.ronan.heyboxlite
 
 import androidx.compose.foundation.background
@@ -15,9 +17,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +53,13 @@ internal data class NumericSettingValue(
     }
 
     fun sliderValue(value: Int): Int = normalize(value).coerceIn(lowerBound, upperBound)
+
+    fun snapSliderValue(raw: Float): Int {
+        val increment = step.coerceAtLeast(1)
+        val clamped = raw.coerceIn(lowerBound.toFloat(), upperBound.toFloat())
+        val snapped = ((clamped - lowerBound) / increment).roundToInt() * increment + lowerBound
+        return snapped.coerceIn(lowerBound, upperBound)
+    }
 
     fun parse(raw: String): NumericValueParseResult {
         val value = try {
@@ -84,6 +96,32 @@ internal sealed class NumericValueParseResult {
 }
 
 @Composable
+private fun composeSettingSliderColors() = SliderDefaults.colors(
+    thumbColor = if (LocalHeyboxTheme.current.dark) {
+        androidx.compose.ui.graphics.Color(0xFFF5F5F7)
+    } else {
+        androidx.compose.ui.graphics.Color.White
+    },
+    activeTrackColor = if (LocalHeyboxTheme.current.dark) {
+        androidx.compose.ui.graphics.Color(0xFF77777D)
+    } else {
+        androidx.compose.ui.graphics.Color(0xFF636368)
+    },
+    activeTickColor = androidx.compose.ui.graphics.Color.Transparent,
+    inactiveTrackColor = if (LocalHeyboxTheme.current.dark) {
+        androidx.compose.ui.graphics.Color(0xFF3A3A3E)
+    } else {
+        androidx.compose.ui.graphics.Color(0xFFD1D1D6)
+    },
+    inactiveTickColor = androidx.compose.ui.graphics.Color.Transparent,
+    disabledThumbColor = LocalHeyboxTheme.current.subtle,
+    disabledActiveTrackColor = LocalHeyboxTheme.current.subtle.copy(alpha = 0.45f),
+    disabledActiveTickColor = androidx.compose.ui.graphics.Color.Transparent,
+    disabledInactiveTrackColor = LocalHeyboxTheme.current.subtle.copy(alpha = 0.28f),
+    disabledInactiveTickColor = androidx.compose.ui.graphics.Color.Transparent,
+)
+
+@Composable
 internal fun ComposeSettingRange(
     title: String,
     value: Int,
@@ -114,24 +152,24 @@ internal fun ComposeSettingRange(
             icon = icon,
             onClick = { dialogOpen = true },
         )
-        Slider(
-            value = slider,
-            onValueChange = { raw ->
-                val increment = setting.step.coerceAtLeast(1)
-                val next = ((raw - setting.lowerBound) / increment).roundToInt() * increment +
-                    setting.lowerBound
-                val bounded = next.coerceIn(setting.lowerBound, setting.upperBound)
-                slider = bounded.toFloat()
-                committed = bounded
-                onValueChange(bounded)
-            },
-            valueRange = setting.lowerBound.toFloat()..setting.upperBound.toFloat(),
-            steps = setting.sliderSteps,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(watchDp(28))
-                .padding(horizontal = watchDp(11)),
-        )
+        CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
+            Slider(
+                value = slider,
+                onValueChange = { raw ->
+                    val bounded = setting.snapSliderValue(raw)
+                    slider = bounded.toFloat()
+                    committed = bounded
+                    onValueChange(bounded)
+                },
+                valueRange = setting.lowerBound.toFloat()..setting.upperBound.toFloat(),
+                steps = 0,
+                colors = composeSettingSliderColors(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(watchDp(28))
+                    .padding(horizontal = watchDp(11)),
+            )
+        }
     }
 
     if (dialogOpen) {
@@ -231,25 +269,25 @@ private fun ComposeNumericSettingDialog(
                         modifier = Modifier.padding(horizontal = watchDp(11), vertical = watchDp(3)),
                     )
                 }
-                Slider(
-                    value = slider,
-                    onValueChange = { raw ->
-                        val increment = setting.step.coerceAtLeast(1)
-                        val next = ((raw - setting.lowerBound) / increment).roundToInt() * increment +
-                            setting.lowerBound
-                        val bounded = next.coerceIn(setting.lowerBound, setting.upperBound)
-                        slider = bounded.toFloat()
-                        input = bounded.toString()
-                        error = null
-                        onValueChange(bounded)
-                    },
-                    valueRange = setting.lowerBound.toFloat()..setting.upperBound.toFloat(),
-                    steps = setting.sliderSteps,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(watchDp(32))
-                        .padding(horizontal = watchDp(11)),
-                )
+                CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
+                    Slider(
+                        value = slider,
+                        onValueChange = { raw ->
+                            val bounded = setting.snapSliderValue(raw)
+                            slider = bounded.toFloat()
+                            input = bounded.toString()
+                            error = null
+                            onValueChange(bounded)
+                        },
+                        valueRange = setting.lowerBound.toFloat()..setting.upperBound.toFloat(),
+                        steps = 0,
+                        colors = composeSettingSliderColors(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(watchDp(32))
+                            .padding(horizontal = watchDp(11)),
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = watchDp(11)),
                 ) {

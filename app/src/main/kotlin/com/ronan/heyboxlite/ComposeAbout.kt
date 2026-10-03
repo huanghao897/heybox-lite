@@ -122,19 +122,25 @@ internal fun ComposeAboutScreen(
 
         WatchSectionTitle("说明")
         WatchCard {
-            Text(
-                text = "支持 Android 7.0 及以上系统",
-                color = LocalHeyboxTheme.current.text,
-                fontSize = watchSp(12f),
-                lineHeight = watchSp(16f),
-            )
-            Text(
-                text = "基于 HeyWear 进行二次开发与方屏适配，非官方应用。",
-                color = LocalHeyboxTheme.current.muted,
-                fontSize = watchSp(12f),
-                lineHeight = watchSp(16f),
-                modifier = Modifier.padding(top = watchDp(7)),
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = watchDp(14), vertical = watchDp(12)),
+            ) {
+                Text(
+                    text = "支持 Android 7.0 及以上系统",
+                    color = LocalHeyboxTheme.current.text,
+                    fontSize = watchSp(12f),
+                    lineHeight = watchSp(16f),
+                )
+                Text(
+                    text = "基于 HeyWear 进行二次开发与方屏适配，非官方应用。",
+                    color = LocalHeyboxTheme.current.muted,
+                    fontSize = watchSp(12f),
+                    lineHeight = watchSp(16f),
+                    modifier = Modifier.padding(top = watchDp(7)),
+                )
+            }
         }
     }
     update?.let { result ->

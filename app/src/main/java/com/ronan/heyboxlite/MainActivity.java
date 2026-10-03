@@ -1743,7 +1743,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         super.onBackPressed();
     }
 
-    private void returnFromDetail() {
+    void returnFromDetail() {
         returnFromDetail(false);
     }
 
