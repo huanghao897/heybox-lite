@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -151,6 +152,7 @@ private fun ComposeCheckinLeaderboardContent(
                 ComposeCheckinQuietButton("重新加载", onClick = onRetry)
             }
             state.data != null -> {
+                WatchSectionTitle("榜单")
                 ComposeCheckinModeSelector(
                     first = "连续签到",
                     second = "赞助排行",
@@ -220,7 +222,8 @@ private fun ComposeCheckinLeaderboardRow(
         Box(
             modifier = Modifier
                 .size(watchDp(28))
-                .background(theme.panelElevated, RoundedCornerShape(watchDp(14))),
+                .clip(CircleShape)
+                .background(theme.panelElevated),
             contentAlignment = Alignment.Center,
         ) {
             if (avatar != null) {
@@ -228,7 +231,7 @@ private fun ComposeCheckinLeaderboardRow(
                     bitmap = avatar.asImageBitmap(),
                     contentDescription = "${entry.displayName}头像",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(watchDp(28)),
+                    modifier = Modifier.size(watchDp(28)).clip(CircleShape),
                 )
             } else {
                 Text(entry.initial, color = theme.text, fontSize = watchSp(11f),

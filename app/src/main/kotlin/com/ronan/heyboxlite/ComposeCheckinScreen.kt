@@ -119,6 +119,7 @@ internal fun ComposeCheckinCenterContent(
     onHistoryRetry: () -> Unit,
 ) {
     WatchPage("小黑盒签到", onBack) {
+        WatchSectionTitle(if (!state.paired) "连接" else "状态")
         val status = state.status
         if (!state.paired) {
             ComposeCheckinUnpairedCard(state, onConnect)

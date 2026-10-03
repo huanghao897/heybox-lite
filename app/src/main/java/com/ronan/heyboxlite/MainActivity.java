@@ -1236,7 +1236,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.leading.setVisibility(0);
         this.leading.setOnClickListener(view -> {
             returnFromDetailSmooth();
-        });
+        }); if (this.composeBridge != null) this.composeBridge.onNativeDetailShown();
         this.title.setText(R.string.title_post_body);
         this.action.setVisibility(4);
         showDetailLoadingOverlay();
@@ -1743,13 +1743,11 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         super.onBackPressed();
     }
 
-    void returnFromDetail() {
-        returnFromDetail(false);
-    }
+    void returnFromDetail() { returnFromDetail(false); }
 
-    private void returnFromDetailGesture() {
-        returnFromDetail(true);
-    }
+    private void returnFromDetailGesture() { if (this.composeBridge != null && this.composeBridge.isLegacyDetailActive()) { this.composeBridge.returnFromNativeDetail(true); return; } returnFromDetail(true); }
+
+    void returnFromDetailForCompose(boolean gestureOwned) { returnFromDetail(gestureOwned); }
 
     private void returnFromDetail(boolean gestureOwned) {
         if (this.readingTimeTracker != null) {

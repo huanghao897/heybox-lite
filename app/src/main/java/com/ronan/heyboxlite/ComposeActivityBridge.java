@@ -45,6 +45,8 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         return true;
     }
 
+    boolean isLegacyDetailActive() { return legacyDetailActive; }
+
     boolean showUserSpace(String userId, String name, String avatar) {
         return showRouteIfMounted("user_space?user=" + Uri.encode(userId)
                 + "&name=" + Uri.encode(name == null ? "" : name)
@@ -81,35 +83,18 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     boolean openComposeDetail(FeedItem item) {
-        // The native detail surface still owns the complete comment/media pipeline.
-        // Keep Compose from stealing the async result until its renderer reaches parity.
-        if (openingLegacyDetail || legacyDetailActive) return false;
-        if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()) return false;
-        activity.pendingBackTransition = false;
-        activity.pageTransitions.finishNow();
-        activity.saveCurrentDetailProgress();
-        activity.stopQrPolling();
-        activity.ensureEmojiCatalog(() -> { });
-        if ("feed".equals(activity.screen)) activity.feedPage.saveScroll();
-        if ("search".equals(activity.screen)) activity.searchPage.saveListPosition();
-        if (!"detail".equals(activity.screen)) {
-            activity.detailReturn = activity.screen;
-            activity.detailReturnTitle = "";
+        // The native detail surface owns the complete content, comment, emoji and
+        // image pipeline. Prepare that surface for every caller, including the
+        // legacy reading-center and favorites callbacks, but let MainActivity run
+        // its normal detail setup exactly once.
+        if (openingLegacyDetail || activity.composeAppHost == null
+                || !activity.composeAppHost.isMounted()) return false;
+        if (!legacyDetailActive) {
+            legacyDetailActive = true;
+            legacyReturnRoute = nativeReturnRoute();
+            hideComposeSurface();
         }
-        activity.screen = "detail";
-        activity.currentLinkId = item.id;
-        activity.currentLinkHsrc = item.hsrc;
-        activity.currentAuthCode = "";
-        activity.currentDetailItem = item;
-        activity.currentDetailBody = null;
-        activity.commentController.reset();
-        activity.localCache.rememberRecent(item);
-        activity.composeAppHost.showDetailLoading(item);
-        activity.detailLoader.load(item);
-        if (activity.activityResumed && activity.readingTimeTracker != null) {
-            activity.readingTimeTracker.start(item.article, item.id);
-        }
-        return true;
+        return false;
     }
 
     boolean showComposeDetailResult(DetailPageAssembler.Result detail, FeedItem fallback) {
@@ -136,6 +121,11 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         activity.setBottomNavVisible(topLevel, false);
         if (topLevel) activity.bottomNavigation.select(key);
         activity.composeAppHost.setRoute(route == null ? "feed" : route);
+    }
+
+    void onNativeDetailShown() {
+        if (!legacyDetailActive || activity.leading == null) return;
+        activity.leading.setOnClickListener(view -> returnFromLegacyDetail());
     }
 
     @Override public void navigate(String route) {
@@ -166,14 +156,11 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         // Compose cards remain the entry point, but comments, emoji, thumbnails,
         // original-image opening and reply actions use the stable native detail host.
         legacyDetailActive = true;
-        legacyReturnRoute = activity.composeAppHost != null
-                ? activity.composeAppHost.currentRoute() : activity.screen;
+        legacyReturnRoute = nativeReturnRoute();
         openingLegacyDetail = true;
-        if (activity.composeLayer != null) activity.composeLayer.setVisibility(View.INVISIBLE);
-        if (activity.content != null) activity.content.setVisibility(View.VISIBLE);
+        hideComposeSurface();
         try {
             activity.showDetail(item);
-            activity.leading.setOnClickListener(view -> returnFromLegacyDetail());
         } finally {
             openingLegacyDetail = false;
         }
@@ -184,9 +171,29 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     private void returnFromLegacyDetail() {
+        returnFromLegacyDetail(false);
+    }
+
+    void returnFromNativeDetail(boolean gestureOwned) {
+        returnFromLegacyDetail(gestureOwned);
+    }
+
+    private void returnFromLegacyDetail(boolean gestureOwned) {
         String route = legacyReturnRoute;
-        activity.returnFromDetail();
+        activity.returnFromDetailForCompose(gestureOwned);
         if (route != null && !route.isEmpty()) showRoute(route);
+    }
+
+    private String nativeReturnRoute() {
+        if (activity.composeAppHost == null) return activity.screen;
+        String route = activity.composeAppHost.currentRouteSpec();
+        if ("detail".equals(route)) route = activity.composeAppHost.detailReturnRouteSpec();
+        return route == null || route.isEmpty() ? activity.screen : route;
+    }
+
+    private void hideComposeSurface() {
+        if (activity.composeLayer != null) activity.composeLayer.setVisibility(View.INVISIBLE);
+        if (activity.content != null) activity.content.setVisibility(View.VISIBLE);
     }
 
     @Override public void requestVideo(VideoData video) {

@@ -146,7 +146,15 @@ internal fun WatchCard(
             containerColor = if (highlighted) state.panelElevated else state.panel,
         ),
         border = BorderStroke(watchDp(1).coerceAtLeast(0.5.dp), state.hairline),
-        content = content,
+        content = {
+            Column(
+                modifier = Modifier.padding(
+                    horizontal = watchDp(4),
+                    vertical = watchDp(4),
+                ),
+                content = content,
+            )
+        },
     )
 }
 

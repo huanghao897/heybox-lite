@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -115,6 +116,16 @@ internal class ComposeAppHost(
     }
 
     fun currentRoute(): String = routeState.value
+
+    fun currentRouteSpec(): String = if (routeState.value == "user_space") {
+        userSpaceRoute.value.ifBlank { routeState.value }
+    } else routeState.value
+
+    fun detailReturnRoute(): String = detailReturnRoute.value
+
+    fun detailReturnRouteSpec(): String = if (detailReturnRoute.value == "user_space") {
+        userSpaceRoute.value.ifBlank { detailReturnRoute.value }
+    } else detailReturnRoute.value
 
     fun isRoute(route: String): Boolean = routeState.value == route
 
@@ -331,7 +342,12 @@ internal class ComposeAppHost(
                         val edgePx = 28.dp.toPx() * services.theme.uiScale
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
-                            val edgeArmed = !down.isConsumed && ComposeSwipePolicy.canArm(
+                            val swipeEnabled = if (route == "feed") {
+                                services.session.homeSwipeExit()
+                            } else {
+                                services.session.shellBackSwipe()
+                            }
+                            val edgeArmed = swipeEnabled && ComposeSwipePolicy.canArm(
                                 route, down.position.x, edgePx,
                             )
                             var totalX = 0f
@@ -340,10 +356,9 @@ internal class ComposeAppHost(
                             var accepted = false
                             val touchSlop = viewConfiguration.touchSlop
                             while (true) {
-                                val event = awaitPointerEvent()
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val change = event.changes.firstOrNull() ?: break
                                 if (!change.pressed) break
-                                if (!decided && change.isConsumed) break
                                 val delta = change.positionChangeIgnoreConsumed()
                                 totalX += delta.x
                                 totalY += delta.y
@@ -351,13 +366,14 @@ internal class ComposeAppHost(
                                     decided = true
                                     accepted = edgeArmed && totalX > 0f
                                             && abs(totalX) > abs(totalY)
+                                    if (!accepted) break
                                 }
                                 if (accepted) change.consume()
                             }
-                            val threshold = 44f * services.theme.uiScale
+                            val threshold = 44.dp.toPx() * services.theme.uiScale
                             if (accepted && totalX > threshold) {
                                 if (route == "feed") {
-                                    if (services.session.homeSwipeExit()) host.callbacks.back()
+                                    host.callbacks.back()
                                 } else if (services.session.shellBackSwipe()) {
                                     host.handleBack()
                                 }

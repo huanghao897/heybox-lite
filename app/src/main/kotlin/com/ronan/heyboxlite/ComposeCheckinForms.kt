@@ -2,6 +2,7 @@ package com.ronan.heyboxlite
 
 import android.app.TimePickerDialog
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -138,6 +139,7 @@ internal fun ComposeCheckinModeSelector(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .border(watchDp(1), theme.hairline, RoundedCornerShape(watchDp(9)))
             .background(theme.panelElevated, RoundedCornerShape(watchDp(9)))
             .padding(watchDp(3)),
         horizontalArrangement = Arrangement.spacedBy(watchDp(3)),

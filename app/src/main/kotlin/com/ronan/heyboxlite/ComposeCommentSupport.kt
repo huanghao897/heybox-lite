@@ -117,7 +117,6 @@ internal fun ComposeCommentLevelBadge(level: Int) {
 @Composable
 internal fun ComposeCommentReplyText(
     author: String,
-    postAuthor: Boolean,
     target: String,
     text: String,
     cy: Boolean,
@@ -129,10 +128,6 @@ internal fun ComposeCommentReplyText(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(author.ifBlank { "匿名用户" }, color = theme.text, fontSize = 11.sp,
                 maxLines = 1)
-            if (postAuthor) {
-                Spacer(Modifier.width(2.dp))
-                ComposeCommentAuthorBadge()
-            }
             if (target.isNotBlank()) {
                 Text(" 回复 $target", color = theme.muted, fontSize = 10.sp, maxLines = 1)
             }
@@ -195,7 +190,7 @@ private fun ComposeCommentThumbnail(
                         view.setTag(COMPOSE_COMMENT_IMAGE_BINDING_TAG, binding)
                         failed = false
                         LazyImageBinder.bind(view) {
-                            ImageLoader.intoMeasuredRevealStable(view, previewUrl,
+                            ImageLoader.intoMeasuredStable(view, previewUrl,
                                 media.imageTargetPx.coerceAtLeast(96)) { success, _ ->
                                 failed = !success
                                 if (success && media.playGif && image.animated && originalUrl.isNotBlank()) {

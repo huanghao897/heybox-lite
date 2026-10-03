@@ -24,7 +24,7 @@ import java.util.Collections;
 import java.util.List;
 
 final class CommentRenderer {
-    private static final int REPLY_PREVIEW_COUNT = 2;
+    private static final int REPLY_PREVIEW_COUNT = 5;
 
     interface Host {
         void loadReplies(LinearLayout target, JSONObject root,
@@ -55,30 +55,32 @@ final class CommentRenderer {
 
     private final Activity activity;
     private final SessionStore session;
-    private final LocalCache localCache;
     private final ThemeTokens tokens;
     private final boolean roundLayout;
     private final float uiScale;
     private final float textScale;
     private final Host host;
+    private final CommentMediaRenderer mediaRenderer;
 
     CommentRenderer(Activity activity, SessionStore session, LocalCache localCache,
                     ThemeTokens tokens, boolean roundLayout, Host host) {
         this.activity = activity;
         this.session = session;
-        this.localCache = localCache;
         this.tokens = tokens;
         this.roundLayout = roundLayout;
         this.uiScale = session.uiScale() / 100.0f;
         this.textScale = session.textScale() / 100.0f;
         this.host = host;
+        this.mediaRenderer = new CommentMediaRenderer(activity, session, localCache,
+                tokens, roundLayout, host::openOriginalImage);
     }
 
     int addComments(LinearLayout page, JSONArray groups, boolean latest) {
         if (groups == null) return 0;
         List<JSONObject> threads = CommentOrder.sorted(groups, latest);
         int count = 0;
-        for (JSONObject group : threads) {
+        for (int threadIndex = 0; threadIndex < threads.size(); threadIndex++) {
+            JSONObject group = threads.get(threadIndex);
             JSONArray comments = group.optJSONArray("comment");
             JSONObject root = comments == null ? group : comments.optJSONObject(0);
             if (root == null) continue;
@@ -113,8 +115,15 @@ final class CommentRenderer {
                 renderReplies(replyList, root, replies, expected, initial,
                         expected <= replies.size());
             }
-            addTop(page, CommentData.isPinnedComment(root)
-                    ? pinnedCard(card) : card, count == 0 ? 0 : 2);
+            View rendered = CommentData.isPinnedComment(root) ? pinnedCard(card) : card;
+            addTop(page, rendered, count == 0 ? 0 : 2);
+            if (threadIndex < threads.size() - 1) {
+                View divider = new View(this.activity);
+                divider.setBackgroundColor(ThemeTokens.blend(
+                        this.tokens.background, this.tokens.muted,
+                        this.session.darkMode() ? 0.12f : 0.07f));
+                page.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
+            }
             count += 1 + replies.size();
         }
         return count;
@@ -261,7 +270,9 @@ final class CommentRenderer {
         container.addView(row, new LinearLayout.LayoutParams(-1, -2));
         if (!reply) addCommentBody(body, comment, visibleComment);
         List<CommentData.CommentImage> images = CommentData.commentImages(comment);
-        if (!this.session.noImage() && !images.isEmpty()) addImages(body, images, reply);
+        if (!this.session.noImage() && !images.isEmpty()) {
+            this.mediaRenderer.addImages(body, images, reply);
+        }
         View.OnLongClickListener copy = view -> {
             this.host.copy(RichInlineRenderer.plainText(visibleComment));
             return true;
@@ -317,75 +328,21 @@ final class CommentRenderer {
         addTop(block, value, 5);
     }
 
-    private void addImages(LinearLayout parent,
-                           List<CommentData.CommentImage> images, boolean reply) {
-        LinearLayout gallery = vertical(Color.TRANSPARENT);
-        int columns = this.roundLayout ? 2 : 3;
-        int size = this.roundLayout ? (reply ? 48 : 54) : (reply ? 68 : 82);
-        for (int start = 0; start < images.size(); start += columns) {
-            LinearLayout row = new LinearLayout(this.activity);
-            row.setGravity(Gravity.LEFT);
-            int end = Math.min(start + columns, images.size());
-            for (int i = start; i < end; i++) {
-                ImageView image = commentImage(images.get(i), size);
-                LinearLayout.LayoutParams params =
-                        new LinearLayout.LayoutParams(dp(size), dp(size));
-                if (i > start) params.leftMargin = dp(5);
-                row.addView(image, params);
-            }
-            LinearLayout.LayoutParams rowParams =
-                    new LinearLayout.LayoutParams(-1, dp(size));
-            if (start > 0) rowParams.topMargin = dp(5);
-            gallery.addView(row, rowParams);
-        }
-        LinearLayout.LayoutParams params =
-                new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(6);
-        parent.addView(gallery, params);
-    }
-
-    private ImageView commentImage(CommentData.CommentImage source, int sizeDp) {
-        ImageView image = new GifImageView(this.activity);
-        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        Compat.setBackground(image, round(this.session.darkMode()
-                ? Color.rgb(28, 30, 32) : Color.rgb(235, 237, 240), 6));
-        Compat.clipToOutline(image);
-        image.setOnClickListener(view ->
-                this.host.openOriginalImage(image, source.originalUrl));
-        LazyImageBinder.bind(image, () -> ImageLoader.intoMeasuredRevealStable(image,
-                source.previewUrl, Math.max(96, dp(sizeDp)), (success, bitmap) -> {
-                    if (success && this.session.playGif()
-                            && (source.animated || GifSupport.isGifUrl(source.originalUrl))) {
-                        ImageLoader.intoGif(image, source.originalUrl, animated ->
-                                this.localCache.log("comment gif "
-                                        + (animated ? "started" : "failed")));
-                    } else if (!success && image.getDrawable() == null) {
-                        image.setImageDrawable(Compat.tintedDrawable(this.activity,
-                                R.drawable.il_image, this.tokens.muted));
-                        image.setPadding(dp(18), dp(18), dp(18), dp(18));
-                    }
-                }));
-        return image;
-    }
-
     private void addCompactReply(LinearLayout block, JSONObject comment,
                                  String author, String target,
                                  String visibleComment, long created) {
         String name = author.isEmpty() ? "匿名用户" : author;
-        String authorBadge = this.host.isPostAuthor(
-                comment.optJSONObject("user"), name) ? " 作者 " : "";
         String cyBadge = CommentData.isCyComment(comment) ? " Cy " : "";
         boolean hasTarget = !target.isEmpty();
         String replyLabel = hasTarget ? " 回复 " : "";
         String replyName = hasTarget ? target : "";
         String meta = commentMeta(comment, created);
         String metaSegment = meta.isEmpty() ? "" : "  " + meta;
-        String full = name + authorBadge + replyLabel + replyName + "："
+        String full = name + replyLabel + replyName + "："
                 + cyBadge + visibleComment + metaSegment;
 
         int nameEnd = name.length();
-        int authorBadgeStart = nameEnd;
-        int replyNameStart = nameEnd + authorBadge.length() + replyLabel.length();
+        int replyNameStart = nameEnd + replyLabel.length();
         int replyNameEnd = replyNameStart + replyName.length();
         int cyBadgeStart = replyNameEnd + 1;
         int metaStart = full.length() - meta.length();
@@ -400,13 +357,6 @@ final class CommentRenderer {
                     0, nameEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             span.setSpan(new StyleSpan(Typeface.BOLD),
                     0, nameEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-            if (!authorBadge.isEmpty()) {
-                Drawable badge = new AuthorBadgeDrawable(this.tokens);
-                badge.setBounds(0, 0, dp(25), dp(13));
-                span.setSpan(new CenteredImageSpan(badge), authorBadgeStart + 1,
-                        authorBadgeStart + authorBadge.length() - 1,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
             if (hasTarget) {
                 span.setSpan(new ForegroundColorSpan(this.tokens.secondary),
                         replyNameStart, replyNameEnd,

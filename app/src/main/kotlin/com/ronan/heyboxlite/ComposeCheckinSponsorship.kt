@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -160,22 +161,27 @@ private fun ComposeCheckinQr(order: CheckinBilling.Order, state: ComposeCheckinU
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
         }
     }
-    val size = minOf(watchDp(210), watchDp(if (LocalHeyboxTheme.current.roundScreen) 158 else 210))
-    Box(
-        modifier = Modifier
-            .size(size)
-            .background(Color.White, RoundedCornerShape(watchDp(4))),
-        contentAlignment = Alignment.Center,
-    ) {
-        when {
-            bitmap != null -> Image(
-                bitmap = bitmap,
-                contentDescription = "${providerLabel(order)}赞助码",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().padding(watchDp(7)),
-            )
-            state.billingQrLoading -> Text("正在加载", color = Color.DarkGray, fontSize = watchSp(11f))
-            else -> Text("赞助码暂不可用", color = Color.DarkGray, fontSize = watchSp(11f))
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val preferred = if (LocalHeyboxTheme.current.roundScreen) 148 else 210
+        val size = minOf(maxWidth - watchDp(4), watchDp(preferred))
+        Box(
+            modifier = Modifier
+                .size(size)
+                .background(Color.White, RoundedCornerShape(watchDp(4))),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                bitmap != null -> Image(
+                    bitmap = bitmap,
+                    contentDescription = "${providerLabel(order)}赞助码",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().padding(watchDp(7)),
+                )
+                state.billingQrLoading -> Text("正在加载", color = Color.DarkGray,
+                    fontSize = watchSp(11f))
+                else -> Text("赞助码暂不可用", color = Color.DarkGray,
+                    fontSize = watchSp(11f))
+            }
         }
     }
 }

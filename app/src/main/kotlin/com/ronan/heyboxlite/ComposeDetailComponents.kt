@@ -199,7 +199,6 @@ internal fun ComposeDetailThread(
     onOpenUser: (String, String, String) -> Unit = { _, _, _ -> },
 ) {
     val theme = LocalHeyboxTheme.current
-    val context = LocalContext.current
     val root = rootComment(group)
     val rootId = CommentData.commentId(root)
     val array = group.optJSONArray("comment")
@@ -324,7 +323,6 @@ private fun ComposeDetailComment(
         if (reply) {
             ComposeCommentReplyText(
                 author = author,
-                postAuthor = isPostAuthor,
                 target = target,
                 text = value,
                 cy = cy,

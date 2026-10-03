@@ -9,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,10 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -78,7 +74,7 @@ internal fun ComposeFeedCard(
         modifier = modifier.fillMaxWidth().clip(shape).background(theme.panel)
             .border(BorderStroke((1 * scale).dp, theme.hairline), shape)
             .clickable { onOpen(item) }
-            .padding((if (theme.roundScreen) 10 else 12).dp * scale),
+            .padding((if (theme.roundScreen) 9 else 10).dp * scale),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             // Keep the avatar bounded even before the async image loader has a bitmap.
@@ -87,14 +83,14 @@ internal fun ComposeFeedCard(
                 item.authorAvatar,
                 theme,
                 noImage,
-                (28 * scale).dp,
+                (26 * scale).dp,
                 CircleShape,
                 "作者头像",
-                modifier = Modifier.size((28 * scale).dp),
+                modifier = Modifier.size((26 * scale).dp),
             )
             Column(modifier = Modifier.weight(1f).padding(start = (8 * scale).dp)) {
                 Text(text = item.author.ifEmpty { "小黑盒社区" }, color = theme.text,
-                    fontSize = (12 * theme.textScale).sp, fontWeight = FontWeight.Bold,
+                    fontSize = (11 * theme.textScale).sp, fontWeight = FontWeight.Bold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (item.createdAt > 0L) {
                     Text(text = Format.relativeTime(item.createdAt), color = theme.subtle,
@@ -103,17 +99,23 @@ internal fun ComposeFeedCard(
             }
             ComposePill(if (item.pinned) "置顶 · $type" else type, theme, item.pinned)
             if (showFollow && item.authorId.isNotEmpty() && item.authorId != currentUserId) {
-                TextButton(
-                    onClick = { onAction?.invoke(item, FeedAction.FOLLOW) },
-                    enabled = !item.followPending,
-                    contentPadding = PaddingValues(horizontal = (5 * scale).dp),
-                    modifier = Modifier.height((28 * scale).dp)
+                Box(
+                    modifier = Modifier.size((25 * scale).dp)
+                        .clip(CircleShape)
+                        .background(theme.panelElevated)
+                        .clickable(enabled = !item.followPending) {
+                            onAction?.invoke(item, FeedAction.FOLLOW)
+                        }
                         .semantics {
                             contentDescription = if (item.following) "取消关注" else "关注"
                         },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = if (item.following) "已关注" else "+ 关注", color = theme.accent,
-                        fontSize = (10 * theme.textScale).sp, maxLines = 1)
+                    Text(text = if (item.following) "✓" else "+",
+                        color = if (item.following) theme.accent else theme.muted,
+                        fontSize = (14 * theme.textScale).sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1)
                 }
             }
         }
@@ -123,13 +125,13 @@ internal fun ComposeFeedCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = title, color = theme.text,
-                    fontSize = ((if (theme.roundScreen) 15 else 16) * theme.textScale).sp,
+                    fontSize = ((if (theme.roundScreen) 14 else 15) * theme.textScale).sp,
                     fontWeight = FontWeight.Bold,
-                    lineHeight = ((if (theme.roundScreen) 19 else 20) * theme.textScale).sp,
+                    lineHeight = ((if (theme.roundScreen) 18 else 19) * theme.textScale).sp,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (description.isNotEmpty()) {
                     Text(text = description, color = theme.muted,
-                        fontSize = ((if (theme.roundScreen) 11 else 12) * theme.textScale).sp,
+                    fontSize = ((if (theme.roundScreen) 10 else 11) * theme.textScale).sp,
                         lineHeight = (15 * theme.textScale).sp,
                         maxLines = if (theme.roundScreen) 1 else 2,
                         overflow = TextOverflow.Ellipsis,
@@ -141,12 +143,12 @@ internal fun ComposeFeedCard(
                     url = item.image,
                     theme = theme,
                     noImage = false,
-                    targetDp = (if (theme.roundScreen) 76 else 96).dp,
+                    targetDp = (if (theme.roundScreen) 68 else 84).dp,
                     shape = RoundedCornerShape((8 * scale).dp),
                     contentDescription = "内容图片",
                     modifier = Modifier.padding(start = (8 * scale).dp).size(
-                        (if (theme.roundScreen) 76 else 96).dp * scale,
-                        (if (theme.roundScreen) 58 else 68).dp * scale,
+                        (if (theme.roundScreen) 68 else 84).dp * scale,
+                        (if (theme.roundScreen) 52 else 60).dp * scale,
                     ),
                 )
             }
@@ -234,30 +236,31 @@ private fun ComposeGameCard(item: FeedItem, theme: ComposeThemeState, noImage: B
     val count = ArticleGameCards.count(preload)
     if (count <= 0) return
     val data = GameCardData.fromEmbedded(preload, "")
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(top = (7 * theme.uiScale).dp),
-        colors = CardDefaults.cardColors(containerColor = theme.panelElevated),
-        border = BorderStroke((1 * theme.uiScale).dp, theme.hairline),
-        shape = RoundedCornerShape((8 * theme.uiScale).dp),
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .padding(top = (7 * theme.uiScale).dp)
+            .clip(RoundedCornerShape((8 * theme.uiScale).dp))
+            .background(theme.panelElevated)
+            .border(BorderStroke((1 * theme.uiScale).dp, theme.hairline),
+                RoundedCornerShape((8 * theme.uiScale).dp))
+            .padding((8 * theme.uiScale).dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(modifier = Modifier.padding((8 * theme.uiScale).dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            if (data != null && data.coverUrl.isNotEmpty()) {
-                ComposeRemoteImage(data.coverUrl, theme, noImage, (42 * theme.uiScale).dp,
-                    RoundedCornerShape((6 * theme.uiScale).dp), "游戏封面",
-                    Modifier.size((42 * theme.uiScale).dp))
-                Spacer(modifier = Modifier.width((8 * theme.uiScale).dp))
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = data?.name?.ifEmpty { "游戏内容" } ?: "游戏内容", color = theme.text,
-                    fontSize = (12 * theme.textScale).sp, fontWeight = FontWeight.SemiBold,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val meta = listOf(data?.platforms, data?.score, data?.currentPrice)
-                    .filter { !it.isNullOrEmpty() }.joinToString(" · ")
-                Text(text = if (meta.isEmpty()) "游戏卡片 · $count 个" else meta, color = theme.muted,
-                    fontSize = (10 * theme.textScale).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = (2 * theme.uiScale).dp))
-            }
+        if (data != null && data.coverUrl.isNotEmpty()) {
+            ComposeRemoteImage(data.coverUrl, theme, noImage, (42 * theme.uiScale).dp,
+                RoundedCornerShape((6 * theme.uiScale).dp), "游戏封面",
+                Modifier.size((42 * theme.uiScale).dp))
+            Spacer(modifier = Modifier.width((8 * theme.uiScale).dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = data?.name?.ifEmpty { "游戏内容" } ?: "游戏内容", color = theme.text,
+                fontSize = (12 * theme.textScale).sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val meta = listOf(data?.platforms, data?.score, data?.currentPrice)
+                .filter { !it.isNullOrEmpty() }.joinToString(" · ")
+            Text(text = if (meta.isEmpty()) "游戏卡片 · $count 个" else meta, color = theme.muted,
+                fontSize = (10 * theme.textScale).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = (2 * theme.uiScale).dp))
         }
     }
 }
@@ -302,31 +305,33 @@ private fun ComposeActionButton(
 internal fun FeedToolbar(
     title: String,
     theme: ComposeThemeState,
-    loading: Boolean,
-    refreshing: Boolean,
-    onBack: (() -> Unit)?,
-    onRefresh: () -> Unit,
     onSearch: () -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxWidth().padding(top = (5 * theme.uiScale).dp),
         verticalAlignment = Alignment.CenterVertically) {
-        if (onBack != null) {
-            IconButton(onClick = onBack, modifier = Modifier.size((34 * theme.uiScale).dp)) {
-                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_arrow_back),
-                    contentDescription = "返回", tint = theme.text)
-            }
-        }
         Text(text = title, color = theme.text, fontSize = (17 * theme.textScale).sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        IconButton(onClick = onSearch, modifier = Modifier.size((34 * theme.uiScale).dp)) {
-            Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_search),
-                contentDescription = "搜索", tint = theme.text)
-        }
-        IconButton(onClick = onRefresh, enabled = !loading && !refreshing,
-            modifier = Modifier.size((34 * theme.uiScale).dp)) {
-            Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_refresh),
-                contentDescription = "刷新", tint = theme.text)
+            fontWeight = FontWeight.SemiBold, maxLines = 1,
+            overflow = TextOverflow.Ellipsis)
+        Spacer(modifier = Modifier.width((8 * theme.uiScale).dp))
+        Row(
+            modifier = Modifier.weight(1f).height((34 * theme.uiScale).dp)
+                .clip(RoundedCornerShape((10 * theme.uiScale).dp))
+                .background(theme.panel.copy(alpha = if (theme.dark) 0.86f else 0.72f))
+                .clickable(onClick = onSearch)
+                .padding(horizontal = (9 * theme.uiScale).dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(androidx.compose.ui.res.painterResource(R.drawable.il_search),
+                contentDescription = "搜索", tint = theme.muted,
+                modifier = Modifier.size((16 * theme.uiScale).dp))
+            Text(
+                text = "搜索帖子、作者或关键词",
+                color = theme.muted,
+                fontSize = (11 * theme.textScale).sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = (5 * theme.uiScale).dp),
+            )
         }
     }
 }

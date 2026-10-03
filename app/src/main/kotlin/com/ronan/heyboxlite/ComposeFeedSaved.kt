@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -298,44 +296,56 @@ private fun ReadingCenterContent(
     onHistory: () -> Unit,
 ) {
     if (state.recent != null) {
-        Card(
-            modifier = Modifier.fillMaxWidth().clickable { onOpen(state.recent) },
-            colors = CardDefaults.cardColors(containerColor = theme.panel),
-            shape = RoundedCornerShape((10 * theme.uiScale).dp),
+        WatchSectionTitle("继续阅读")
+        WatchCard(
+            modifier = Modifier.clickable { onOpen(state.recent) },
+            highlighted = true,
         ) {
-            Column(modifier = Modifier.padding((12 * theme.uiScale).dp)) {
-                Text(text = "继续阅读", color = theme.text, fontSize = (14 * theme.textScale).sp,
-                    fontWeight = FontWeight.Bold)
-                Text(text = state.recent.title.ifEmpty { "无标题内容" }, color = theme.muted,
-                    fontSize = (11 * theme.textScale).sp, maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = (4 * theme.uiScale).dp))
-                if (state.hasSavedPosition) {
-                    Text(text = "已记录上次阅读位置", color = theme.subtle,
-                        fontSize = (10 * theme.textScale).sp,
-                        modifier = Modifier.padding(top = (5 * theme.uiScale).dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("继续阅读", color = theme.text,
+                        fontSize = (14 * theme.textScale).sp,
+                        fontWeight = FontWeight.Bold)
+                    Text(
+                        state.recent.title.ifEmpty { "无标题内容" },
+                        color = theme.muted,
+                        fontSize = (11 * theme.textScale).sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = (4 * theme.uiScale).dp),
+                    )
                 }
+                Text(
+                    if (state.recent.article) "文章" else if (state.recent.video) "视频" else "帖子",
+                    color = theme.accent,
+                    fontSize = (10 * theme.textScale).sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            if (state.hasSavedPosition) {
+                Text("已记录上次阅读位置", color = theme.subtle,
+                    fontSize = (10 * theme.textScale).sp,
+                    modifier = Modifier.padding(top = (5 * theme.uiScale).dp))
             }
         }
     }
-    Text(text = "阅读库", color = theme.muted, fontSize = (11 * theme.textScale).sp,
-        modifier = Modifier.padding(start = (3 * theme.uiScale).dp,
-            top = (5 * theme.uiScale).dp))
-    SavedRow("阅读时长", state.readingSummary, R.drawable.il_reading, theme, onReadingStats)
-    SavedRow(
-        "稍后看",
-        "${state.watchLaterCount} 篇 · ${Format.cacheMb(state.offlineBytes)}",
-        R.drawable.il_history,
-        theme,
-        onWatchLater,
-    )
-    SavedRow(
-        "历史记录",
-        if (loggedIn) "小黑盒云端记录" else "登录后查看小黑盒记录",
-        R.drawable.il_history,
-        theme,
-        onHistory,
-    )
+    WatchSectionTitle("阅读库")
+    WatchCard {
+        WatchRow("阅读时长", state.readingSummary, R.drawable.il_reading,
+            onClick = onReadingStats)
+        WatchRow(
+            "稍后看",
+            "${state.watchLaterCount} 篇 · ${Format.cacheMb(state.offlineBytes)}",
+            R.drawable.il_history,
+            onClick = onWatchLater,
+        )
+        WatchRow(
+            "历史记录",
+            if (loggedIn) "小黑盒云端记录" else "登录后查看小黑盒记录",
+            R.drawable.il_history,
+            onClick = onHistory,
+        )
+    }
 }
 
 @Composable
@@ -428,39 +438,6 @@ private fun FavoriteFolderRow(
 }
 
 @Composable
-private fun SavedRow(
-    title: String,
-    value: String,
-    icon: Int,
-    theme: ComposeThemeState,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape((10 * theme.uiScale).dp))
-            .background(theme.panel).clickable(onClick = onClick)
-            .padding(horizontal = (11 * theme.uiScale).dp, vertical = (10 * theme.uiScale).dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        androidx.compose.material3.Icon(
-            painter = androidx.compose.ui.res.painterResource(icon),
-            contentDescription = null,
-            tint = theme.muted,
-            modifier = Modifier.size((18 * theme.uiScale).dp),
-        )
-        Column(modifier = Modifier.weight(1f).padding(start = (8 * theme.uiScale).dp)) {
-            Text(text = title, color = theme.text, fontSize = (13 * theme.textScale).sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (value.isNotEmpty()) {
-                Text(text = value, color = theme.muted, fontSize = (11 * theme.textScale).sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = (2 * theme.uiScale).dp))
-            }
-        }
-        Text(text = "›", color = theme.subtle, fontSize = (18 * theme.textScale).sp)
-    }
-}
-
-@Composable
 private fun ColumnScope.SavedEmpty(message: String, theme: ComposeThemeState) {
     Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
         Text(text = message, color = theme.muted, fontSize = (13 * theme.textScale).sp)
@@ -475,11 +452,14 @@ private fun savedHorizontalPadding(theme: ComposeThemeState) =
 private fun ComposeReadingCenterPreview() {
     val theme = composePreviewTheme(false)
     HeyboxComposeTheme(theme) {
-        SavedPage("阅读中心", theme, {}) {
-            Text(text = "阅读库", color = theme.muted, fontSize = 11.sp)
-            SavedRow("阅读时长", "24 分钟", R.drawable.il_reading, theme, {})
-            SavedRow("稍后看", "3 篇 · 12.0 MB", R.drawable.il_history, theme, {})
-            SavedRow("历史记录", "登录后查看小黑盒记录", R.drawable.il_history, theme, {})
+        WatchPage("阅读中心", {}) {
+            WatchSectionTitle("阅读库")
+            WatchCard {
+                WatchRow("阅读时长", "24 分钟", R.drawable.il_reading, onClick = {})
+                WatchRow("稍后看", "3 篇 · 12.0 MB", R.drawable.il_history, onClick = {})
+                WatchRow("历史记录", "登录后查看小黑盒记录", R.drawable.il_history,
+                    onClick = {})
+            }
         }
     }
 }
