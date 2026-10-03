@@ -2,8 +2,6 @@ package com.ronan.heyboxlite;
 
 import android.net.Uri;
 import android.view.View;
-import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 
 import org.json.JSONObject;
@@ -14,12 +12,15 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     private boolean openingLegacyDetail;
     private boolean legacyDetailActive;
     private String legacyReturnRoute = "feed";
+    private boolean returningLegacyDetail;
+    private NativeDetailReturnHandoff returnHandoff;
 
     ComposeActivityBridge(MainActivity activity) {
         this.activity = activity;
     }
 
     void mount(FrameLayout body) {
+        disposeReturnHandoff();
         if (activity.composeAppHost != null) activity.composeAppHost.close();
         activity.content = new BackSwipeFrameLayout(activity, activity);
         body.addView(activity.content, new FrameLayout.LayoutParams(-1, -1));
@@ -44,13 +45,17 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
 
     boolean showRouteIfMounted(String route) {
         if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()) return false;
-        showRoute(route);
+        // MainActivity selects a native fallback key; the bridge owns the full Compose return spec.
+        showRoute(returningLegacyDetail ? legacyReturnRoute : route);
         return true;
     }
 
     boolean isLegacyDetailActive() { return legacyDetailActive; }
 
-    void clearLegacyDetailOwnership() { legacyDetailActive = false; }
+    void clearLegacyDetailOwnership() {
+        legacyDetailActive = false;
+        disposeReturnHandoff();
+    }
 
     boolean showUserSpace(String userId, String name, String avatar) {
         // A native fallback page owns its own history. Do not replace it with
@@ -113,7 +118,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
             // A post opened from a native user page/detail page must remain in
             // the native history. Clear the root marker so its back gesture
             // returns to that native page instead of skipping it.
-            legacyDetailActive = false;
+            clearLegacyDetailOwnership();
             return false;
         }
         if (!legacyDetailActive) {
@@ -139,8 +144,12 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
 
     void showRoute(String route) {
         if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()) return;
+        if (!returningLegacyDetail) disposeReturnHandoff();
+        String routeSpec = route == null ? "feed" : route;
         String key = route == null ? "feed" : route.split("\\?", 2)[0];
-        if (!"detail".equals(key)) legacyDetailActive = false;
+        if (!"detail".equals(key)) {
+            legacyDetailActive = false;
+        }
         activity.screen = key;
         activity.shellBar.setVisibility(View.GONE);
         activity.content.setVisibility(View.INVISIBLE);
@@ -149,7 +158,9 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         boolean topLevel = "feed".equals(key) || "profile".equals(key);
         activity.setBottomNavVisible(topLevel, false);
         if (topLevel) activity.bottomNavigation.select(key);
-        activity.composeAppHost.setRoute(route == null ? "feed" : route);
+        if (!returningLegacyDetail || !routeSpec.equals(activity.composeAppHost.currentRouteSpec())) {
+            activity.composeAppHost.setRoute(routeSpec);
+        }
     }
 
     void onNativeDetailShown() {
@@ -216,10 +227,16 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     private void returnFromLegacyDetail(boolean gestureOwned) {
+        if (returningLegacyDetail) return;
         String route = legacyReturnRoute;
-        View handoff = gestureOwned ? createDetailReturnPreview() : null;
-        ViewGroup root = handoff == null ? null : (ViewGroup) activity.findViewById(android.R.id.content);
-        if (root != null) root.addView(handoff, new ViewGroup.LayoutParams(-1, -1));
+        disposeReturnHandoff();
+        DetailPager owner = NativeDetailReturnHandoff.returningPager(activity.detailPager);
+        NativeDetailReturnHandoff handoff = gestureOwned
+                ? NativeDetailReturnHandoff.adopt(owner, NativeDetailReturnHandoff.livePreview(owner),
+                activity.composeLayer, () -> returnHandoff = null) : null;
+        returnHandoff = handoff;
+        returningLegacyDetail = true;
+        boolean restoredCompose = false;
         try {
             activity.returnFromDetailForCompose(gestureOwned);
             // Returning a nested native detail restored a native user page. Keep
@@ -233,17 +250,22 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
                     ? "" : activity.composeAppHost.currentRouteSpec()) || !composeVisible)) {
                 showRoute(route);
             }
+            restoredCompose = isComposeSurfaceVisible();
         } finally {
-            if (handoff != null && root != null) {
-                handoff.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
-                    @Override public boolean onPreDraw() {
-                        handoff.getViewTreeObserver().removeOnPreDrawListener(this);
-                        handoff.postOnAnimation(() -> root.removeView(handoff));
-                        return true;
-                    }
-                });
+            returningLegacyDetail = false;
+            if (handoff != null) {
+                ComposeAppHost destinationHost = activity.composeAppHost;
+                if (restoredCompose && destinationHost != null) {
+                    handoff.awaitDestination(() -> activity.composeAppHost == destinationHost
+                            && destinationHost.isMounted()
+                            && route.equals(destinationHost.currentRouteSpec()));
+                } else handoff.dispose();
             }
         }
+    }
+
+    private void disposeReturnHandoff() {
+        if (returnHandoff != null) returnHandoff.dispose();
     }
 
     private boolean isComposeSurfaceVisible() {
@@ -259,6 +281,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     private void hideComposeSurface() {
+        disposeReturnHandoff();
         if (activity.composeAppHost != null) activity.composeAppHost.setSurfaceActive(false);
         if (activity.composeLayer != null) activity.composeLayer.setVisibility(View.INVISIBLE);
         if (activity.content != null) {

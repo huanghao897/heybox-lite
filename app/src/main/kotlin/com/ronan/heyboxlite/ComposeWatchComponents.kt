@@ -80,7 +80,7 @@ internal fun WatchPage(
 ) {
     val state = LocalHeyboxTheme.current
     val scrollState = rememberScrollState()
-    val rotary = state.rotaryRequest
+    val rotary = LocalHeyboxRotaryRequest.current
     LaunchedEffect(rotary?.serial) {
         if (rotary != null) scrollState.scrollBy(rotary.distance.toFloat())
     }

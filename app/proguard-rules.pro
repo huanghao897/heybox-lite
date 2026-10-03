@@ -25,7 +25,7 @@
 -keep class com.max.xiaoheihe.utils.** { *; }
 -keep class com.max.xiaoheihe.router.serviceimpl.k { *; }
 -keep class okhttp3.** { *; }
--keep class okio.** { *; }
+-keep class okio.ByteString { *; }
 -keep class com.ronan.heyboxlite.NativeLibraryLoader { *; }
 
 # cnwearoverlay resolves optional vendor Wear classes by reflection.

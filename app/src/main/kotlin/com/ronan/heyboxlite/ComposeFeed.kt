@@ -2,32 +2,20 @@ package com.ronan.heyboxlite
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 
@@ -80,92 +68,76 @@ internal fun ComposeFeedScreen(
     interactive: Boolean = true,
 ) {
     HeyboxComposeTheme(services.theme) {
+        val theme = LocalHeyboxTheme.current
+        val noImage = services.session.noImage()
+        val currentUserId = services.session.userId()
+        val gameCardNoImage = services.session.gameCardNoImage()
         val rotary = services.theme.rotaryRequest
-        val pullOffset = remember { mutableStateOf(0f) }
-        val density = LocalDensity.current
-        val refreshThreshold = with(density) { 56.dp.toPx() }
-        val refreshHold = with(density) { 30.dp.toPx() }
         LaunchedEffect(rotary?.serial) {
             if (rotary != null) listState.scrollBy(rotary.distance.toFloat())
         }
-        LaunchedEffect(refreshing) {
-            if (refreshing) {
-                pullOffset.value = refreshHold
-            } else if (pullOffset.value > 0f) {
-                pullOffset.value = 0f
-            }
-        }
         BoxWithConstraints(
             modifier = androidx.compose.ui.Modifier.fillMaxSize()
-                .background(services.theme.background),
+                .background(theme.background),
         ) {
-            val horizontal = feedHorizontalPadding(maxWidth, services.theme)
+            val horizontal = feedHorizontalPadding(maxWidth, theme)
             if (observeLoadMore) {
                 ObserveFeedLoadMore(listState, items.size, loading, noMore, onLoadMore)
             }
-            androidx.compose.foundation.layout.Box(
+            OfficialPullRefreshBox(
+                refreshing = refreshing,
+                enabled = interactive && !loading && !refreshing,
+                active = interactive,
+                onRefresh = onRefresh,
                 modifier = Modifier.fillMaxSize().padding(horizontal = horizontal),
             ) {
                 LazyColumn(
                     state = listState,
                     userScrollEnabled = interactive,
-                    modifier = Modifier.fillMaxSize()
-                        .watchPullToRefresh(
-                            listState = listState,
-                            enabled = interactive && !loading && !refreshing,
-                            pullOffset = pullOffset,
-                            thresholdPx = refreshThreshold,
-                            holdPx = refreshHold,
-                            onRefresh = onRefresh,
-                        ),
+                    modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        top = (8 * services.theme.uiScale).dp,
-                        bottom = (14 * services.theme.uiScale).dp,
+                        top = (8 * theme.uiScale).dp,
+                        bottom = (14 * theme.uiScale).dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(
-                        (7 * services.theme.uiScale).dp,
+                        (7 * theme.uiScale).dp,
                     ),
                 ) {
-                    item(key = "feed-search") {
+                    item(key = "feed-search", contentType = "feed-search") {
                         FeedToolbar(
-                            theme = services.theme,
+                            theme = theme,
                             onSearch = onSearch,
                         )
                     }
                     if (loading && items.isEmpty()) {
                         item(key = "feed-loading") {
-                            FeedLoading(services.theme)
+                            FeedLoading(theme)
                         }
                     } else if (items.isEmpty()) {
                         item(key = "feed-empty") {
-                            FeedEmpty("暂无内容", "刷新", services.theme, onRefresh)
+                            FeedEmpty("暂无内容", "刷新", theme, onRefresh)
                         }
                     } else {
                         itemsIndexed(
                             items = items,
                             key = { index, item -> item.id.ifEmpty { "feed-$index" } },
+                            contentType = { _, _ -> "feed-card" },
                         ) { _, item ->
                             ComposeFeedCard(
                                 item = item,
-                                theme = services.theme,
-                                noImage = services.session.noImage(),
-                                currentUserId = services.session.userId(),
+                                theme = theme,
+                                noImage = noImage,
+                                currentUserId = currentUserId,
                                 onOpen = onOpen,
                                 onAction = onAction,
                                 showSecondaryActions = false,
-                                gameCardNoImage = services.session.gameCardNoImage(),
+                                gameCardNoImage = gameCardNoImage,
                             )
                         }
-                        item { FeedFooter(loading, noMore, services.theme, onLoadMore) }
+                        item(key = "feed-footer", contentType = "feed-footer") {
+                            FeedFooter(loading, noMore, theme, onLoadMore)
+                        }
                     }
-                }
-                if (refreshing) {
-                    LinearProgressIndicator(
-                        modifier = Modifier.fillMaxWidth()
-                            .height((2 * services.theme.uiScale).dp),
-                        color = services.theme.accent,
-                        trackColor = Color.Transparent,
-                    )
                 }
             }
         }
@@ -200,56 +172,6 @@ private fun previewFeedItem(): FeedItem = FeedItem.from(
         .put("topic_name", "社区")
         .put("user", org.json.JSONObject().put("username", "Ronan").put("userid", "preview")),
 )
-
-private fun Modifier.watchPullToRefresh(
-    listState: LazyListState,
-    enabled: Boolean,
-    pullOffset: MutableState<Float>,
-    thresholdPx: Float,
-    holdPx: Float,
-    onRefresh: () -> Unit,
-): Modifier = graphicsLayer { translationY = pullOffset.value }.pointerInput(enabled) {
-    awaitEachGesture {
-        val down = awaitFirstDown(requireUnconsumed = false)
-        var atTop = listState.firstVisibleItemIndex == 0 &&
-            listState.firstVisibleItemScrollOffset == 0
-        var lastY = down.position.y
-        var totalX = 0f
-        var totalY = 0f
-        var distance = 0f
-        var tracking = false
-        var decided = false
-        while (true) {
-            val event = awaitPointerEvent(PointerEventPass.Initial)
-            val change = event.changes.firstOrNull() ?: break
-            val currentY = change.position.y
-            val delta = currentY - lastY
-            totalX = change.position.x - down.position.x
-            totalY = currentY - down.position.y
-            atTop = listState.firstVisibleItemIndex == 0 &&
-                listState.firstVisibleItemScrollOffset == 0
-            if (!decided && maxOf(kotlin.math.abs(totalX), kotlin.math.abs(totalY))
-                >= viewConfiguration.touchSlop) {
-                decided = true
-                if (kotlin.math.abs(totalX) > kotlin.math.abs(totalY) || totalY <= 0f) break
-            }
-            if (enabled && atTop && decided && (delta > 0f || tracking)) {
-                tracking = true
-                distance = (distance + delta).coerceAtLeast(0f)
-                pullOffset.value = (distance * 0.52f).coerceAtMost(holdPx * 2.4f)
-                change.consume()
-            }
-            lastY = currentY
-            if (!change.pressed) break
-        }
-        if (enabled && tracking && atTop && distance >= thresholdPx) {
-            pullOffset.value = holdPx
-            onRefresh()
-        } else if (tracking) {
-            pullOffset.value = 0f
-        }
-    }
-}
 
 @Preview(name = "Feed card square", showBackground = true, widthDp = 360, heightDp = 420)
 @Composable

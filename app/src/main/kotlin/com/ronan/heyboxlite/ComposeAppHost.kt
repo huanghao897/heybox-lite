@@ -371,7 +371,7 @@ internal class ComposeAppHost(
             if (route == "feed" && !host.feedStarted) {
                 host.feedStarted = true
                 host.feed.restoreCache()
-                host.feed.refresh()
+                host.feed.loadInitial()
             }
         }
         HeyboxComposeTheme(services.theme) {

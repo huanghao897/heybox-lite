@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -66,11 +67,11 @@ internal fun ComposeFeedCard(
 ) {
     val scale = theme.uiScale
     val shape = RoundedCornerShape((if (theme.roundScreen) 9 else 10).dp)
-    val title = RichContent.commentText(item.title).ifEmpty {
-        RichContent.plainText(item.title)
-    }.ifEmpty { "无标题内容" }
-    val description = RichContent.commentText(item.description).ifEmpty {
-        RichContent.plainText(item.description)
+    val title = remember(item.title) {
+        composeFeedText(item.title).ifEmpty { "无标题内容" }
+    }
+    val description = remember(item.description) {
+        composeFeedText(item.description)
     }
     val type = when {
         item.video -> "视频"
@@ -265,10 +266,9 @@ internal fun ComposePill(text: String, theme: ComposeThemeState, accent: Boolean
 
 @Composable
 private fun ComposeGameCard(item: FeedItem, theme: ComposeThemeState, noImage: Boolean) {
-    val preload = item.contentPreload ?: return
-    val count = ArticleGameCards.count(preload)
-    if (count <= 0) return
-    val data = GameCardData.fromEmbedded(preload, "")
+    val content = remember(item.contentPreload) {
+        composeGameCardPresentation(item.contentPreload)
+    } ?: return
     Row(
         modifier = Modifier.fillMaxWidth()
             .padding(top = (7 * theme.uiScale).dp)
@@ -279,19 +279,17 @@ private fun ComposeGameCard(item: FeedItem, theme: ComposeThemeState, noImage: B
             .padding((8 * theme.uiScale).dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (data != null && data.coverUrl.isNotEmpty()) {
-            ComposeRemoteImage(data.coverUrl, theme, noImage, (42 * theme.uiScale).dp,
+        if (content.coverUrl.isNotEmpty()) {
+            ComposeRemoteImage(content.coverUrl, theme, noImage, (42 * theme.uiScale).dp,
                 RoundedCornerShape((6 * theme.uiScale).dp), "游戏封面",
                 Modifier.size((42 * theme.uiScale).dp))
             Spacer(modifier = Modifier.width((8 * theme.uiScale).dp))
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = data?.name?.ifEmpty { "游戏内容" } ?: "游戏内容", color = theme.text,
+            Text(text = content.name.ifEmpty { "游戏内容" }, color = theme.text,
                 fontSize = (12 * theme.textScale).sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val meta = listOf(data?.platforms, data?.score, data?.currentPrice)
-                .filter { !it.isNullOrEmpty() }.joinToString(" · ")
-            Text(text = if (meta.isEmpty()) "游戏卡片 · $count 个" else meta, color = theme.muted,
+            Text(text = content.metadata.ifEmpty { "游戏卡片 · ${content.count} 个" }, color = theme.muted,
                 fontSize = (10 * theme.textScale).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = (2 * theme.uiScale).dp))
         }

@@ -7,6 +7,10 @@ final class ImageZoomPolicy {
 
     private ImageZoomPolicy() {}
 
+    static long doubleTapTimeout(boolean watchDisplay) {
+        return watchDisplay ? 480L : 340L;
+    }
+
     static int nextLevel(int currentLevel) {
         if (currentLevel == 1) return 2;
         if (currentLevel == 2) return 0;

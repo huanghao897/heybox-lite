@@ -6,18 +6,35 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * Feed state for Compose. Network and filtering stay in the existing Java services;
- * this class only exposes immutable snapshots to the UI.
+ * Publishes feed snapshots on the UI thread. Parsing, filtering and page merging
+ * run on one worker; requests still use the original Java API and parameters.
  */
 internal class ComposeFeedController(
-    private val session: SessionStore,
-    private val api: ApiClient,
-    private val cache: LocalCache,
+    private val request: (String, Map<String, String>, ApiClient.Callback) -> Unit,
+    private val readCache: () -> List<FeedItem>,
+    private val writeCache: (List<FeedItem>) -> Unit,
+    private val blockedKeywords: () -> List<String>,
+    private val io: ExecutorService,
+    private val publish: (() -> Unit) -> Unit,
     private val onMessage: (String) -> Unit,
 ) {
+    constructor(session: SessionStore, api: ApiClient, cache: LocalCache,
+                onMessage: (String) -> Unit, main: Handler = Handler(Looper.getMainLooper())) : this(
+        request = api::get,
+        readCache = cache::feedItems,
+        writeCache = cache::saveFeed,
+        blockedKeywords = session::blockKeywordList,
+        io = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "heybox-compose-feed").apply { isDaemon = true }
+        },
+        publish = { action -> main.post(action); Unit },
+        onMessage = onMessage,
+    )
+
     val items: MutableState<List<FeedItem>> = mutableStateOf(emptyList())
     val loading: MutableState<Boolean> = mutableStateOf(false)
     val refreshing: MutableState<Boolean> = mutableStateOf(false)
@@ -28,20 +45,18 @@ internal class ComposeFeedController(
     private var cursor = ""
     private var lastPull: Int? = null
     private var firstRequest = true
-    private var requestSerial = 0
-    private var restoreSerial = 0
-    private val main = Handler(Looper.getMainLooper())
-    private val io = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "heybox-compose-feed-cache").apply { isDaemon = true }
-    }
+    @Volatile private var requestSerial = 0
+    @Volatile private var restoreSerial = 0
+    @Volatile private var closed = false
 
     fun restoreCache() {
-        if (items.value.isNotEmpty()) return
+        if (closed || items.value.isNotEmpty()) return
         val serial = ++restoreSerial
         io.execute {
-            val cached = FeedCollection.filter(cache.feedItems(), session.blockKeywordList())
-            main.post {
-                if (serial == restoreSerial && items.value.isEmpty() && cached.isNotEmpty()) {
+            if (closed || serial != restoreSerial) return@execute
+            val cached = FeedCollection.filter(readCache(), blockedKeywords())
+            publish {
+                if (!closed && serial == restoreSerial && items.value.isEmpty() && cached.isNotEmpty()) {
                     items.value = cached
                 }
             }
@@ -52,12 +67,17 @@ internal class ComposeFeedController(
         load(reset = true)
     }
 
+    fun loadInitial() {
+        load(reset = true, showRefreshFeedback = false)
+    }
+
     fun loadMore() {
         if (loading.value || loadingMore.value || noMore.value) return
         load(reset = false)
     }
 
     fun close() {
+        closed = true
         requestSerial++
         restoreSerial++
         loading.value = false
@@ -66,10 +86,10 @@ internal class ComposeFeedController(
         io.shutdownNow()
     }
 
-    private fun load(reset: Boolean) {
-        if (loading.value || loadingMore.value) return
+    private fun load(reset: Boolean, showRefreshFeedback: Boolean = true) {
+        if (closed || loading.value || loadingMore.value) return
         if (reset) {
-            refreshing.value = true
+            refreshing.value = showRefreshFeedback
             noMore.value = false
         } else {
             loadingMore.value = true
@@ -84,35 +104,54 @@ internal class ComposeFeedController(
             if (reset) "" else cursor,
             if (reset) true else firstRequest,
         )
-        api.get(EndpointProvider.feeds(), params, object : ApiClient.Callback {
+        request(EndpointProvider.feeds(), params, object : ApiClient.Callback {
             override fun onSuccess(body: JSONObject) {
-                if (serial != requestSerial) return
-                val result = body.optJSONObject("result")
-                val links = result?.optJSONArray("links")
-                val parsed = parseLinks(links)
-                val filtered = FeedCollection.filter(parsed, session.blockKeywordList())
-                val next = if (reset) ArrayList(filtered) else ArrayList(items.value)
-                val added = FeedCollection.appendUnique(next, filtered)
-                if (reset && filtered.isEmpty() && previous.isNotEmpty()) {
-                    onMessage("没有获取到新内容，已保留原列表")
-                } else {
-                    items.value = next
+                if (!accept(serial)) return
+                io.execute {
+                    if (!accept(serial)) return@execute
+                    try {
+                        val result = body.optJSONObject("result")
+                        val parsed = parseLinks(result?.optJSONArray("links"))
+                        val filtered = FeedCollection.filter(parsed, blockedKeywords())
+                        val next = if (reset) ArrayList<FeedItem>() else ArrayList(previous)
+                        val added = FeedCollection.appendUnique(next, filtered)
+                        val nextCursor = result?.optString("lastval", "") ?: ""
+                        publish {
+                            if (!accept(serial)) return@publish
+                            restoreSerial++
+                            if (reset && filtered.isEmpty() && items.value.isNotEmpty()) {
+                                onMessage("没有获取到新内容，已保留原列表")
+                            } else {
+                                items.value = next
+                            }
+                            cursor = nextCursor
+                            lastPull = if (reset) 1 else 0
+                            firstRequest = false
+                            if (!reset && FeedCollection.loadMoreExhausted(parsed.size, added)) {
+                                noMore.value = true
+                            }
+                            complete(reset)
+                            writeCache(items.value)
+                        }
+                    } catch (_: RuntimeException) {
+                        publish { fail(serial, reset, "内容解析失败，请重试") }
+                    }
                 }
-                cursor = result?.optString("lastval", "") ?: ""
-                lastPull = if (reset) 1 else 0
-                firstRequest = false
-                if (!reset && (parsed.isEmpty() || added == 0)) noMore.value = true
-                cache.saveFeed(items.value)
-                complete(reset)
             }
 
             override fun onError(message: String) {
-                if (serial != requestSerial) return
-                error.value = message
-                if (reset && items.value.isEmpty()) restoreCache()
-                complete(reset)
+                fail(serial, reset, message)
             }
         })
+    }
+
+    private fun accept(serial: Int): Boolean = !closed && serial == requestSerial
+
+    private fun fail(serial: Int, reset: Boolean, message: String) {
+        if (!accept(serial)) return
+        error.value = message
+        if (reset && items.value.isEmpty()) restoreCache()
+        complete(reset)
     }
 
     private fun complete(reset: Boolean) {

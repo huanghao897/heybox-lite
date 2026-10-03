@@ -36,10 +36,16 @@ final class DetailPager extends FrameLayout {
     private int currentPage;
     private boolean dragging;
     private boolean returning;
+    private boolean returnCommitted;
     private View returnPreview;
     private boolean realReturnView;
     private ValueAnimator settleAnimator;
     private int gestureAxis = GestureAxisLock.NONE;
+    private final Runnable alignPage = () -> {
+        if (!dragging && settleAnimator == null && !returnCommitted) {
+            scrollTo(pageScrollX(currentPage), 0);
+        }
+    };
 
     DetailPager(Context context, Dp dimensions, boolean compactMotion, Listener listener) {
         super(context);
@@ -51,6 +57,8 @@ final class DetailPager extends FrameLayout {
 
     void setPages(View preview, View article, View comments) {
         cancelSettle();
+        removeCallbacks(this.alignPage);
+        this.returnCommitted = false;
         removeAllViews();
         this.returnPreview = preview;
         this.realReturnView = false;
@@ -58,7 +66,7 @@ final class DetailPager extends FrameLayout {
         addView(article, new FrameLayout.LayoutParams(-1, -1));
         addView(comments, new FrameLayout.LayoutParams(-1, -1));
         this.currentPage = PAGE_ARTICLE;
-        post(() -> scrollTo(pageScrollX(this.currentPage), 0));
+        post(this.alignPage);
     }
 
     void setReturnView(View view) {
@@ -82,6 +90,24 @@ final class DetailPager extends FrameLayout {
         return view;
     }
 
+    boolean canHandoffReturnPreview(View expected) {
+        return this.returnCommitted && !this.realReturnView && expected != null
+                && this.returnPreview == expected && expected.getParent() == this;
+    }
+
+    View returnPreviewForHandoff() {
+        return this.realReturnView ? null : this.returnPreview;
+    }
+
+    View detachReturnPreviewForHandoff() {
+        View view = this.returnPreview;
+        removeCallbacks(this.alignPage);
+        // Reattached by the handoff in this drawing cycle; do not dispose its composition.
+        detachViewFromParent(view);
+        this.returnPreview = null;
+        return view;
+    }
+
     boolean showingComments() {
         return this.currentPage == PAGE_COMMENTS;
     }
@@ -101,12 +127,9 @@ final class DetailPager extends FrameLayout {
         if (this.returnPreview != null) this.returnPreview.layout(-width, 0, 0, height);
         if (getChildCount() > PAGE_COMMENTS) getChildAt(PAGE_COMMENTS).layout(0, 0, width, height);
         if (getChildCount() > 2) getChildAt(2).layout(width, 0, width * 2, height);
-        if (changed && !this.dragging && this.settleAnimator == null) {
-            post(() -> {
-                if (!this.dragging && this.settleAnimator == null) {
-                    scrollTo(pageScrollX(this.currentPage), 0);
-                }
-            });
+        if (changed && !this.dragging && this.settleAnimator == null && !this.returnCommitted) {
+            removeCallbacks(this.alignPage);
+            post(this.alignPage);
         }
     }
 
@@ -252,6 +275,7 @@ final class DetailPager extends FrameLayout {
 
     private void settleToPage(int page, boolean animate) {
         cancelSettle();
+        this.returnCommitted = false;
         this.currentPage = page;
         this.listener.onPageChanged();
         int destination = pageScrollX(page);
@@ -292,7 +316,8 @@ final class DetailPager extends FrameLayout {
         if (Motions.off()) {
             scrollTo(destination, 0);
             this.returning = false;
-            this.listener.onReturn();
+            this.returnCommitted = true;
+            NativeDetailReturnHandoff.dispatchReturn(this, this.listener::onReturn);
             return;
         }
         int distance = Math.abs(destination - from);
@@ -306,10 +331,12 @@ final class DetailPager extends FrameLayout {
         this.settleAnimator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
+                if (settleAnimator != animation) return;
                 settleAnimator = null;
                 if (returning) {
                     returning = false;
-                    listener.onReturn();
+                    returnCommitted = true;
+                    NativeDetailReturnHandoff.dispatchReturn(DetailPager.this, listener::onReturn);
                 }
             }
         });
@@ -320,7 +347,11 @@ final class DetailPager extends FrameLayout {
         ValueAnimator animator = this.settleAnimator;
         this.settleAnimator = null;
         this.returning = false;
-        if (animator != null) animator.cancel();
+        if (animator != null) {
+            animator.removeAllUpdateListeners();
+            animator.removeAllListeners();
+            animator.cancel();
+        }
         requestParentTouch(false);
     }
 
@@ -330,9 +361,11 @@ final class DetailPager extends FrameLayout {
     }
 
     void cancelMotion() {
+        removeCallbacks(this.alignPage);
         cancelSettle();
         this.dragging = false;
         this.returning = false;
+        this.returnCommitted = false;
         this.gestureAxis = GestureAxisLock.NONE;
         requestParentTouch(false);
         scrollTo(pageScrollX(this.currentPage), 0);

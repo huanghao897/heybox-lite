@@ -11,10 +11,10 @@ import android.view.ScaleGestureDetector;
 import android.view.ViewConfiguration;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
+// Matrix-based media rendering uses the platform ImageViewerTheme, not AppCompat image tinting.
+@SuppressLint("AppCompatCustomView")
 final class ZoomImageView extends ImageView {
     private static final int INVALID_POINTER_ID = -1;
-    private static final long PHONE_DOUBLE_TAP_TIMEOUT_MS = 340L;
-    private static final long WATCH_DOUBLE_TAP_TIMEOUT_MS = 480L;
     private final Matrix matrix = new Matrix();
     private final float[] startValues = new float[9];
     private final float[] endValues = new float[9];
@@ -56,8 +56,7 @@ final class ZoomImageView extends ImageView {
         setScaleType(ScaleType.MATRIX);
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         pullTouchThreshold = touchSlop * ImageDismissPolicy.TOUCH_SLOP_MULTIPLIER;
-        doubleTapTimeout = RoundLayoutMetrics.isWatchDisplay(context)
-                ? WATCH_DOUBLE_TAP_TIMEOUT_MS : PHONE_DOUBLE_TAP_TIMEOUT_MS;
+        doubleTapTimeout = ImageZoomPolicy.doubleTapTimeout(RoundLayoutMetrics.isWatchDisplay(context));
         doubleTapSlop = Math.max(dp(24), touchSlop * 3.0f);
         scaleDetector = new ScaleGestureDetector(context,
                 new ScaleGestureDetector.SimpleOnScaleGestureListener() {

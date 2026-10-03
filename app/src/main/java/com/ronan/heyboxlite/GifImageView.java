@@ -1,11 +1,14 @@
 package com.ronan.heyboxlite;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Rect;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 
+// Platform rendering and themes are intentional; Lottie's AppCompat dependency does not change them.
+@SuppressLint("AppCompatCustomView")
 final class GifImageView extends ImageView {
     private final Rect visibleBounds = new Rect();
     private final ViewTreeObserver.OnScrollChangedListener scrollListener =

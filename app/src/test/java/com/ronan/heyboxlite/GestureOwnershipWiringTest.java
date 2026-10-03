@@ -76,7 +76,10 @@ public class GestureOwnershipWiringTest {
     public void feedSearchAndScrollStateBelongToTheScrollableFeed() throws Exception {
         String feed = source("kotlin/com/ronan/heyboxlite/ComposeFeed.kt");
         String host = source("kotlin/com/ronan/heyboxlite/ComposeAppHost.kt");
-        assertTrue(feed.contains("item(key = \"feed-search\")"));
+        int list = feed.indexOf("LazyColumn(");
+        int searchItem = feed.indexOf("item(key = \"feed-search\"");
+        assertTrue(list >= 0 && searchItem > list);
+        assertTrue(feed.indexOf("FeedToolbar(", searchItem) > searchItem);
         assertTrue(host.contains("internal val feedListState = LazyListState()"));
         assertTrue(host.contains("mutableMapOf(\"feed\" to feedListState)"));
         assertTrue(host.contains("SaveableStateProvider(page)"));

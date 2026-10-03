@@ -6,6 +6,11 @@ import org.junit.Test;
 
 public class ImageZoomPolicyTest {
     @Test
+    public void watchAndPhoneKeepTheirExistingTapTimeouts() {
+        assertEquals(480L, ImageZoomPolicy.doubleTapTimeout(true));
+        assertEquals(340L, ImageZoomPolicy.doubleTapTimeout(false));
+    }
+    @Test
     public void advancesThroughTwoZoomLevelsAndBackToFit() {
         int first = ImageZoomPolicy.nextLevel(0);
         int second = ImageZoomPolicy.nextLevel(first);
