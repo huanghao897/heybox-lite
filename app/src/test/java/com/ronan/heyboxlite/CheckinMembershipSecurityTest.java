@@ -64,6 +64,14 @@ public class CheckinMembershipSecurityTest {
         assertTrue(client.split("\n", -1).length <= 918);
     }
 
+    @Test
+    public void legacyRendererOnlyExposesSponsorshipWhenNoFixedProductsExist() throws Exception {
+        String renderer = source("CheckinCenterPageRenderer.java");
+        String body = methodBody(renderer, "void addSponsorshipEntry(");
+        assertTrue(body.contains("membership.usesLegacySponsorship()"));
+        assertFalse(body.contains("membership.voluntarySponsorship"));
+    }
+
     private static String source(String name) throws Exception {
         File path = new File("src/main/java/com/ronan/heyboxlite/" + name);
         if (!path.isFile()) path = new File("app", path.getPath());

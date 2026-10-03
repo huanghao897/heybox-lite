@@ -35,7 +35,7 @@ internal fun ComposeMembershipCheckoutScreen(
     onClaim: () -> Unit,
 ) {
     val order = state.order
-    val sponsorship = state.catalog?.voluntarySponsorship == true
+    val sponsorship = state.catalog?.usesVariableSponsorship() == true
     WatchPage(if (sponsorship) "\u786e\u8ba4\u8d5e\u52a9" else "\u786e\u8ba4\u5f00\u901a", onBack) {
         if (order == null) {
             WatchEmptyState(if (state.requestInFlight) "\u6b63\u5728\u521b\u5efa\u8ba2\u5355"
@@ -178,7 +178,7 @@ internal fun membershipOrderProduct(order: CheckinBilling.Order, catalog: Checki
     if (order.productName.isNotBlank()) return order.productName
     return catalog?.products?.firstOrNull { it.sku == order.productSku }?.name
         ?: order.productSku.ifBlank {
-            if (catalog?.voluntarySponsorship == true) catalog.plan.name else "\u5957\u9910\u4fe1\u606f\u5f85\u786e\u8ba4"
+            if (catalog?.usesVariableSponsorship() == true) catalog.plan.name else "\u5957\u9910\u4fe1\u606f\u5f85\u786e\u8ba4"
         }
 }
 

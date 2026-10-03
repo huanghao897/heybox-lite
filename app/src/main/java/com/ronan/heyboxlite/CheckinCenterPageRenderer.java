@@ -159,7 +159,7 @@ final class CheckinCenterPageRenderer {
 
     private void addSponsorshipEntry(LinearLayout list,
                                      CheckinBilling.Membership membership) {
-        if (membership == null || !membership.voluntarySponsorship) return;
+        if (membership == null || !membership.usesLegacySponsorship()) return;
         if (membership.checkoutAvailable) {
             settingsUi.addEntry(list, "赞助", null, "自愿支持", R.drawable.il_qr,
                     () -> actions.openSponsorship(membership));

@@ -79,6 +79,35 @@ internal fun CheckinMenuRow(
 }
 
 @Composable
+internal fun CheckinDangerRow(
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val theme = LocalHeyboxTheme.current
+    val danger = Color(0xFFDD7777)
+    val shape = RoundedCornerShape(watchDp(10))
+    val foreground = if (enabled) danger else theme.subtle
+    val background = if (enabled) danger.copy(alpha = if (theme.dark) 0.14f else 0.10f)
+        else theme.panelElevated
+    Row(
+        modifier.fillMaxWidth().clip(shape).background(background)
+            .clickable(enabled = enabled, onClick = onClick)
+            .heightIn(min = watchDp(36))
+            .padding(horizontal = watchDp(12), vertical = watchDp(7)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(painterResource(R.drawable.ic_logout), null, tint = foreground,
+            modifier = Modifier.size(watchDp(18)))
+        Spacer(Modifier.width(watchDp(9)))
+        Text(title, color = foreground, fontSize = watchSp(12f),
+            fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Clip,
+            modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
 internal fun CheckinActionButton(
     text: String,
     onClick: () -> Unit,

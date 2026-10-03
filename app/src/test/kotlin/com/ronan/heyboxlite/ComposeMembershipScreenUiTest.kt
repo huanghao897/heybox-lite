@@ -183,6 +183,21 @@ internal class ComposeMembershipScreenUiTest : ComposeMembershipUiRegressionHarn
         text("\u786e\u8ba4\u8d5e\u52a9").assertIsEnabled()
     }
 
+    @Test fun fixedProductsHideLegacySponsorshipInputEvenWhenLegacyFlagsRemainSet() {
+        val catalog = MembershipUiFixtures.catalog(
+            mode = "free", entitled = false, voluntary = true,
+            plan = CheckinBilling.Plan("Legacy sponsorship", 999, "CNY", 0,
+                true, 1, 100_000_000))
+        show(MembershipUiFixtures.state(catalog).copy(amount = "99.99"))
+
+        assertFalse(state.value.variableSponsorship())
+        description("\u8d5e\u52a9\u91d1\u989d").assertDoesNotExist()
+        text("\u786e\u8ba4\u8d5e\u52a9").assertDoesNotExist()
+        text("\u5f00\u901a\u4f1a\u5458").assertIsEnabled()
+        assertLabelFits("\u00a55")
+        assertLabelFits("\u00a510")
+    }
+
     @Test fun squareProductsAndLastMenuAreUsable() = verifyLayout()
 
     @Test @Config(qualifiers = "w227dp-h227dp-round-mdpi")

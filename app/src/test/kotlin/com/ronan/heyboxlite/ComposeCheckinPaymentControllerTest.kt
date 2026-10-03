@@ -77,6 +77,22 @@ class ComposeCheckinPaymentControllerTest {
         fixture.controller.close()
     }
 
+    @Test fun fixedProductsUseSkuOrderEvenWhenLegacySponsorshipFlagsAreSet() {
+        val fixture = Fixture(CheckinBilling.Membership("free", false, false,
+            false, "", true, true, CheckinBilling.Plan("Legacy sponsorship", 999,
+                "CNY", 0, true, 1, 100_000_000), listOf(
+                CheckinBilling.Product("monthly", "30 days", 500, "CNY", 30, true),
+                CheckinBilling.Product("quarterly", "90 days", 1000, "CNY", 90, true)),
+            "afdian"))
+
+        fixture.controller.create()
+
+        assertEquals(listOf("monthly"), fixture.skus)
+        assertTrue(fixture.legacyAmounts.isEmpty())
+        assertTrue(fixture.state.requestInFlight)
+        fixture.controller.close()
+    }
+
     @Test fun invalidAuthorizationStopsPollingAndLateCallbacksCannotReopenPayment() {
         val fixture = Fixture()
         fixture.create()
@@ -101,18 +117,23 @@ class ComposeCheckinPaymentControllerTest {
         fixture.controller.close()
     }
 
-    private class Fixture {
-        var state = ComposeMembershipUiState(catalog = CheckinBilling.Membership("paid", true, false,
+    private class Fixture(
+        catalog: CheckinBilling.Membership = CheckinBilling.Membership("paid", true, false,
             false, "", true, false, CheckinBilling.Plan.empty(),
-            listOf(CheckinBilling.Product("monthly", "30 days", 500, "CNY", 30, true)), "afdian"), selectedSku = "monthly")
+            listOf(CheckinBilling.Product("monthly", "30 days", 500, "CNY", 30, true)), "afdian"),
+    ) {
+        var state = ComposeMembershipUiState(catalog = catalog,
+            selectedSku = catalog.products.firstOrNull()?.sku ?: "")
         var route = ComposeCheckinRoute.CHECKOUT
         val creates = ArrayList<CheckinCenterClient.Callback<CheckinBilling.Order>>()
         val polls = ArrayList<CheckinCenterClient.Callback<CheckinBilling.Order>>()
         val lost = ArrayList<String>()
+        val skus = ArrayList<String>()
+        val legacyAmounts = ArrayList<Int>()
         var paid = 0
         val requests = ComposeMembershipRequests({ }, { }, { _, _ -> },
-            { sku, callback -> assertEquals("monthly", sku); creates += callback },
-            { _, _ -> fail("Paid mode must not send an amount") },
+            { sku, callback -> skus += sku; creates += callback },
+            { amount, callback -> legacyAmounts += amount; creates += callback },
             { id, callback -> assertEquals(order().id, id); polls += callback },
             { _, _ -> fail("No legacy QR URL is supplied") }, { _, _, _ -> })
         val controller = ComposeCheckinPaymentController(requests, { state }, { state = it }, { route },

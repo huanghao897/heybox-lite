@@ -20,7 +20,7 @@ internal data class ComposeMembershipUiState(
     val message: String = "",
 ) {
     fun selectedProduct(): CheckinBilling.Product? = catalog?.products?.firstOrNull { it.sku == selectedSku }
-    fun variableSponsorship(): Boolean = catalog?.let { it.voluntarySponsorship && it.plan.variableAmount } == true
+    fun variableSponsorship(): Boolean = catalog?.usesVariableSponsorship() == true
 }
 
 internal fun membershipMoney(cents: Int, currency: String = "CNY"): String =

@@ -146,7 +146,7 @@ final class CheckinPaymentPage {
         TextView notice = body("赞助不会解锁功能，也不会影响签到计划。", tokens.muted);
         notice.setLineSpacing(0f, 1.12f);
         addTop(summary, notice, 8);
-        if (order == null && membership.plan.variableAmount) {
+        if (order == null && membership.usesVariableSponsorship()) {
             sponsorshipAmount = input("赞助金额（元）", 10);
             sponsorshipAmount.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
                     | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
@@ -256,7 +256,7 @@ final class CheckinPaymentPage {
 
     private void createOrder() {
         if (requestInFlight || closed) return;
-        int amountCents = membership.plan.variableAmount
+        int amountCents = membership.usesVariableSponsorship()
                 ? SponsorshipAmount.parseCents(sponsorshipAmount == null
                         ? "" : sponsorshipAmount.getText().toString(),
                         membership.plan.minimumAmountCents,

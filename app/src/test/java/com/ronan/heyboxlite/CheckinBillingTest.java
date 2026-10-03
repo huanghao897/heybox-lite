@@ -93,6 +93,42 @@ public class CheckinBillingTest {
     }
 
     @Test
+    public void fixedProductsOverrideLegacySponsorshipFlagsButEmptyCatalogKeepsCompatibility()
+            throws Exception {
+        JSONObject response = new JSONObject()
+                .put("billing_mode", "free")
+                .put("voluntary_sponsorship", true)
+                .put("checkout_available", true)
+                .put("plan", new JSONObject()
+                        .put("name", "Legacy sponsorship")
+                        .put("amount_cents", 999)
+                        .put("duration_days", 0)
+                        .put("variable_amount", true))
+                .put("products", new JSONArray()
+                        .put(product("heybox_monthly", "30 days", 500, "CNY", 30, true))
+                        .put(product("heybox_quarterly", "90 days", 1000, "CNY", 90, true)));
+
+        CheckinBilling.Membership fixed = CheckinBilling.parseMembership(response);
+        assertFalse(fixed.usesLegacySponsorship());
+        assertFalse(fixed.usesVariableSponsorship());
+
+        response.remove("products");
+        CheckinBilling.Membership legacy = CheckinBilling.parseMembership(response);
+        assertTrue(legacy.usesLegacySponsorship());
+        assertTrue(legacy.usesVariableSponsorship());
+    }
+
+    @Test
+    public void legacyFixedAmountSponsorshipRemainsVisibleWithoutServerProducts() {
+        CheckinBilling.Membership legacy = new CheckinBilling.Membership("free", false,
+                true, false, "", true, true,
+                new CheckinBilling.Plan("Legacy fixed", 500, "CNY", 30,
+                        false, 500, 500));
+        assertTrue(legacy.usesLegacySponsorship());
+        assertFalse(legacy.usesVariableSponsorship());
+    }
+
+    @Test
     public void membershipDefensivelyCopiesProductsAndDoesNotSynthesizeMissingProducts() {
         List<CheckinBilling.Product> products = new ArrayList<>();
         products.add(new CheckinBilling.Product("server_sku", "Server plan", 1432,

@@ -115,6 +115,12 @@ internal class ComposeCheckinCenterUiTest : ComposeMembershipUiRegressionHarness
         }
     }
 
+    @Test fun loggedOutAccountSummaryAlsoOpensMobileLogin() {
+        show(MembershipUiFixtures.center(account = CheckinCenterClient.Account("logged_out", "Fixture account", "")))
+        tapReachable("Fixture account")
+        compose.runOnIdle { assertEquals(listOf("login"), actions) }
+    }
+
     @Test fun scheduleWindowAndMissingScheduleComeFromTheServerNotTheReferenceDesign() {
         show()
         assertLabelFits("23:40 - 00:10")
@@ -160,6 +166,9 @@ internal class ComposeCheckinCenterUiTest : ComposeMembershipUiRegressionHarness
     private fun verifyLayout(largeLight: Boolean = false) {
         show(MembershipUiFixtures.center(MembershipUiFixtures.catalog(entitled = true)),
             largeLight = largeLight)
+        tag("checkin-account-card").fetchSemanticsNode()
+        tag("checkin-home-entry-group").fetchSemanticsNode()
+        tag("checkin-danger-row").fetchSemanticsNode()
         assertLabelFits("123****89")
         assertLabelFits("23:40 - 00:10")
         assertLabelFits("09:17")

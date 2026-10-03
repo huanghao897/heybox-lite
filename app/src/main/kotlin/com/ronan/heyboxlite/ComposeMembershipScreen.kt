@@ -66,7 +66,7 @@ internal fun ComposeMembershipScreen(
             if (catalog.products.isNotEmpty()) {
                 WatchSectionTitle("\u9009\u62e9\u5957\u9910")
                 MembershipProducts(catalog.products, state.selectedSku, !busy, onSelect)
-            } else if (!catalog.voluntarySponsorship) {
+            } else if (!catalog.usesLegacySponsorship()) {
                 MembershipNotice("\u6682\u65e0\u53ef\u7528\u5957\u9910")
             }
             if (state.variableSponsorship()) {
@@ -79,7 +79,7 @@ internal fun ComposeMembershipScreen(
                         membershipMoney(catalog.plan.maximumAmountCents, catalog.plan.currency),
                     muted = true, fontSize = 10f,
                 )
-            } else if (catalog.products.isEmpty() && catalog.voluntarySponsorship) {
+            } else if (catalog.usesLegacySponsorship()) {
                 MembershipBodyText(catalog.plan.name, weight = FontWeight.Medium)
                 MembershipBodyText(membershipMoney(catalog.plan.amountCents, catalog.plan.currency))
             }
@@ -92,7 +92,7 @@ internal fun ComposeMembershipScreen(
             CheckinActionButton(
                 text = when {
                     state.requestInFlight -> "\u5904\u7406\u4e2d"
-                    catalog.voluntarySponsorship -> "\u786e\u8ba4\u8d5e\u52a9"
+                    state.variableSponsorship() -> "\u786e\u8ba4\u8d5e\u52a9"
                     catalog.entitled -> "\u7eed\u8d39\u4f1a\u5458"
                     else -> "\u5f00\u901a\u4f1a\u5458"
                 },
@@ -140,7 +140,7 @@ internal fun MembershipOverview(catalog: CheckinBilling.Membership) {
                 },
                 muted = true, fontSize = 11f,
             )
-            if (catalog.voluntarySponsorship) {
+            if (catalog.usesVariableSponsorship()) {
                 MembershipBodyText("\u81ea\u613f\u8d5e\u52a9\uff0c\u4e0d\u5f71\u54cd\u7b7e\u5230\u6743\u76ca",
                     muted = true, fontSize = 10f)
             }

@@ -52,6 +52,15 @@ final class CheckinBilling {
             return new Membership("free", false, true, false, "", false,
                     true, Plan.empty());
         }
+
+        boolean usesVariableSponsorship() {
+            return usesLegacySponsorship() && plan.variableAmount;
+        }
+
+        boolean usesLegacySponsorship() {
+            // Fixed server products take precedence over both legacy flags.
+            return products.isEmpty() && voluntarySponsorship;
+        }
     }
 
     static final class Product {
