@@ -186,7 +186,8 @@ HeyBoxCommunity/
 
 云端签到由 `CheckinCenterClient` 调用签到服务完成。Lite 不在本地执行签到，也不把普通小黑盒浏览请求改成签到代理。`CheckinCenterCoordinator` 持有页面级状态，`CheckinPairingFlow`、`CheckinServiceAccountFlow`、`CheckinMobileLoginFlow` 和 `CheckinTaskSettingsFlow` 分别负责配对、服务账号、手机号登录和任务设置；`CheckinHistory` 只负责最近执行记录的解析与展示。
 
-- `CheckinCenterClient`：只连接固定 HTTPS 服务地址，限制响应大小，拒绝重定向，并把 HTTP、TLS、网络、协议和客户端错误统一回调给页面。
+- `CheckinCenterClient`：签到业务 API 入口，负责参数校验、异步任务和页面可用的协议结果。
+- `CheckinCenterTransport`：签到网络边界，固定 HTTPS 服务地址，限制响应大小，拒绝重定向，并把 HTTP、TLS、网络和协议错误统一转换为 `ApiError`；业务类不再直接持有连接实现。
 - `CheckinCenterPage`：负责签到页面状态切换、生命周期和 Flow 回调，不持有本地签到实现；`CheckinCenterPageRenderer` 负责未连接、连接中、已连接和错误状态的视图拼装，`CheckinResultText` 负责手动执行结果文案。
 - `NativeSignBridge` / `NativeSignService` / `NativeSecuritySigner`：仅为官方只读/互动请求提供兼容安全参数，并在独立进程执行；不能被复用于云端签到凭据上传。
 

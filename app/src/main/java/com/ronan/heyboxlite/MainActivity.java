@@ -1,6 +1,5 @@
 package com.ronan.heyboxlite;
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
@@ -33,6 +32,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.activity.ComponentActivity;
 
 import java.io.File;
 import java.util.HashMap;
@@ -41,7 +41,7 @@ import java.util.Map;
 import org.json.JSONObject;
 
 @SuppressLint("WrongConstant")
-public final class MainActivity extends Activity implements BackSwipeFrameLayout.Host,
+public final class MainActivity extends ComponentActivity implements BackSwipeFrameLayout.Host,
         ShellScreenNavigator.Host, CheckinLeaderboardController.Host {
     private static final int REQUEST_CHECKIN_CAPTCHA = 9134;
     int BG;

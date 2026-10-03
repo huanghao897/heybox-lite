@@ -2,39 +2,25 @@ package com.ronan.heyboxlite;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.ConnectException;
-import java.net.SocketTimeoutException;
 import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.UnknownHostException;
-import java.net.URL;
-import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLException;
-
 final class CheckinCenterClient {
     static final String TRUSTED_ORIGIN = "https://heyboxlite.xyz";
     static final String API_BASE = TRUSTED_ORIGIN + "/checkin/api/lite";
-    private static final String TRUSTED_HOST = "heyboxlite.xyz";
-    private static final String PAIRING_PATH_PREFIX = "/checkin/";
-    private static final int CONNECT_TIMEOUT_MS = 10_000;
-    private static final int STANDARD_READ_TIMEOUT_MS = 25_000;
-    private static final int SIGNING_READ_TIMEOUT_MS = 125_000;
-    private static final int MAX_RESPONSE_BYTES = 64 * 1024;
-    private static final int MAX_QR_BYTES = 512 * 1024;
+    static final String TRUSTED_HOST = "heyboxlite.xyz";
+    static final String PAIRING_PATH_PREFIX = "/checkin/";
+    static final int CONNECT_TIMEOUT_MS = 10_000;
+    static final int STANDARD_READ_TIMEOUT_MS = 25_000;
+    static final int SIGNING_READ_TIMEOUT_MS = 125_000;
+    static final int MAX_RESPONSE_BYTES = 64 * 1024;
+    static final int MAX_QR_BYTES = 512 * 1024;
 
     enum Operation {
         PAIR_START,
@@ -314,6 +300,7 @@ final class CheckinCenterClient {
     });
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final EventLogger eventLogger;
+    private final CheckinCenterTransport transport;
     private volatile boolean closed;
 
     CheckinCenterClient() {
@@ -322,6 +309,7 @@ final class CheckinCenterClient {
 
     CheckinCenterClient(EventLogger eventLogger) {
         this.eventLogger = eventLogger;
+        this.transport = new CheckinCenterTransport(eventLogger);
     }
 
     void startPairing(String deviceName, String appVersion, int appVersionCode,
@@ -731,137 +719,21 @@ final class CheckinCenterClient {
     }
 
     static URI requireTrustedPairingUri(String value) throws ApiError {
-        return requireTrustedUri(value, false, Operation.PAIR_START);
+        return CheckinCenterTransport.requireTrustedPairingUri(value);
     }
 
     static boolean isTrustedPairingUri(String value) {
-        try {
-            requireTrustedPairingUri(value);
-            return true;
-        } catch (ApiError ignored) {
-            return false;
-        }
+        return CheckinCenterTransport.isTrustedPairingUri(value);
     }
 
     private <T> T request(Operation operation, String method, String path, String token,
-                          JSONObject body, Parser<T> parser) throws ApiError {
-        HttpsURLConnection connection = null;
-        long startedAt = SystemClock.elapsedRealtime();
-        try {
-            URI uri = requireTrustedUri(API_BASE + path, true, operation);
-            URL url = uri.toURL();
-            connection = (HttpsURLConnection) url.openConnection();
-            connection.setInstanceFollowRedirects(false);
-            connection.setUseCaches(false);
-            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            connection.setReadTimeout(readTimeoutMillis(operation));
-            connection.setRequestMethod(method);
-            connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("User-Agent", "heybox-Lite/" + BuildConfig.VERSION_NAME);
-            if (!token.isEmpty()) {
-                connection.setRequestProperty("Authorization", "Bearer " + token);
-            }
-            if (body != null) {
-                byte[] bytes = body.toString().getBytes("UTF-8");
-                connection.setDoOutput(true);
-                connection.setFixedLengthStreamingMode(bytes.length);
-                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-                try (OutputStream output = connection.getOutputStream()) {
-                    output.write(bytes);
-                }
-            }
-            int status = connection.getResponseCode();
-            if (status >= 300 && status < 400) {
-                throw new ApiError(operation, status, "签到服务拒绝了跳转响应");
-            }
-            String response = readResponse(connection, status, operation);
-            if (status < 200 || status >= 300) {
-                throw statusError(operation, status, response);
-            }
-            JSONObject json = response.isEmpty() ? new JSONObject() : new JSONObject(response);
-            return parser.parse(json);
-        } catch (ApiError error) {
-            logFailure(error, startedAt);
-            throw error;
-        } catch (IOException error) {
-            ApiError classified = networkError(operation, error);
-            logFailure(classified, startedAt);
-            throw classified;
-        } catch (JSONException error) {
-            ApiError protocol = protocolError(operation);
-            logFailure(protocol, startedAt);
-            throw protocol;
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
+                           JSONObject body, Parser<T> parser) throws ApiError {
+        return transport.request(operation, method, path, token, body, parser);
     }
 
     private byte[] requestBytes(Operation operation, String path, String token)
             throws ApiError {
-        HttpsURLConnection connection = null;
-        long startedAt = SystemClock.elapsedRealtime();
-        try {
-            URI uri = requireTrustedUri(API_BASE + path, true, operation);
-            URL url = uri.toURL();
-            connection = (HttpsURLConnection) url.openConnection();
-            connection.setInstanceFollowRedirects(false);
-            connection.setUseCaches(false);
-            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            connection.setReadTimeout(STANDARD_READ_TIMEOUT_MS);
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty("Accept", "image/png");
-            connection.setRequestProperty("User-Agent", "heybox-Lite/" + BuildConfig.VERSION_NAME);
-            connection.setRequestProperty("Authorization", "Bearer " + token);
-            int status = connection.getResponseCode();
-            if (status >= 300 && status < 400) {
-                throw new ApiError(operation, status, "签到服务拒绝了跳转响应");
-            }
-            if (status < 200 || status >= 300) {
-                String response = readResponse(connection, status, operation);
-                throw statusError(operation, status, response);
-            }
-            String contentType = connection.getContentType();
-            if (contentType == null || !contentType.toLowerCase(Locale.ROOT)
-                    .startsWith("image/png")) {
-                throw protocolError(operation);
-            }
-            return readBytes(connection.getInputStream(), MAX_QR_BYTES, operation);
-        } catch (ApiError error) {
-            logFailure(error, startedAt);
-            throw error;
-        } catch (IOException error) {
-            ApiError classified = networkError(operation, error);
-            logFailure(classified, startedAt);
-            throw classified;
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
-    }
-
-    private static String readResponse(HttpsURLConnection connection, int status,
-                                       Operation operation)
-            throws IOException, ApiError {
-        InputStream input = status >= 200 && status < 400
-                ? connection.getInputStream() : connection.getErrorStream();
-        if (input == null) return "";
-        return new String(readBytes(input, MAX_RESPONSE_BYTES, operation), "UTF-8");
-    }
-
-    private static byte[] readBytes(InputStream input, int maxBytes, Operation operation)
-            throws IOException, ApiError {
-        try (InputStream stream = input; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[4096];
-            int total = 0;
-            int count;
-            while ((count = stream.read(buffer)) != -1) {
-                total += count;
-                if (total > maxBytes) {
-                    throw new ApiError(operation, 0, "签到服务响应异常");
-                }
-                output.write(buffer, 0, count);
-            }
-            return output.toByteArray();
-        }
+        return transport.requestBytes(operation, path, token);
     }
 
     static PairingStart parsePairingStart(JSONObject value)
@@ -905,21 +777,7 @@ final class CheckinCenterClient {
 
     static URI requireTrustedUri(String value, boolean api, Operation operation)
             throws ApiError {
-        try {
-            URI uri = new URI(value);
-            String path = uri.getRawPath();
-            boolean pathAllowed = api ? path != null && path.startsWith("/checkin/api/lite/")
-                    : path != null && (path.equals("/checkin")
-                    || path.startsWith(PAIRING_PATH_PREFIX));
-            if (!"https".equals(uri.getScheme()) || !TRUSTED_HOST.equals(uri.getHost())
-                    || (uri.getPort() != -1 && uri.getPort() != 443)
-                    || uri.getUserInfo() != null || uri.getFragment() != null || !pathAllowed) {
-                throw new ApiError(operation, 0, "签到服务地址不受信任");
-            }
-            return uri;
-        } catch (URISyntaxException error) {
-            throw new ApiError(operation, 0, "签到服务地址不受信任");
-        }
+        return CheckinCenterTransport.requireTrustedUri(value, api, operation);
     }
 
     static String requirePrefix(String value, String prefix, Operation operation)
@@ -951,169 +809,15 @@ final class CheckinCenterClient {
     }
 
     static int readTimeoutMillis(Operation operation) {
-        return operation == Operation.RUN_NOW || operation == Operation.SMS_SEND
-                || operation == Operation.SMS_SUBMIT
-                || operation == Operation.PASSWORD_LOGIN
-                ? SIGNING_READ_TIMEOUT_MS : STANDARD_READ_TIMEOUT_MS;
-    }
-
-    private static ApiError networkError(Operation operation, IOException error) {
-        if (error instanceof SocketTimeoutException) {
-            String message;
-            if (operation == Operation.RUN_NOW) {
-                message = "签到执行超时，请稍后刷新状态";
-            } else if (operation == Operation.PASSWORD_LOGIN) {
-                message = "小黑盒登录超时，请稍后重试";
-            } else {
-                message = "连接签到服务超时，请检查网络";
-            }
-            return new ApiError(operation, 0, message, ErrorKind.TIMEOUT);
-        }
-        if (error instanceof SSLException) {
-            return new ApiError(operation, 0, "签到服务证书校验失败，请更新客户端",
-                    ErrorKind.TLS);
-        }
-        if (error instanceof UnknownHostException || error instanceof ConnectException) {
-            return new ApiError(operation, 0, "无法连接签到服务，请检查网络",
-                    ErrorKind.NETWORK);
-        }
-        return new ApiError(operation, 0, "签到服务连接异常，请稍后重试",
-                ErrorKind.NETWORK);
-    }
-
-    private void logFailure(ApiError error, long startedAt) {
-        String detail = error.diagnosticCode.isEmpty()
-                ? "" : " reason=" + error.diagnosticCode;
-        eventLogger.log("checkin request failed operation=" + error.operation.name()
-                + " status=" + error.statusCode
-                + " category=" + error.kind.name().toLowerCase(Locale.ROOT)
-                + detail
-                + " elapsedMs=" + Math.max(0L, SystemClock.elapsedRealtime() - startedAt));
+        return CheckinCenterTransport.readTimeoutMillis(operation);
     }
 
     static ApiError statusError(Operation operation, int status, String response) {
-        String diagnosticCode = serverErrorCode(response);
-        String captchaUri = "";
-        int retryAfterSeconds = serverRetryAfterSeconds(response);
-        String message;
-        switch (status) {
-            case 401:
-                message = operation == Operation.PAIR_APPROVE
-                        ? "签到服务账号或密码错误"
-                        : "签到服务连接已失效，请重新连接";
-                break;
-            case 402:
-                message = "签到服务状态异常，请稍后重试";
-                break;
-            case 403:
-                message = operation == Operation.PAIR_REGISTER
-                        || operation == Operation.REGISTRATION_EMAIL
-                        ? "签到服务当前未开放注册"
-                        : "当前操作没有权限";
-                break;
-            case 404:
-                if (operation == Operation.PAIR_POLL || operation == Operation.PAIR_APPROVE
-                        || operation == Operation.PAIR_REGISTER
-                        || operation == Operation.REGISTRATION_EMAIL) {
-                    message = "配对请求不存在，请重新连接";
-                } else if (operation == Operation.SMS_SEND
-                        || operation == Operation.SMS_SUBMIT
-                        || operation == Operation.PASSWORD_LOGIN) {
-                    message = "服务器暂未支持手机号登录，请稍后重试";
-                } else if (operation == Operation.BILLING_STATUS
-                        || operation == Operation.BILLING_QR
-                        || operation == Operation.BILLING_CLAIM) {
-                    message = "赞助记录不存在";
-                } else if (operation == Operation.LEADERBOARD) {
-                    message = "排行榜暂不可用";
-                } else if (operation == Operation.HISTORY) {
-                    message = "签到历史记录暂不可用";
-                } else {
-                    message = "签到任务尚未配置";
-                }
-                break;
-            case 409:
-                if ((operation == Operation.SMS_SEND || operation == Operation.SMS_SUBMIT
-                        || operation == Operation.PASSWORD_LOGIN)
-                        && "captcha_required".equals(diagnosticCode)) {
-                    captchaUri = serverCaptchaUri(response);
-                    message = captchaUri.isEmpty()
-                            ? "小黑盒要求安全验证，但验证页面不可用"
-                            : "请完成小黑盒安全验证";
-                } else if (operation == Operation.PAIR_REGISTER) {
-                    message = "registration_account_used".equals(diagnosticCode)
-                            ? "签到服务账号或邮箱已被注册"
-                            : "该签到服务账号已存在，或配对状态已变化";
-                } else if (operation == Operation.BILLING_CREATE) {
-                    message = "赞助码暂不可用，请稍后重试";
-                } else {
-                    message = "当前操作与服务器状态冲突，请稍后重试";
-                }
-                break;
-            case 410:
-                if (operation == Operation.SMS_SUBMIT) {
-                    message = "短信验证码已过期，请重新发送";
-                } else if (operation == Operation.BILLING_QR
-                        || operation == Operation.BILLING_STATUS) {
-                    message = "赞助码已过期，请重新生成";
-                } else {
-                    message = "配对已过期，请重新连接";
-                }
-                break;
-            case 413:
-                message = "签到资料异常，请更新客户端后重试";
-                break;
-            case 422:
-                if (operation == Operation.PAIR_APPROVE) {
-                    message = "签到服务账号信息无效";
-                } else if (operation == Operation.PAIR_REGISTER) {
-                    message = "registration_email_code_invalid".equals(diagnosticCode)
-                            ? "邮箱验证码错误或已过期"
-                            : "注册信息无效，请检查账号、密码和验证码";
-                } else if (operation == Operation.REGISTRATION_EMAIL) {
-                    message = "邮箱地址或配对状态无效";
-                } else if (operation == Operation.SMS_SEND) {
-                    message = "手机号无效或发送过于频繁，请稍后重试";
-                } else if (operation == Operation.SMS_SUBMIT) {
-                    message = "验证码无效、已过期或登录失败";
-                } else if (operation == Operation.PASSWORD_LOGIN) {
-                    message = "手机号或密码错误，登录失败";
-                } else if (operation == Operation.TASK_SETTINGS) {
-                    message = "签到时间或随机偏移无效";
-                } else if (operation == Operation.BILLING_CLAIM) {
-                    message = "支付订单号格式不正确";
-                } else if (operation == Operation.BILLING_CREATE) {
-                    message = "赞助金额无效";
-                } else {
-                    message = "签到服务请求无效";
-                }
-                break;
-            case 429:
-                message = operation == Operation.REGISTRATION_EMAIL
-                        ? "邮箱验证码发送过于频繁，请稍后重试"
-                        : "操作过于频繁，请稍后重试";
-                break;
-            case 502:
-            case 503:
-                message = operation == Operation.REGISTRATION_EMAIL
-                        ? "验证邮件暂时无法发送，请稍后重试"
-                        : "签到服务暂时不可用，请稍后重试";
-                break;
-            default:
-                message = "签到服务请求失败";
-                break;
-        }
-        return new ApiError(operation, status, message, ErrorKind.HTTP,
-                diagnosticCode, captchaUri, retryAfterSeconds);
+        return CheckinCenterTransport.statusError(operation, status, response);
     }
 
     static String serverCaptchaUri(String response) {
-        try {
-            String uri = new JSONObject(response).optString("verification_uri", "").trim();
-            return CheckinCaptchaContract.isTrustedPageUri(uri) ? uri : "";
-        } catch (JSONException ignored) {
-            return "";
-        }
+        return CheckinCenterTransport.serverCaptchaUri(response);
     }
 
     static boolean captchaProofValid(String ticket, String randstr) {
@@ -1141,30 +845,11 @@ final class CheckinCenterClient {
     }
 
     static String serverErrorCode(String response) {
-        try {
-            String error = new JSONObject(response).optString("error", "");
-            if ("captcha_required".equals(error)) return "captcha_required";
-            if ("registration email code is invalid".equals(error)) {
-                return "registration_email_code_invalid";
-            }
-            if ("registration account is already used".equals(error)) {
-                return "registration_account_used";
-            }
-            if ("registration email limit reached".equals(error)) {
-                return "registration_email_rate_limited";
-            }
-        } catch (JSONException ignored) {
-        }
-        return "";
+        return CheckinCenterTransport.serverErrorCode(response);
     }
 
     static int serverRetryAfterSeconds(String response) {
-        try {
-            int value = new JSONObject(response).optInt("retry_after", 0);
-            return value > 0 && value <= 3_600 ? value : 0;
-        } catch (JSONException ignored) {
-            return 0;
-        }
+        return CheckinCenterTransport.serverRetryAfterSeconds(response);
     }
 
     static boolean validRegistrationEmail(String value) {

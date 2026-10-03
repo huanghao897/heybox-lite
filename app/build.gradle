@@ -169,6 +169,7 @@ tasks.withType(JavaCompile).configureEach {
 dependencies {
     implementation project(":cnwearoverlay-runtime")
     implementation "com.google.zxing:core:3.3.3"
+    implementation "androidx.activity:activity:1.10.1"
     implementation platform("androidx.compose:compose-bom:2024.12.01")
     implementation "androidx.compose.animation:animation"
     implementation "androidx.compose.foundation:foundation"

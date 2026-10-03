@@ -6,6 +6,7 @@
 
 - `MainActivity`：Activity 生命周期和顶层组件装配。详情请求由 `DetailLoadCoordinator` 管理，底部导航由 `BottomNavigationController` 管理，转场位图由 `TransitionSnapshotStore` 管理。
 - `CheckinCenterPage`：签到子页面切换、生命周期和业务回调接线。配对轮询、服务账号、手机号登录、任务设置分别由对应的 `Checkin*Flow` 管理，输入视图由 `CheckinAccountForms` 管理，稳定内容状态由 `CheckinCenterPageRenderer` 创建，结果文案由 `CheckinResultText` 统一生成。
+- `CheckinCenterClient` / `CheckinCenterTransport`：前者负责签到业务入口、异步回调和协议模型，后者负责固定 HTTPS 地址、响应大小、重定向和网络错误边界。
 - `*Flow` / `*Coordinator`：拥有一个完整业务流程的状态和异步请求，不直接承担整页视觉设计。
 - `*Ui` / `*Renderer` / `*Forms`：只创建或绑定视图，不发起业务网络请求。
 - `SessionStore` / `LocalCache`：分别负责设置与会话、内容缓存，不承接页面导航逻辑。
