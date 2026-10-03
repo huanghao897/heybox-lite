@@ -59,9 +59,59 @@ public class GestureOwnershipWiringTest {
         String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
         String activity = source("java/com/ronan/heyboxlite/MainActivity.java");
         assertTrue(bridge.contains("activity.captureComposeReturnSnapshot();"));
-        assertTrue(bridge.indexOf("captureComposeReturnSnapshot()")
+        assertTrue(bridge.indexOf("captureReturnFallback(legacyReturnRoute)")
                 < bridge.indexOf("hideComposeSurface()"));
+        assertTrue(bridge.contains("!activity.composeAppHost.hasLiveReturnPreview(route)"));
         assertTrue(activity.contains("!this.composeBridge.isLegacyDetailActive()"));
+    }
+
+    @Test
+    public void nativeDetailReturnRestoresComposeEvenWhenRouteIsUnchanged() throws Exception {
+        String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
+        assertTrue(bridge.contains("boolean composeVisible = isComposeSurfaceVisible();"));
+        assertTrue(bridge.contains("|| !composeVisible"));
+    }
+
+    @Test
+    public void feedSearchAndScrollStateBelongToTheScrollableFeed() throws Exception {
+        String feed = source("kotlin/com/ronan/heyboxlite/ComposeFeed.kt");
+        String host = source("kotlin/com/ronan/heyboxlite/ComposeAppHost.kt");
+        assertTrue(feed.contains("item(key = \"feed-search\")"));
+        assertTrue(host.contains("internal val feedListState = LazyListState()"));
+        assertTrue(host.contains("mutableMapOf(\"feed\" to feedListState)"));
+        assertTrue(host.contains("SaveableStateProvider(page)"));
+    }
+
+    @Test
+    public void topLevelSwipeUsesLivePreviewsWithoutPagingSideEffects() throws Exception {
+        String swipe = source("kotlin/com/ronan/heyboxlite/ComposeSwipeContainer.kt");
+        String screens = source("kotlin/com/ronan/heyboxlite/ComposeRouteScreen.kt");
+        assertTrue(swipe.contains("key(page)"));
+        assertTrue(swipe.contains("takeUnless(ComposeSwipePresentation::isLiveRoute)"));
+        assertTrue(screens.contains("observeLoadMore = active"));
+    }
+
+    @Test
+    public void profileIdentityAndCompactSwitchesAreExplicit() throws Exception {
+        String profile = source("kotlin/com/ronan/heyboxlite/ComposeProfileScreen.kt");
+        String switches = source("kotlin/com/ronan/heyboxlite/ComposeWatchComponents.kt");
+        assertTrue(profile.contains("if (loggedIn && userId.isNotBlank()) \"ID $userId\""));
+        assertTrue(switches.contains("Modifier.size(width = watchDp(36), height = watchDp(22))"));
+        assertTrue(switches.contains("role = Role.Switch"));
+    }
+
+    @Test
+    public void nativeDetailUsesLiveReturnContentAndClearsStaleNativeLayers() throws Exception {
+        String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
+        String factory = source("java/com/ronan/heyboxlite/DetailReturnPreviewFactory.java");
+        String host = source("kotlin/com/ronan/heyboxlite/ComposeAppHost.kt");
+        assertTrue(factory.indexOf("if (livePreview != null) return livePreview;")
+                < factory.indexOf("new ImageView(activity)"));
+        assertTrue(bridge.contains("activity.content.removeAllViews();"));
+        assertTrue(bridge.contains("createReturnPreview(legacyReturnRoute)"));
+        int openStart = host.indexOf("internal fun openDetail(item: FeedItem)");
+        int openEnd = host.indexOf("internal fun detailAction", openStart);
+        assertFalse(host.substring(openStart, openEnd).contains("navigation.showDetailLoading(item)"));
     }
 
     private static String source(String path) throws Exception {

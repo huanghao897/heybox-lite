@@ -3,7 +3,10 @@
 package com.ronan.heyboxlite
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.material3.Card
@@ -30,8 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -232,7 +236,8 @@ internal fun WatchSwitchRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(watchDp(10)))
-            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch,
+                onValueChange = onCheckedChange)
             .heightIn(min = watchDp(40))
             .padding(horizontal = watchDp(11), vertical = watchDp(7)),
         verticalAlignment = Alignment.CenterVertically,
@@ -257,31 +262,22 @@ internal fun WatchSwitchRow(
         val checkedTrack = if (state.dark) Color(0xFF77777D) else Color(0xFFA6A6AB)
         val uncheckedTrack = if (state.dark) Color(0xFF3A3A3E) else Color(0xFFD1D1D6)
         val thumb = if (state.dark) Color(0xFFF5F5F7) else Color.White
-        val switchColors = SwitchDefaults.colors(
-            checkedThumbColor = thumb,
-            checkedTrackColor = checkedTrack,
-            checkedBorderColor = checkedTrack,
-            checkedIconColor = state.text,
-            uncheckedThumbColor = thumb,
-            uncheckedTrackColor = uncheckedTrack,
-            uncheckedBorderColor = uncheckedTrack,
-            uncheckedIconColor = state.text,
-            disabledCheckedThumbColor = state.subtle,
-            disabledCheckedTrackColor = checkedTrack.copy(alpha = 0.45f),
-            disabledCheckedBorderColor = checkedTrack.copy(alpha = 0.45f),
-            disabledCheckedIconColor = state.subtle,
-            disabledUncheckedThumbColor = state.subtle,
-            disabledUncheckedTrackColor = uncheckedTrack.copy(alpha = 0.45f),
-            disabledUncheckedBorderColor = uncheckedTrack.copy(alpha = 0.45f),
-            disabledUncheckedIconColor = state.subtle,
+        val thumbPosition by animateFloatAsState(
+            targetValue = if (checked) 1f else 0f,
+            animationSpec = tween(if (Motions.off()) 0 else 160),
+            label = "setting-switch",
         )
-        CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
-            Switch(
-                checked = checked,
-                onCheckedChange = if (enabled) onCheckedChange else null,
-                enabled = enabled,
-                colors = switchColors,
-                modifier = Modifier.size(width = watchDp(42), height = watchDp(26)),
+        val track = if (checked) checkedTrack else uncheckedTrack
+        Canvas(modifier = Modifier.size(width = watchDp(36), height = watchDp(22))
+            .clip(RoundedCornerShape(50))
+            .background(if (enabled) track else track.copy(alpha = 0.45f))) {
+            val radius = size.height * 9f / 22f
+            val inset = size.height / 2f
+            drawCircle(
+                color = if (enabled) thumb else state.subtle,
+                radius = radius,
+                center = Offset(inset + (size.width - 2f * inset) * thumbPosition,
+                    size.height / 2f),
             )
         }
     }

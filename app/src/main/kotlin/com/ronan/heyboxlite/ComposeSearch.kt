@@ -50,6 +50,7 @@ internal fun ComposeSearchScreen(
     onBack: () -> Unit,
     onLoadMore: () -> Unit,
     listState: LazyListState = rememberLazyListState(),
+    observeLoadMore: Boolean = true,
 ) {
     HeyboxComposeTheme(services.theme) {
         val rotary = services.theme.rotaryRequest
@@ -60,7 +61,9 @@ internal fun ComposeSearchScreen(
             modifier = Modifier.fillMaxSize().background(services.theme.background),
         ) {
             val horizontal = feedHorizontalPadding(maxWidth, services.theme)
-            ObserveFeedLoadMore(listState, items.size, loading, noMore, onLoadMore)
+            if (observeLoadMore) {
+                ObserveFeedLoadMore(listState, items.size, loading, noMore, onLoadMore)
+            }
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = horizontal)) {
                 SearchToolbar(services.theme, onBack)
                 SearchField(query, services.theme, onQueryChange)

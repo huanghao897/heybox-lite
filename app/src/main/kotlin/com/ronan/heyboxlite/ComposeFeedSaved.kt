@@ -249,10 +249,10 @@ internal fun ComposeHistoryScreen(
     services: ComposeServices,
     onOpen: (FeedItem) -> Unit,
     onBack: () -> Unit,
+    listState: LazyListState = rememberLazyListState(),
 ) {
     HeyboxComposeTheme(services.theme) {
         val rotary = services.theme.rotaryRequest
-        val listState = rememberLazyListState()
         LaunchedEffect(rotary?.serial) {
             if (rotary != null) listState.scrollBy(rotary.distance.toFloat())
         }

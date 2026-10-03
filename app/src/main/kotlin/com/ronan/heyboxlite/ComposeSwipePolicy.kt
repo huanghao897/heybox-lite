@@ -10,4 +10,8 @@ internal object ComposeSwipePolicy {
         // the same ownership rule through its child disallow-intercept path.
         return route.isNotBlank() && (edgePx <= 0f || startX <= edgePx)
     }
+
+    @JvmStatic
+    fun dragOffset(distance: Float, direction: Int, width: Float): Float =
+        if (direction > 0) distance.coerceIn(0f, width) else distance.coerceIn(-width, 0f)
 }

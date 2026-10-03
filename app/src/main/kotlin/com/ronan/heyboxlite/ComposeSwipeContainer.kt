@@ -1,6 +1,7 @@
 package com.ronan.heyboxlite
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -9,11 +10,12 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -21,206 +23,124 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.dp
 
-/** Owns the single Compose horizontal gesture owner and its interactive preview layer. */
+/** A live target keeps its composition when it becomes the current page. */
 @Composable
 internal fun ComposeSwipeContainer(
     host: ComposeAppHost,
     route: String,
     services: ComposeServices,
-    content: @Composable () -> Unit,
+    content: @Composable (route: String, active: Boolean) -> Unit,
 ) {
-    val swipeOffset = remember { mutableStateOf(0f) }
-    val swipeDirection = remember { mutableStateOf(0) }
-    val previewRoute = remember { mutableStateOf<String?>(null) }
-    val pendingTarget = remember { mutableStateOf<String?>(null) }
-    val handoffTarget = remember { mutableStateOf<String?>(null) }
-    val settleCommit = remember { mutableStateOf(false) }
-    val settleToken = remember { mutableStateOf(0) }
+    val offset = remember { mutableStateOf(0f) }
+    val direction = remember { mutableStateOf(0) }
+    val target = remember { mutableStateOf<String?>(null) }
+    val handoff = remember { mutableStateOf(false) }
+    val settling = remember { mutableStateOf(false) }
+    val commit = remember { mutableStateOf(false) }
+    val settleSerial = remember { mutableStateOf(0) }
     val density = LocalDensity.current
     val touchSlop = LocalViewConfiguration.current.touchSlop
-    val backEdge = with(density) {
+    val edge = if (route == "feed" || route == "profile") 0f else with(density) {
         maxOf(32.dp.toPx(), (52.dp * services.theme.uiScale).toPx())
     }
-    val backSwipeEnabled = host.composeSwipeEnabled(route)
-    val edge = if (route == "feed" || route == "profile") 0f else backEdge
 
-    LaunchedEffect(settleToken.value) {
-        if (settleToken.value == 0) return@LaunchedEffect
-        val direction = swipeDirection.value
-        val target = pendingTarget.value
-        if (direction == 0 || target == null) {
-            previewRoute.value = null
-            swipeOffset.value = 0f
-            swipeDirection.value = 0
-            settleToken.value = 0
-            return@LaunchedEffect
-        }
+    fun reset() {
+        offset.value = 0f
+        direction.value = 0
+        target.value = null
+        handoff.value = false
+        settling.value = false
+        commit.value = false
+    }
+
+    LaunchedEffect(settleSerial.value) {
+        if (settleSerial.value == 0) return@LaunchedEffect
+        val destinationRoute = target.value ?: return@LaunchedEffect
         val width = host.contentWidthPx().coerceAtLeast(1f)
-        val destination = if (settleCommit.value) direction * width else 0f
-        val animation = Animatable(swipeOffset.value)
-        animation.animateTo(
-            destination,
-            tween(durationMillis = if (services.theme.uiScale < 0.95f) 190 else 220),
-        ) {
-            swipeOffset.value = value
-        }
-        if (settleCommit.value) {
-            host.completeComposeSwipe(target)
-            if (target.isEmpty()) {
-                pendingTarget.value = null
-                previewRoute.value = null
-                swipeOffset.value = 0f
-                swipeDirection.value = 0
-                settleCommit.value = false
-                settleToken.value = 0
-            } else {
-                // Keep the target snapshot visible while the real destination
-                // is being recomposed. Clearing this in the same frame as the
-                // route mutation briefly exposed the old/blank layer.
-                handoffTarget.value = target
-                settleCommit.value = false
-                settleToken.value = 0
-            }
+        val destination = if (commit.value) direction.value * width else 0f
+        val animation = Animatable(offset.value)
+        animation.animateTo(destination, tween(
+            durationMillis = if (Motions.off()) 0 else 220,
+            easing = LinearOutSlowInEasing,
+        )) { offset.value = value }
+        if (commit.value && destinationRoute.isNotEmpty()) {
+            handoff.value = true
+            host.completeComposeSwipe(destinationRoute)
         } else {
-            pendingTarget.value = null
-            previewRoute.value = null
-            swipeOffset.value = 0f
-            swipeDirection.value = 0
-            settleCommit.value = false
-            settleToken.value = 0
+            if (commit.value) host.completeComposeSwipe(destinationRoute)
+            reset()
         }
     }
 
-    LaunchedEffect(route, handoffTarget.value) {
-        val target = handoffTarget.value ?: return@LaunchedEffect
-        if (route != target.substringBefore('?')) return@LaunchedEffect
-        // Let the destination composition commit one frame under the snapshot
-        // before releasing the transition layer.
+    LaunchedEffect(route, handoff.value) {
+        if (!handoff.value || route != target.value?.substringBefore('?')) return@LaunchedEffect
+        // The target is the same keyed composition before and after the route change.
         withFrameNanos { }
-        handoffTarget.value = null
-        pendingTarget.value = null
-        previewRoute.value = null
-        swipeOffset.value = 0f
-        swipeDirection.value = 0
+        reset()
     }
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(services.theme.background),
-    ) {
-        val widthPx = with(density) { maxWidth.toPx() }.coerceAtLeast(1f)
-        val preview = previewRoute.value?.let(host::transitionPreview)
-        val visibleOffset = swipeOffset.value.coerceIn(-widthPx, widthPx)
-        Box(
-            modifier = Modifier.fillMaxSize().composeBackSwipe(
-                route = route,
-                enabled = backSwipeEnabled,
-                edgePx = edge,
-                thresholdPx = with(density) { 44.dp.toPx() * services.theme.uiScale },
-                touchSlopPx = touchSlop,
-                maxDragPx = widthPx,
-                canStart = { direction ->
-                    handoffTarget.value == null && host.composeSwipeTarget(route, direction) != null
-                },
-                onStart = { direction ->
-                    if (settleToken.value != 0 || handoffTarget.value != null) {
-                        return@composeBackSwipe false
-                    }
-                    val target = host.composeSwipeTarget(route, direction)
-                        ?: return@composeBackSwipe false
-                    swipeDirection.value = direction
-                    pendingTarget.value = target
-                    previewRoute.value = target.takeUnless { it.isEmpty() }
-                    swipeOffset.value = 0f
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().background(services.theme.background)) {
+        val width = with(density) { maxWidth.toPx() }.coerceAtLeast(1f)
+        val destinationRoute = target.value
+        val snapshot = destinationRoute?.takeUnless(ComposeSwipePresentation::isLiveRoute)
+            ?.let(host::transitionPreview)
+        Box(Modifier.fillMaxSize().composeBackSwipe(
+            route = route,
+            enabled = host.composeSwipeEnabled(route),
+            edgePx = edge,
+            thresholdPx = with(density) { 44.dp.toPx() * services.theme.uiScale },
+            touchSlopPx = touchSlop,
+            maxDragPx = width,
+            canStart = { !settling.value && !handoff.value && host.composeSwipeTarget(route, it) != null },
+            onStart = { dragDirection ->
+                val next = host.composeSwipeTarget(route, dragDirection)
+                if (next == null || settling.value || handoff.value) false else {
+                    target.value = next
+                    direction.value = dragDirection
+                    offset.value = 0f
                     true
-                },
-                onProgress = { swipeOffset.value = it },
-                onCancel = {
-                    if (pendingTarget.value != null && settleToken.value == 0) {
-                        settleCommit.value = false
-                        settleToken.value++
-                    }
-                },
-                onComplete = {
-                    settleCommit.value = true
-                    settleToken.value++
-                },
-            ),
-        ) {
-            if (previewRoute.value != null) {
-                val previewTranslation = if (swipeDirection.value > 0) {
-                    -widthPx + visibleOffset
-                } else {
-                    widthPx + visibleOffset
                 }
-                if (preview != null && !preview.isRecycled) {
-                    Image(
-                        bitmap = preview.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.FillBounds,
-                        modifier = Modifier.fillMaxSize().graphicsLayer {
-                            translationX = previewTranslation
-                        },
+            },
+            onProgress = { offset.value = it },
+            onCancel = {
+                if (target.value != null && !settling.value) {
+                    settling.value = true
+                    commit.value = false
+                    settleSerial.value++
+                }
+            },
+            onComplete = {
+                if (target.value != null && !settling.value) {
+                    settling.value = true
+                    commit.value = true
+                    settleSerial.value++
+                }
+            },
+        )) {
+            if (destinationRoute != null && !ComposeSwipePresentation.isLiveRoute(destinationRoute)) {
+                Box(Modifier.fillMaxSize().graphicsLayer {
+                    translationX = ComposeSwipePresentation.translation(
+                        destinationRoute, destinationRoute, direction.value, offset.value, width,
                     )
-                } else if (previewRoute.value == "profile") {
-                    Box(
-                        modifier = Modifier.fillMaxSize()
-                            .graphicsLayer { translationX = previewTranslation },
-                    ) {
-                        ComposeProfileScreen(services, host::navigate)
+                }) {
+                    if (snapshot != null && !snapshot.isRecycled) {
+                        Image(snapshot.asImageBitmap(), null, Modifier.fillMaxSize(),
+                            contentScale = ContentScale.FillBounds)
+                    } else {
+                        Box(Modifier.fillMaxSize().background(services.theme.background))
                     }
-                } else if (previewRoute.value == "feed") {
-                    Box(
-                        modifier = Modifier.fillMaxSize()
-                            .graphicsLayer { translationX = previewTranslation },
-                    ) {
-                        host.feedRevision.value
-                        val items by host.feed.items
-                        val loading by host.feed.loading
-                        val refreshing by host.feed.refreshing
-                        val noMore by host.feed.noMore
-                        ComposeFeedScreen(
-                            items,
-                            loading,
-                            refreshing,
-                            noMore,
-                            services,
-                            onOpen = host::openDetail,
-                            onRefresh = host.feed::refresh,
-                            onLoadMore = host.feed::loadMore,
-                            onSearch = { host.navigate("search") },
-                            onAction = { item, action ->
-                                host.callbacks.feedAction(
-                                    item,
-                                    when (action) {
-                                        FeedAction.LIKE -> ComposeAppCallbacks.ACTION_LIKE
-                                        FeedAction.FAVORITE -> ComposeAppCallbacks.ACTION_FAVORITE
-                                        FeedAction.CACHE -> ComposeAppCallbacks.ACTION_CACHE
-                                        FeedAction.FOLLOW -> ComposeAppCallbacks.ACTION_FOLLOW
-                                        FeedAction.COMMENT -> ComposeAppCallbacks.ACTION_COMMENT
-                                    },
-                                )
-                            },
-                        )
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize()
-                            .background(services.theme.background)
-                            .graphicsLayer { translationX = previewTranslation },
-                    )
                 }
             }
-            Box(
-                modifier = Modifier.fillMaxSize().graphicsLayer {
-                    // The outgoing page follows the finger one-to-one. The
-                    // previous page is already underneath it, so there is no
-                    // reset-to-zero frame or black strip on commit.
-                    translationX = visibleOffset
-                },
-            ) {
-                content()
+            for (page in ComposeSwipePresentation.routes(route, destinationRoute)) {
+                key(page) {
+                    Box(Modifier.fillMaxSize().graphicsLayer {
+                        translationX = ComposeSwipePresentation.translation(
+                            page, target.value, direction.value, offset.value, width,
+                        )
+                    }) {
+                        content(page, page == route && !settling.value && target.value == null)
+                    }
+                }
             }
         }
     }

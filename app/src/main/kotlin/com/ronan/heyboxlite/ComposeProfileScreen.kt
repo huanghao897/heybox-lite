@@ -17,25 +17,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
 internal fun ComposeProfileScreen(
     services: ComposeServices,
+    profileState: ComposeProfileState,
     onNavigate: (String) -> Unit,
 ) {
     val session = services.session
+    val loggedIn = profileState.loggedIn
+    val userId = profileState.userId
+    val displayName = profileState.name.ifBlank {
+        if (loggedIn) "小黑盒用户" else "未登录"
+    }
     var recentCount by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Int?>(null) }
     LaunchedEffect(services.cache) {
         recentCount = withContext(Dispatchers.IO) { services.cache.recentItems().size }
     }
     WatchPage("我的", null) {
-        val accountRoute = if (session.isLoggedIn()) {
-            "user_space?user=${android.net.Uri.encode(session.userId())}" +
-                "&name=${android.net.Uri.encode(session.userName())}" +
-                "&avatar=${android.net.Uri.encode(session.avatar())}"
+        val accountRoute = if (loggedIn) {
+            "user_space?user=${android.net.Uri.encode(userId)}" +
+                "&name=${android.net.Uri.encode(displayName)}" +
+                "&avatar=${android.net.Uri.encode(profileState.avatar)}"
         } else "login"
         WatchCard(modifier = Modifier
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(watchDp(14)))
@@ -46,17 +51,17 @@ internal fun ComposeProfileScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ComposeMediaImage(
-                    session.avatar(),
+                    profileState.avatar,
                     ComposeMediaSettings(!session.noImage(), session.playGif(), 240),
                     Modifier.size(watchDp(46)),
                     androidx.compose.foundation.shape.CircleShape,
-                    placeholderLabel = session.userName().ifBlank { "我" }.take(1),
+                    placeholderLabel = profileState.name.ifBlank { "我" }.take(1),
                     ensureTouchTarget = false,
                 )
                 Spacer(Modifier.size(watchDp(10)))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        session.userName().ifBlank { "未登录" },
+                        displayName,
                         color = LocalHeyboxTheme.current.text,
                         fontSize = watchSp(16f),
                         fontWeight = FontWeight.SemiBold,
@@ -64,9 +69,33 @@ internal fun ComposeProfileScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        if (session.isLoggedIn()) "账号信息" else "登录小黑盒",
+                        if (loggedIn && userId.isNotBlank()) "ID $userId" else "登录小黑盒",
                         color = LocalHeyboxTheme.current.muted,
                         fontSize = watchSp(11f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (loggedIn && profileState.hasProfile) {
+                Text(
+                    "关注 ${profileState.follows}  粉丝 ${profileState.fans}  获赞 ${profileState.likes}",
+                    modifier = Modifier.fillMaxWidth().padding(
+                        start = watchDp(11), end = watchDp(11), bottom = watchDp(6),
+                    ),
+                    color = LocalHeyboxTheme.current.accent,
+                    fontSize = watchSp(11f),
+                )
+                if (profileState.signature.isNotBlank()) {
+                    Text(
+                        profileState.signature,
+                        modifier = Modifier.fillMaxWidth().padding(
+                            start = watchDp(11), end = watchDp(11), bottom = watchDp(9),
+                        ),
+                        color = LocalHeyboxTheme.current.text,
+                        fontSize = watchSp(12f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

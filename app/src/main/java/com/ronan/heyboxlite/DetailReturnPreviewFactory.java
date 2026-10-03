@@ -2,6 +2,7 @@ package com.ronan.heyboxlite;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
+import android.view.View;
 import android.widget.ImageView;
 
 /** Builds the native detail return layer without adding more UI state to MainActivity. */
@@ -13,10 +14,11 @@ final class DetailReturnPreviewFactory {
     private DetailReturnPreviewFactory() {
     }
 
-    static ImageView create(Activity activity, ThemeTokens tokens, String targetKey,
+    static View create(Activity activity, ThemeTokens tokens, String targetKey,
                             SnapshotProvider pageSnapshots,
                             SnapshotProvider fullScreenSnapshots,
-                            boolean preferFullScreen) {
+                            boolean preferFullScreen, View livePreview) {
+        if (livePreview != null) return livePreview;
         ImageView snapshot = new ImageView(activity);
         snapshot.setBackgroundColor(tokens == null ? 0xff202124 : tokens.panel);
         snapshot.setScaleType(ImageView.ScaleType.FIT_XY);

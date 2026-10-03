@@ -10,7 +10,7 @@ import kotlin.math.abs
 
 /**
  * A parent-level back gesture that leaves vertical scrolling and controls to
- * their child. It only consumes a decided rightward horizontal gesture.
+ * their child. It only consumes a decided navigation gesture.
  */
 internal fun Modifier.composeBackSwipe(
     route: String,
@@ -37,6 +37,7 @@ internal fun Modifier.composeBackSwipe(
         var decided = false
         var accepted = false
         var finished = false
+        var direction = 0
 
         while (true) {
             // Initial pass lets the shell decide before a LazyColumn starts a
@@ -58,7 +59,7 @@ internal fun Modifier.composeBackSwipe(
 
             if (!decided && maxOf(abs(totalX), abs(totalY)) >= touchSlopPx) {
                 decided = true
-                val direction = if (totalX > 0f) 1 else -1
+                direction = if (totalX > 0f) 1 else -1
                 accepted = abs(totalX) > abs(totalY) * 1.18f
                         && canStart(direction)
                         && onStart(direction)
@@ -66,13 +67,12 @@ internal fun Modifier.composeBackSwipe(
             }
             if (accepted) {
                 change.consume()
-                val limit = maxDragPx.takeIf { it > 0f }
-                onProgress(if (limit == null) totalX else totalX.coerceIn(-limit, limit))
+                onProgress(ComposeSwipePolicy.dragOffset(totalX, direction, maxDragPx))
             }
             if (!change.pressed) break
         }
 
-        if (accepted && abs(totalX) >= thresholdPx) {
+        if (accepted && abs(ComposeSwipePolicy.dragOffset(totalX, direction, maxDragPx)) >= thresholdPx) {
             finished = true
             onComplete()
         }

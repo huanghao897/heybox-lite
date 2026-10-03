@@ -20,7 +20,7 @@ final class MotionSpec {
     static final long WATCH_SETTLE_MIN_MS = 150L;
     static final long WATCH_SETTLE_MAX_MS = 250L;
     static final float WATCH_AXIS_RATIO = 1.24f;
-    static final float WATCH_DRAG_RESPONSE = 0.92f;
+    static final float WATCH_DRAG_RESPONSE = 1.0f;
     static final float WATCH_COMMIT_DISTANCE_RATIO = 0.28f;
     static final int WATCH_COMMIT_VELOCITY_DP = 420;
     static final int WATCH_TOUCH_SLOP_MULTIPLIER = 2;

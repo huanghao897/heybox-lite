@@ -2,8 +2,9 @@ package com.ronan.heyboxlite;
 
 import android.net.Uri;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 
 import org.json.JSONObject;
 
@@ -117,7 +118,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         if (!legacyDetailActive) {
             legacyDetailActive = true;
             legacyReturnRoute = nativeReturnRoute();
-            activity.captureComposeReturnSnapshot();
+            captureReturnFallback(legacyReturnRoute);
             hideComposeSurface();
         }
         return false;
@@ -143,6 +144,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         activity.shellBar.setVisibility(View.GONE);
         activity.content.setVisibility(View.INVISIBLE);
         activity.composeLayer.setVisibility(View.VISIBLE);
+        activity.composeAppHost.setSurfaceActive(true);
         boolean topLevel = "feed".equals(key) || "profile".equals(key);
         activity.setBottomNavVisible(topLevel, false);
         if (topLevel) activity.bottomNavigation.select(key);
@@ -182,7 +184,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         // Compose cards remain the entry point, but comments, emoji, thumbnails,
         // original-image opening and reply actions use the stable native detail host.
         if (!legacyDetailActive && isComposeSurfaceVisible()) {
-            activity.captureComposeReturnSnapshot();
+            captureReturnFallback(nativeReturnRoute());
         }
         legacyDetailActive = true;
         legacyReturnRoute = nativeReturnRoute();
@@ -207,12 +209,16 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         returnFromLegacyDetail(gestureOwned);
     }
 
+    View createDetailReturnPreview() {
+        return legacyDetailActive && activity.composeAppHost != null
+                ? activity.composeAppHost.createReturnPreview(legacyReturnRoute) : null;
+    }
+
     private void returnFromLegacyDetail(boolean gestureOwned) {
         String route = legacyReturnRoute;
-        String snapshotKey = route == null ? "" : route.split("\\?", 2)[0];
-        ImageView handoff = gestureOwned
-                ? activity.installFullScreenTransitionOverlay(
-                activity.fullScreenSnapshot(snapshotKey)) : null;
+        View handoff = gestureOwned ? createDetailReturnPreview() : null;
+        ViewGroup root = handoff == null ? null : (ViewGroup) activity.findViewById(android.R.id.content);
+        if (root != null) root.addView(handoff, new ViewGroup.LayoutParams(-1, -1));
         try {
             activity.returnFromDetailForCompose(gestureOwned);
             // Returning a nested native detail restored a native user page. Keep
@@ -220,13 +226,22 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
             // user backs out of the native chain.
             if ("user_space".equals(activity.screen) && activity.composeLayer != null
                     && activity.composeLayer.getVisibility() != View.VISIBLE) return;
+            boolean composeVisible = isComposeSurfaceVisible();
             if (route != null && !route.isEmpty()
-                    && !route.equals(activity.composeAppHost == null
-                    ? "" : activity.composeAppHost.currentRouteSpec())) {
+                    && (!route.equals(activity.composeAppHost == null
+                    ? "" : activity.composeAppHost.currentRouteSpec()) || !composeVisible)) {
                 showRoute(route);
             }
         } finally {
-            activity.removeFullScreenTransitionOverlayAfterLayout(handoff);
+            if (handoff != null && root != null) {
+                handoff.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+                    @Override public boolean onPreDraw() {
+                        handoff.getViewTreeObserver().removeOnPreDrawListener(this);
+                        handoff.postOnAnimation(() -> root.removeView(handoff));
+                        return true;
+                    }
+                });
+            }
         }
     }
 
@@ -243,8 +258,19 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     private void hideComposeSurface() {
+        if (activity.composeAppHost != null) activity.composeAppHost.setSurfaceActive(false);
         if (activity.composeLayer != null) activity.composeLayer.setVisibility(View.INVISIBLE);
-        if (activity.content != null) activity.content.setVisibility(View.VISIBLE);
+        if (activity.content != null) {
+            activity.pageTransitions.finishNow();
+            activity.content.removeAllViews();
+            activity.content.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void captureReturnFallback(String route) {
+        if (activity.composeAppHost == null || !activity.composeAppHost.hasLiveReturnPreview(route)) {
+            activity.captureComposeReturnSnapshot();
+        }
     }
 
     @Override public void requestVideo(VideoData video) {
@@ -301,6 +327,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     @Override public void loginCompleted() {
         if (activity.feedPage != null) activity.feedPage.clearItems();
         activity.toast("登录成功");
+        if (activity.composeAppHost != null) activity.composeAppHost.invalidateProfile();
         if (activity.api != null) EmojiStore.load(activity.api, () -> { });
         activity.showTopLevel(0);
         PresenceReporter.pingNow(activity.session, activity.readingTimeTracker, status -> { });
@@ -346,6 +373,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         } else if ("logout".equals(key)) {
             activity.session.clearSession();
             activity.toast("已退出登录");
+            if (activity.composeAppHost != null) activity.composeAppHost.invalidateProfile();
             showRoute("profile");
         } else if ("cache_prune".equals(key)) {
             activity.cacheMaintenance.pruneOffline(() -> activity.toast("已清理过期离线内容"));

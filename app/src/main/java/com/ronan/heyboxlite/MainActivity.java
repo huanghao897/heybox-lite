@@ -1363,7 +1363,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
 
     private View detailReturnPreview() {
         String targetKey = backTargetScreenKey();
-        return DetailReturnPreviewFactory.create(this, this.themeTokens, targetKey, this::screenSnapshot, this::fullScreenSnapshot, this.composeBridge != null && this.composeBridge.isLegacyDetailActive());
+        return DetailReturnPreviewFactory.create(this, this.themeTokens, targetKey, this::screenSnapshot, this::fullScreenSnapshot, this.composeBridge != null && this.composeBridge.isLegacyDetailActive(), this.composeBridge == null ? null : this.composeBridge.createDetailReturnPreview());
     }
 
     private void updateDetailPagerTitle() {

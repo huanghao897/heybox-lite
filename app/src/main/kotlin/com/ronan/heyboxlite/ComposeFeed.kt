@@ -7,7 +7,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -77,6 +76,8 @@ internal fun ComposeFeedScreen(
     onSearch: () -> Unit,
     onAction: (FeedItem, FeedAction) -> Unit,
     listState: LazyListState = rememberLazyListState(),
+    observeLoadMore: Boolean = true,
+    interactive: Boolean = true,
 ) {
     HeyboxComposeTheme(services.theme) {
         val rotary = services.theme.rotaryRequest
@@ -99,65 +100,72 @@ internal fun ComposeFeedScreen(
                 .background(services.theme.background),
         ) {
             val horizontal = feedHorizontalPadding(maxWidth, services.theme)
-            ObserveFeedLoadMore(listState, items.size, loading, noMore, onLoadMore)
-            Column(modifier = Modifier.fillMaxSize().padding(horizontal = horizontal)) {
-                FeedToolbar(
-                    theme = services.theme,
-                    onSearch = onSearch,
-                )
-                when {
-                    loading && items.isEmpty() -> FeedLoading(services.theme)
-                    items.isEmpty() -> FeedEmpty("暂无内容", "刷新", services.theme, onRefresh)
-                    else -> androidx.compose.foundation.layout.Box(
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                    ) {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize()
-                                .watchPullToRefresh(
-                                    listState = listState,
-                                    enabled = !loading && !refreshing,
-                                    pullOffset = pullOffset,
-                                    thresholdPx = refreshThreshold,
-                                    holdPx = refreshHold,
-                                    onRefresh = onRefresh,
-                                ),
-                            contentPadding = PaddingValues(
-                                top = (8 * services.theme.uiScale).dp,
-                                bottom = (14 * services.theme.uiScale).dp,
-                            ),
-                            verticalArrangement = Arrangement.spacedBy(
-                                (7 * services.theme.uiScale).dp,
-                            ),
-                        ) {
-                            itemsIndexed(
-                                items = items,
-                                key = { index, item -> item.id.ifEmpty { "feed-$index" } },
-                            ) { _, item ->
-                                ComposeFeedCard(
-                                    item = item,
-                                    theme = services.theme,
-                                    noImage = services.session.noImage(),
-                                    currentUserId = services.session.userId(),
-                                    onOpen = onOpen,
-                                    onAction = onAction,
-                                    showSecondaryActions = false,
-                                    favorite = item.favorited,
-                                    cached = services.cache.isWatchLater(item.id),
-                                    gameCardNoImage = services.session.gameCardNoImage(),
-                                )
-                            }
-                            item { FeedFooter(loading, noMore, services.theme, onLoadMore) }
+            if (observeLoadMore) {
+                ObserveFeedLoadMore(listState, items.size, loading, noMore, onLoadMore)
+            }
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier.fillMaxSize().padding(horizontal = horizontal),
+            ) {
+                LazyColumn(
+                    state = listState,
+                    userScrollEnabled = interactive,
+                    modifier = Modifier.fillMaxSize()
+                        .watchPullToRefresh(
+                            listState = listState,
+                            enabled = interactive && !loading && !refreshing,
+                            pullOffset = pullOffset,
+                            thresholdPx = refreshThreshold,
+                            holdPx = refreshHold,
+                            onRefresh = onRefresh,
+                        ),
+                    contentPadding = PaddingValues(
+                        top = (8 * services.theme.uiScale).dp,
+                        bottom = (14 * services.theme.uiScale).dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(
+                        (7 * services.theme.uiScale).dp,
+                    ),
+                ) {
+                    item(key = "feed-search") {
+                        FeedToolbar(
+                            theme = services.theme,
+                            onSearch = onSearch,
+                        )
+                    }
+                    if (loading && items.isEmpty()) {
+                        item(key = "feed-loading") {
+                            FeedLoading(services.theme)
                         }
-                        if (refreshing) {
-                            LinearProgressIndicator(
-                                modifier = Modifier.fillMaxWidth()
-                                    .height((2 * services.theme.uiScale).dp),
-                                color = services.theme.accent,
-                                trackColor = Color.Transparent,
+                    } else if (items.isEmpty()) {
+                        item(key = "feed-empty") {
+                            FeedEmpty("暂无内容", "刷新", services.theme, onRefresh)
+                        }
+                    } else {
+                        itemsIndexed(
+                            items = items,
+                            key = { index, item -> item.id.ifEmpty { "feed-$index" } },
+                        ) { _, item ->
+                            ComposeFeedCard(
+                                item = item,
+                                theme = services.theme,
+                                noImage = services.session.noImage(),
+                                currentUserId = services.session.userId(),
+                                onOpen = onOpen,
+                                onAction = onAction,
+                                showSecondaryActions = false,
+                                gameCardNoImage = services.session.gameCardNoImage(),
                             )
                         }
+                        item { FeedFooter(loading, noMore, services.theme, onLoadMore) }
                     }
+                }
+                if (refreshing) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth()
+                            .height((2 * services.theme.uiScale).dp),
+                        color = services.theme.accent,
+                        trackColor = Color.Transparent,
+                    )
                 }
             }
         }

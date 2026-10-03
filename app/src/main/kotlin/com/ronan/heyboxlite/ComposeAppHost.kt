@@ -3,13 +3,14 @@ package com.ronan.heyboxlite
 import android.app.Activity
 import android.graphics.Bitmap
 import android.os.Handler
+import android.view.View
 import android.widget.FrameLayout
-import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -35,7 +36,7 @@ internal class ComposeAppHost(
     callbacks: ComposeAppCallbacks,
     toast: ComposeToast,
 ) {
-    private val navigation = ComposeNavigationState()
+    internal val navigation = ComposeNavigationState()
     private val servicesState = mutableStateOf(
         ComposeServices(
             activity, session, api, GameDetailClient(api), cache, handler, reading, checkin,
@@ -43,19 +44,24 @@ internal class ComposeAppHost(
         ),
     )
     internal val feed = ComposeFeedController(session, api, cache, toast::show)
-    private val search = ComposeSearchController(session, api, cache, handler)
-    private val saved = ComposeSavedController(servicesState.value)
+    internal val profile = ComposeProfileController(servicesState.value)
+    internal val search = ComposeSearchController(session, api, cache, handler)
+    internal val saved = ComposeSavedController(servicesState.value)
     private val readingLoader = ReadingCenterLoader(activity, cache)
-    private val readingState = mutableStateOf<ComposeReadingCenterState?>(null)
-    private val readingLoading = mutableStateOf(false)
+    internal val readingState = mutableStateOf<ComposeReadingCenterState?>(null)
+    internal val readingLoading = mutableStateOf(false)
     private var readingStarted = false
     private val transitionSnapshots = TransitionSnapshotStore()
     internal val callbacks = callbacks
     private val view = ComposeView(activity)
     internal val feedRevision = mutableStateOf(0)
+    internal val profileRevision = mutableStateOf(0)
+    internal val feedListState = LazyListState()
+    private val listStates = mutableMapOf("feed" to feedListState)
     private var feedStarted = false
     private var mounted = true
     private var suppressNextTransitionSnapshot = false
+    private val surfaceActive = mutableStateOf(true)
 
     init {
         // The content layer moves during a back gesture. Keep the host view
@@ -136,8 +142,8 @@ internal class ComposeAppHost(
             return
         }
         val current = navigation.route.value
+        suppressNextTransitionSnapshot = true
         if (target == navigation.backTarget() && current != "feed") {
-            suppressNextTransitionSnapshot = true
             handleBack()
         } else {
             navigate(target)
@@ -151,6 +157,37 @@ internal class ComposeAppHost(
     }
 
     fun contentWidthPx(): Float = view.width.toFloat()
+
+    fun setSurfaceActive(active: Boolean) {
+        surfaceActive.value = active
+    }
+
+    fun hasLiveReturnPreview(route: String): Boolean = ComposeSwipePresentation.isLiveRoute(route)
+
+    fun createReturnPreview(routeSpec: String): View? {
+        if (!mounted) return null
+        val key = routeSpec.substringBefore('?')
+        if (!hasLiveReturnPreview(key)) return null
+        val sourceState = listState(key)
+        val previewState = LazyListState(sourceState.firstVisibleItemIndex,
+            sourceState.firstVisibleItemScrollOffset)
+        return ComposeView(servicesState.value.activity).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setBackgroundColor(servicesState.value.theme.background.toArgb())
+            setContent {
+                val currentServices by servicesState
+                val previewServices = currentServices.copy(
+                    theme = currentServices.theme.copy(rotaryRequest = null),
+                )
+                HeyboxComposeTheme(previewServices.theme) {
+                    ComposeRouteScreen(this@ComposeAppHost, key, previewServices, false, previewState)
+                }
+            }
+        }
+    }
+
+    internal fun listState(route: String): LazyListState =
+        listStates.getOrPut(route) { LazyListState() }
 
     fun updateTheme(tokens: ThemeTokens, roundScreen: Boolean, uiScale: Float, textScale: Float) {
         view.setBackgroundColor(tokens.background)
@@ -167,6 +204,7 @@ internal class ComposeAppHost(
         }
         if (!mounted || !view.isShown) return
         val routeSpec = navigation.currentRouteSpec().ifBlank { "feed" }
+        if (ComposeSwipePresentation.isLiveRoute(routeSpec)) return
         transitionSnapshots.capture(
             routeSpec,
             8,
@@ -178,6 +216,11 @@ internal class ComposeAppHost(
 
     fun invalidateFeed() {
         feedRevision.value++
+    }
+
+    fun invalidateProfile() {
+        profile.invalidate()
+        profileRevision.value++
     }
 
     fun scrollRotary(distance: Int): Boolean {
@@ -196,6 +239,7 @@ internal class ComposeAppHost(
         mounted = false
         navigation.clearSavedState()
         feed.close()
+        profile.close()
         search.close()
         saved.close()
         readingLoader.close()
@@ -291,11 +335,10 @@ internal class ComposeAppHost(
         servicesState.value = servicesState.value.copy(
             theme = servicesState.value.theme.copy(rotaryRequest = null),
         )
-        navigation.showDetailLoading(item)
         callbacks.openDetail(item)
     }
 
-    private fun detailAction(action: ComposeDetailAction) {
+    internal fun detailAction(action: ComposeDetailAction) {
         when (action) {
             is ComposeDetailAction.LikePost -> callbacks.feedAction(action.item, ComposeAppCallbacks.ACTION_LIKE)
             is ComposeDetailAction.WriteComment -> callbacks.writeComment(action.item)
@@ -309,9 +352,9 @@ internal class ComposeAppHost(
     private fun ComposeAppRoot(host: ComposeAppHost) {
         val services by host.servicesState
         val route by host.navigation.route
-        val userRoute by host.navigation.userSpaceRoute
-        val detailState by host.navigation.detail
+        val screenStates = rememberSaveableStateHolder()
         LaunchedEffect(route) {
+            if (route == "profile") host.profile.refresh()
             if (route == "feed" && !host.feedStarted) {
                 host.feedStarted = true
                 host.feed.restoreCache()
@@ -319,150 +362,15 @@ internal class ComposeAppHost(
             }
         }
         HeyboxComposeTheme(services.theme) {
-            ComposeSwipeContainer(host, route, services) {
-                    when (route) {
-                "feed" -> {
-                    host.feedRevision.value
-                    val items by host.feed.items
-                    val loading by host.feed.loading
-                    val refreshing by host.feed.refreshing
-                    val noMore by host.feed.noMore
-                    ComposeFeedScreen(
-                        items, loading, refreshing, noMore, services,
-                        onOpen = host::openDetail,
-                        onRefresh = host.feed::refresh,
-                        onLoadMore = host.feed::loadMore,
-                        onSearch = { host.navigate("search") },
-                        onAction = { item, action ->
-                            val code = when (action) {
-                                FeedAction.LIKE -> ComposeAppCallbacks.ACTION_LIKE
-                                FeedAction.FAVORITE -> ComposeAppCallbacks.ACTION_FAVORITE
-                                FeedAction.CACHE -> ComposeAppCallbacks.ACTION_CACHE
-                                FeedAction.FOLLOW -> ComposeAppCallbacks.ACTION_FOLLOW
-                                FeedAction.COMMENT -> ComposeAppCallbacks.ACTION_COMMENT
-                            }
-                            host.callbacks.feedAction(item, code)
-                        },
-                    )
-                }
-                "profile" -> ComposeProfileScreen(services, host::navigate)
-                "login" -> ComposeLoginScreen(
-                    services = services,
-                    onBack = { host.handleBack() },
-                    onGuest = { host.setRoute("feed"); host.callbacks.navigate("feed") },
-                    onLoggedIn = {
-                        host.callbacks.loginCompleted()
-                        host.setRoute("feed")
-                        host.callbacks.navigate("feed")
-                    },
+            ComposeSwipeContainer(host, route, services) { page, active ->
+                val pageActive = active && host.surfaceActive.value
+                val pageServices = if (pageActive) services else services.copy(
+                    theme = services.theme.copy(rotaryRequest = null),
                 )
-                "user_space" -> ComposeUserSpaceScreen(
-                    route = composeUserSpaceRoute(userRoute),
-                    services = services,
-                    onBack = { host.handleBack() },
-                    onOpen = host::openDetail,
-                )
-                "search" -> {
-                    val items by host.search.items
-                    val loading by host.search.loading
-                    val noMore by host.search.noMore
-                    val query by host.search.query
-                    ComposeSearchScreen(
-                        query, items, loading, noMore, services,
-                        onQueryChange = host.search::setQuery,
-                        onOpen = host::openDetail,
-                        onBack = { host.handleBack() },
-                        onLoadMore = host.search::loadMore,
-                    )
-                }
-                "detail" -> {
-                    val state = detailState
-                    if (state == null) {
-                        WatchEmptyState("正在打开…", Modifier.background(services.theme.background))
-                    } else {
-                        ComposeDetailScreen(
-                            item = state.item,
-                            content = state.content,
-                            videos = state.videos,
-                            comments = state.comments,
-                            loading = state.loading,
-                            services = services,
-                            onBack = { host.handleBack() },
-                            onOpenImage = { host.callbacks.requestImage(it) },
-                            onOpenVideo = { host.callbacks.requestVideo(it) },
-                            onOpenUser = { id, name, avatar ->
-                                host.navigate("user_space?user=${android.net.Uri.encode(id)}&name=${android.net.Uri.encode(name)}&avatar=${android.net.Uri.encode(avatar)}")
-                            },
-                            onCommentAction = host::detailAction,
-                        )
-                    }
-                }
-                "settings_home", "display_settings", "display_preview", "startup_settings",
-                "app_settings", "video_settings", "splash_preview", "about",
-                "announcement_board", "feedback_group" -> ComposeSettingsScreen(
-                    route, services, host::navigate, { host.handleBack() },
-                    host.callbacks::settingsChanged,
-                )
-                "checkin_center" -> ComposeCheckinScreen(
-                    services, host::navigate, { host.handleBack() },
-                )
-                "reading_center" -> ComposeReadingCenterScreen(
-                    state = host.readingState.value,
-                    loading = host.readingLoading.value,
-                    services = services,
-                    onOpen = host::openDetail,
-                    onReadingStats = { host.navigate("reading_stats") },
-                    onWatchLater = { host.navigate("watch_later") },
-                    onHistory = { host.navigate("reading_history") },
-                    onBack = { host.handleBack() },
-                )
-                "favorites" -> ComposeFavoritesScreen(
-                    items = host.saved.favoriteItems.value,
-                    folders = host.saved.favoriteFolders.value,
-                    selectedTab = host.saved.favoriteTab.value,
-                    loading = host.saved.favoriteLoading.value,
-                    services = services,
-                    onTabChange = host.saved::selectFavoriteTab,
-                    onOpen = host::openDetail,
-                    onOpenFolder = host.saved::openFolder,
-                    onAction = { item, action ->
-                        val code = when (action) {
-                            FeedAction.LIKE -> ComposeAppCallbacks.ACTION_LIKE
-                            FeedAction.FAVORITE -> ComposeAppCallbacks.ACTION_FAVORITE
-                            FeedAction.CACHE -> ComposeAppCallbacks.ACTION_CACHE
-                            FeedAction.FOLLOW -> ComposeAppCallbacks.ACTION_FOLLOW
-                            FeedAction.COMMENT -> ComposeAppCallbacks.ACTION_COMMENT
-                        }
-                        host.callbacks.feedAction(item, code)
-                    },
-                    onBack = { host.handleBack() },
-                )
-                "watch_later" -> ComposeWatchLaterScreen(
-                    entries = host.saved.watchLaterItems.value,
-                    services = services,
-                    onOpen = host::openDetail,
-                    onRemove = host.saved::removeWatchLater,
-                    onBack = { host.handleBack() },
-                )
-                "reading_history" -> ComposeHistoryScreen(
-                    items = host.saved.historyItems.value,
-                    loading = host.saved.historyLoading.value,
-                    services = services,
-                    onOpen = host::openDetail,
-                    onBack = { host.handleBack() },
-                )
-                "reading_stats" -> ComposeReadingStatsScreen(
-                    services = services,
-                    onBack = { host.handleBack() },
-                )
-                "leaderboard" -> ComposeCheckinLeaderboardScreen(
-                    services = services,
-                    onBack = { host.handleBack() },
-                )
-                    else -> ComposeFallbackScreen(route, services, { host.handleBack() })
+                screenStates.SaveableStateProvider(page) {
+                    ComposeRouteScreen(host, page, pageServices, pageActive)
                 }
             }
         }
     }
-
 }
