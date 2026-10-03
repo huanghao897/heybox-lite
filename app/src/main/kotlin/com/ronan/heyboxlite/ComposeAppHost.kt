@@ -89,6 +89,9 @@ internal class ComposeAppHost(
     private var mounted = true
 
     init {
+        // The content layer moves during a back gesture. Keep the host view
+        // painted so the exposed strip never reveals the hidden legacy layer.
+        view.setBackgroundColor(tokens.background)
         view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
         view.setContent {
             ComposeAppRoot(this)
@@ -112,6 +115,22 @@ internal class ComposeAppHost(
         }
     }
 
+    /**
+     * Entry point for native callers opening a Compose user page. Unlike a
+     * plain setRoute call, this records the actual current route so the page
+     * can return to search, reading center or the preserved detail screen.
+     */
+    fun showExternalUserSpace(route: String) {
+        if (routeState.value != "user_space") {
+            userSpaceReturnRoute.value = currentRouteSpec()
+            if (routeState.value == "detail" && detail.value != null) {
+                savedDetailForUserSpace.value = detail.value
+                savedDetailParentRoute = detailReturnRouteSpec()
+            }
+        }
+        setRoute(route)
+    }
+
     fun currentRoute(): String = routeState.value
 
     fun currentRouteSpec(): String = if (routeState.value == "user_space") {
@@ -129,6 +148,7 @@ internal class ComposeAppHost(
     fun isMounted(): Boolean = mounted && view.parent != null
 
     fun updateTheme(tokens: ThemeTokens, roundScreen: Boolean, uiScale: Float, textScale: Float) {
+        view.setBackgroundColor(tokens.background)
         val current = servicesState.value
         servicesState.value = current.copy(
             theme = composeThemeState(tokens, uiScale, textScale, roundScreen),
@@ -333,6 +353,9 @@ internal class ComposeAppHost(
             val swipeOffset = remember { mutableStateOf(0f) }
             val density = LocalDensity.current
             val touchSlop = LocalViewConfiguration.current.touchSlop
+            val backEdge = with(density) {
+                (36.dp * services.theme.uiScale).toPx()
+            }
             val backSwipeEnabled = if (route == "feed") services.session.homeSwipeExit()
             else services.session.shellBackSwipe()
             LaunchedEffect(route, backSwipeEnabled) {
@@ -349,7 +372,7 @@ internal class ComposeAppHost(
                     .composeBackSwipe(
                         route = route,
                         enabled = backSwipeEnabled,
-                        edgePx = 0f,
+                        edgePx = backEdge,
                         thresholdPx = with(density) { 44.dp.toPx() * services.theme.uiScale },
                         touchSlopPx = touchSlop,
                         onProgress = { swipeOffset.value = it },

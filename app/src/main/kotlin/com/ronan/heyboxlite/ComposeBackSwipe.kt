@@ -36,26 +36,33 @@ internal fun Modifier.composeBackSwipe(
         var finished = false
 
         while (true) {
-            val event = awaitPointerEvent(PointerEventPass.Main)
+            // Initial pass lets the shell decide before a LazyColumn starts a
+            // horizontal-looking drag, but we do not consume anything until
+            // the axis and direction are unambiguous. Vertical scrolling and
+            // sliders therefore keep their normal ownership.
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (event.changes.size != 1) {
+                // A second pointer belongs to pinch/zoom or another
+                // multi-touch control. It must never finish a partially
+                // accumulated back gesture.
+                accepted = false
+                break
+            }
             val change = event.changes.firstOrNull() ?: break
-            if (!change.pressed) break
-
-            // Main pass runs after child scrolling and controls. A consumed
-            // change belongs to that child and must never become back.
-            if (!decided && change.isConsumed) break
             val delta = change.positionChangeIgnoreConsumed()
             totalX += delta.x
             totalY += delta.y
 
             if (!decided && maxOf(abs(totalX), abs(totalY)) >= touchSlopPx) {
                 decided = true
-                accepted = totalX > 0f && abs(totalX) > abs(totalY) * 1.12f
+                accepted = totalX > 0f && abs(totalX) > abs(totalY) * 1.18f
                 if (!accepted) break
             }
             if (accepted) {
                 change.consume()
                 onProgress(totalX.coerceIn(0f, thresholdPx * 2.5f))
             }
+            if (!change.pressed) break
         }
 
         if (accepted && totalX >= thresholdPx) {

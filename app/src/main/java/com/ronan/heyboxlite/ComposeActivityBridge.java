@@ -53,9 +53,13 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         // A native fallback page owns its own history. Do not replace it with
         // a Compose route while the Compose layer is hidden.
         if (!isComposeSurfaceVisible()) return false;
-        return showRouteIfMounted("user_space?user=" + Uri.encode(userId)
+        if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()) return false;
+        String route = "user_space?user=" + Uri.encode(userId)
                 + "&name=" + Uri.encode(name == null ? "" : name)
-                + "&avatar=" + Uri.encode(avatar == null ? "" : avatar));
+                + "&avatar=" + Uri.encode(avatar == null ? "" : avatar);
+        activity.composeAppHost.showExternalUserSpace(route);
+        syncChrome(route);
+        return true;
     }
 
     boolean handleBack() {

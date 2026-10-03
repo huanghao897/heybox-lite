@@ -37,6 +37,23 @@ public class GestureOwnershipWiringTest {
         assertTrue(shell.contains("Child controls (sliders, pagers and zoomable images) own the stream"));
     }
 
+    @Test
+    public void composeBackSwipeDoesNotOwnEveryHorizontalControl() throws Exception {
+        String swipe = source("kotlin/com/ronan/heyboxlite/ComposeBackSwipe.kt");
+        String policy = source("kotlin/com/ronan/heyboxlite/ComposeSwipePolicy.kt");
+        assertTrue(swipe.contains("PointerEventPass.Initial"));
+        assertTrue(swipe.contains("event.changes.size != 1"));
+        assertTrue(policy.contains("startX <= edgePx"));
+    }
+
+    @Test
+    public void externalComposeUserPageKeepsItsParentRoute() throws Exception {
+        String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
+        String host = source("kotlin/com/ronan/heyboxlite/ComposeAppHost.kt");
+        assertTrue(bridge.contains("showExternalUserSpace(route)"));
+        assertTrue(host.contains("userSpaceReturnRoute.value = currentRouteSpec()"));
+    }
+
     private static String source(String path) throws Exception {
         File direct = new File("src/main/" + path);
         File file = direct.isFile() ? direct : new File("app/src/main/" + path);
