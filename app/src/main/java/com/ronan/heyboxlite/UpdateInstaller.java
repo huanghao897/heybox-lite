@@ -176,7 +176,7 @@ final class UpdateInstaller {
     }
 
     private void openApk(File apk, boolean chooser) {
-        Uri uri = UpdateApkProvider.uriFor(apk);
+        Uri uri = UpdateApkProvider.uriFor(this.activity, apk);
         Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(uri, "application/vnd.android.package-archive");
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

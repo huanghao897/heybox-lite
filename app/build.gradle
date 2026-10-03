@@ -6,6 +6,7 @@ plugins {
 
 def signingProperties = new Properties()
 def signingPropertiesFile = rootProject.file("release-signing.properties")
+def heyboxApplicationId = "com.ronan.heyboxlite.preview"
 if (signingPropertiesFile.exists()) {
     signingProperties.load(new FileInputStream(signingPropertiesFile))
 }
@@ -16,7 +17,11 @@ android {
     compileSdk 36
 
     defaultConfig {
-        applicationId "com.ronan.heyboxlite.preview"
+        applicationId heyboxApplicationId
+        manifestPlaceholders = [
+                diagnosticsAuthority: heyboxApplicationId + ".diagnostics",
+                updateAuthority: heyboxApplicationId + ".updateapk"
+        ]
         minSdk 21
         targetSdk 35
         testInstrumentationRunner "com.ronan.heyboxlite.CheckinCenterDeviceTestRunner"

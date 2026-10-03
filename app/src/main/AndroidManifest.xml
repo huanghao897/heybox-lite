@@ -68,12 +68,12 @@
             android:process=":native_signer" />
         <provider
             android:name=".DiagnosticsProvider"
-            android:authorities="com.ronan.heyboxlite.preview.diagnostics"
+            android:authorities="${diagnosticsAuthority}"
             android:exported="false"
             android:grantUriPermissions="true" />
         <provider
             android:name=".UpdateApkProvider"
-            android:authorities="com.ronan.heyboxlite.preview.updateapk"
+            android:authorities="${updateAuthority}"
             android:exported="false"
             android:grantUriPermissions="true" />
     </application>

@@ -5,7 +5,6 @@ import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
-import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
@@ -59,7 +58,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private VideoSettingsPage videoSettingsPage;
     private NoticeCenter noticeCenter;
     private UpdateInstaller updateInstaller;
-    private DiagnosticsController diagnosticsController;
+    DiagnosticsController diagnosticsController;
     private DetailContentRenderer detailContentRenderer;
     private DetailHeaderRenderer detailHeaderRenderer;
     private DetailActionBar detailActionBar;
@@ -74,12 +73,12 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     PostActionController postActions;
     SessionStore session;
     ApiClient api;
-    private WriteTokenProvider writeTokenProvider;
-    private WriteActionClient writeActions;
-    private QrLoginPage qrLoginPage;
+    WriteTokenProvider writeTokenProvider;
+    WriteActionClient writeActions;
+    QrLoginPage qrLoginPage;
     CheckinCenterCoordinator checkinCenterCoordinator;
-    private CheckinCenterPage checkinCenterPage;
-    private CheckinLeaderboardController checkinLeaderboardController;
+    CheckinCenterPage checkinCenterPage;
+    CheckinLeaderboardController checkinLeaderboardController;
     ReadingTimeTracker readingTimeTracker;
     LinearLayout shellRoot;
     LinearLayout shellBar;
@@ -104,18 +103,19 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             new ContentNavigationHistory<>();
     private long lastExitBackAt;
     final Handler handler = new Handler(Looper.getMainLooper());
+    private final MainActivityLifecycle lifecycle = new MainActivityLifecycle(this);
     final PageTransitionController pageTransitions = new PageTransitionController();
     private ShellScreenNavigator shellScreenNavigator;
     private MainActivityLayout layout;
     CrownInputHandler crownInput;
-    private SearchBarController searchBars;
+    SearchBarController searchBars;
     private MainActivityLegacyUi legacyUi;
     SearchPage searchPage;
     boolean pendingBackTransition;
     boolean pendingLateralPush;
     private boolean immediatePageReplacement;
-    private final TransitionSnapshotStore screenSnapshots = new TransitionSnapshotStore();
-    private final TransitionSnapshotStore fullScreenSnapshots = new TransitionSnapshotStore();
+    final TransitionSnapshotStore screenSnapshots = new TransitionSnapshotStore();
+    final TransitionSnapshotStore fullScreenSnapshots = new TransitionSnapshotStore();
     final Map<String, View> retainedPages = new HashMap<>();
     String screen = "feed";
     String detailReturn = "feed";
@@ -127,7 +127,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     private String lastDetailDiagnostics = "";
     JSONObject currentDetailBody;
     boolean activityResumed;
-    private boolean accountBlockedScreen;
+    boolean accountBlockedScreen;
     private TextView accountBlockedMessage;
     @Override
     protected void onCreate(Bundle state) {
@@ -249,7 +249,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         }
     }
 
-    private void applyAccessStatus(AccessStatus status) {
+    void applyAccessStatus(AccessStatus status) {
         if (status == null || isFinishing()) return;
         this.session.setAppBlocked(status.banned, status.message);
         if (status.banned) {
@@ -1854,7 +1854,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         return true;
     }
 
-    private void discardDetailHistory() {
+    void discardDetailHistory() {
         for (DetailNavigationState state : this.detailHistory.drain()) {
             state.pager.cancelMotion();
             state.pager.takeReturnView();
@@ -1974,121 +1974,30 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     @Override
     protected void onResume() {
         super.onResume();
-        this.activityResumed = true;
-        if (this.checkinCenterPage != null && "checkin_center".equals(this.screen)) {
-            this.checkinCenterPage.onResume();
-        }
-        if (this.checkinLeaderboardController != null && "leaderboard".equals(this.screen)) {
-            this.checkinLeaderboardController.onResume();
-        }
-        if ("login".equals(this.screen) && this.qrLoginPage != null) {
-            this.qrLoginPage.resume();
-        }
-        if (this.accountBlockedScreen) {
-            PresenceReporter.pingNow(this.session, this.readingTimeTracker,
-                    this::applyAccessStatus);
-            return;
-        }
-        if ("detail".equals(this.screen) && this.currentDetailBody != null
-                && this.currentDetailItem != null && this.readingTimeTracker != null) {
-            this.readingTimeTracker.start(this.currentDetailItem.article, this.currentDetailItem.id);
-        }
-        PresenceReporter.ping(this.session, this.readingTimeTracker, this::applyAccessStatus);
-        this.handler.removeCallbacks(this.presenceTick);
-        this.handler.postDelayed(this.presenceTick, 600_000L);
+        this.lifecycle.onResume();
     }
 
     @Override
     protected void onPause() {
-        this.activityResumed = false;
-        if (this.crownInput != null) this.crownInput.cancel();
-        if (this.checkinCenterPage != null) this.checkinCenterPage.onPause();
-        if (this.checkinLeaderboardController != null) {
-            this.checkinLeaderboardController.onPause();
-        }
-        if (this.qrLoginPage != null) this.qrLoginPage.pause();
-        if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
-        this.handler.removeCallbacks(this.presenceTick);
-        saveCurrentDetailProgress();
+        this.lifecycle.onPause();
         super.onPause();
     }
 
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
-        CrashBreadcrumbs.record("memory trim level=" + level);
-        if (level < ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return;
-        ImageLoader.clear();
-        this.screenSnapshots.clear();
-        this.fullScreenSnapshots.clear();
+        this.lifecycle.onTrimMemory(level);
     }
 
     @Override
     public void onLowMemory() {
-        ImageLoader.clear();
-        this.screenSnapshots.clear();
-        this.fullScreenSnapshots.clear();
+        this.lifecycle.onLowMemory();
         super.onLowMemory();
     }
 
-    /** 前台在线心跳每 10 分钟一次，退后台即停止。 */
-    private final Runnable presenceTick = new Runnable() {
-        @Override
-        public void run() {
-            PresenceReporter.ping(MainActivity.this.session, MainActivity.this.readingTimeTracker,
-                    MainActivity.this::applyAccessStatus);
-            MainActivity.this.handler.postDelayed(this, 600_000L);
-        }
-    };
-
     @Override
     protected void onDestroy() {
-        if (this.composeAppHost != null) this.composeAppHost.close();
-        if (this.crownInput != null) this.crownInput.cancel();
-        if (this.readingTimeTracker != null) this.readingTimeTracker.pause();
-        if (this.checkinCenterPage != null) {
-            this.checkinCenterPage.close();
-            this.checkinCenterPage = null;
-        }
-        if (this.checkinLeaderboardController != null) {
-            this.checkinLeaderboardController.close();
-            this.checkinLeaderboardController = null;
-        }
-        if (this.checkinCenterCoordinator != null) {
-            this.checkinCenterCoordinator.close();
-            this.checkinCenterCoordinator = null;
-        }
-        saveCurrentDetailProgress();
-        stopQrPolling();
-        if (this.qrLoginPage != null) {
-            this.qrLoginPage.close();
-            this.qrLoginPage = null;
-        }
-        this.pageTransitions.cancelNow();
-        discardDetailHistory();
-        if (this.feedPage != null) this.feedPage.close();
-        if (this.savedContentController != null) this.savedContentController.close();
-        if (this.detailPager != null) this.detailPager.cancelMotion();
-        if (this.content instanceof BackSwipeFrameLayout) {
-            ((BackSwipeFrameLayout) this.content).cancelMotion();
-        }
-        ImageLoader.cancelTree(this.content);
-        this.screenSnapshots.releaseAll();
-        this.fullScreenSnapshots.releaseAll();
-        this.retainedPages.clear();
-        if (this.searchPage != null) this.searchPage.close();
-        if (this.searchBars != null) this.searchBars.clear();
-        if (this.writeActions != null) this.writeActions.close();
-        if (this.detailLoader != null) this.detailLoader.close();
-        this.handler.removeCallbacksAndMessages(null);
-        if (this.writeTokenProvider != null) {
-            this.writeTokenProvider.close();
-        }
-        if (this.api != null) {
-            this.api.close();
-        }
-        if (this.cacheMaintenance != null) this.cacheMaintenance.close();
-        if (this.diagnosticsController != null) this.diagnosticsController.close();
+        this.lifecycle.onDestroy();
         super.onDestroy();
     }
 

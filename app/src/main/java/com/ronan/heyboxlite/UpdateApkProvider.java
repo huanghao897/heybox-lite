@@ -12,9 +12,10 @@ import android.text.TextUtils;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.Locale;
 
 public final class UpdateApkProvider extends ContentProvider {
-    static final String AUTHORITY = "com.ronan.heyboxlite.preview.updateapk";
+    private static final String AUTHORITY_SUFFIX = ".updateapk";
     private static final String MIME_APK = "application/vnd.android.package-archive";
 
     @Override public boolean onCreate() {
@@ -49,7 +50,9 @@ public final class UpdateApkProvider extends ContentProvider {
     @Override public ParcelFileDescriptor openFile(Uri uri, String mode)
             throws FileNotFoundException {
         File file = fileFor(uri);
-        if (file == null || !file.isFile()) throw new FileNotFoundException();
+        if (file == null || !file.isFile()) {
+            throw new FileNotFoundException("更新 APK 不存在或已失效");
+        }
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
     }
 
@@ -66,10 +69,10 @@ public final class UpdateApkProvider extends ContentProvider {
         return 0;
     }
 
-    static Uri uriFor(File file) {
+    static Uri uriFor(android.content.Context context, File file) {
         return new Uri.Builder()
                 .scheme("content")
-                .authority(AUTHORITY)
+                .authority(context.getPackageName() + AUTHORITY_SUFFIX)
                 .appendPath(file == null ? "" : file.getName())
                 .build();
     }
@@ -77,24 +80,36 @@ public final class UpdateApkProvider extends ContentProvider {
     private File fileFor(Uri uri) {
         if (getContext() == null || uri == null) return null;
         String name = uri.getLastPathSegment();
-        if (TextUtils.isEmpty(name) || name.contains("/") || name.contains("\\")) {
-            return null;
-        }
-        if (!name.startsWith("heybox-Lite-update-") || !name.endsWith(".apk")) {
+        if (TextUtils.isEmpty(name) || name.contains("/") || name.contains("\\")
+                || name.contains("..") || !isApkName(name)) {
             return null;
         }
         try {
-            File cacheRoot = new File(getContext().getCacheDir(), "updates");
-            File cacheFile = fileUnder(cacheRoot, name);
+            File cacheFile = existingFile(new File(getContext().getCacheDir(), "updates"), name);
             if (cacheFile != null) return cacheFile;
 
             File externalRoot = getContext().getExternalFilesDir(
                     android.os.Environment.DIRECTORY_DOWNLOADS);
-            return externalRoot == null ? null
-                    : fileUnder(new File(externalRoot, "heyboxlite"), name);
+            if (externalRoot != null) {
+                File externalFile = existingFile(new File(externalRoot, "heyboxlite"), name);
+                if (externalFile != null) return externalFile;
+            }
+
+            File filesRoot = getContext().getFilesDir();
+            return existingFile(new File(filesRoot, "updates"), name);
         } catch (IOException | SecurityException ignored) {
             return null;
         }
+    }
+
+    private boolean isApkName(String name) {
+        return name.length() <= 160
+                && name.toLowerCase(Locale.ROOT).endsWith(".apk");
+    }
+
+    private File existingFile(File root, String name) throws IOException {
+        File file = fileUnder(root, name);
+        return file != null && file.isFile() && file.canRead() ? file : null;
     }
 
     private File fileUnder(File root, String name) throws IOException {
