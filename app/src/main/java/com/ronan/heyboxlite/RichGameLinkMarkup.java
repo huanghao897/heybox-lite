@@ -47,6 +47,10 @@ final class RichGameLinkMarkup {
 
     private RichGameLinkMarkup() {}
 
+    static boolean hasMarkup(String source) {
+        return source != null && source.indexOf(START) >= 0;
+    }
+
     static String normalizeAnchors(String source) {
         if (source == null || source.isEmpty()) return "";
         Matcher matcher = ANCHOR.matcher(source);

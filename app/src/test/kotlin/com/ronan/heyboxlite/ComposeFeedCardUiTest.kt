@@ -38,7 +38,7 @@ class ComposeFeedCardUiTest {
 
     @Test fun actionAndThemeUpdatesDoNotReparseContentAndKeepLiveFeedItemCallbacks() {
         val preload = preload("Game One")
-        val item = post("Title", "Summary", preload)
+        val item = post("Title [inline-test]", "Summary [inline-test]", preload)
         val theme = mutableStateOf(composePreviewTheme(false))
         val favorite = mutableStateOf(false)
         val cached = mutableStateOf(false)
@@ -54,8 +54,8 @@ class ComposeFeedCardUiTest {
         compose.waitForIdle()
         val initialReads = preload.reads
         assertTrue("Initial rendering must parse the preload", initialReads > 0)
-        val titleView = compose.runOnIdle { richView("Title") }
-        val descriptionView = compose.runOnIdle { richView("Summary") }
+        val titleView = compose.runOnIdle { richView("Title [inline-test]") }
+        val descriptionView = compose.runOnIdle { richView("Summary [inline-test]") }
         val renderedTitle = compose.runOnIdle { titleView.text }
         val renderedDescription = compose.runOnIdle { descriptionView.text }
         repeat(5) { index ->
@@ -98,7 +98,7 @@ class ComposeFeedCardUiTest {
     @Test fun replacingTheSamePostIdInvalidatesTextAndPreloadPresentation() {
         val firstPreload = preload("Game One")
         val nextPreload = preload("Game Two")
-        val current = mutableStateOf(post("First title", "First summary", firstPreload))
+        val current = mutableStateOf(post("First title [inline-test]", "First summary [inline-test]", firstPreload))
         val theme = composePreviewTheme(false)
         compose.setContent {
             HeyboxComposeTheme(theme) {
@@ -106,17 +106,41 @@ class ComposeFeedCardUiTest {
             }
         }
         compose.onNodeWithText("Game One").assertIsDisplayed()
-        val titleView = compose.runOnIdle { richView("First title") }
+        val titleView = compose.runOnIdle { richView("First title [inline-test]") }
         val firstText = compose.runOnIdle { titleView.text }
-        compose.runOnIdle { current.value = post("Second title", "Second summary", nextPreload) }
+        compose.runOnIdle { current.value = post("Second title [inline-test]", "Second summary [inline-test]", nextPreload) }
         compose.onNodeWithText("Game Two").assertIsDisplayed()
         compose.onNodeWithText("Game One").assertDoesNotExist()
         compose.runOnIdle {
-            assertSame(titleView, richView("Second title"))
+            assertSame(titleView, richView("Second title [inline-test]"))
             assertNotSame(firstText, titleView.text)
-            assertEquals("Second summary", richView("Second summary").text.toString())
+            assertEquals("Second summary [inline-test]", richView("Second summary [inline-test]").text.toString())
             assertTrue(nextPreload.reads > 0)
         }
+    }
+
+    @Test fun ordinaryFeedTextUsesComposeWithoutCreatingNativeRichTextViews() {
+        val current = mutableStateOf(post("Plain title", "Plain summary", JSONObject()))
+        val theme = composePreviewTheme(false)
+        compose.setContent {
+            HeyboxComposeTheme(theme) {
+                ComposeFeedCard(current.value, theme, true, "", {}, null)
+            }
+        }
+        compose.onNodeWithText("Plain title").assertIsDisplayed()
+        compose.onNodeWithText("Plain summary").assertIsDisplayed()
+        compose.runOnIdle {
+            assertTrue(richViews(compose.activity.window.decorView).isEmpty())
+            current.value = post("Rich [inline-test]", "Still plain", JSONObject())
+        }
+        compose.onNodeWithText("Still plain").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals("Rich [inline-test]", richView("Rich [inline-test]").text.toString())
+            assertEquals(1, richViews(compose.activity.window.decorView).size)
+            current.value = post("Plain again", "Plain summary", JSONObject())
+        }
+        compose.onNodeWithText("Plain again").assertIsDisplayed()
+        compose.runOnIdle { assertTrue(richViews(compose.activity.window.decorView).isEmpty()) }
     }
 
     @Test fun aPreloadWithNoGamesAlsoCachesItsEmptyResult() {

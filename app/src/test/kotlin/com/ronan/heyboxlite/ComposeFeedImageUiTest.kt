@@ -40,6 +40,28 @@ class ComposeFeedImageUiTest {
     @Before fun prepareRenderer() { EmojiRenderer.clear() }
     @After fun clearRenderer() { EmojiRenderer.clear() }
 
+    @Test fun memoryCachedImagesRenderWithoutStartingAnotherAsyncRequest() {
+        loader.cachedBitmaps["cached-source" to 64] = red
+        val source = mutableStateOf("cached-source")
+        val noImage = mutableStateOf(false)
+        val theme = composePreviewTheme(false)
+        compose.setContent {
+            ComposeRemoteImage(source.value, theme, noImage.value, 64.dp,
+                RoundedCornerShape(4.dp), "cached image", loader = loader)
+        }
+        assertContains(android.graphics.Color.RED)
+        assertTrue(loader.requests.isEmpty())
+        compose.runOnIdle { noImage.value = true }
+        assertMissing(android.graphics.Color.RED)
+        assertTrue(loader.requests.isEmpty())
+        compose.runOnIdle { noImage.value = false }
+        assertContains(android.graphics.Color.RED)
+        assertTrue(loader.requests.isEmpty())
+        compose.runOnIdle { source.value = "new-source" }
+        assertMissing(android.graphics.Color.RED)
+        assertEquals("new-source", loader.requests.single().source)
+    }
+
     @Test fun sourceSizeAndNoImageChangesCannotShowThePreviousBitmapOrAcceptItsCallback() {
         val source = mutableStateOf("first-source")
         val target = mutableStateOf(64.dp)
@@ -65,6 +87,7 @@ class ComposeFeedImageUiTest {
         compose.waitForIdle()
         val second = loader.requests.last()
         assertEquals("second-source", second.source)
+        assertTrue("The old image must cancel its queued work", first.cancelled)
         assertMissing(android.graphics.Color.RED)
         compose.runOnIdle { first.callback(red) }
         assertMissing(android.graphics.Color.RED)
@@ -199,12 +222,20 @@ class ComposeFeedImageUiTest {
     private fun image(color: Int) = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
         .apply { eraseColor(color) }
 
-    private data class Request(val source: String, val targetPx: Int, val callback: (Bitmap?) -> Unit)
+    private data class Request(val source: String, val targetPx: Int, val callback: (Bitmap?) -> Unit,
+                               var cancelled: Boolean = false)
 
     private class DeferredImages : ComposeImageLoader {
         val requests = mutableListOf<Request>()
+        val cachedBitmaps = mutableMapOf<Pair<String, Int>, Bitmap>()
+        override fun cached(sourceUrl: String, targetPx: Int): Bitmap? = cachedBitmaps[sourceUrl to targetPx]
         override fun load(sourceUrl: String, targetPx: Int, callback: (Bitmap?) -> Unit) {
             requests += Request(sourceUrl, targetPx, callback)
+        }
+        override fun loadCancellable(sourceUrl: String, targetPx: Int, callback: (Bitmap?) -> Unit): () -> Unit {
+            val request = Request(sourceUrl, targetPx, callback)
+            requests += request
+            return { request.cancelled = true }
         }
     }
 }

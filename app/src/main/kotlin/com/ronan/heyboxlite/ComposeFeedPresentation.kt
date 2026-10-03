@@ -9,7 +9,12 @@ internal data class ComposeFeedPresentation(
     val title: String,
     val description: String,
     val game: ComposeGameCardPresentation?,
+    val richTitle: Boolean = feedTextNeedsSpans(title),
+    val richDescription: Boolean = feedTextNeedsSpans(description),
 )
+
+internal fun feedTextNeedsSpans(source: String): Boolean =
+    EmojiRenderer.hasTokens(source) || RichGameLinkMarkup.hasMarkup(source)
 
 /** Java action callbacks mutate FeedItem in place; publish their visible values explicitly. */
 internal data class ComposeFeedActionState(

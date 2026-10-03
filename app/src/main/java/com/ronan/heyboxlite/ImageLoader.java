@@ -280,20 +280,22 @@ final class ImageLoader {
     }
 
     static void load(String sourceUrl, int targetPx, Callback callback) {
-        String url = thumbnailUrl(sourceUrl, targetPx);
-        if (url.isEmpty()) {
-            MAIN.post(() -> callback.onLoaded(null));
-            return;
-        }
+        loadCancellable(sourceUrl, targetPx, callback);
+    }
+
+    static Bitmap cachedThumbnail(String sourceUrl, int targetPx) {
+        return CACHE.get(thumbnailUrl(sourceUrl, targetPx));
+    }
+
+    static ImageLoadRequest loadCancellable(String sourceUrl, int targetPx, Callback callback) {
+        return requestBitmap(thumbnailUrl(sourceUrl, targetPx), targetPx, SMALL_EXECUTOR, callback);
+    }
+
+    private static ImageLoadRequest requestBitmap(String url, int targetPx,
+                                                  ExecutorService executor, Callback callback) {
         Bitmap cached = CACHE.get(url);
-        if (cached != null) {
-            MAIN.post(() -> callback.onLoaded(cached));
-            return;
-        }
-        SMALL_EXECUTOR.execute(() -> {
-            Bitmap bitmap = download(url, safeTarget(targetPx));
-            MAIN.post(() -> callback.onLoaded(bitmap));
-        });
+        if (url.isEmpty() || cached != null) return ImageLoadRequest.deliver(MAIN, cached, callback);
+        return ImageLoadRequest.submit(executor, MAIN, () -> download(url, safeTarget(targetPx)), callback);
     }
 
     static void prefetchOffline(Context context, List<String> sourceUrls, int targetPx,
@@ -324,20 +326,7 @@ final class ImageLoader {
     }
 
     static void loadOriginal(String sourceUrl, int targetPx, Callback callback) {
-        String url = originalUrl(sourceUrl);
-        if (url.isEmpty()) {
-            MAIN.post(() -> callback.onLoaded(null));
-            return;
-        }
-        Bitmap cached = CACHE.get(url);
-        if (cached != null) {
-            MAIN.post(() -> callback.onLoaded(cached));
-            return;
-        }
-        LARGE_EXECUTOR.execute(() -> {
-            Bitmap bitmap = download(url, safeTarget(Math.min(targetPx, MAX_BITMAP_SIDE)));
-            MAIN.post(() -> callback.onLoaded(bitmap));
-        });
+        requestBitmap(originalUrl(sourceUrl), Math.min(targetPx, MAX_BITMAP_SIDE), LARGE_EXECUTOR, callback);
     }
 
     static void loadLongImageTiles(String sourceUrl, int targetWidthPx,

@@ -1,7 +1,6 @@
 package com.ronan.heyboxlite
 
 import android.graphics.Bitmap
-import android.text.TextUtils
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -139,24 +138,22 @@ internal fun ComposeFeedCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                ComposeRichText(
+                ComposeFeedText(
                     source = title,
-                    darkMode = theme.dark,
-                    textColor = theme.text,
-                    linkColor = theme.link,
+                    rich = content.richTitle,
+                    theme = theme,
+                    color = theme.text,
                     fontSize = ((if (theme.roundScreen) 14 else 15) * theme.textScale).sp,
                     lineHeight = ((if (theme.roundScreen) 18 else 19) * theme.textScale).sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
-                    ellipsize = TextUtils.TruncateAt.END,
                 )
                 if (description.isNotEmpty()) {
-                    ComposeRichText(source = description, darkMode = theme.dark,
-                        textColor = theme.muted, linkColor = theme.link,
+                    ComposeFeedText(source = description, rich = content.richDescription,
+                        theme = theme, color = theme.muted,
                         fontSize = ((if (theme.roundScreen) 10 else 11) * theme.textScale).sp,
                         lineHeight = (15 * theme.textScale).sp,
                         maxLines = if (theme.roundScreen) 1 else 2,
-                        ellipsize = TextUtils.TruncateAt.END,
                         modifier = Modifier.padding(top = (4 * scale).dp))
                 }
             }
@@ -248,13 +245,18 @@ internal fun ComposeRemoteImage(
     loader: ComposeImageLoader = ExistingComposeImageLoader,
 ) {
     val targetPx = with(LocalDensity.current) { targetDp.toPx().toInt().coerceAtLeast(1) }
-    val bitmap = remember(url, targetPx, noImage, loader) { mutableStateOf<Bitmap?>(null) }
+    val bitmap = remember(url, targetPx, noImage, loader) {
+        mutableStateOf(if (!noImage && url.isNotBlank()) loader.cached(url, targetPx) else null)
+    }
     DisposableEffect(url, targetPx, noImage, loader) {
         var active = true
-        if (!noImage && url.isNotBlank()) loader.load(url, targetPx) {
-            if (active) bitmap.value = it
+        val cancel = if (!noImage && url.isNotBlank() && bitmap.value == null) {
+            loader.loadCancellable(url, targetPx) { if (active) bitmap.value = it }
+        } else null
+        onDispose {
+            active = false
+            cancel?.invoke()
         }
-        onDispose { active = false }
     }
     val image = remember(bitmap.value) { bitmap.value?.asImageBitmap() }
     Box(

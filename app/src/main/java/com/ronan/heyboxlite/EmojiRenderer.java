@@ -51,6 +51,10 @@ final class EmojiRenderer {
         return BITMAPS.size();
     }
 
+    static boolean hasTokens(String source) {
+        return source != null && TOKEN.matcher(source).find();
+    }
+
     static void set(TextView view, String source) {
         set(view, source, false, null);
     }
@@ -68,7 +72,7 @@ final class EmojiRenderer {
         String value = source == null ? "" : source;
         view.setTag(value);
         render(view, value, darkMode);
-        if (!EmojiStore.isLoaded() && TOKEN.matcher(value).find()) {
+        if (!EmojiStore.isLoaded() && hasTokens(value)) {
             EmojiStore.whenReady(() -> {
                 if (value.equals(view.getTag())) render(view, value, darkMode);
             });

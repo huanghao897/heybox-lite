@@ -40,9 +40,22 @@ internal enum class FeedAction {
 /** Small callback bridge around the Java ImageLoader; it owns all network/cache work. */
 internal interface ComposeImageLoader {
     fun load(sourceUrl: String, targetPx: Int, callback: (Bitmap?) -> Unit)
+    fun cached(sourceUrl: String, targetPx: Int): Bitmap? = null
+    fun loadCancellable(sourceUrl: String, targetPx: Int, callback: (Bitmap?) -> Unit): () -> Unit {
+        load(sourceUrl, targetPx, callback)
+        return {}
+    }
 }
 
 internal object ExistingComposeImageLoader : ComposeImageLoader {
+    override fun cached(sourceUrl: String, targetPx: Int): Bitmap? =
+        ImageLoader.cachedThumbnail(sourceUrl, targetPx)
+
+    override fun loadCancellable(sourceUrl: String, targetPx: Int, callback: (Bitmap?) -> Unit): () -> Unit {
+        val request = ImageLoader.loadCancellable(sourceUrl, targetPx, callback)
+        return request::cancel
+    }
+
     override fun load(sourceUrl: String, targetPx: Int, callback: (Bitmap?) -> Unit) {
         ImageLoader.load(sourceUrl, targetPx, object : ImageLoader.Callback {
             override fun onLoaded(bitmap: Bitmap?) {
@@ -69,6 +82,7 @@ internal fun ComposeFeedScreen(
     interactive: Boolean = true,
     presentations: Map<FeedItem, ComposeFeedPresentation> = emptyMap(),
     actionRevision: Int = 0,
+    rotaryInput: ComposeFeedRotaryInput? = null,
 ) {
     val presentationCache = remember { ComposeFeedPresentationCache() }
     HeyboxComposeTheme(services.theme) {
@@ -76,9 +90,13 @@ internal fun ComposeFeedScreen(
         val noImage = services.session.noImage()
         val currentUserId = services.session.userId()
         val gameCardNoImage = services.session.gameCardNoImage()
-        val rotary = services.theme.rotaryRequest
-        LaunchedEffect(rotary?.serial) {
-            if (rotary != null) listState.scrollBy(rotary.distance.toFloat())
+        if (rotaryInput != null) {
+            ObserveFeedRotaryInput(rotaryInput, listState)
+        } else {
+            val rotary = services.theme.rotaryRequest
+            LaunchedEffect(rotary?.serial) {
+                if (rotary != null) listState.scrollBy(rotary.distance.toFloat())
+            }
         }
         BoxWithConstraints(
             modifier = androidx.compose.ui.Modifier.fillMaxSize()

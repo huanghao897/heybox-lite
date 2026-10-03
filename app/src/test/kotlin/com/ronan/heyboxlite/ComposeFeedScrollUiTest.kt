@@ -50,7 +50,7 @@ class ComposeFeedScrollUiTest {
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun realFeedRoundTripsReuseViewsAndParsedContentWithoutMovingTheAnchor() {
         val preloads = (0 until 32).map { preload(it) }
-        val posts = preloads.mapIndexed { index, preload -> post(index, preload) }
+        val posts = preloads.mapIndexed { index, preload -> post(index, preload, rich = true) }
         val state = LazyListState()
         val services = services()
         val theme = mutableStateOf(services.theme)
@@ -67,8 +67,10 @@ class ComposeFeedScrollUiTest {
             compose.onNode(hasScrollAction()).performScrollToIndex(index + 1)
             compose.runOnIdle {
                 val views = richViews(compose.activity.window.decorView)
-                assertEquals("Title $index", views.single { it.tag == "Title $index" }.text.toString())
-                assertEquals("Summary $index", views.single { it.tag == "Summary $index" }.text.toString())
+                assertEquals("Title $index [inline-test]",
+                    views.single { it.tag == "Title $index [inline-test]" }.text.toString())
+                assertEquals("Summary $index [inline-test]",
+                    views.single { it.tag == "Summary $index [inline-test]" }.text.toString())
                 for (view in views) {
                     val source = view.tag as? String ?: continue
                     assertEquals(source, view.text.toString())
@@ -234,8 +236,10 @@ class ComposeFeedScrollUiTest {
         compose.runOnIdle {
             assertEquals("Display must use the worker's prepared content even on first bind",
                 preparedReads, preloads.map { it.reads })
-            assertTrue(richViews(compose.activity.window.decorView).any { it.text.toString() == "Title 0" })
+            assertTrue("Plain feed text must not allocate native rich-text Views",
+                richViews(compose.activity.window.decorView).isEmpty())
         }
+        compose.onNodeWithText("Title 0").assertExists()
     }
 
     private fun services(): ComposeServices {
@@ -248,9 +252,9 @@ class ComposeFeedScrollUiTest {
             composePreviewTheme(false).copy(motionLevel = MotionLevel.OFF), ComposeToast {})
     }
 
-    private fun post(index: Int, preload: JSONObject) = FeedItem.from(
-        JSONObject().put("linkid", "post-$index").put("title", "<p>Title $index</p>")
-            .put("description", "[{\"type\":\"text\",\"text\":\"Summary $index\"}]")
+    private fun post(index: Int, preload: JSONObject, rich: Boolean = false) = FeedItem.from(
+        JSONObject().put("linkid", "post-$index").put("title", "<p>Title $index${if (rich) " [inline-test]" else ""}</p>")
+            .put("description", "[{\"type\":\"text\",\"text\":\"Summary $index${if (rich) " [inline-test]" else ""}\"}]")
             .put("user", JSONObject().put("username", "Author").put("userid", "author"))
             .put("communityPostPreload", preload),
     )

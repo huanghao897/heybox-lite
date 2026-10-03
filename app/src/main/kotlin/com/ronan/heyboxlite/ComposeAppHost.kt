@@ -66,6 +66,7 @@ internal class ComposeAppHost(
     internal val feedRevision = mutableStateOf(0)
     internal val profileRevision = mutableStateOf(0)
     internal val feedListState = LazyListState()
+    internal val feedRotaryInput = ComposeFeedRotaryInput()
     private val listStates = mutableMapOf("feed" to feedListState)
     private var feedStarted = false
     private var mounted = true
@@ -97,9 +98,7 @@ internal class ComposeAppHost(
 
     fun setRoute(route: String) {
         captureCurrentTransitionSnapshot()
-        servicesState.value = servicesState.value.copy(
-            theme = servicesState.value.theme.copy(rotaryRequest = null),
-        )
+        clearRotaryInput()
         navigation.setRoute(route)
         prepareSavedRoute(route)
     }
@@ -111,9 +110,7 @@ internal class ComposeAppHost(
      */
     fun showExternalUserSpace(route: String) {
         captureCurrentTransitionSnapshot()
-        servicesState.value = servicesState.value.copy(
-            theme = servicesState.value.theme.copy(rotaryRequest = null),
-        )
+        clearRotaryInput()
         navigation.showExternalUserSpace(route)
     }
 
@@ -182,6 +179,7 @@ internal class ComposeAppHost(
     fun contentWidthPx(): Float = view.width.toFloat()
 
     fun setSurfaceActive(active: Boolean) {
+        if (!active) feedRotaryInput.clear()
         surfaceActive.value = active
     }
 
@@ -215,6 +213,7 @@ internal class ComposeAppHost(
         } else route) { LazyListState() }
 
     fun updateTheme(tokens: ThemeTokens, roundScreen: Boolean, uiScale: Float, textScale: Float) {
+        feedRotaryInput.clear()
         view.setBackgroundColor(tokens.background)
         val current = servicesState.value
         servicesState.value = current.copy(
@@ -251,6 +250,10 @@ internal class ComposeAppHost(
 
     fun scrollRotary(distance: Int): Boolean {
         if (!mounted || distance == 0) return false
+        if (navigation.route.value == "feed") {
+            if (surfaceActive.value) feedRotaryInput.offer(distance)
+            return true
+        }
         val current = servicesState.value
         val serial = (current.theme.rotaryRequest?.serial ?: 0) + 1
         servicesState.value = current.copy(
@@ -261,9 +264,18 @@ internal class ComposeAppHost(
         return true
     }
 
+    private fun clearRotaryInput() {
+        feedRotaryInput.clear()
+        val current = servicesState.value
+        if (current.theme.rotaryRequest != null) {
+            servicesState.value = current.copy(theme = current.theme.copy(rotaryRequest = null))
+        }
+    }
+
     fun close() {
         if (!mounted) return
         mounted = false
+        feedRotaryInput.clear()
         savedStateRegistry.unregisterSavedStateProvider("heybox.compose.saved-query")
         navigation.clearSavedState()
         feed.close()
@@ -289,9 +301,7 @@ internal class ComposeAppHost(
 
     fun showDetailLoading(item: FeedItem) {
         captureCurrentTransitionSnapshot()
-        servicesState.value = servicesState.value.copy(
-            theme = servicesState.value.theme.copy(rotaryRequest = null),
-        )
+        clearRotaryInput()
         navigation.showDetailLoading(item)
     }
 
@@ -318,9 +328,7 @@ internal class ComposeAppHost(
             return true
         }
         val target = navigation.backTarget()
-        servicesState.value = servicesState.value.copy(
-            theme = servicesState.value.theme.copy(rotaryRequest = null),
-        )
+        clearRotaryInput()
         navigation.restoreSavedDetailIfNeeded(target)
         callbacks.backTo(target)
         return true
@@ -346,9 +354,7 @@ internal class ComposeAppHost(
             }
             else -> {
                 captureCurrentTransitionSnapshot()
-                servicesState.value = servicesState.value.copy(
-                    theme = servicesState.value.theme.copy(rotaryRequest = null),
-                )
+                clearRotaryInput()
                 navigation.navigate(route)
                 prepareSavedRoute(route)
                 callbacks.navigate(route)
@@ -357,9 +363,7 @@ internal class ComposeAppHost(
     }
 
     internal fun openDetail(item: FeedItem) {
-        servicesState.value = servicesState.value.copy(
-            theme = servicesState.value.theme.copy(rotaryRequest = null),
-        )
+        clearRotaryInput()
         callbacks.openDetail(item)
     }
 

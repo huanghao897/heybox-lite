@@ -38,6 +38,7 @@ internal fun ComposeRouteScreen(
                 interactive = active,
                 presentations = presentations,
                 actionRevision = actionRevision,
+                rotaryInput = if (active && previewListState == null) host.feedRotaryInput else null,
             )
         }
         "profile" -> {

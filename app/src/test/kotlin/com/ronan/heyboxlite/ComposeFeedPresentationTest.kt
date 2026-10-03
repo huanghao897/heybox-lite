@@ -12,6 +12,19 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class, qualifiers = "mdpi")
 class ComposeFeedPresentationTest {
+    @Test fun onlyEmojiAndGameLinksRequireNativeFeedText() {
+        for (plain in listOf("", "Plain text", "Watch 2.18", "A normal game name")) {
+            assertFalse(feedTextNeedsSpans(plain))
+        }
+        for (rich in listOf("Text [smile]", "cube_example", "heygirl_example",
+            composeFeedText("<a data-link-type=\"game\" data-game-id=\"42\">Game</a>"))) {
+            assertTrue(feedTextNeedsSpans(rich))
+        }
+        val presentation = ComposeFeedPresentation("Plain", "Text [smile]", null)
+        assertFalse(presentation.richTitle)
+        assertTrue(presentation.richDescription)
+    }
+
     @Test fun textNormalizationKeepsExistingFallbackAndInlineMarkup() {
         val sources = listOf("", "Plain text", "<p>First</p><p>Second</p>",
             "[{\"type\":\"text\",\"text\":\"Structured text\"}]",
