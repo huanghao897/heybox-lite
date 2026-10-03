@@ -116,6 +116,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         if (!legacyDetailActive) {
             legacyDetailActive = true;
             legacyReturnRoute = nativeReturnRoute();
+            activity.captureComposeReturnSnapshot();
             hideComposeSurface();
         }
         return false;

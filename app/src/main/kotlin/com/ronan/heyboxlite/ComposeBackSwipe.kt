@@ -18,6 +18,8 @@ internal fun Modifier.composeBackSwipe(
     edgePx: Float,
     thresholdPx: Float,
     touchSlopPx: Float,
+    canStart: (direction: Int) -> Boolean,
+    onStart: (direction: Int) -> Boolean,
     onProgress: (Float) -> Unit,
     onCancel: () -> Unit,
     onComplete: () -> Unit,
@@ -55,19 +57,21 @@ internal fun Modifier.composeBackSwipe(
 
             if (!decided && maxOf(abs(totalX), abs(totalY)) >= touchSlopPx) {
                 decided = true
-                accepted = totalX > 0f && abs(totalX) > abs(totalY) * 1.18f
+                val direction = if (totalX > 0f) 1 else -1
+                accepted = abs(totalX) > abs(totalY) * 1.18f
+                        && canStart(direction)
+                        && onStart(direction)
                 if (!accepted) break
             }
             if (accepted) {
                 change.consume()
-                onProgress(totalX.coerceIn(0f, thresholdPx * 2.5f))
+                onProgress(totalX.coerceIn(-thresholdPx * 2.5f, thresholdPx * 2.5f))
             }
             if (!change.pressed) break
         }
 
-        if (accepted && totalX >= thresholdPx) {
+        if (accepted && abs(totalX) >= thresholdPx) {
             finished = true
-            onProgress(0f)
             onComplete()
         }
         if (!finished) onCancel()

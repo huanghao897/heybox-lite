@@ -881,6 +881,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     private void captureFullScreenSnapshot(String key) {
         this.fullScreenSnapshots.capture(key, 4, this.shellRoot, this.BG, this.localCache);
     }
+    void captureComposeReturnSnapshot() { captureFullScreenSnapshot(this.screen); }
 
     private Bitmap screenSnapshot(String key) {
         if (key == null || key.isEmpty()) {
@@ -1214,7 +1215,9 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         if ("search".equals(this.screen)) this.searchPage.saveListPosition();
         View sourceChild = (this.content == null || this.content.getChildCount() == 0) ? null : this.content.getChildAt(0);
         captureShellSnapshot(this.screen, sourceChild);
-        captureFullScreenSnapshot(this.screen);
+        if (this.composeBridge == null || !this.composeBridge.isLegacyDetailActive()) {
+            captureFullScreenSnapshot(this.screen);
+        }
         if (!"detail".equals(this.screen)) {
             this.detailReturn = this.screen;
             this.detailReturnTitle = this.title == null ? "" : this.title.getText().toString();
@@ -1359,12 +1362,9 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     }
 
     private View detailReturnPreview() {
-        ImageView snapshot = new ImageView(this);
-        snapshot.setBackgroundColor(this.themeTokens == null ? this.PANEL : this.themeTokens.panel);
-        snapshot.setScaleType(ImageView.ScaleType.FIT_XY);
-        Bitmap bitmap = screenSnapshot(backTargetScreenKey());
-        if (bitmap != null && !bitmap.isRecycled()) snapshot.setImageBitmap(bitmap);
-        return snapshot;
+        String targetKey = backTargetScreenKey();
+        return DetailReturnPreviewFactory.create(this, this.themeTokens, targetKey,
+                this::screenSnapshot, this::fullScreenSnapshot);
     }
 
     private void updateDetailPagerTitle() {

@@ -1,45 +1,18 @@
 package com.ronan.heyboxlite
 
 import android.app.Activity
+import android.graphics.Bitmap
 import android.os.Handler
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Owns the Compose surface mounted above the legacy shell.  It deliberately
@@ -62,31 +35,27 @@ internal class ComposeAppHost(
     callbacks: ComposeAppCallbacks,
     toast: ComposeToast,
 ) {
-    private val routeState = mutableStateOf("feed")
-    private val userSpaceRoute = mutableStateOf("")
-    private val userSpaceReturnRoute = mutableStateOf("profile")
+    private val navigation = ComposeNavigationState()
     private val servicesState = mutableStateOf(
         ComposeServices(
             activity, session, api, GameDetailClient(api), cache, handler, reading, checkin,
             composeThemeState(tokens, uiScale, textScale, roundScreen), toast,
         ),
     )
-    private val feed = ComposeFeedController(session, api, cache, toast::show)
+    internal val feed = ComposeFeedController(session, api, cache, toast::show)
     private val search = ComposeSearchController(session, api, cache, handler)
     private val saved = ComposeSavedController(servicesState.value)
     private val readingLoader = ReadingCenterLoader(activity, cache)
     private val readingState = mutableStateOf<ComposeReadingCenterState?>(null)
     private val readingLoading = mutableStateOf(false)
     private var readingStarted = false
-    private val detail = mutableStateOf<ComposeDetailState?>(null)
-    private val detailReturnRoute = mutableStateOf("feed")
-    private val savedDetailForUserSpace = mutableStateOf<ComposeDetailState?>(null)
-    private var savedDetailParentRoute = "feed"
-    private val callbacks = callbacks
+    private val transitionSnapshots = TransitionSnapshotStore()
+    internal val callbacks = callbacks
     private val view = ComposeView(activity)
-    private val feedRevision = mutableStateOf(0)
+    internal val feedRevision = mutableStateOf(0)
     private var feedStarted = false
     private var mounted = true
+    private var suppressNextTransitionSnapshot = false
 
     init {
         // The content layer moves during a back gesture. Keep the host view
@@ -100,13 +69,12 @@ internal class ComposeAppHost(
     }
 
     fun setRoute(route: String) {
-        val raw = route.ifBlank { "feed" }
-        val normalized = raw.substringBefore('?').ifBlank { "feed" }
-        if (normalized == "user_space") userSpaceRoute.value = raw
+        val normalized = route.ifBlank { "feed" }.substringBefore('?').ifBlank { "feed" }
+        captureCurrentTransitionSnapshot()
         servicesState.value = servicesState.value.copy(
             theme = servicesState.value.theme.copy(rotaryRequest = null),
         )
-        routeState.value = normalized
+        navigation.setRoute(route)
         when (normalized) {
             "favorites" -> saved.openFavorites()
             "watch_later" -> saved.refreshWatchLater()
@@ -121,37 +89,90 @@ internal class ComposeAppHost(
      * can return to search, reading center or the preserved detail screen.
      */
     fun showExternalUserSpace(route: String) {
-        if (routeState.value != "user_space") {
-            userSpaceReturnRoute.value = currentRouteSpec()
-            if (routeState.value == "detail" && detail.value != null) {
-                savedDetailForUserSpace.value = detail.value
-                savedDetailParentRoute = detailReturnRouteSpec()
-            }
-        }
-        setRoute(route)
+        captureCurrentTransitionSnapshot()
+        servicesState.value = servicesState.value.copy(
+            theme = servicesState.value.theme.copy(rotaryRequest = null),
+        )
+        navigation.showExternalUserSpace(route)
     }
 
-    fun currentRoute(): String = routeState.value
+    fun currentRoute(): String = navigation.route.value
 
-    fun currentRouteSpec(): String = if (routeState.value == "user_space") {
-        userSpaceRoute.value.ifBlank { routeState.value }
-    } else routeState.value
+    fun currentRouteSpec(): String = navigation.currentRouteSpec()
 
-    fun detailReturnRoute(): String = detailReturnRoute.value
+    fun detailReturnRoute(): String = navigation.detailReturnRoute.value
 
-    fun detailReturnRouteSpec(): String = if (detailReturnRoute.value == "user_space") {
-        userSpaceRoute.value.ifBlank { detailReturnRoute.value }
-    } else detailReturnRoute.value
+    fun detailReturnRouteSpec(): String = navigation.detailReturnRouteSpec()
 
-    fun isRoute(route: String): Boolean = routeState.value == route
+    fun isRoute(route: String): Boolean = navigation.route.value == route
 
     fun isMounted(): Boolean = mounted && view.parent != null
+
+    /**
+     * Returns the route that should be visible underneath a horizontal drag.
+     * An empty target means the home-screen exit action, not another page.
+     */
+    fun composeSwipeTarget(route: String, direction: Int): String? {
+        if (direction < 0 && route == "feed") return "profile"
+        if (direction > 0 && route == "feed") {
+            return if (servicesState.value.session.homeSwipeExit()) "" else null
+        }
+        if (direction > 0 && servicesState.value.session.shellBackSwipe()) {
+            val target = navigation.backTarget()
+            return target.takeUnless { it.isEmpty() || it == route }
+        }
+        return null
+    }
+
+    fun composeSwipeEnabled(route: String): Boolean {
+        return composeSwipeTarget(route, -1) != null
+                || composeSwipeTarget(route, 1) != null
+    }
+
+    fun completeComposeSwipe(target: String) {
+        if (!mounted) return
+        if (target.isEmpty()) {
+            callbacks.back()
+            return
+        }
+        val current = navigation.route.value
+        if (target == navigation.backTarget() && current != "feed") {
+            suppressNextTransitionSnapshot = true
+            handleBack()
+        } else {
+            navigate(target)
+        }
+    }
+
+    fun transitionPreview(routeSpec: String): Bitmap? {
+        val raw = routeSpec.ifBlank { "feed" }
+        return transitionSnapshots.get(raw)
+            ?: transitionSnapshots.get(raw.substringBefore('?'))
+    }
+
+    fun contentWidthPx(): Float = view.width.toFloat()
 
     fun updateTheme(tokens: ThemeTokens, roundScreen: Boolean, uiScale: Float, textScale: Float) {
         view.setBackgroundColor(tokens.background)
         val current = servicesState.value
         servicesState.value = current.copy(
             theme = composeThemeState(tokens, uiScale, textScale, roundScreen),
+        )
+    }
+
+    private fun captureCurrentTransitionSnapshot() {
+        if (suppressNextTransitionSnapshot) {
+            suppressNextTransitionSnapshot = false
+            return
+        }
+        if (!mounted || !view.isShown) return
+        val routeSpec = navigation.currentRouteSpec().ifBlank { "feed" }
+        transitionSnapshots.capture(
+            routeSpec,
+            8,
+            view,
+            servicesState.value.theme.background.toArgb(),
+            servicesState.value.cache,
         )
     }
 
@@ -173,11 +194,12 @@ internal class ComposeAppHost(
 
     fun close() {
         mounted = false
-        savedDetailForUserSpace.value = null
+        navigation.clearSavedState()
         feed.close()
         search.close()
         saved.close()
         readingLoader.close()
+        transitionSnapshots.releaseAll()
         view.disposeComposition()
     }
 
@@ -208,94 +230,40 @@ internal class ComposeAppHost(
     }
 
     fun showDetailLoading(item: FeedItem) {
-        if (routeState.value != "detail" || detail.value == null) {
-            detailReturnRoute.value = routeState.value.takeUnless { it == "detail" } ?: "feed"
-        }
+        captureCurrentTransitionSnapshot()
         servicesState.value = servicesState.value.copy(
             theme = servicesState.value.theme.copy(rotaryRequest = null),
         )
-        detail.value = ComposeDetailState(item, emptyList(), item.videos, emptyList(), true)
-        routeState.value = "detail"
+        navigation.showDetailLoading(item)
     }
 
     fun showDetailResult(result: DetailPageAssembler.Result, fallback: FeedItem) {
-        val comments = ArrayList<JSONObject>()
-        val source = result.comments
-        if (source != null) {
-            for (index in 0 until source.length()) {
-                source.optJSONObject(index)?.let { comments.add(it) }
-            }
-        }
-        detail.value = ComposeDetailState(
-            fallback,
-            result.contentBlocks ?: emptyList(),
-            result.videos ?: fallback.videos,
-            comments,
-            false,
-        )
+        navigation.showDetailResult(result, fallback)
     }
 
-    fun appendDetailReplies(rootId: String, replies: List<JSONObject>) {
-        if (replies.isEmpty()) return
-        val current = detail.value ?: return
-        val updated = current.comments.map { group ->
-            val root = group.optJSONArray("comment")?.optJSONObject(0) ?: group
-            if (CommentData.commentId(root) != rootId) return@map group
-            val array = group.optJSONArray("comment") ?: JSONArray().also { group.put("comment", it) }
-            val known = HashSet<String>()
-            for (index in 0 until array.length()) {
-                array.optJSONObject(index)?.let { known.add(CommentData.commentId(it)) }
-            }
-            replies.forEach { reply ->
-                val id = CommentData.commentId(reply)
-                if (id.isEmpty() || known.add(id)) array.put(reply)
-            }
-            group
-        }
-        detail.value = current.copy(comments = updated)
+    fun appendDetailReplies(rootId: String, replies: List<org.json.JSONObject>) {
+        navigation.appendDetailReplies(rootId, replies)
     }
 
     fun handleBack(): Boolean {
-        val current = routeState.value
+        val current = navigation.route.value
         if (current == "feed") return false
         if (current == "detail") {
             val targetSpec = detailReturnRouteSpec()
-            val target = targetSpec.substringBefore('?').ifBlank { "feed" }
-            detail.value = null
+            navigation.clearDetail()
             callbacks.backTo(targetSpec)
-            routeState.value = target
             return true
         }
-        val target = when {
-            current == "profile" -> "feed"
-            current == "search" -> "feed"
-            current == "favorites" -> "profile"
-            current == "leaderboard" -> "profile"
-            current == "watch_later" || current == "reading_history" -> "reading_center"
-            current == "reading_stats" -> "reading_center"
-            current == "login" -> "profile"
-            current == "user_space" -> userSpaceReturnRoute.value.ifBlank { "profile" }
-            current.startsWith("settings") || current in setOf(
-                "display_settings", "display_preview", "startup_settings",
-                "app_settings", "video_settings", "splash_preview", "about",
-                "announcement_board", "feedback_group",
-            ) -> if (current == "settings_home") "profile" else "settings_home"
-            else -> "profile"
-        }
+        val target = navigation.backTarget()
         servicesState.value = servicesState.value.copy(
             theme = servicesState.value.theme.copy(rotaryRequest = null),
         )
-        if (current == "user_space" && target == "detail") {
-            detail.value = savedDetailForUserSpace.value
-            detailReturnRoute.value = savedDetailParentRoute
-            savedDetailForUserSpace.value = null
-        }
-        routeState.value = target
+        navigation.restoreSavedDetailIfNeeded(target)
         callbacks.backTo(target)
         return true
     }
 
-    private fun navigate(route: String) {
+    internal fun navigate(route: String) {
         val key = route.substringBefore('?')
         when (key) {
             "cache_prune", "cache_clear", "diagnostics_export", "diagnostics_upload",
@@ -303,26 +271,27 @@ internal class ComposeAppHost(
                 callbacks.runSettingsAction(route)
             }
             else -> {
-                if (key == "user_space") {
-                    userSpaceReturnRoute.value = routeState.value
-                    if (routeState.value == "detail" && detail.value != null) {
-                        savedDetailForUserSpace.value = detail.value
-                        savedDetailParentRoute = detailReturnRoute.value
-                    }
+                captureCurrentTransitionSnapshot()
+                servicesState.value = servicesState.value.copy(
+                    theme = servicesState.value.theme.copy(rotaryRequest = null),
+                )
+                navigation.navigate(route)
+                when (key) {
+                    "favorites" -> saved.openFavorites()
+                    "watch_later" -> saved.refreshWatchLater()
+                    "reading_history" -> saved.openHistory()
+                    "reading_center" -> loadReadingCenter()
                 }
-                setRoute(route)
                 callbacks.navigate(route)
             }
         }
     }
 
-    private fun openDetail(item: FeedItem) {
-        detailReturnRoute.value = routeState.value
+    internal fun openDetail(item: FeedItem) {
         servicesState.value = servicesState.value.copy(
             theme = servicesState.value.theme.copy(rotaryRequest = null),
         )
-        detail.value = ComposeDetailState(item, emptyList(), item.videos, emptyList(), true)
-        routeState.value = "detail"
+        navigation.showDetailLoading(item)
         callbacks.openDetail(item)
     }
 
@@ -339,9 +308,9 @@ internal class ComposeAppHost(
     @Composable
     private fun ComposeAppRoot(host: ComposeAppHost) {
         val services by host.servicesState
-        val route by host.routeState
-        val userRoute by host.userSpaceRoute
-        val detailState by host.detail
+        val route by host.navigation.route
+        val userRoute by host.navigation.userSpaceRoute
+        val detailState by host.navigation.detail
         LaunchedEffect(route) {
             if (route == "feed" && !host.feedStarted) {
                 host.feedStarted = true
@@ -350,40 +319,8 @@ internal class ComposeAppHost(
             }
         }
         HeyboxComposeTheme(services.theme) {
-            val swipeOffset = remember { mutableStateOf(0f) }
-            val density = LocalDensity.current
-            val touchSlop = LocalViewConfiguration.current.touchSlop
-            val backEdge = with(density) {
-                (36.dp * services.theme.uiScale).toPx()
-            }
-            val backSwipeEnabled = if (route == "feed") services.session.homeSwipeExit()
-            else services.session.shellBackSwipe()
-            LaunchedEffect(route, backSwipeEnabled) {
-                swipeOffset.value = 0f
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        // Keep the gesture visible on a watch without
-                        // changing layout or remeasuring the current page.
-                        translationX = swipeOffset.value * 0.72f
-                    }
-                    .composeBackSwipe(
-                        route = route,
-                        enabled = backSwipeEnabled,
-                        edgePx = backEdge,
-                        thresholdPx = with(density) { 44.dp.toPx() * services.theme.uiScale },
-                        touchSlopPx = touchSlop,
-                        onProgress = { swipeOffset.value = it },
-                        onCancel = { swipeOffset.value = 0f },
-                        onComplete = {
-                            swipeOffset.value = 0f
-                            if (route == "feed") host.callbacks.back() else host.handleBack()
-                        },
-                    ),
-            ) {
-                when (route) {
+            ComposeSwipeContainer(host, route, services) {
+                    when (route) {
                 "feed" -> {
                     host.feedRevision.value
                     val items by host.feed.items
@@ -528,11 +465,4 @@ internal class ComposeAppHost(
         }
     }
 
-    private data class ComposeDetailState(
-        val item: FeedItem,
-        val content: List<RichContent.Block>,
-        val videos: List<VideoData>,
-        val comments: List<JSONObject>,
-        val loading: Boolean,
-    )
 }

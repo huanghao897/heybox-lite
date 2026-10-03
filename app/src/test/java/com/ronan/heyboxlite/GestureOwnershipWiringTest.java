@@ -49,9 +49,19 @@ public class GestureOwnershipWiringTest {
     @Test
     public void externalComposeUserPageKeepsItsParentRoute() throws Exception {
         String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
-        String host = source("kotlin/com/ronan/heyboxlite/ComposeAppHost.kt");
+        String navigation = source("kotlin/com/ronan/heyboxlite/ComposeNavigationState.kt");
         assertTrue(bridge.contains("showExternalUserSpace(route)"));
-        assertTrue(host.contains("userSpaceReturnRoute.value = currentRouteSpec()"));
+        assertTrue(navigation.contains("userSpaceReturnRoute.value = currentRouteSpec()"));
+    }
+
+    @Test
+    public void composeDetailCapturesReturnLayerBeforeHidingCompose() throws Exception {
+        String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
+        String activity = source("java/com/ronan/heyboxlite/MainActivity.java");
+        assertTrue(bridge.contains("activity.captureComposeReturnSnapshot();"));
+        assertTrue(bridge.indexOf("captureComposeReturnSnapshot()")
+                < bridge.indexOf("hideComposeSurface()"));
+        assertTrue(activity.contains("!this.composeBridge.isLegacyDetailActive()"));
     }
 
     private static String source(String path) throws Exception {
