@@ -1,14 +1,9 @@
 package com.ronan.heyboxlite;
 
 import android.app.Activity;
-import android.graphics.Color;
-import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -22,7 +17,7 @@ final class CheckinCenterPage {
         void showMessage(String message);
     }
 
-    private enum State {
+    enum State {
         UNPAIRED,
         PAIRING,
         MOBILE_LOGIN,
@@ -51,6 +46,7 @@ final class CheckinCenterPage {
     private final FrameLayout root;
     private final SettingsUi settingsUi;
     private final CheckinHistoryView historyView;
+    private final CheckinCenterPageRenderer contentRenderer;
     private final boolean roundLayout;
     private State state;
     private CheckinCenterClient.Status status;
@@ -264,6 +260,20 @@ final class CheckinCenterPage {
                 });
         this.taskSettingsView = new CheckinTaskSettingsView(activity, session, tokens,
                 settingsUi, ui, taskSettingsFlow, roundLayout);
+        this.contentRenderer = new CheckinCenterPageRenderer(activity, session, tokens, ui,
+                settingsUi, historyView, taskSettingsView, roundLayout,
+                new CheckinCenterPageRenderer.Actions() {
+                    @Override public void beginPairing() { CheckinCenterPage.this.beginPairing(); }
+                    @Override public void openMobileLogin() { CheckinCenterPage.this.openMobileLogin(); }
+                    @Override public void runNow() { CheckinCenterPage.this.runNow(); }
+                    @Override public void openTaskSettings() { CheckinCenterPage.this.openTaskSettings(); }
+                    @Override public void openSponsorship(CheckinBilling.Membership membership) {
+                        CheckinCenterPage.this.openSponsorship(membership);
+                    }
+                    @Override public void requestRevoke() { CheckinCenterPage.this.requestRevoke(); }
+                    @Override public void refresh() { CheckinCenterPage.this.refresh(); }
+                    @Override public void loadHistory() { CheckinCenterPage.this.loadHistory(); }
+                });
         this.root = new FrameLayout(activity);
         this.root.setBackgroundColor(tokens.background);
         this.state = coordinator.paired() ? State.SYNCING : State.UNPAIRED;
@@ -424,7 +434,7 @@ final class CheckinCenterPage {
         coordinator.runNow(new CheckinCenterClient.Callback<CheckinCenterClient.RunResult>() {
             @Override
             public void onSuccess(CheckinCenterClient.RunResult value) {
-                host.showMessage(runMessage(value));
+                host.showMessage(CheckinResultText.runMessage(value));
                 loadStatus();
             }
 
@@ -541,129 +551,15 @@ final class CheckinCenterPage {
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
         page.addView(settingsUi.topCard(
                 state == State.TASK_SETTINGS ? "签到设置" : "小黑盒签到"));
-        if (!errorMessage.isEmpty()) addTop(page, errorBanner(errorMessage), 6);
-        if (!coordinator.paired()) renderUnpaired(page);
-        else if (state == State.TASK_SETTINGS && status != null) {
-            renderTaskSettings(page);
-        }
-        else if (state == State.SYNCING || state == State.ERROR || status == null) {
-            renderLoading(page);
-        } else {
-            renderConnected(page);
-        }
+        contentRenderer.render(page, state, status, history, historyLoading, historyError,
+                errorMessage, coordinator.paired(), coordinator.supported());
         present(scroll, animate);
-    }
-
-    private void renderUnpaired(LinearLayout page) {
-        LinearLayout card = card();
-        String subtitle = coordinator.supported()
-                ? "连接后由服务器按计划执行"
-                : "当前设备不支持安全连接";
-        card.addView(statusHeader(R.drawable.il_calendar, "未连接", subtitle, tokens.text));
-        addTop(card, body("登录签到服务后，再连接需要签到的小黑盒账号。",
-                tokens.muted), 12);
-        Button connect = primaryButton("连接签到服务");
-        connect.setEnabled(coordinator.supported());
-        connect.setOnClickListener(view -> {
-            UiComponents.press(view);
-            beginPairing();
-        });
-        addTop(card, connect, 13);
-        page.addView(card);
-    }
-
-    private void renderLoading(LinearLayout page) {
-        LinearLayout card = card();
-        String title = state == State.SYNCING ? "正在连接" : "暂时无法连接";
-        String message = state == State.SYNCING ? "正在读取账号与签到计划"
-                : state == State.ERROR ? "可重新加载状态，或撤销此设备"
-                : "正在处理签到任务";
-        card.addView(statusHeader(R.drawable.il_refresh, title, message,
-                state == State.ERROR ? tokens.muted : tokens.text,
-                state == State.SYNCING));
-        page.addView(card);
-        if (state == State.ERROR) addRecoveryActions(page);
-    }
-
-    private void renderConnected(LinearLayout page) {
-        boolean accountConnected = "connected".equalsIgnoreCase(status.account.state);
-        LinearLayout statusCard = card();
-        String stateLabel = !accountConnected ? "等待手机号登录"
-                : state == State.RUNNING ? "执行中" : taskStateLabel(status.task);
-        int stateColor = state == State.RUNNING || accountConnected && status.task.active()
-                ? tokens.text : tokens.muted;
-        statusCard.addView(statusHeader(R.drawable.il_calendar, stateLabel,
-                accountConnected ? accountLabel(status.account) : "尚未连接小黑盒账号",
-                stateColor, state == State.RUNNING));
-        if (!accountConnected) {
-            addTop(statusCard, body("自动签到需要单独使用手机号登录小黑盒。",
-                    tokens.muted), 11);
-            Button login = primaryButton("手机号登录");
-            login.setOnClickListener(view -> {
-                UiComponents.press(view);
-                openMobileLogin();
-            });
-            addTop(statusCard, login, 12);
-            page.addView(statusCard);
-
-            CheckinBilling.Membership membership = status.membership;
-            settingsUi.addSection(page, "服务");
-            LinearLayout service = settingsUi.list();
-            addSponsorshipEntry(service, membership);
-            settingsUi.addEntry(service, "撤销此设备", null, null,
-                    R.drawable.ic_logout, this::requestRevoke);
-            page.addView(service);
-            return;
-        }
-        addTop(statusCard, scheduleMetric(status.task), 13);
-        Button run = primaryButton(state == State.RUNNING ? "正在签到" : "立即签到");
-        run.setEnabled(state != State.RUNNING && status.task.active());
-        run.setOnClickListener(view -> {
-            UiComponents.press(view);
-            runNow();
-        });
-        addTop(statusCard, run, 12);
-        page.addView(statusCard);
-
-        settingsUi.addSection(page, "管理");
-        LinearLayout management = settingsUi.list();
-        settingsUi.addEntry(management, "签到设置", null,
-                CheckinTaskSettingsView.scheduleLabel(status.task) + " · "
-                        + CheckinTaskSettingsView.offsetLabel(status.task.offsetMinutes),
-                R.drawable.il_settings, this::openTaskSettings);
-        CheckinBilling.Membership membership = status.membership;
-        addSponsorshipEntry(management, membership);
-        settingsUi.addEntry(management, "更换账号", null, "手机号登录",
-                R.drawable.il_person, this::openMobileLogin);
-        page.addView(management);
-
-        historyView.addTo(page, history, historyLoading, historyError, this::loadHistory);
-
-        Button revoke = quietButton("撤销此设备");
-        revoke.setEnabled(state != State.RUNNING);
-        revoke.setOnClickListener(view -> requestRevoke());
-        addTop(page, revoke, 8);
-    }
-
-    private void renderTaskSettings(LinearLayout page) {
-        taskSettingsView.addTo(page, status.task);
     }
 
     private void openTaskSettings() {
         if (status == null || state == State.RUNNING) return;
         state = State.TASK_SETTINGS;
         render();
-    }
-
-    private void addSponsorshipEntry(LinearLayout list,
-                                     CheckinBilling.Membership membership) {
-        if (membership == null || !membership.voluntarySponsorship) return;
-        if (membership.checkoutAvailable) {
-            settingsUi.addEntry(list, "赞助", null, "自愿支持",
-                    R.drawable.il_qr, () -> openSponsorship(membership));
-        } else {
-            settingsUi.addInfoEntry(list, "赞助", null, "暂不可用", R.drawable.il_qr);
-        }
     }
 
     private void openSponsorship(CheckinBilling.Membership membership) {
@@ -690,20 +586,6 @@ final class CheckinCenterPage {
         state = State.BILLING;
         render();
         paymentPage.onResume();
-    }
-
-    private void addRecoveryActions(LinearLayout page) {
-        settingsUi.addSection(page, "操作");
-        LinearLayout actions = settingsUi.list();
-        settingsUi.addEntry(actions, "登录小黑盒", null, "手机号",
-                R.drawable.il_person, this::openMobileLogin);
-        settingsUi.addEntry(actions, "重新加载", null, null,
-                R.drawable.il_refresh, this::refresh);
-        if (coordinator.paired()) {
-            settingsUi.addEntry(actions, "撤销此设备", null, null,
-                    R.drawable.ic_logout, this::requestRevoke);
-        }
-        page.addView(actions);
     }
 
     private void renderPairing() {
@@ -782,10 +664,6 @@ final class CheckinCenterPage {
         accountForms.clearServicePasswords();
     }
 
-    private View errorBanner(String message) {
-        return ui.errorBanner(message);
-    }
-
     private void setMobileLoginControls(boolean enabled, CheckinMobileLoginFlow.Mode mode,
                                         boolean hasSession, long retryAtElapsed) {
         accountForms.setMobileControls(enabled, mode, hasSession, retryAtElapsed);
@@ -799,16 +677,6 @@ final class CheckinCenterPage {
         accountForms.clearMobile();
     }
 
-    private LinearLayout statusHeader(int iconRes, String title, String subtitle,
-                                      int titleColor) {
-        return ui.statusHeader(iconRes, title, subtitle, titleColor, false);
-    }
-
-    private LinearLayout statusHeader(int iconRes, String title, String subtitle,
-                                      int titleColor, boolean showProgress) {
-        return ui.statusHeader(iconRes, title, subtitle, titleColor, showProgress);
-    }
-
     private void present(View view) {
         present(view, true);
     }
@@ -819,94 +687,12 @@ final class CheckinCenterPage {
         contentPresented = true;
     }
 
-    private LinearLayout scheduleMetric(CheckinCenterClient.Task task) {
-        LinearLayout row = new LinearLayout(activity);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout copy = column(Color.TRANSPARENT);
-        copy.addView(label("下次签到", 10.5f, tokens.muted));
-        String window = windowLabel(task);
-        TextView detail = body(window.isEmpty()
-                ? CheckinTaskSettingsView.enabledLabel(task) : window, tokens.muted);
-        detail.setPadding(0, dp(2), 0, 0);
-        copy.addView(detail);
-        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1f));
-
-        TextView time = label(CheckinTaskSettingsView.scheduleLabel(task),
-                roundLayout ? 20f : 22f, tokens.text);
-        time.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        time.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        time.setSingleLine(true);
-        row.addView(time, new LinearLayout.LayoutParams(-2, -2));
-        return row;
-    }
-
-    private LinearLayout card() {
-        return ui.card();
-    }
-
     private void applyPageInsets(LinearLayout page, boolean subpage) {
         ui.applyPageInsets(page, subpage);
     }
 
     private LinearLayout column(int color) {
         return ui.column(color);
-    }
-
-    private TextView body(String value, int color) {
-        return ui.body(value, color);
-    }
-
-    private TextView label(String value, float size, int color) {
-        return ui.label(value, size, color);
-    }
-
-    private Button primaryButton(String value) {
-        return ui.primaryButton(value);
-    }
-
-    private Button quietButton(String value) {
-        return ui.quietButton(value);
-    }
-
-    private void addTop(ViewGroup parent, View child, int marginDp) {
-        ui.addTop(parent, child, marginDp);
-    }
-
-    private String accountLabel(CheckinCenterClient.Account account) {
-        String name = account.displayName.isEmpty() ? "小黑盒账号" : account.displayName;
-        return account.externalIdMasked.isEmpty() ? name : name + "  " + account.externalIdMasked;
-    }
-
-    private String taskStateLabel(CheckinCenterClient.Task task) {
-        if (task.platformBlocked || task.signBlocked) return "自动签到已暂停";
-        return task.active() ? "自动签到已启用" : "自动签到未启用";
-    }
-
-    private String windowLabel(CheckinCenterClient.Task task) {
-        if (task.windowStart.isEmpty()) return task.windowEnd;
-        if (task.windowEnd.isEmpty()) return task.windowStart;
-        return task.windowStart + " - " + task.windowEnd;
-    }
-
-    private String runMessage(CheckinCenterClient.RunResult result) {
-        if (result.checkIn.checkedIn) {
-            String reward = rewardLabel(result.checkIn);
-            return reward.isEmpty() ? "已签到" : "已签到，获得 " + reward;
-        }
-        if ("ok".equalsIgnoreCase(result.status)) return "小黑盒签到任务已完成";
-        if ("skipped".equalsIgnoreCase(result.status)) return "今日没有需要执行的签到任务";
-        return "签到任务已返回结果";
-    }
-
-    private String rewardLabel(CheckinCenterClient.CheckinResult result) {
-        if (result == null) return "";
-        StringBuilder value = new StringBuilder();
-        if (result.coinDelta >= 0) value.append(result.coinDelta).append(" 盒币");
-        if (result.experienceDelta >= 0) {
-            if (value.length() > 0) value.append("、");
-            value.append(result.experienceDelta).append(" 经验");
-        }
-        return value.toString();
     }
 
     private int dp(int value) {

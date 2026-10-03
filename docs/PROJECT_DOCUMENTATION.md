@@ -10,7 +10,7 @@
 
 heybox Lite 是面向 **Android 手表和小屏设备**的小黑盒（HeyBox）社区第三方客户端。它不复刻手机端，而是在腕上尺寸内优先保留高频能力：刷信息流、搜索、看正文与长图、看评论、点赞收藏关注评论、看收藏历史动态、收公告查更新、出问题时导出日志。
 
-从 1.x 演进到 2.0 线：1.x 偏「功能能跑」，2.0 起重做 UI、交互、圆屏适配、后台统计，2.0.4 加入动效系统、GIF 播放与图片离线缓存。代码以 **Java View 体系**为主，不引入 Compose 或大型 UI 框架 —— 手表 ROM、低性能设备与旧安卓对包体积、兼容性、渲染开销更敏感。
+从 1.x 演进到 2.0 线：1.x 偏「功能能跑」，2.0 起重做 UI、交互、圆屏适配、后台统计，2.0.4 加入动效系统、GIF 播放与图片离线缓存。当前迁移分支使用 **Kotlin + Jetpack Compose 作为主壳**，Java 保留网络、缓存、媒体和旧 ROM 兼容层；这样可以逐步收敛页面状态，同时不把成熟的媒体与设备兼容逻辑一次性重写。
 
 ---
 
@@ -18,14 +18,14 @@ heybox Lite 是面向 **Android 手表和小屏设备**的小黑盒（HeyBox）�
 
 | 项 | 值 |
 |----|----|
-| 语言 / UI | Java，原生 View（无 Compose） |
+| 语言 / UI | Kotlin + Jetpack Compose 主界面；Java 业务与兼容层 |
 | `applicationId` | `com.ronan.heyboxlite.preview` |
 | `namespace` / 包名 | `com.ronan.heyboxlite` |
-| `versionName` / `versionCode` | `2.17` / `220` |
-| `minSdk` / `targetSdk` / `compileSdk` | `14` / `35` / `36` |
+| `versionName` / `versionCode` | `2.18` / `221` |
+| `minSdk` / `targetSdk` / `compileSdk` | `21` / `35` / `36` |
 | JDK | 17 |
-| 第三方依赖 | 仅 `com.google.zxing:core:3.3.3`（二维码登录） |
-| APK 体积 | 约 1.7 MB（Release，R8 混淆 + 资源压缩） |
+| 第三方依赖 | `cnwearoverlay-runtime`、`com.google.zxing:core:3.3.3`、Jetpack Compose（BOM 管理） |
+| APK 体积 | 约 3.0 MB（Release，R8 混淆 + 资源压缩；随构建内容变化） |
 
 `BuildConfig` 注入的服务地址（来自 `app/build.gradle`）：
 
@@ -63,7 +63,8 @@ HeyBoxCommunity/
 │  ├─ proguard-rules.pro
 │  └─ src/main/
 │     ├─ AndroidManifest.xml
-│     ├─ java/com/ronan/heyboxlite/   # 全部源码
+│     ├─ java/com/ronan/heyboxlite/   # Java 业务、网络、缓存与兼容层
+│     ├─ kotlin/com/ronan/heyboxlite/ # Compose 主界面与状态协调
 │     └─ res/
 │        ├─ drawable/         # 矢量图标（il_* 线性图标、ic_* 功能图标）
 │        ├─ mipmap-*/         # 应用图标
@@ -109,7 +110,7 @@ HeyBoxCommunity/
 
 ## 6. Android 模块详解
 
-源码位于 `app/src/main/java/com/ronan/heyboxlite/`，按页面、流程协调器、网络、解析和缓存职责分组。遗留大类的拆分边界记录在 `ARCHITECTURE.md` 与 `config/java-size-limits.properties`，新增代码不得继续堆入这些大类。
+源码位于 `app/src/main/java/com/ronan/heyboxlite/` 与 `app/src/main/kotlin/com/ronan/heyboxlite/`，按页面、流程协调器、网络、解析和缓存职责分组。遗留大类的拆分边界记录在 `ARCHITECTURE.md` 与 `config/java-size-limits.properties`，新增代码不得继续堆入这些大类。
 
 ### 6.1 入口与外壳
 
@@ -186,7 +187,7 @@ HeyBoxCommunity/
 云端签到由 `CheckinCenterClient` 调用签到服务完成。Lite 不在本地执行签到，也不把普通小黑盒浏览请求改成签到代理。`CheckinCenterCoordinator` 持有页面级状态，`CheckinPairingFlow`、`CheckinServiceAccountFlow`、`CheckinMobileLoginFlow` 和 `CheckinTaskSettingsFlow` 分别负责配对、服务账号、手机号登录和任务设置；`CheckinHistory` 只负责最近执行记录的解析与展示。
 
 - `CheckinCenterClient`：只连接固定 HTTPS 服务地址，限制响应大小，拒绝重定向，并把 HTTP、TLS、网络、协议和客户端错误统一回调给页面。
-- `CheckinCenterPage`：展示连接状态、计划时间、最近日志和手动执行，不持有本地签到实现。
+- `CheckinCenterPage`：负责签到页面状态切换、生命周期和 Flow 回调，不持有本地签到实现；`CheckinCenterPageRenderer` 负责未连接、连接中、已连接和错误状态的视图拼装，`CheckinResultText` 负责手动执行结果文案。
 - `NativeSignBridge` / `NativeSignService` / `NativeSecuritySigner`：仅为官方只读/互动请求提供兼容安全参数，并在独立进程执行；不能被复用于云端签到凭据上传。
 
 维护铁律：签到服务失败不能影响主页、不清理普通登录态、不向日志写入 Cookie、pkey、token 或 Authorization；修改签到协议前必须以服务端接口文档和脱敏诊断为准。
