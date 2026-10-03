@@ -38,7 +38,9 @@ final class CrashExitHistory {
                     + "exitTimeMillis: " + exit.getTimestamp() + "\n"
                     + "exitStatus: " + exit.getStatus() + "\n"
                     + "pssKb: " + exit.getPss() + "\nrssKb: " + exit.getRss() + "\n"
-                    + "description: " + CrashText.shortLine(exit.getDescription(), 500) + "\n";
+                    + "description: " + CrashText.shortLine(exit.getDescription(), 500) + "\n"
+                    + "recent events:\n"
+                    + CrashText.limit(CrashBreadcrumbs.snapshot(), 6 * 1024);
             // Native traces may be binary protobufs. Do not treat them as arbitrary text/logcat.
             if (exit.getReason() == ApplicationExitInfo.REASON_ANR) {
                 report += "\nANR trace:\n" + anrTrace(exit);

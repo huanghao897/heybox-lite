@@ -132,6 +132,8 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        CrashBreadcrumbs.screen("startup");
+        CrashBreadcrumbs.record("startup stage=activity_created");
         CrashReporter.install(this);
         NativeLibraryLoader.init(this);
         if (!AppIntegrityCheck.isTrusted(this)) {
@@ -145,6 +147,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             setContentView(blocked);
             return;
         }
+        CrashBreadcrumbs.record("startup stage=integrity_ready");
         this.session = new SessionStore(this);
         this.legacyUi = new MainActivityLegacyUi(this);
         getWindow().setBackgroundDrawable(new ColorDrawable(this.session.darkMode()
@@ -178,6 +181,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         Motions.setLevel(this.session.motionLevel());
         this.pageTransitions.setCompactMotion(usesWatchLayout());
         this.localCache = new LocalCache(this);
+        CrashBreadcrumbs.record("startup stage=cache_ready");
         this.cacheMaintenance = new CacheMaintenance(this, this.localCache, this.handler);
         this.checkinCenterCoordinator = new CheckinCenterCoordinator(this, this.localCache);
         this.checkinCenterCoordinator.setAuthorizationListener(paired -> {
@@ -191,9 +195,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
         OfficialEmojiFallback.load(this);
         ImageLoader.init(this);
         ImageLoader.setLogger(this.localCache::log);
-        if (this.session.autoOfflineCleanup()) {
-            this.cacheMaintenance.pruneOffline(null);
-        }
+        CrashBreadcrumbs.record("startup stage=media_ready");
         applyPalette();
         Compat.colorSystemBars(getWindow(), this.BG);
         getWindow().getDecorView().setSystemUiVisibility(Compat.fullscreenFlags());
@@ -207,6 +209,7 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                 message -> {
                     if (this.localCache != null) this.localCache.log(message);
                 });
+        CrashBreadcrumbs.record("startup stage=services_ready");
         this.searchBars = new SearchBarController(this, this.handler,
                 this.session.uiScale() / 100.0f);
         this.searchPage = new SearchPage(this, this.session, this.api,
@@ -227,12 +230,15 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
                     }
                 });
         buildShell();
+        CrashBreadcrumbs.record("startup stage=shell_ready");
         if (this.session.isLoggedIn()) {
             EmojiStore.load(this.api, () -> {
                 if ("feed".equals(this.screen)) this.feedPage.notifyAdapter();
             });
         }
         showFeed();
+        scheduleOptionalStartupMaintenance();
+        CrashBreadcrumbs.record("startup stage=feed_requested");
         if (this.session.appBlocked()) {
             showAccountBlocked(this.session.appBlockMessage());
         }
@@ -247,6 +253,17 @@ public final class MainActivity extends Activity implements BackSwipeFrameLayout
             this.handler.postDelayed(this::checkAnnouncementOnLaunch,
                     950L);
         }
+    }
+
+    private void scheduleOptionalStartupMaintenance() {
+        if (!this.session.autoOfflineCleanup()) return;
+        // Cache pruning is useful but not part of the first frame. On 128 MB watches,
+        // listing a large offline image directory during startup can race the first
+        // Compose layout and be reported by the OS as a low-memory process exit.
+        this.handler.postDelayed(() -> {
+            if (isFinishing() || this.cacheMaintenance == null) return;
+            this.cacheMaintenance.pruneOffline(null);
+        }, 1200L);
     }
 
     void applyAccessStatus(AccessStatus status) {

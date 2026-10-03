@@ -13,18 +13,12 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -39,14 +33,6 @@ final class LocalCache {
     private static final int MAX_DETAIL_FILES = 80;
     private static final int MAX_OFFLINE_COMMENTS = 10;
     private static final int MAX_CACHED_FEED_ITEMS = 60;
-    private static final int MAX_LOG_BYTES = 96 * 1024;
-    private static final Object SESSION_LOCK = new Object();
-    private static final ExecutorService LOG_EXECUTOR =
-            Executors.newSingleThreadExecutor(runnable -> {
-                Thread thread = new Thread(runnable, "heybox-event-log");
-                thread.setDaemon(true);
-                return thread;
-            });
     private static final ExecutorService CACHE_EXECUTOR =
             new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
                     new ArrayBlockingQueue<>(4), runnable -> {
@@ -54,18 +40,11 @@ final class LocalCache {
                 thread.setDaemon(true);
                 return thread;
             }, new ThreadPoolExecutor.DiscardOldestPolicy());
-    private static String processSessionId;
-    private static long processSessionStartedAt;
-    private static boolean processSessionLogPrepared;
-
-    private final Context context;
     private final SharedPreferences prefs;
     private final File rootDir;
     private final File detailDir;
     private final File savedDir;
-    private final File diagnosticsDir;
-    private final String sessionId;
-    private final long sessionStartedAt;
+    private final LocalDiagnosticsLog diagnostics;
 
     static final class OfflineItem {
         final FeedItem item;
@@ -85,29 +64,14 @@ final class LocalCache {
     }
 
     LocalCache(Context context) {
-        this.context = context.getApplicationContext();
-        this.prefs = this.context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        this.rootDir = new File(this.context.getFilesDir(), "offline-cache");
+        Context app = context.getApplicationContext();
+        this.prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        this.rootDir = new File(app.getFilesDir(), "offline-cache");
         this.detailDir = new File(rootDir, "details");
         this.savedDir = new File(rootDir, "saved-lists");
-        File external = this.context.getExternalFilesDir(null);
-        this.diagnosticsDir = new File(external == null ? rootDir : external, "diagnostics");
         detailDir.mkdirs();
         savedDir.mkdirs();
-        diagnosticsDir.mkdirs();
-        synchronized (SESSION_LOCK) {
-            if (processSessionId == null || processSessionId.isEmpty()) {
-                processSessionId = UUID.randomUUID().toString();
-                processSessionStartedAt = System.currentTimeMillis();
-                processSessionLogPrepared = false;
-            }
-            this.sessionId = processSessionId;
-            this.sessionStartedAt = processSessionStartedAt;
-            if (!processSessionLogPrepared) {
-                processSessionLogPrepared = true;
-                LOG_EXECUTOR.execute(this::resetSessionLogLocked);
-            }
-        }
+        this.diagnostics = new LocalDiagnosticsLog(app, rootDir);
     }
 
     void saveFeed(List<FeedItem> items) {
@@ -392,103 +356,43 @@ final class LocalCache {
     }
 
     void log(String message) {
-        CrashBreadcrumbs.record(message);
-        String line = timestamp() + "  " + (message == null ? "" : message) + "\n";
-        File file = logFile();
-        LOG_EXECUTOR.execute(() -> appendEvent(file, line));
+        diagnostics.log(message);
     }
 
     String recentLog() {
-        awaitEventWrites();
-        synchronized (SESSION_LOCK) {
-            return read(logFile());
-        }
+        return diagnostics.recentLog();
     }
 
     String previousLog() {
-        synchronized (SESSION_LOCK) {
-            return read(previousLogFile());
-        }
+        return diagnostics.previousLog();
     }
 
     String crashLog() {
-        return CrashReporter.latestCrashReport(context);
+        return diagnostics.crashLog();
     }
 
     String previousCrashLog() {
-        return CrashReporter.previousCrashReport(context);
+        return diagnostics.previousCrashLog();
     }
 
     String nativeSignLog() {
-        synchronized (SESSION_LOCK) {
-            return read(nativeSignLogFile());
-        }
+        return diagnostics.nativeSignLog();
     }
 
     static void appendNativeSignLog(Context context, String message) {
-        if (context == null) return;
-        synchronized (SESSION_LOCK) {
-            Context app = context.getApplicationContext();
-            File external = app.getExternalFilesDir(null);
-            File dir = new File(external == null
-                    ? new File(app.getFilesDir(), "offline-cache") : external, "diagnostics");
-            File file = new File(dir, "native-sign.log");
-            String line = timestampNow() + "  " + (message == null ? "" : message) + "\n";
-            String previous = readStatic(file);
-            String next = previous + line;
-            if (next.length() > MAX_LOG_BYTES) {
-                next = next.substring(Math.max(0, next.length() - MAX_LOG_BYTES));
-            }
-            writeStatic(file, next);
-        }
-    }
-
-    private static void appendEvent(File file, String line) {
-        synchronized (SESSION_LOCK) {
-            File parent = file.getParentFile();
-            if (parent != null) parent.mkdirs();
-            try (FileOutputStream output = new FileOutputStream(file, true)) {
-                output.write(line.getBytes(UTF_8));
-            } catch (IOException ignored) {
-                return;
-            }
-            if (file.length() <= MAX_LOG_BYTES + 8 * 1024L) return;
-            String value = readStatic(file);
-            if (value.length() > MAX_LOG_BYTES) {
-                value = value.substring(value.length() - MAX_LOG_BYTES);
-                int firstLine = value.indexOf('\n');
-                if (firstLine >= 0 && firstLine + 1 < value.length()) {
-                    value = value.substring(firstLine + 1);
-                }
-            }
-            writeStatic(file, value);
-        }
-    }
-
-    private static void awaitEventWrites() {
-        try {
-            Future<?> barrier = LOG_EXECUTOR.submit(() -> { });
-            barrier.get(2, TimeUnit.SECONDS);
-        } catch (Exception ignored) {
-        }
+        LocalDiagnosticsLog.appendNativeSignLog(context, message);
     }
 
     String sessionId() {
-        return sessionId;
+        return diagnostics.sessionId();
     }
 
     long sessionStartedAt() {
-        return sessionStartedAt;
+        return diagnostics.sessionStartedAt();
     }
 
     File writeDiagnostics(String text) {
-        diagnosticsDir.mkdirs();
-        File output = new File(diagnosticsDir,
-                "heybox-lite-diagnostics-" + timestampFile() + ".txt");
-        write(output, text == null ? "" : text);
-        write(new File(diagnosticsDir, "heybox-lite-diagnostics-latest.txt"),
-                text == null ? "" : text);
-        return output;
+        return diagnostics.writeDiagnostics(text);
     }
 
     private String encodeItems(List<FeedItem> items) {
@@ -521,31 +425,6 @@ final class LocalCache {
         } catch (JSONException ignored) {
         }
         return items;
-    }
-
-    private File logFile() {
-        return new File(diagnosticsDir, "events-session.log");
-    }
-
-    private File previousLogFile() {
-        return new File(diagnosticsDir, "events-previous-session.log");
-    }
-
-    private File nativeSignLogFile() {
-        return new File(diagnosticsDir, "native-sign.log");
-    }
-
-    private void resetSessionLogLocked() {
-        String previous = read(logFile());
-        if (!previous.trim().isEmpty()) {
-            write(previousLogFile(), previous);
-        }
-        write(logFile(), "sessionId: " + sessionId + "\n"
-                + "sessionStartedLocal: " + timestamp(sessionStartedAt) + "\n"
-                + "sessionStartedMillis: " + sessionStartedAt + "\n");
-        write(nativeSignLogFile(), "sessionId: " + sessionId + "\n"
-                + "sessionStartedLocal: " + timestamp(sessionStartedAt) + "\n"
-                + "sessionStartedMillis: " + sessionStartedAt + "\n");
     }
 
     private File file(File dir, String name) {
@@ -617,19 +496,4 @@ final class LocalCache {
         return total;
     }
 
-    private String timestamp() {
-        return timestamp(System.currentTimeMillis());
-    }
-
-    private static String timestampNow() {
-        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date());
-    }
-
-    private String timestamp(long millis) {
-        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date(millis));
-    }
-
-    private String timestampFile() {
-        return new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
-    }
 }
