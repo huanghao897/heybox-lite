@@ -70,6 +70,7 @@ internal class ComposeAppHost(
     private var feedStarted = false
     private var mounted = true
     private var suppressNextTransitionSnapshot = false
+    private var checkinPageOwner: ComposeCheckinController? = null
     private val surfaceActive = mutableStateOf(true)
     private val savedStateRegistry = activity.savedStateRegistry
 
@@ -133,6 +134,10 @@ internal class ComposeAppHost(
      * An empty target means the home-screen exit action, not another page.
      */
     fun composeSwipeTarget(route: String, direction: Int): String? {
+        val checkinPage = ComposeCheckinNavigation.page(route)
+        if (checkinPage != null && direction > 0 && servicesState.value.session.shellBackSwipe()) {
+            ComposeCheckinNavigation.parent(checkinPage)?.let { return ComposeCheckinNavigation.key(it) }
+        }
         if (direction < 0 && route == "feed") return "profile"
         if (direction > 0 && route == "feed") {
             return if (servicesState.value.session.homeSwipeExit()) "" else null
@@ -151,6 +156,10 @@ internal class ComposeAppHost(
 
     fun completeComposeSwipe(target: String) {
         if (!mounted) return
+        if (navigation.route.value == "checkin_center" && ComposeCheckinNavigation.page(target) != null) {
+            checkinPageOwner?.navigateBack { }
+            return
+        }
         if (target.isEmpty()) {
             callbacks.back()
             return
@@ -262,6 +271,8 @@ internal class ComposeAppHost(
         search.close()
         saved.close()
         readingCenter.close()
+        checkinPageOwner?.close()
+        checkinPageOwner = null
         transitionSnapshots.releaseAll()
         view.disposeComposition()
     }
@@ -294,6 +305,11 @@ internal class ComposeAppHost(
 
     fun handleBack(): Boolean {
         val current = navigation.route.value
+        if (current == "checkin_center" && checkinPageOwner?.uiState?.route != ComposeCheckinRoute.CENTER
+            && checkinPageOwner != null) {
+            checkinPageOwner?.navigateBack { }
+            return true
+        }
         if (current == "feed") return false
         if (current == "detail") {
             val targetSpec = detailReturnRouteSpec()
@@ -308,6 +324,12 @@ internal class ComposeAppHost(
         navigation.restoreSavedDetailIfNeeded(target)
         callbacks.backTo(target)
         return true
+    }
+
+    internal fun checkinPageController(): ComposeCheckinController? {
+        val services = servicesState.value
+        val coordinator = services.checkin ?: return null
+        return checkinPageOwner ?: ComposeCheckinController(services, coordinator).also { checkinPageOwner = it }
     }
 
     internal fun navigate(route: String) {
@@ -365,8 +387,14 @@ internal class ComposeAppHost(
     private fun ComposeAppRoot(host: ComposeAppHost) {
         val services by host.servicesState
         val route by host.navigation.route
+        val swipeRoute = if (route == "checkin_center") host.checkinPageController()?.uiState?.route
+            ?.let(ComposeCheckinNavigation::key) ?: route else route
         val screenStates = rememberSaveableStateHolder()
         LaunchedEffect(route) {
+            if (route == "checkin_center") host.checkinPageController()?.start() else {
+                host.checkinPageOwner?.close()
+                host.checkinPageOwner = null
+            }
             if (route == "profile") host.profile.refresh()
             if (route == "feed" && !host.feedStarted) {
                 host.feedStarted = true
@@ -375,7 +403,7 @@ internal class ComposeAppHost(
             }
         }
         HeyboxComposeTheme(services.theme) {
-            ComposeSwipeContainer(host, route, services) { page, active ->
+            ComposeSwipeContainer(host, swipeRoute, services) { page, active ->
                 val pageActive = active && host.surfaceActive.value
                 val pageServices = if (pageActive) services else services.copy(
                     theme = services.theme.copy(rotaryRequest = null),

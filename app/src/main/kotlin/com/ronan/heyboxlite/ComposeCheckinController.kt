@@ -54,19 +54,25 @@ internal class ComposeCheckinController(
         serviceAccountHost,
     )
     internal val taskSettings = CheckinTaskSettingsFlow(coordinator, taskSettingsHost)
-    private val billingController = ComposeCheckinBillingController(
-        services = services,
-        coordinator = coordinator,
-        state = { uiState },
-        setState = { uiState = it },
-        active = { isActive() },
+    internal val membership = ComposeCheckinMembershipController(
+        requests = ComposeMembershipRequests(coordinator), state = { uiState.membership },
+        update = { uiState = uiState.copy(membership = it) }, route = { uiState.route },
+        navigate = { uiState = uiState.copy(route = it) }, active = ::isActive,
         onAuthorizationLost = ::handleAuthorizationLost,
-        onClosePage = ::closeSponsorship,
+        onCatalogChanged = { value ->
+            uiState.status?.let { previous -> uiState = uiState.copy(status = CheckinCenterClient.Status(
+                previous.account, previous.task, previous.lastRun, value)) }
+        },
+    )
+    private val historyController = ComposeCheckinHistoryController(
+        request = coordinator::getHistory, state = { uiState }, update = { uiState = it },
+        active = ::isActive, generation = { statusGeneration }, onAuthorizationLost = ::handleAuthorizationLost,
     )
 
     fun start() {
         if (closed || started) return
         started = true
+        membership.start(services.activity)
         pairingFlow.resume()
         if (coordinator.paired()) refreshStatus()
     }
@@ -74,7 +80,8 @@ internal class ComposeCheckinController(
     fun close() {
         if (closed) return
         closed = true
-        billingController.stop()
+        membership.close()
+        historyController.close()
         ComposeCheckinCaptchaController.clear(captchaCallbacks)
         mobileLogin.close()
         serviceAccount.close()
@@ -91,7 +98,11 @@ internal class ComposeCheckinController(
                 setCenterState(clearError = true)
             }
             ComposeCheckinRoute.TASK_SETTINGS -> setCenterState(clearError = true)
-            ComposeCheckinRoute.SPONSORSHIP -> closeSponsorship()
+            ComposeCheckinRoute.MEMBERSHIP -> { membership.leave(); setCenterState(clearError = true) }
+            ComposeCheckinRoute.CHECKOUT, ComposeCheckinRoute.REDEEM, ComposeCheckinRoute.PURCHASES ->
+                membership.backToMembership()
+            ComposeCheckinRoute.HISTORY -> setCenterState(clearError = true)
+            ComposeCheckinRoute.HISTORY_DETAIL -> uiState = uiState.copy(route = ComposeCheckinRoute.HISTORY)
             ComposeCheckinRoute.CENTER -> onBack()
         }
     }
@@ -107,10 +118,6 @@ internal class ComposeCheckinController(
             route = ComposeCheckinRoute.CENTER,
             stage = ComposeCheckinStage.SYNCING,
             paired = true,
-            status = null,
-            history = null,
-            historyLoading = false,
-            historyError = "",
             errorMessage = "",
         )
         coordinator.getStatus(object : CheckinCenterClient.Callback<CheckinCenterClient.Status> {
@@ -121,13 +128,9 @@ internal class ComposeCheckinController(
                     stage = ComposeCheckinStage.CONNECTED,
                     paired = true,
                     status = value,
-                    history = null,
-                    historyLoading = connected,
-                    historyError = "",
                     errorMessage = "",
-                    billingMembership = value.membership,
                 )
-                if (connected) loadHistory(value, generation)
+                if (connected) historyController.load()
             }
 
             override fun onError(error: CheckinCenterClient.ApiError) {
@@ -137,13 +140,18 @@ internal class ComposeCheckinController(
         })
     }
 
-    fun refreshHistory() {
-        val value = uiState.status ?: return
-        if (!coordinator.paired() ||
-            !value.account.state.equals("connected", ignoreCase = true)
-        ) return
-        loadHistory(value, statusGeneration)
+    fun refreshHistory() = historyController.load()
+
+    fun openHistory() {
+        uiState = uiState.copy(route = ComposeCheckinRoute.HISTORY)
+        if (uiState.history == null && !uiState.historyLoading) historyController.load()
     }
+
+    fun openHistoryEntry(entry: CheckinHistory.Entry) {
+        uiState = uiState.copy(route = ComposeCheckinRoute.HISTORY_DETAIL, selectedHistoryEntry = entry)
+    }
+
+    fun openMembership() = membership.open(uiState.status?.membership)
 
     fun openPairing() {
         if (closed) return
@@ -167,6 +175,11 @@ internal class ComposeCheckinController(
         if (closed) return
         if (!coordinator.paired()) {
             showControllerError("请先连接签到服务")
+            return
+        }
+        val entitlement = uiState.status?.membership
+        if (entitlement?.required == true && !entitlement.entitled) {
+            openMembership()
             return
         }
         mobileLogin.start()
@@ -199,7 +212,7 @@ internal class ComposeCheckinController(
         coordinator.runNow(object : CheckinCenterClient.Callback<CheckinCenterClient.RunResult> {
             override fun onSuccess(value: CheckinCenterClient.RunResult) {
                 if (!isActive()) return
-                services.toast.show(runMessage(value))
+                services.toast.show(checkinRunMessage(value))
                 refreshStatus()
             }
 
@@ -323,69 +336,25 @@ internal class ComposeCheckinController(
         taskSettings.save(task.enabled, CheckinTaskSettingsView.normalizedTime(task), next)
     }
 
+    fun setTaskOffset(value: Int) {
+        val task = uiState.status?.task ?: return
+        if (value !in 0..720 || value == task.offsetMinutes) return
+        taskSettings.save(task.enabled, CheckinTaskSettingsView.normalizedTime(task), value)
+    }
+
     fun setShare(action: String, enabled: Boolean) {
         taskSettings.share(action, enabled)
-    }
-
-    fun setBillingAmount(value: String) = billingController.setAmount(value)
-
-    fun setBillingPaymentReference(value: String) = billingController.setPaymentReference(value)
-
-    fun openSponsorship(membership: CheckinBilling.Membership?) =
-        billingController.open(membership)
-
-    fun closeSponsorship() {
-        billingController.stop()
-        setCenterState(clearError = true)
-    }
-
-    fun finishOrRegenerateBilling() = billingController.finishOrRegenerate()
-
-    fun createBillingOrder() = billingController.createOrder()
-
-    fun loadBillingQr() = billingController.loadQr()
-
-    fun submitBillingClaim() = billingController.submitClaim()
-
-    private fun loadHistory(value: CheckinCenterClient.Status, generation: Int) {
-        if (!isActive() || !coordinator.paired()) return
-        uiState = uiState.copy(historyLoading = true, historyError = "")
-        coordinator.getHistory(object : CheckinCenterClient.Callback<CheckinHistory> {
-            override fun onSuccess(result: CheckinHistory) {
-                if (!isActive() || generation != statusGeneration || uiState.status !== value) return
-                uiState = uiState.copy(history = result, historyLoading = false, historyError = "")
-            }
-
-            override fun onError(error: CheckinCenterClient.ApiError) {
-                if (!isActive() || generation != statusGeneration || uiState.status !== value) return
-                if (error.authorizationInvalid()) {
-                    handleAuthorizationLost(errorMessage(error))
-                } else if (error.operation == CheckinCenterClient.Operation.HISTORY &&
-                    error.statusCode == 404 && value.lastRun != null
-                ) {
-                    uiState = uiState.copy(
-                        history = CheckinHistory.fromLastRun(value.lastRun),
-                        historyLoading = false,
-                        historyError = "",
-                    )
-                } else {
-                    uiState = uiState.copy(
-                        historyLoading = false,
-                        historyError = errorMessage(error),
-                    )
-                }
-            }
-        })
     }
 
     internal fun isActive(): Boolean = !closed
 
     internal fun setCenterState(clearError: Boolean) {
         val paired = coordinator.paired()
-        billingController.stop()
+        membership.leave()
         uiState = uiState.copy(
             route = ComposeCheckinRoute.CENTER,
-            stage = if (paired) ComposeCheckinStage.SYNCING else ComposeCheckinStage.UNPAIRED,
+            stage = if (!paired) ComposeCheckinStage.UNPAIRED
+                else if (uiState.status != null) ComposeCheckinStage.CONNECTED else ComposeCheckinStage.SYNCING,
             paired = paired,
             status = if (paired) uiState.status else null,
             history = if (paired) uiState.history else null,
@@ -421,6 +390,11 @@ internal class ComposeCheckinController(
             handleAuthorizationLost(message)
             return
         }
+        if (error.statusCode == 402) {
+            uiState = uiState.copy(stage = ComposeCheckinStage.CONNECTED, errorMessage = "")
+            openMembership()
+            return
+        }
         val paired = coordinator.paired()
         uiState = uiState.copy(
             route = ComposeCheckinRoute.CENTER,
@@ -435,7 +409,7 @@ internal class ComposeCheckinController(
         pairingFlow.cancel()
         mobileLogin.pause()
         serviceAccount.pause()
-        billingController.stop()
+        membership.leave()
         statusGeneration++
         uiState = uiState.copy(
             route = ComposeCheckinRoute.CENTER,
@@ -474,26 +448,6 @@ internal class ComposeCheckinController(
             services.theme.roundScreen,
             captchaCallbacks,
         )
-    }
-
-    private fun runMessage(result: CheckinCenterClient.RunResult): String {
-        val checkIn = result.checkIn
-        if (checkIn != null && checkIn.checkedIn) {
-            val reward = rewardLabel(checkIn)
-            return if (reward.isEmpty()) "已签到" else "已签到，获得 $reward"
-        }
-        return when (result.status.lowercase()) {
-            "ok" -> "小黑盒签到任务已完成"
-            "skipped" -> "今日没有需要执行的签到任务"
-            else -> "签到任务已返回结果"
-        }
-    }
-
-    private fun rewardLabel(result: CheckinCenterClient.CheckinResult): String {
-        val parts = mutableListOf<String>()
-        if (result.coinDelta >= 0) parts += "${result.coinDelta} 盒币"
-        if (result.experienceDelta >= 0) parts += "${result.experienceDelta} 经验"
-        return parts.joinToString("、")
     }
 
 }

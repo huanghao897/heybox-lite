@@ -5,6 +5,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 
+import java.util.List;
 import java.util.Locale;
 
 final class CheckinCenterCoordinator {
@@ -185,6 +186,46 @@ final class CheckinCenterCoordinator {
             return;
         }
         client.createBillingOrder(token, amountCents, authorizationAware(callback));
+    }
+
+    void getMembershipCatalog(CheckinCenterClient.Callback<CheckinBilling.Membership> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.BILLING_CATALOG, "尚未连接签到服务");
+            return;
+        }
+        new CheckinMembershipApi(client).getMembershipCatalog(token, authorizationAware(callback));
+    }
+
+    void getPurchaseHistory(
+            CheckinCenterClient.Callback<List<CheckinBilling.OrderRecord>> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.BILLING_HISTORY, "尚未连接签到服务");
+            return;
+        }
+        new CheckinMembershipApi(client).getPurchaseHistory(token, authorizationAware(callback));
+    }
+
+    void redeemMembership(String code,
+                          CheckinCenterClient.Callback<CheckinBilling.Membership> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.BILLING_REDEEM, "尚未连接签到服务");
+            return;
+        }
+        new CheckinMembershipApi(client).redeemMembership(token, code, authorizationAware(callback));
+    }
+
+    void createMembershipOrder(String productSku,
+                               CheckinCenterClient.Callback<CheckinBilling.Order> callback) {
+        String token = store.deviceToken();
+        if (token.isEmpty()) {
+            fail(callback, CheckinCenterClient.Operation.BILLING_CREATE, "尚未连接签到服务");
+            return;
+        }
+        new CheckinMembershipApi(client).createMembershipOrder(
+                token, productSku, authorizationAware(callback));
     }
 
     void getBillingOrder(String orderId,

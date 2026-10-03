@@ -30,11 +30,6 @@ final class CheckinLeaderboardPage {
         int roundHeaderInset();
     }
 
-    private enum Board {
-        CHECKIN,
-        SPONSORSHIP
-    }
-
     private final Activity activity;
     private final SessionStore session;
     private final CheckinCenterCoordinator coordinator;
@@ -47,7 +42,6 @@ final class CheckinLeaderboardPage {
     private final FrameLayout root;
     private final boolean roundLayout;
 
-    private Board board = Board.CHECKIN;
     private CheckinLeaderboard.Data data;
     private String errorMessage = "";
     private boolean loading;
@@ -139,8 +133,7 @@ final class CheckinLeaderboardPage {
         } else if (!errorMessage.isEmpty()) {
             ui.addTop(page, errorCard(), dimensions.sectionGap());
         } else {
-            ui.addTop(page, boardSelector(), dimensions.sectionGap());
-            ui.addTop(page, boardCard(), dimensions.compactGap());
+            ui.addTop(page, boardCard(), dimensions.sectionGap());
         }
         root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
     }
@@ -165,40 +158,11 @@ final class CheckinLeaderboardPage {
         return card;
     }
 
-    private View boardSelector() {
-        LinearLayout selector = new LinearLayout(activity);
-        selector.setGravity(Gravity.CENTER_VERTICAL);
-        int selectorPadding = dimensions.selectorPadding();
-        selector.setPadding(selectorPadding, selectorPadding,
-                selectorPadding, selectorPadding);
-        Compat.setBackground(selector, UiComponents.round(
-                activity, tokens.panelElevated, dimensions.isCompact() ? 9 : 10, scale()));
-
-        Button checkin = ui.segmentButton("连续签到", board == Board.CHECKIN);
-        Button sponsorship = ui.segmentButton("赞助排行", board == Board.SPONSORSHIP);
-        checkin.setOnClickListener(view -> select(Board.CHECKIN));
-        sponsorship.setOnClickListener(view -> select(Board.SPONSORSHIP));
-
-        int height = dimensions.selectorItemHeight();
-        selector.addView(checkin, new LinearLayout.LayoutParams(0, height, 1.0f));
-        selector.addView(sponsorship, new LinearLayout.LayoutParams(0, height, 1.0f));
-        selector.setMinimumHeight(dimensions.selectorHeight());
-        return selector;
-    }
-
-    private void select(Board selected) {
-        if (closed || board == selected || data == null) return;
-        board = selected;
-        render();
-    }
-
     private View boardCard() {
         LinearLayout card = card();
-        String title = board == Board.CHECKIN ? "连续签到" : "赞助排行";
-        String subtitle = board == Board.CHECKIN
-                ? "按连续签到天数排序" : "按累计赞助金额排序";
-        List<CheckinLeaderboard.Entry> entries = board == Board.CHECKIN
-                ? data.checkin : data.sponsorship;
+        String title = "连续签到";
+        String subtitle = "按连续签到天数排序";
+        List<CheckinLeaderboard.Entry> entries = data.checkin;
 
         LinearLayout heading = new LinearLayout(activity);
         heading.setGravity(Gravity.CENTER_VERTICAL);

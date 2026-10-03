@@ -31,16 +31,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 
-internal enum class ComposeCheckinBoard {
-    CHECKIN,
-    SPONSORSHIP,
-}
-
 internal data class ComposeCheckinLeaderboardState(
     val loading: Boolean = false,
     val errorMessage: String = "",
     val data: CheckinLeaderboard.Data? = null,
-    val board: ComposeCheckinBoard = ComposeCheckinBoard.CHECKIN,
     val avatars: Map<String, Bitmap> = emptyMap(),
 )
 
@@ -87,14 +81,10 @@ internal class ComposeCheckinLeaderboardController(
         })
     }
 
-    fun select(board: ComposeCheckinBoard) {
-        if (uiState.board != board) uiState = uiState.copy(board = board)
-    }
-
     private fun loadAvatars(value: CheckinLeaderboard.Data, request: Int) {
         if (services.session.noImage()) return
         val target = (64f * services.activity.resources.displayMetrics.density).toInt()
-        (value.checkin + value.sponsorship).forEach { entry ->
+        value.checkin.forEach { entry ->
             val url = entry.avatarUrl
             if (url.isEmpty() || uiState.avatars.containsKey(url)) return@forEach
             ImageLoader.load(url, target) { bitmap ->
@@ -123,18 +113,17 @@ internal fun ComposeCheckinLeaderboardScreen(
             controller.start()
             onDispose { controller.close() }
         }
-        ComposeCheckinLeaderboardContent(controller.uiState, onBack, controller::select, controller::refresh)
+        ComposeCheckinLeaderboardContent(controller.uiState, onBack, controller::refresh)
     }
 }
 
 @Composable
-private fun ComposeCheckinLeaderboardContent(
+internal fun ComposeCheckinLeaderboardContent(
     state: ComposeCheckinLeaderboardState,
     onBack: () -> Unit,
-    onBoardSelected: (ComposeCheckinBoard) -> Unit,
     onRetry: () -> Unit,
 ) {
-    WatchPage("排行榜", onBack) {
+    WatchPage("连续签到排行榜", onBack) {
         when {
             state.loading -> WatchCard(highlighted = true) {
                 Text("正在加载", color = LocalHeyboxTheme.current.text,
@@ -152,15 +141,6 @@ private fun ComposeCheckinLeaderboardContent(
                 ComposeCheckinQuietButton("重新加载", onClick = onRetry)
             }
             state.data != null -> {
-                WatchSectionTitle("榜单")
-                ComposeCheckinModeSelector(
-                    first = "连续签到",
-                    second = "赞助排行",
-                    firstSelected = state.board == ComposeCheckinBoard.CHECKIN,
-                    onFirst = { onBoardSelected(ComposeCheckinBoard.CHECKIN) },
-                    onSecond = { onBoardSelected(ComposeCheckinBoard.SPONSORSHIP) },
-                )
-                Spacer(modifier = Modifier.height(watchDp(7)))
                 ComposeCheckinBoardCard(state)
             }
             else -> WatchEmptyState("暂无数据")
@@ -171,21 +151,15 @@ private fun ComposeCheckinLeaderboardContent(
 @Composable
 private fun ComposeCheckinBoardCard(state: ComposeCheckinLeaderboardState) {
     val data = state.data ?: return
-    val entries = if (state.board == ComposeCheckinBoard.CHECKIN) data.checkin else data.sponsorship
-    val title = if (state.board == ComposeCheckinBoard.CHECKIN) "连续签到" else "赞助排行"
-    val subtitle = if (state.board == ComposeCheckinBoard.CHECKIN) {
-        "按连续签到天数排序"
-    } else {
-        "按累计赞助金额排序"
-    }
+    val entries = data.checkin
     WatchCard {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, color = LocalHeyboxTheme.current.text, fontSize = watchSp(14.5f),
+            Text("连续签到", color = LocalHeyboxTheme.current.text, fontSize = watchSp(14.5f),
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             Text("${entries.size} 人", color = LocalHeyboxTheme.current.muted,
                 fontSize = watchSp(11f))
         }
-        Text(subtitle, color = LocalHeyboxTheme.current.muted,
+        Text("按连续签到天数排序", color = LocalHeyboxTheme.current.muted,
             fontSize = watchSp(11f), modifier = Modifier.padding(top = watchDp(2)))
         if (entries.isEmpty()) {
             WatchEmptyState("暂无数据")
@@ -275,7 +249,6 @@ private fun ComposeCheckinLeaderboardPreview() {
         ComposeCheckinLeaderboardContent(
             ComposeCheckinLeaderboardState(data = data),
             onBack = {},
-            onBoardSelected = {},
             onRetry = {},
         )
     }

@@ -36,6 +36,7 @@ class ComposeFeedControllerTest {
         assertEquals(0, responseReads)
         assertEquals(0, fixture.filterReads)
         assertTrue(fixture.controller.items.value.isEmpty())
+        assertTrue(fixture.controller.presentations.value.isEmpty())
         fixture.worker.runNext()
         assertTrue(responseReads > 0)
         assertEquals(1, fixture.filterReads)
@@ -43,6 +44,7 @@ class ComposeFeedControllerTest {
         assertTrue(fixture.controller.loading.value)
         fixture.publishNext()
         assertEquals(listOf("1"), fixture.ids())
+        assertEquals("A post", fixture.controller.presentations.value.values.single().title)
         assertFalse(fixture.controller.refreshing.value)
         assertEquals(1, fixture.saved.size)
     }
@@ -52,6 +54,7 @@ class ComposeFeedControllerTest {
         fixture.controller.loadInitial()
         fixture.finish(response("first", "1", "2"))
         val firstItem = fixture.controller.items.value.first()
+        val firstPresentation = fixture.controller.presentations.value[firstItem]
         firstItem.likes = 27
         fixture.controller.loadMore()
         repeat(5) {
@@ -63,6 +66,8 @@ class ComposeFeedControllerTest {
         fixture.finish(response("second", "2", "3"))
         assertEquals(listOf("1", "2", "3"), fixture.ids())
         assertSame(firstItem, fixture.controller.items.value.first())
+        assertSame(firstPresentation, fixture.controller.presentations.value[firstItem])
+        assertEquals(fixture.controller.items.value.toSet(), fixture.controller.presentations.value.keys)
         assertEquals(27, fixture.controller.items.value.first().likes)
         assertFalse(fixture.controller.loadingMore.value)
         assertFalse(fixture.controller.noMore.value)
@@ -80,6 +85,7 @@ class ComposeFeedControllerTest {
             .put(JSONObject().put("linkid", "2").put("title", "Repeated"))
         fixture.finish(JSONObject().put("result", JSONObject().put("links", links)))
         assertEquals(listOf("2"), fixture.ids())
+        assertEquals(fixture.controller.items.value.toSet(), fixture.controller.presentations.value.keys)
         assertFalse(fixture.controller.refreshing.value)
     }
 
@@ -173,12 +179,41 @@ class ComposeFeedControllerTest {
         fixture.controller.refresh()
         fixture.controller.loadMore()
         assertTrue(fixture.controller.items.value.isEmpty())
+        assertTrue(fixture.controller.presentations.value.isEmpty())
         assertFalse(fixture.controller.refreshing.value)
         assertFalse(fixture.controller.loading.value)
         assertTrue(fixture.worker.isShutdown)
         assertTrue(fixture.worker.tasks.isEmpty())
         assertTrue(fixture.saved.isEmpty())
         assertEquals(1, fixture.requests.size)
+    }
+
+    @Test fun gamePresentationIsPreparedOnTheWorkerAndRetainedAcrossPagination() {
+        val fixture = Fixture()
+        var reads = 0
+        val preload = object : JSONObject() {
+            override fun opt(key: String): Any? {
+                assertTrue("Game display data must be prepared on the worker", fixture.worker.running)
+                reads++
+                return super.opt(key)
+            }
+        }.put("game", JSONObject().put("appid", "42").put("name", "Game"))
+        fixture.controller.loadInitial()
+        fixture.finish(JSONObject().put("result", JSONObject().put("lastval", "first")
+            .put("links", JSONArray().put(JSONObject().put("linkid", "1").put("title", "Title")
+                .put("communityPostPreload", preload)))))
+        assertTrue(reads > 0)
+        val before = reads
+        val item = fixture.controller.items.value.single()
+        val presentation = requireNotNull(fixture.controller.presentations.value[item])
+        assertEquals("Game", requireNotNull(presentation.game).name)
+        fixture.controller.loadMore()
+        fixture.finish(response("next", "2"))
+        assertEquals(before, reads)
+        assertSame(presentation, fixture.controller.presentations.value[item])
+        fixture.controller.refresh()
+        fixture.finish(response("reset", "3"))
+        assertFalse(fixture.controller.presentations.value.containsKey(item))
     }
 
     private class Fixture {

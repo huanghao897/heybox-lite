@@ -33,6 +33,7 @@ internal fun ComposeHistoryScreen(
     onRetry: () -> Unit,
     onBack: () -> Unit,
     listState: LazyListState,
+    actionRevision: Int = 0,
 ) {
     val scope = rememberCoroutineScope()
     val filtered = remember(state.items, query) { filterReadingHistory(state.items, query) }
@@ -57,7 +58,7 @@ internal fun ComposeHistoryScreen(
                     ComposeFeedCard(item, services.theme, services.session.noImage(),
                         services.session.userId(), onOpen, onAction,
                         favorite = item.favorited, showFollow = false,
-                        gameCardNoImage = services.session.gameCardNoImage())
+                        gameCardNoImage = services.session.gameCardNoImage(), actionRevision = actionRevision)
                 }
             }
         }

@@ -1,106 +1,62 @@
 package com.ronan.heyboxlite
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
-
-internal @Composable fun ComposeCheckinScreen(
-    services: ComposeServices,
-    onNavigate: (String) -> Unit,
-    onBack: () -> Unit,
-) {
-    HeyboxComposeTheme(services.theme) {
-        val coordinator = services.checkin
-        if (coordinator == null) {
-            ComposeCheckinUnavailableScreen(onBack)
-            return@HeyboxComposeTheme
-        }
-        val controller = remember(coordinator) {
-            ComposeCheckinController(services, coordinator)
-        }
-        DisposableEffect(controller) {
-            controller.start()
-            onDispose { controller.close() }
-        }
-        val state = controller.uiState
-        when (state.route) {
-            ComposeCheckinRoute.CENTER -> ComposeCheckinCenterContent(
-                state = state,
-                onBack = { controller.navigateBack(onBack) },
-                onConnect = controller::openPairing,
-                onRefresh = controller::refreshStatus,
-                onLogin = controller::openMobileLogin,
-                onRunNow = controller::runNow,
-                onTaskSettings = controller::openTaskSettings,
-                onSponsorship = controller::openSponsorship,
-                onLeaderboard = { onNavigate("leaderboard") },
-                onRevoke = controller::requestRevoke,
-                onHistoryRetry = controller::refreshHistory,
-            )
-            ComposeCheckinRoute.PAIRING -> ComposeCheckinPairingScreen(
-                state,
-                controller,
-                { controller.navigateBack(onBack) },
-            )
-            ComposeCheckinRoute.MOBILE_LOGIN -> ComposeCheckinMobileLoginScreen(
-                state,
-                controller,
-                { controller.navigateBack(onBack) },
-            )
-            ComposeCheckinRoute.TASK_SETTINGS -> ComposeCheckinTaskSettingsScreen(
-                state,
-                controller,
-                { controller.navigateBack(onBack) },
-            )
-            ComposeCheckinRoute.SPONSORSHIP -> ComposeCheckinSponsorshipScreen(
-                state,
-                controller,
-                { controller.navigateBack(onBack) },
-            )
-        }
-        if (state.showRevokeConfirm) {
-            ComposeConfirmDialog(
-                title = "撤销此设备",
-                message = "撤销后，这台设备需要重新连接才能查看或执行小黑盒签到。服务器中的定时任务不会自动删除。",
-                onDismiss = controller::dismissRevoke,
-                onConfirm = controller::revokeDevice,
-            )
-        }
-    }
-}
 
 @Composable
-private fun ComposeCheckinUnavailableScreen(onBack: () -> Unit) {
-    WatchPage("小黑盒签到", onBack) {
-        WatchCard(highlighted = true) {
-            Text(
-                text = "签到服务暂不可用",
-                color = LocalHeyboxTheme.current.text,
-                fontSize = watchSp(15f),
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(modifier = Modifier.height(watchDp(5)))
-            Text(
-                text = "请稍后重新打开此页面。",
-                color = LocalHeyboxTheme.current.muted,
-                fontSize = watchSp(12f),
-            )
+internal fun ComposeCheckinScreen(services: ComposeServices, onNavigate: (String) -> Unit, onBack: () -> Unit,
+                                 controller: ComposeCheckinController?, page: ComposeCheckinRoute) {
+    HeyboxComposeTheme(services.theme) {
+        if (controller == null) {
+            WatchPage("小黑盒签到", onBack) { WatchEmptyState("签到服务暂不可用") }
+            return@HeyboxComposeTheme
         }
+        val state = controller.uiState.copy(route = page)
+        val back = { controller.navigateBack(onBack) }
+            when (page) {
+                ComposeCheckinRoute.CENTER -> ComposeCheckinCenterContent(state, back,
+                    controller::openPairing, controller::refreshStatus, controller::openMobileLogin,
+                    controller::runNow, controller::openTaskSettings, controller::openMembership,
+                    { onNavigate("leaderboard") }, controller::requestRevoke, controller::openHistory)
+                ComposeCheckinRoute.PAIRING -> ComposeCheckinPairingScreen(state, controller, back)
+                ComposeCheckinRoute.MOBILE_LOGIN -> ComposeCheckinMobileLoginScreen(state, controller, back)
+                ComposeCheckinRoute.TASK_SETTINGS -> ComposeCheckinTaskSettingsScreen(state, controller, back)
+                ComposeCheckinRoute.MEMBERSHIP -> ComposeMembershipScreen(state.membership, back,
+                    controller.membership::selectProduct, controller.membership::openCheckout,
+                    controller.membership::openRedeem, controller.membership::openPurchases,
+                    controller.membership::refreshCatalog, controller.membership::setAmount)
+                ComposeCheckinRoute.CHECKOUT -> ComposeMembershipCheckoutScreen(state.membership,
+                    state.status?.account, back, controller.membership::finishOrRegenerate,
+                    controller.membership::setPaymentReference, controller.membership::submitClaim)
+                ComposeCheckinRoute.REDEEM -> ComposeMembershipRedeemScreen(state.membership, back,
+                    controller.membership::setRedeemCode, controller.membership::redeem)
+                ComposeCheckinRoute.PURCHASES -> ComposeMembershipPurchasesScreen(state.membership, back,
+                    controller.membership::refreshPurchases)
+                ComposeCheckinRoute.HISTORY -> ComposeCheckinHistoryScreen(state, back,
+                    controller::refreshHistory, controller::openHistoryEntry)
+                ComposeCheckinRoute.HISTORY_DETAIL -> ComposeCheckinHistoryDetailScreen(state.selectedHistoryEntry, back)
+            }
+        if (state.showRevokeConfirm) ComposeConfirmDialog("撤销此设备",
+            "撤销后需重新连接才能查看或执行签到。服务器定时任务不会自动删除。",
+            controller::dismissRevoke, controller::revokeDevice)
     }
 }
 
@@ -113,331 +69,117 @@ internal fun ComposeCheckinCenterContent(
     onLogin: () -> Unit,
     onRunNow: () -> Unit,
     onTaskSettings: () -> Unit,
-    onSponsorship: (CheckinBilling.Membership?) -> Unit,
+    onMembership: () -> Unit,
     onLeaderboard: () -> Unit,
     onRevoke: () -> Unit,
-    onHistoryRetry: () -> Unit,
+    onHistory: () -> Unit,
 ) {
     WatchPage("小黑盒签到", onBack) {
-        WatchSectionTitle(if (!state.paired) "连接" else "状态")
         val status = state.status
         if (!state.paired) {
-            ComposeCheckinUnpairedCard(state, onConnect)
+            CheckinPanel {
+                Column(Modifier.padding(watchDp(13)), verticalArrangement = Arrangement.spacedBy(watchDp(5))) {
+                    Text("未连接签到服务", color = LocalHeyboxTheme.current.text,
+                        fontSize = watchSp(14f), fontWeight = FontWeight.SemiBold)
+                    Text("连接签到服务后，使用手机号登录需要签到的小黑盒账号。",
+                        color = LocalHeyboxTheme.current.muted, fontSize = watchSp(11f))
+                }
+            }
+            CheckinActionButton("连接签到服务", onConnect, enabled = state.supported,
+                icon = R.drawable.il_calendar)
         } else if (status == null) {
-            ComposeCheckinLoadingCard(state, onRefresh)
-        } else {
-            ComposeCheckinConnectedContent(
-                state = state,
-                onLogin = onLogin,
-                onRunNow = onRunNow,
-                onTaskSettings = onTaskSettings,
-                onSponsorship = onSponsorship,
-                onLeaderboard = onLeaderboard,
-                onRevoke = onRevoke,
-                onHistoryRetry = onHistoryRetry,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ComposeCheckinUnpairedCard(
-    state: ComposeCheckinUiState,
-    onConnect: () -> Unit,
-) {
-    WatchCard(highlighted = true) {
-        Text(
-            text = if (state.errorMessage.isEmpty()) "未连接" else "连接不可用",
-            color = LocalHeyboxTheme.current.text,
-            fontSize = watchSp(15f),
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(modifier = Modifier.height(watchDp(4)))
-        Text(
-            text = state.errorMessage.ifEmpty {
-                if (state.supported) "连接后由服务器按计划执行" else "当前设备不支持安全连接"
-            },
-            color = LocalHeyboxTheme.current.muted,
-            fontSize = watchSp(12f),
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(modifier = Modifier.height(watchDp(9)))
-        Text(
-            text = "登录签到服务后，再连接需要签到的小黑盒账号。",
-            color = LocalHeyboxTheme.current.muted,
-            fontSize = watchSp(12f),
-        )
-        Spacer(modifier = Modifier.height(watchDp(11)))
-        ComposeCheckinPrimaryButton(
-            text = "连接签到服务",
-            enabled = state.supported,
-            onClick = onConnect,
-        )
-    }
-}
-
-@Composable
-private fun ComposeCheckinLoadingCard(
-    state: ComposeCheckinUiState,
-    onRefresh: () -> Unit,
-) {
-    WatchCard(highlighted = state.stage == ComposeCheckinStage.ERROR) {
-        Text(
-            text = if (state.stage == ComposeCheckinStage.ERROR) "暂时无法连接" else "正在连接",
-            color = LocalHeyboxTheme.current.text,
-            fontSize = watchSp(15f),
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(modifier = Modifier.height(watchDp(4)))
-        Text(
-            text = state.errorMessage.ifEmpty { "正在读取账号与签到计划" },
-            color = LocalHeyboxTheme.current.muted,
-            fontSize = watchSp(12f),
-        )
-        if (state.stage == ComposeCheckinStage.ERROR) {
-            Spacer(modifier = Modifier.height(watchDp(8)))
-            ComposeCheckinQuietButton("重新加载", onClick = onRefresh)
-        }
-    }
-}
-
-@Composable
-private fun ComposeCheckinConnectedContent(
-    state: ComposeCheckinUiState,
-    onLogin: () -> Unit,
-    onRunNow: () -> Unit,
-    onTaskSettings: () -> Unit,
-    onSponsorship: (CheckinBilling.Membership?) -> Unit,
-    onLeaderboard: () -> Unit,
-    onRevoke: () -> Unit,
-    onHistoryRetry: () -> Unit,
-) {
-    val status = state.status ?: return
-    val accountConnected = status.account.state.equals("connected", ignoreCase = true)
-    WatchCard(highlighted = state.stage == ComposeCheckinStage.RUNNING) {
-        Text(
-            text = if (!accountConnected) "等待手机号登录"
-            else if (state.stage == ComposeCheckinStage.RUNNING) "执行中"
-            else taskStateLabel(status.task),
-            color = if (status.task.active() || state.stage == ComposeCheckinStage.RUNNING) {
-                LocalHeyboxTheme.current.text
-            } else {
-                LocalHeyboxTheme.current.muted
-            },
-            fontSize = watchSp(15f),
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(modifier = Modifier.height(watchDp(4)))
-        Text(
-            text = if (accountConnected) accountLabel(status.account) else "尚未连接小黑盒账号",
-            color = LocalHeyboxTheme.current.muted,
-            fontSize = watchSp(12f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (!accountConnected) {
-            Spacer(modifier = Modifier.height(watchDp(9)))
-            Text(
-                text = "自动签到需要单独使用手机号登录小黑盒。",
-                color = LocalHeyboxTheme.current.muted,
-                fontSize = watchSp(12f),
-            )
-            Spacer(modifier = Modifier.height(watchDp(10)))
-            ComposeCheckinPrimaryButton("手机号登录", onClick = onLogin)
-        } else {
-            Spacer(modifier = Modifier.height(watchDp(9)))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("下次签到", color = LocalHeyboxTheme.current.subtle, fontSize = watchSp(10f))
-                    Spacer(modifier = Modifier.height(watchDp(2)))
-                    Text(
-                        text = windowLabel(status.task).ifEmpty {
-                            CheckinTaskSettingsView.enabledLabel(status.task)
-                        },
-                        color = LocalHeyboxTheme.current.muted,
-                        fontSize = watchSp(11f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+            CheckinPanel {
+                Column(Modifier.padding(watchDp(13))) {
+                    Text(if (state.stage == ComposeCheckinStage.ERROR) "暂时无法连接" else "正在读取账号",
+                        color = LocalHeyboxTheme.current.text, fontSize = watchSp(14f), fontWeight = FontWeight.SemiBold)
+                    Text(state.errorMessage.ifEmpty { "读取签到计划与服务状态" },
+                        color = LocalHeyboxTheme.current.muted, fontSize = watchSp(11f),
+                        modifier = Modifier.padding(top = watchDp(5)))
                 }
-                Text(
-                    text = CheckinTaskSettingsView.scheduleLabel(status.task),
-                    color = LocalHeyboxTheme.current.text,
-                    fontSize = watchSp(20f),
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
             }
-            Spacer(modifier = Modifier.height(watchDp(10)))
-            ComposeCheckinPrimaryButton(
-                text = if (state.stage == ComposeCheckinStage.RUNNING) "正在签到" else "立即签到",
-                enabled = state.stage != ComposeCheckinStage.RUNNING && status.task.active(),
-                onClick = onRunNow,
-            )
-        }
-    }
-
-    WatchSectionTitle(if (accountConnected) "管理" else "服务")
-    WatchCard {
-        if (accountConnected) {
-            WatchRow(
-                title = "签到设置",
-                value = CheckinTaskSettingsView.scheduleLabel(status.task) + " · " +
-                    CheckinTaskSettingsView.offsetLabel(status.task.offsetMinutes),
-                icon = R.drawable.il_settings,
-                onClick = onTaskSettings,
-            )
-        }
-        AddSponsorshipRow(status.membership, onSponsorship)
-        WatchRow(
-            title = "连续签到排行榜",
-            icon = R.drawable.il_leaderboard,
-            onClick = onLeaderboard,
-        )
-        if (accountConnected) {
-            WatchRow(
-                title = "更换账号",
-                value = "手机号登录",
-                icon = R.drawable.il_person,
-                onClick = onLogin,
-            )
-        }
-        WatchRow(
-            title = "撤销此设备",
-            icon = R.drawable.ic_logout,
-            enabled = state.stage != ComposeCheckinStage.RUNNING,
-            onClick = onRevoke,
-        )
-    }
-
-    if (accountConnected) {
-        ComposeCheckinHistoryContent(state, onHistoryRetry)
-    }
-}
-
-@Composable
-    private fun AddSponsorshipRow(
-    membership: CheckinBilling.Membership?,
-    onSponsorship: (CheckinBilling.Membership?) -> Unit,
-) {
-    if (membership == null || !membership.voluntarySponsorship) return
-    WatchRow(
-        title = "赞助",
-        value = if (membership.checkoutAvailable) "自愿支持" else "暂不可用",
-        icon = R.drawable.il_qr,
-        enabled = membership.checkoutAvailable,
-        onClick = if (membership.checkoutAvailable) {
-            { onSponsorship(membership) }
+            if (state.stage == ComposeCheckinStage.ERROR) CheckinActionButton("重新读取", onRefresh,
+                icon = R.drawable.il_refresh)
         } else {
-            null
-        },
-    )
+            val connected = status.account.state.equals("connected", true)
+            CheckinAccountCard(status, state.stage, onLogin)
+            if (connected) CheckinActionButton(
+                if (state.stage == ComposeCheckinStage.RUNNING) "正在签到" else "立即签到", onRunNow,
+                enabled = state.stage != ComposeCheckinStage.RUNNING && status.task.active() &&
+                    (!status.membership.required || status.membership.entitled), icon = R.drawable.ic_play)
+            else CheckinActionButton("手机号登录", onLogin, icon = R.drawable.il_person)
+            if (connected) CheckinPanel { CheckinMenuRow("签到设置", R.drawable.il_settings, onTaskSettings) }
+        }
+        if (state.errorMessage.isNotBlank() && status != null) CheckinPanel {
+            CheckinMenuRow("重新读取状态", R.drawable.il_refresh, onRefresh, subtitle = state.errorMessage)
+        }
+        if (state.paired) {
+            CheckinPanel { CheckinMenuRow("会员服务", R.drawable.il_crown, onMembership) }
+            CheckinPanel { CheckinMenuRow("连续签到排行榜", R.drawable.il_leaderboard, onLeaderboard) }
+            if (status?.account?.state.equals("connected", true)) {
+                CheckinPanel { CheckinMenuRow("签到记录", R.drawable.il_history, onHistory) }
+            }
+            CheckinPanel { CheckinMenuRow("撤销此设备", R.drawable.ic_logout, onRevoke,
+                enabled = state.stage != ComposeCheckinStage.RUNNING, danger = true) }
+        }
+    }
 }
 
 @Composable
-private fun ComposeCheckinHistoryContent(
-    state: ComposeCheckinUiState,
-    onRetry: () -> Unit,
-) {
-    WatchSectionTitle("最近签到")
-    WatchCard {
-        when {
-            state.historyLoading -> {
-                WatchRow("正在同步记录", "读取最近执行结果", R.drawable.il_refresh)
+private fun CheckinAccountCard(status: CheckinCenterClient.Status, stage: ComposeCheckinStage, onLogin: () -> Unit) {
+    val theme = LocalHeyboxTheme.current
+    val account = status.account
+    val connected = account.state.equals("connected", true)
+    CheckinPanel {
+        Row(Modifier.fillMaxWidth().clickable(onClick = onLogin).padding(watchDp(12)),
+            verticalAlignment = Alignment.CenterVertically) {
+            Image(painterResource(R.mipmap.heywear), null, Modifier.size(watchDp(34))
+                .clip(RoundedCornerShape(watchDp(8))))
+            Spacer(Modifier.width(watchDp(9)))
+            Column(Modifier.weight(1f)) {
+                Text(account.displayName.ifEmpty { "小黑盒账号" }, color = theme.text,
+                    fontSize = watchSp(13f), fontWeight = FontWeight.SemiBold, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
+                Text(account.externalIdMasked.ifEmpty { "尚未连接" }, color = theme.muted, fontSize = watchSp(10f))
             }
-            state.historyError.isNotEmpty() -> {
-                WatchRow("暂时无法读取记录", state.historyError, R.drawable.il_info)
-                WatchActionText("重新读取", onRetry)
-            }
-            state.history == null || state.history.entries.isEmpty() -> {
-                WatchRow("暂无记录", "签到任务执行后会显示在这里", R.drawable.il_history)
-            }
-            else -> state.history.entries.forEachIndexed { index, entry ->
-                if (index > 0) {
-                    Spacer(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(watchDp(1))
-                            .padding(horizontal = watchDp(4)),
-                    )
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = watchDp(11), vertical = watchDp(8)),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = entry.state,
-                            color = if (entry.state == "失败") {
-                                LocalHeyboxTheme.current.muted
-                            } else {
-                                LocalHeyboxTheme.current.text
-                            },
-                            fontSize = watchSp(13f),
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                        )
-                        Spacer(modifier = Modifier.height(watchDp(2)))
-                        Text(
-                            text = entry.summaryPreview(),
-                            color = LocalHeyboxTheme.current.muted,
-                            fontSize = watchSp(11f),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+        }
+        Row(Modifier.fillMaxWidth().padding(start = watchDp(12), end = watchDp(12), bottom = watchDp(10))) {
+            CheckinBadge(when {
+                !connected -> "等待手机号登录"
+                stage == ComposeCheckinStage.RUNNING -> "签到执行中"
+                status.membership.required && !status.membership.entitled -> "等待开通会员"
+                status.task.platformBlocked || status.task.signBlocked -> "自动签到已暂停"
+                status.task.active() -> "自动签到已开启"
+                else -> "自动签到未开启"
+            })
+        }
+        if (connected) {
+            CheckinDivider()
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(watchDp(12))) {
+                if (maxWidth.value < 160f * theme.textScale) {
+                    Column(verticalArrangement = Arrangement.spacedBy(watchDp(10))) {
+                        CheckinScheduleField("下次签到时段", checkinWindow(status.task).ifEmpty { "未设置" }, false)
+                        CheckinScheduleField("预计执行", CheckinTaskSettingsView.scheduleLabel(status.task), true)
                     }
-                    Spacer(modifier = Modifier.width(watchDp(8)))
-                    Text(
-                        text = entry.displayTime(),
-                        color = LocalHeyboxTheme.current.subtle,
-                        fontSize = watchSp(10f),
-                        maxLines = 1,
-                    )
+                } else {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(watchDp(10))) {
+                        CheckinScheduleField("下次签到时段", checkinWindow(status.task).ifEmpty { "未设置" }, false,
+                            Modifier.weight(1.2f))
+                        CheckinScheduleField("预计执行", CheckinTaskSettingsView.scheduleLabel(status.task), true,
+                            Modifier.weight(1f))
+                    }
                 }
             }
         }
     }
 }
 
-private fun accountLabel(account: CheckinCenterClient.Account): String {
-    val name = account.displayName.ifEmpty { "小黑盒账号" }
-    return if (account.externalIdMasked.isEmpty()) name
-    else "$name  ${account.externalIdMasked}"
-}
-
-private fun taskStateLabel(task: CheckinCenterClient.Task): String {
-    if (task.platformBlocked || task.signBlocked) return "自动签到已暂停"
-    return if (task.active()) "自动签到已启用" else "自动签到未启用"
-}
-
-private fun windowLabel(task: CheckinCenterClient.Task): String {
-    if (task.windowStart.isEmpty()) return task.windowEnd
-    if (task.windowEnd.isEmpty()) return task.windowStart
-    return "${task.windowStart} - ${task.windowEnd}"
-}
-
-@Preview(name = "Checkin round", showBackground = true, widthDp = 192, heightDp = 192)
 @Composable
-private fun ComposeCheckinRoundPreview() {
-    HeyboxComposeTheme(composePreviewTheme(roundScreen = true)) {
-        ComposeCheckinCenterContent(
-            state = ComposeCheckinUiState(supported = true),
-            onBack = {},
-            onConnect = {},
-            onRefresh = {},
-            onLogin = {},
-            onRunNow = {},
-            onTaskSettings = {},
-            onSponsorship = {},
-            onLeaderboard = {},
-            onRevoke = {},
-            onHistoryRetry = {},
-        )
+private fun CheckinScheduleField(label: String, value: String, prominent: Boolean, modifier: Modifier = Modifier) {
+    val theme = LocalHeyboxTheme.current
+    Column(modifier) {
+        Text(label, color = theme.muted, fontSize = watchSp(10f))
+        Text(value, color = theme.text, fontSize = watchSp(if (prominent) 19f else 12f),
+            fontWeight = if (prominent) FontWeight.SemiBold else FontWeight.Medium,
+            modifier = Modifier.padding(top = watchDp(3)), maxLines = 2)
     }
 }

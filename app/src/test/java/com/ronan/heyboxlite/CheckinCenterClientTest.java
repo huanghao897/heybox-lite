@@ -314,10 +314,11 @@ public class CheckinCenterClientTest {
     }
 
     @Test
-    public void obsoleteSubscriptionErrorsDoNotRequestPayment() {
+    public void subscriptionRequiredResponseExplainsMembershipWithoutInvalidatingDevice() {
         CheckinCenterClient.ApiError error = CheckinCenterClient.statusError(
                 CheckinCenterClient.Operation.RUN_NOW, 402,
                 "{\"code\":\"subscription_required\"}");
-        assertEquals("签到服务状态异常，请稍后重试", error.getMessage());
+        assertEquals("请开通或续费小黑盒签到会员", error.getMessage());
+        assertFalse(error.authorizationInvalid());
     }
 }

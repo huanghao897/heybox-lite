@@ -5,7 +5,12 @@ internal enum class ComposeCheckinRoute {
     PAIRING,
     MOBILE_LOGIN,
     TASK_SETTINGS,
-    SPONSORSHIP,
+    MEMBERSHIP,
+    CHECKOUT,
+    REDEEM,
+    PURCHASES,
+    HISTORY,
+    HISTORY_DETAIL,
 }
 
 internal enum class ComposeCheckinStage {
@@ -32,6 +37,7 @@ internal data class ComposeCheckinUiState(
     val history: CheckinHistory? = null,
     val historyLoading: Boolean = false,
     val historyError: String = "",
+    val selectedHistoryEntry: CheckinHistory.Entry? = null,
     val errorMessage: String = "",
     val pairing: CheckinCenterClient.PairingStart? = null,
     val pairingRemainingSeconds: Long = 0L,
@@ -68,13 +74,6 @@ internal data class ComposeCheckinUiState(
     val mobileSmsButtonEnabled: Boolean = true,
     val focusTarget: String = "",
     val taskSaving: Boolean = false,
-    val billingMembership: CheckinBilling.Membership? = null,
-    val billingOrder: CheckinBilling.Order? = null,
-    val billingAmount: String = "",
-    val billingPaymentReference: String = "",
-    val billingRequestInFlight: Boolean = false,
-    val billingQrLoading: Boolean = false,
-    val billingQrBytes: ByteArray? = null,
-    val billingMessage: String = "",
+    val membership: ComposeMembershipUiState = ComposeMembershipUiState(),
     val showRevokeConfirm: Boolean = false,
 )

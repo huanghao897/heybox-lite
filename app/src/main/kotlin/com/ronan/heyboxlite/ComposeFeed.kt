@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
@@ -66,7 +67,10 @@ internal fun ComposeFeedScreen(
     listState: LazyListState = rememberLazyListState(),
     observeLoadMore: Boolean = true,
     interactive: Boolean = true,
+    presentations: Map<FeedItem, ComposeFeedPresentation> = emptyMap(),
+    actionRevision: Int = 0,
 ) {
+    val presentationCache = remember { ComposeFeedPresentationCache() }
     HeyboxComposeTheme(services.theme) {
         val theme = LocalHeyboxTheme.current
         val noImage = services.session.noImage()
@@ -132,6 +136,9 @@ internal fun ComposeFeedScreen(
                                 onAction = onAction,
                                 showSecondaryActions = false,
                                 gameCardNoImage = gameCardNoImage,
+                                presentationCache = presentationCache,
+                                precomputedPresentation = presentations[item],
+                                actionRevision = actionRevision,
                             )
                         }
                         item(key = "feed-footer", contentType = "feed-footer") {

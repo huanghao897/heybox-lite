@@ -10,7 +10,7 @@ internal object ComposeSwipePresentation {
 
     @JvmStatic
     fun isLiveRoute(route: String?): Boolean =
-        route?.substringBefore('?') in liveRoutes
+        route?.substringBefore('?') in liveRoutes || ComposeCheckinNavigation.page(route.orEmpty()) != null
 
     @JvmStatic
     fun routes(current: String, target: String?): List<String> {

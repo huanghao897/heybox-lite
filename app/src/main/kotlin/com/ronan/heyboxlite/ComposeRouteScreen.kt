@@ -20,8 +20,9 @@ internal fun ComposeRouteScreen(
     val listState = previewListState ?: host.listState(route)
     when (route) {
         "feed" -> {
-            host.feedRevision.value
+            val actionRevision by host.feedRevision
             val items by host.feed.items
+            val presentations by host.feed.presentations
             val loading by host.feed.loading
             val refreshing by host.feed.refreshing
             val noMore by host.feed.noMore
@@ -35,6 +36,8 @@ internal fun ComposeRouteScreen(
                 listState = listState,
                 observeLoadMore = active,
                 interactive = active,
+                presentations = presentations,
+                actionRevision = actionRevision,
             )
         }
         "profile" -> {
@@ -101,8 +104,11 @@ internal fun ComposeRouteScreen(
             route, services, host::navigate, { host.handleBack() },
             host.callbacks::settingsChanged,
         )
-        "checkin_center" -> ComposeCheckinScreen(
-            services, host::navigate, { host.handleBack() },
+        "checkin_center", "checkin_page_pairing", "checkin_page_mobile_login", "checkin_page_task_settings",
+        "checkin_page_membership", "checkin_page_checkout", "checkin_page_redeem", "checkin_page_purchases",
+        "checkin_page_history", "checkin_page_history_detail" -> ComposeCheckinScreen(
+            services, host::navigate, { host.handleBack() }, host.checkinPageController(),
+            ComposeCheckinNavigation.page(route) ?: ComposeCheckinRoute.CENTER,
         )
         "reading_center" -> ComposeReadingCenterScreen(
             state = host.readingCenter.state.value,
@@ -115,7 +121,7 @@ internal fun ComposeRouteScreen(
             onBack = { host.handleBack() },
         )
         "favorites" -> {
-            host.feedRevision.value
+            val actionRevision by host.feedRevision
             ComposeFavoritesScreen(
                 state = host.saved.favorites.state.value,
                 folders = host.saved.favoriteFolders.value,
@@ -131,10 +137,11 @@ internal fun ComposeRouteScreen(
                 onRetryFolders = { host.saved.loadFavoriteFolders(force = true) },
                 onBack = { host.handleBack() },
                 listState = listState,
+                actionRevision = actionRevision,
             )
         }
         "favorite_folder" -> {
-            host.feedRevision.value
+            val actionRevision by host.feedRevision
             ComposeFavoriteFolderScreen(
                 title = host.saved.selectedFolder.value?.name.orEmpty(),
                 state = host.saved.folderPosts.state.value,
@@ -144,6 +151,7 @@ internal fun ComposeRouteScreen(
                 onRetry = host.saved::retryFolder,
                 onBack = { host.handleBack() },
                 listState = listState,
+                actionRevision = actionRevision,
             )
         }
         "watch_later" -> ComposeWatchLaterScreen(
@@ -156,7 +164,7 @@ internal fun ComposeRouteScreen(
             listState = listState,
         )
         "reading_history" -> {
-            host.feedRevision.value
+            val actionRevision by host.feedRevision
             ComposeHistoryScreen(
                 state = host.saved.history.state.value,
                 query = host.saved.historyQuery.value,
@@ -167,6 +175,7 @@ internal fun ComposeRouteScreen(
                 onRetry = host.saved::retryHistory,
                 onBack = { host.handleBack() },
                 listState = listState,
+                actionRevision = actionRevision,
             )
         }
         "reading_stats" -> ComposeReadingStatsScreen(

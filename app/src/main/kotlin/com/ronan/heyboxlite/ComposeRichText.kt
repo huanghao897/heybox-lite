@@ -33,6 +33,7 @@ internal fun ComposeRichText(
     cy: Boolean = false,
     maxLines: Int = Int.MAX_VALUE,
     ellipsize: TextUtils.TruncateAt? = null,
+    viewFactory: (Context) -> ComposeRichTextView = ::ComposeRichTextView,
 ) {
     val density = LocalDensity.current
     val binding = ComposeRichTextBinding(
@@ -50,7 +51,9 @@ internal fun ComposeRichText(
     )
     AndroidView(
         modifier = modifier,
-        factory = { ComposeRichTextView(it) },
+        factory = viewFactory,
+        onReset = { it.reset() },
+        onRelease = { it.reset() },
         update = { it.bind(binding) },
     )
 }
@@ -86,11 +89,18 @@ internal class ComposeRichTextView(context: Context) : TextView(context) {
         isLongClickable = false
     }
 
+    fun reset() {
+        // Remove decorators as well as spans before this View enters the lazy reuse pool.
+        EmojiRenderer.set(this, "", false, null)
+        tag = null
+        binding = null
+    }
+
     fun bind(next: ComposeRichTextBinding) {
         val previous = binding
         if (previous == next) return
         if (previous?.maxLines != next.maxLines) maxLines = next.maxLines
-        if (previous?.ellipsize != next.ellipsize) ellipsize = next.ellipsize
+        if (previous == null || previous.ellipsize != next.ellipsize) ellipsize = next.ellipsize
         if (previous?.textSizePx != next.textSizePx) {
             setTextSize(TypedValue.COMPLEX_UNIT_PX, next.textSizePx)
         }

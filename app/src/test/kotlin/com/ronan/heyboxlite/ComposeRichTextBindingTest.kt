@@ -7,6 +7,7 @@ import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.view.View
+import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.*
@@ -97,6 +98,62 @@ class ComposeRichTextBindingTest {
             .getSpans(0, view.text.length, CenteredImageSpan::class.java).isEmpty())
     }
 
+    @Test fun resetClearsTheDefaultTagAndDecoratorsAndForcesAnEqualSourceToRebind() {
+        val view = view()
+        val initial = binding().copy(cy = true, maxLines = 2, ellipsize = TextUtils.TruncateAt.END)
+        view.bind(initial)
+        val rendered = view.text
+        assertCyBadge(rendered as Spanned)
+        view.reset()
+        assertNull(view.tag)
+        assertEquals("", view.text.toString())
+        val decorators = EmojiRenderer::class.java.getDeclaredField("DECORATORS")
+            .apply { isAccessible = true }.get(null) as Map<*, *>
+        assertFalse(decorators.containsKey(view))
+        view.bind(initial.copy())
+        assertNotSame(rendered, view.text)
+        assertEquals("Cy ${initial.source}", view.tag)
+        assertCyBadge(view.text as Spanned)
+        view.reset()
+        view.bind(initial.copy(cy = false, textColor = Color.RED, textSizePx = 20f,
+            lineSpacing = 1.7f, mediumWeight = true, maxLines = 1, ellipsize = null))
+        assertEquals(initial.source, view.tag)
+        assertEquals(Color.RED, view.currentTextColor)
+        assertEquals(20f, view.textSize, 0f)
+        assertEquals(1.7f, view.lineSpacingMultiplier, 0f)
+        assertEquals(1, view.maxLines)
+        assertNull(view.ellipsize)
+        assertTrue((view.text as Spanned).getSpans(0, view.text.length,
+            CenteredImageSpan::class.java).isEmpty())
+    }
+
+    @Test fun bitmapWaitersCannotUpdateAResetOrReboundView() {
+        val initial = binding("Old source")
+        val view = view()
+        view.bind(initial)
+        val type = Class.forName("com.ronan.heyboxlite.EmojiRenderer\$Waiter")
+        val constructor = type.getDeclaredConstructor(TextView::class.java,
+            String::class.java, java.lang.Boolean.TYPE).apply { isAccessible = true }
+        val waiter = constructor.newInstance(view, initial.source, initial.darkMode)
+        @Suppress("UNCHECKED_CAST")
+        val waiters = EmojiRenderer::class.java.getDeclaredField("WAITERS")
+            .apply { isAccessible = true }.get(null) as MutableMap<String, MutableList<Any>>
+        val notify = EmojiRenderer::class.java.getDeclaredMethod("notifyWaiters",
+            String::class.java, java.lang.Boolean.TYPE).apply { isAccessible = true }
+        view.reset()
+        val empty = view.text
+        waiters["old-bitmap"] = mutableListOf(waiter)
+        notify.invoke(null, "old-bitmap", true)
+        assertNull(view.tag)
+        assertSame(empty, view.text)
+        view.bind(initial.copy(source = "Current source"))
+        val current = view.text
+        waiters["old-bitmap"] = mutableListOf(waiter)
+        notify.invoke(null, "old-bitmap", true)
+        assertEquals("Current source", view.tag)
+        assertSame(current, view.text)
+    }
+
     @Test fun queuedEmojiRefreshKeepsDecoratorsAndDoesNotRepeatOrOverwriteItsBinding() {
         val loading = EmojiStore::class.java.getDeclaredField("loading").apply { isAccessible = true }
         val loaded = EmojiStore::class.java.getDeclaredField("catalogLoaded").apply { isAccessible = true }
@@ -130,6 +187,11 @@ class ComposeRichTextBindingTest {
             view.bind(binding.copy())
             assertSame(refreshed, view.text)
             assertEquals(expectedTag, view.tag)
+            view.reset()
+            val pooledText = view.text
+            callback.run()
+            assertNull(view.tag)
+            assertSame(pooledText, view.text)
             view.bind(binding.copy(source = "Replacement", cy = false))
             val replacement = view.text
             callback.run()

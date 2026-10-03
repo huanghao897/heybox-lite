@@ -183,7 +183,7 @@ final class CheckinCenterTransport {
                         : "签到服务连接已失效，请重新连接";
                 break;
             case 402:
-                message = "签到服务状态异常，请稍后重试";
+                message = "请开通或续费小黑盒签到会员";
                 break;
             case 403:
                 message = operation == CheckinCenterClient.Operation.PAIR_REGISTER
@@ -203,7 +203,11 @@ final class CheckinCenterTransport {
                 } else if (operation == CheckinCenterClient.Operation.BILLING_STATUS
                         || operation == CheckinCenterClient.Operation.BILLING_QR
                         || operation == CheckinCenterClient.Operation.BILLING_CLAIM) {
-                    message = "赞助记录不存在";
+                    message = "支付订单不存在";
+                } else if (operation == CheckinCenterClient.Operation.BILLING_CATALOG
+                        || operation == CheckinCenterClient.Operation.BILLING_HISTORY
+                        || operation == CheckinCenterClient.Operation.BILLING_REDEEM) {
+                    message = "服务器暂未开放此会员操作";
                 } else if (operation == CheckinCenterClient.Operation.LEADERBOARD) {
                     message = "排行榜暂不可用";
                 } else if (operation == CheckinCenterClient.Operation.HISTORY) {
@@ -225,7 +229,9 @@ final class CheckinCenterTransport {
                             ? "签到服务账号或邮箱已被注册"
                             : "该签到服务账号已存在，或配对状态已变化";
                 } else if (operation == CheckinCenterClient.Operation.BILLING_CREATE) {
-                    message = "赞助码暂不可用，请稍后重试";
+                    message = "支付渠道暂不可用，请稍后重试";
+                } else if (operation == CheckinCenterClient.Operation.BILLING_REDEEM) {
+                    message = "当前服务暂不支持兑换";
                 } else {
                     message = "当前操作与服务器状态冲突，请稍后重试";
                 }
@@ -235,7 +241,7 @@ final class CheckinCenterTransport {
                     message = "短信验证码已过期，请重新发送";
                 } else if (operation == CheckinCenterClient.Operation.BILLING_QR
                         || operation == CheckinCenterClient.Operation.BILLING_STATUS) {
-                    message = "赞助码已过期，请重新生成";
+                    message = "支付码已过期，请重新生成";
                 } else {
                     message = "配对已过期，请重新连接";
                 }
@@ -262,7 +268,9 @@ final class CheckinCenterTransport {
                 } else if (operation == CheckinCenterClient.Operation.BILLING_CLAIM) {
                     message = "支付订单号格式不正确";
                 } else if (operation == CheckinCenterClient.Operation.BILLING_CREATE) {
-                    message = "赞助金额无效";
+                    message = "套餐或支付金额无效";
+                } else if (operation == CheckinCenterClient.Operation.BILLING_REDEEM) {
+                    message = "激活码无效、已过期或已使用";
                 } else {
                     message = "签到服务请求无效";
                 }

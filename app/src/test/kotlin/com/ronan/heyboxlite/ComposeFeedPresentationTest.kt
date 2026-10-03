@@ -69,4 +69,74 @@ class ComposeFeedPresentationTest {
         assertEquals("Original", original.name)
         assertEquals("Replacement", requireNotNull(composeGameCardPresentation(preload)).name)
     }
+
+    @Test fun screenCacheReusesParsesButNotMutableActionsOrSameIdReplacements() {
+        val preload = countingPreload("First game")
+        val first = post("<p>First title</p>", preload)
+        val cache = ComposeFeedPresentationCache()
+        val presentation = cache.get(first)
+        val reads = preload.reads
+        assertTrue(reads > 0)
+        assertEquals(composeFeedText(first.title), presentation.title)
+        assertEquals(composeFeedText(first.description), presentation.description)
+        first.likes = 42
+        first.liked = true
+        first.following = true
+        repeat(20) { assertSame(presentation, cache.get(first)) }
+        assertEquals(reads, preload.reads)
+        val replacement = post("Replacement", countingPreload("Next game"))
+        val next = cache.get(replacement)
+        assertNotSame(presentation, next)
+        assertEquals(first.id, replacement.id)
+        assertEquals("Replacement", next.title)
+        assertEquals("Next game", requireNotNull(next.game).name)
+        assertEquals("First game", requireNotNull(presentation.game).name)
+    }
+
+    @Test fun screenCacheIsBoundedAndEvictsTheLeastRecentlyUsedEntry() {
+        val cache = ComposeFeedPresentationCache(capacity = 2)
+        val preloads = (0..2).map { countingPreload("Game $it") }
+        val posts = preloads.mapIndexed { index, preload -> post("Title $index", preload) }
+        val first = cache.get(posts[0])
+        cache.get(posts[1])
+        val reads = preloads.map { it.reads }
+        assertSame(first, cache.get(posts[0]))
+        cache.get(posts[2])
+        assertEquals(2, cache.size)
+        assertSame(first, cache.get(posts[0]))
+        assertEquals(reads[0], preloads[0].reads)
+        cache.get(posts[1])
+        assertTrue(preloads[1].reads > reads[1])
+        assertEquals(2, cache.size)
+    }
+
+    @Test fun screenCacheAlsoRetainsEmptyGameScans() {
+        val preload = CountingPreload().apply { put("text", "No games") }
+        val item = post("", preload)
+        val cache = ComposeFeedPresentationCache()
+        val first = cache.get(item)
+        val reads = preload.reads
+        assertTrue(reads > 0)
+        assertEquals("\u65e0\u6807\u9898\u5185\u5bb9", first.title)
+        assertNull(first.game)
+        repeat(20) { assertSame(first, cache.get(item)) }
+        assertEquals(reads, preload.reads)
+    }
+
+    private fun post(title: String, preload: JSONObject) = FeedItem.from(
+        JSONObject().put("linkid", "same-id").put("title", title)
+            .put("description", "<p>Summary</p>").put("communityPostPreload", preload),
+    )
+
+    private fun countingPreload(name: String) = CountingPreload().apply {
+        put("game", JSONObject().put("appid", "42").put("name", name))
+    }
+
+    private class CountingPreload : JSONObject() {
+        var reads = 0
+        override fun opt(key: String): Any? {
+            reads++
+            return super.opt(key)
+        }
+    }
 }

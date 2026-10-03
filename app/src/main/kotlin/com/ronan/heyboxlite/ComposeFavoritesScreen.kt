@@ -44,6 +44,7 @@ internal fun ComposeFavoritesScreen(
     onRetryFolders: () -> Unit,
     onBack: () -> Unit,
     listState: LazyListState,
+    actionRevision: Int = 0,
 ) {
     val theme = services.theme
     ObserveSavedRotary(listState, services)
@@ -58,7 +59,7 @@ internal fun ComposeFavoritesScreen(
             }
         }
         if (selectedTab == ComposeFavoriteTab.POSTS) {
-            SavedFavoritePosts(state, services, listState, onOpen, onAction, onRetry)
+            SavedFavoritePosts(state, services, listState, onOpen, onAction, onRetry, actionRevision)
         } else {
             if (foldersError.isNotBlank()) SavedLoadError(foldersError, folders.isNotEmpty(), onRetryFolders)
             when {
@@ -98,10 +99,11 @@ internal fun ComposeFavoriteFolderScreen(
     onRetry: () -> Unit,
     onBack: () -> Unit,
     listState: LazyListState,
+    actionRevision: Int = 0,
 ) {
     ObserveSavedRotary(listState, services)
     SavedPage(title.ifBlank { "收藏夹" }, services.theme, onBack) {
-        SavedFavoritePosts(state, services, listState, onOpen, onAction, onRetry)
+        SavedFavoritePosts(state, services, listState, onOpen, onAction, onRetry, actionRevision)
     }
 }
 
@@ -126,6 +128,7 @@ private fun ColumnScope.SavedFavoritePosts(
     onOpen: (FeedItem) -> Unit,
     onAction: (FeedItem, FeedAction) -> Unit,
     onRetry: () -> Unit,
+    actionRevision: Int,
 ) {
     if (state.error.isNotBlank()) SavedLoadError(state.error, state.items.isNotEmpty(), onRetry)
     when {
@@ -137,7 +140,7 @@ private fun ColumnScope.SavedFavoritePosts(
             items(state.items, key = { it.id }) { item ->
                 ComposeFeedCard(item, services.theme, services.session.noImage(),
                     services.session.userId(), onOpen, onAction, favorite = item.favorited,
-                    gameCardNoImage = services.session.gameCardNoImage())
+                    gameCardNoImage = services.session.gameCardNoImage(), actionRevision = actionRevision)
             }
         }
     }

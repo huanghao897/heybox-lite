@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ExecutorService
@@ -36,6 +37,7 @@ internal class ComposeFeedController(
     )
 
     val items: MutableState<List<FeedItem>> = mutableStateOf(emptyList())
+    val presentations: MutableState<Map<FeedItem, ComposeFeedPresentation>> = mutableStateOf(emptyMap())
     val loading: MutableState<Boolean> = mutableStateOf(false)
     val refreshing: MutableState<Boolean> = mutableStateOf(false)
     val loadingMore: MutableState<Boolean> = mutableStateOf(false)
@@ -55,9 +57,10 @@ internal class ComposeFeedController(
         io.execute {
             if (closed || serial != restoreSerial) return@execute
             val cached = FeedCollection.filter(readCache(), blockedKeywords())
+            val prepared = cached.associateWith(::composeFeedPresentation)
             publish {
                 if (!closed && serial == restoreSerial && items.value.isEmpty() && cached.isNotEmpty()) {
-                    items.value = cached
+                    publishItems(cached, prepared)
                 }
             }
         }
@@ -98,6 +101,7 @@ internal class ComposeFeedController(
         error.value = null
         val serial = ++requestSerial
         val previous = items.value
+        val previousPresentations = presentations.value
         val params = OfficialRequestParams.feed(
             if (reset) 1 else 0,
             if (reset) null else lastPull,
@@ -115,6 +119,9 @@ internal class ComposeFeedController(
                         val filtered = FeedCollection.filter(parsed, blockedKeywords())
                         val next = if (reset) ArrayList<FeedItem>() else ArrayList(previous)
                         val added = FeedCollection.appendUnique(next, filtered)
+                        val prepared = next.associateWith { item ->
+                            previousPresentations[item] ?: composeFeedPresentation(item)
+                        }
                         val nextCursor = result?.optString("lastval", "") ?: ""
                         publish {
                             if (!accept(serial)) return@publish
@@ -122,7 +129,7 @@ internal class ComposeFeedController(
                             if (reset && filtered.isEmpty() && items.value.isNotEmpty()) {
                                 onMessage("没有获取到新内容，已保留原列表")
                             } else {
-                                items.value = next
+                                publishItems(next, prepared)
                             }
                             cursor = nextCursor
                             lastPull = if (reset) 1 else 0
@@ -146,6 +153,13 @@ internal class ComposeFeedController(
     }
 
     private fun accept(serial: Int): Boolean = !closed && serial == requestSerial
+
+    private fun publishItems(next: List<FeedItem>, prepared: Map<FeedItem, ComposeFeedPresentation>) {
+        Snapshot.withMutableSnapshot {
+            items.value = next
+            presentations.value = prepared
+        }
+    }
 
     private fun fail(serial: Int, reset: Boolean, message: String) {
         if (!accept(serial)) return

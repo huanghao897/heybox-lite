@@ -39,6 +39,9 @@ final class CheckinCenterClient {
         RECOVERY_COMPLETE,
         RUN_NOW,
         REVOKE,
+        BILLING_CATALOG,
+        BILLING_HISTORY,
+        BILLING_REDEEM,
         BILLING_CREATE,
         BILLING_STATUS,
         BILLING_QR,
@@ -643,32 +646,14 @@ final class CheckinCenterClient {
 
     void createBillingOrder(String deviceToken, int amountCents,
                             Callback<CheckinBilling.Order> callback) {
-        if (!SponsorshipAmount.validCents(amountCents)) {
-            deliverError(callback, new ApiError(Operation.BILLING_CREATE, 422,
-                    "赞助金额无效"));
-            return;
-        }
-        JSONObject body = new JSONObject();
-        try {
-            body.put("amount_cents", amountCents);
-        } catch (JSONException impossible) {
-            deliverError(callback, protocolError(Operation.BILLING_CREATE));
-            return;
-        }
-        billingToken(deviceToken, Operation.BILLING_CREATE, callback,
-                token -> submit(callback, () -> request(Operation.BILLING_CREATE, "POST",
-                        "/billing/orders", token, body, CheckinBilling::parseOrder)));
+        new CheckinMembershipApi(this).createBillingOrder(
+                deviceToken, amountCents, legacyBillingCallback(callback));
     }
 
     void getBillingOrder(String deviceToken, String orderId,
                          Callback<CheckinBilling.Order> callback) {
-        if (!CheckinBilling.validOrderId(orderId)) {
-            deliverError(callback, protocolError(Operation.BILLING_STATUS));
-            return;
-        }
-        billingToken(deviceToken, Operation.BILLING_STATUS, callback,
-                token -> submit(callback, () -> request(Operation.BILLING_STATUS, "GET",
-                        "/billing/orders/" + orderId, token, null, CheckinBilling::parseOrder)));
+        new CheckinMembershipApi(this).getBillingOrder(
+                deviceToken, orderId, legacyBillingCallback(callback));
     }
 
     void loadBillingQr(String deviceToken, String orderId, Callback<byte[]> callback) {
@@ -683,23 +668,22 @@ final class CheckinCenterClient {
 
     void submitBillingClaim(String deviceToken, String orderId, String paymentReference,
                             Callback<CheckinBilling.Review> callback) {
-        if (!CheckinBilling.validOrderId(orderId)
-                || !CheckinBilling.validPaymentReference(paymentReference)) {
-            deliverError(callback, new ApiError(Operation.BILLING_CLAIM, 422,
-                    "支付订单号格式不正确"));
-            return;
-        }
-        JSONObject body = new JSONObject();
-        try {
-            body.put("payment_reference", paymentReference.trim());
-        } catch (JSONException impossible) {
-            deliverError(callback, protocolError(Operation.BILLING_CLAIM));
-            return;
-        }
-        billingToken(deviceToken, Operation.BILLING_CLAIM, callback,
-                token -> submit(callback, () -> request(Operation.BILLING_CLAIM, "POST",
-                        "/billing/orders/" + orderId + "/claim", token, body,
-                        CheckinBilling::parseClaim)));
+        new CheckinMembershipApi(this).submitBillingClaim(
+                deviceToken, orderId, paymentReference, legacyBillingCallback(callback));
+    }
+
+    private <T> Callback<T> legacyBillingCallback(Callback<T> callback) {
+        return new Callback<T>() {
+            @Override
+            public void onSuccess(T value) {
+                if (callback != null) callback.onSuccess(value);
+            }
+
+            @Override
+            public void onError(ApiError error) {
+                deliverError(callback, error);
+            }
+        };
     }
 
     private <T> void billingToken(String deviceToken, Operation operation,

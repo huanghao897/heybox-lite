@@ -27,9 +27,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -64,15 +64,21 @@ internal fun ComposeFeedCard(
     showActions: Boolean = true,
     showFollow: Boolean = true,
     showSecondaryActions: Boolean = true,
+    presentationCache: ComposeFeedPresentationCache? = null,
+    precomputedPresentation: ComposeFeedPresentation? = null,
+    imageLoader: ComposeImageLoader = ExistingComposeImageLoader,
+    actionRevision: Int = 0,
 ) {
     val scale = theme.uiScale
     val shape = RoundedCornerShape((if (theme.roundScreen) 9 else 10).dp)
-    val title = remember(item.title) {
-        composeFeedText(item.title).ifEmpty { "无标题内容" }
+    val content = remember(item, presentationCache, precomputedPresentation) {
+        precomputedPresentation ?: presentationCache?.get(item) ?: composeFeedPresentation(item)
     }
-    val description = remember(item.description) {
-        composeFeedText(item.description)
+    val actions = remember(item, actionRevision, item.likes, item.liked, item.following, item.followPending) {
+        ComposeFeedActionState.from(item)
     }
+    val title = content.title
+    val description = content.description
     val type = when {
         item.video -> "视频"
         item.article -> "文章"
@@ -95,6 +101,7 @@ internal fun ComposeFeedCard(
                 CircleShape,
                 "作者头像",
                 modifier = Modifier.size((26 * scale).dp),
+                loader = imageLoader,
             )
             Column(modifier = Modifier.weight(1f).padding(start = (8 * scale).dp)) {
                 Text(text = item.author.ifEmpty { "小黑盒社区" }, color = theme.text,
@@ -111,16 +118,16 @@ internal fun ComposeFeedCard(
                     modifier = Modifier.size((25 * scale).dp)
                         .clip(CircleShape)
                         .background(theme.panelElevated)
-                        .clickable(enabled = !item.followPending) {
+                        .clickable(enabled = !actions.followPending) {
                             onAction?.invoke(item, FeedAction.FOLLOW)
                         }
                         .semantics {
-                            contentDescription = if (item.following) "取消关注" else "关注"
+                            contentDescription = if (actions.following) "取消关注" else "关注"
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = if (item.following) "✓" else "+",
-                        color = if (item.following) theme.accent else theme.muted,
+                    Text(text = if (actions.following) "✓" else "+",
+                        color = if (actions.following) theme.accent else theme.muted,
                         fontSize = (14 * theme.textScale).sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1)
@@ -158,17 +165,18 @@ internal fun ComposeFeedCard(
                     url = item.image,
                     theme = theme,
                     noImage = false,
-                    targetDp = (if (theme.roundScreen) 68 else 84).dp,
+                    targetDp = (if (theme.roundScreen) 68 else 84).dp * scale,
                     shape = RoundedCornerShape((8 * scale).dp),
                     contentDescription = "内容图片",
                     modifier = Modifier.padding(start = (8 * scale).dp).size(
                         (if (theme.roundScreen) 68 else 84).dp * scale,
                         (if (theme.roundScreen) 52 else 60).dp * scale,
                     ),
+                    loader = imageLoader,
                 )
             }
         }
-        ComposeGameCard(item, theme, noImage || gameCardNoImage)
+        ComposeGameCard(content.game, theme, noImage || gameCardNoImage, imageLoader)
         if (showActions) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = (5 * scale).dp),
@@ -189,6 +197,7 @@ internal fun ComposeFeedCard(
                                     item.topicIcon, theme, false, (13 * scale).dp,
                                     CircleShape, "分区图标",
                                     Modifier.size((13 * scale).dp),
+                                    loader = imageLoader,
                                 )
                                 Spacer(Modifier.width((4 * scale).dp))
                             }
@@ -201,8 +210,8 @@ internal fun ComposeFeedCard(
                     Spacer(modifier = Modifier.weight(1f))
                 }
                 ComposeActionButton(R.drawable.official_comment_like_filled,
-                    Format.commentLikeCount(item.likes),
-                    if (item.liked) "取消点赞" else "点赞", item.liked, theme) {
+                    Format.commentLikeCount(actions.likes),
+                    if (actions.liked) "取消点赞" else "点赞", actions.liked, theme) {
                     onAction?.invoke(item, FeedAction.LIKE)
                 }
                 if (showSecondaryActions) {
@@ -239,16 +248,22 @@ internal fun ComposeRemoteImage(
     loader: ComposeImageLoader = ExistingComposeImageLoader,
 ) {
     val targetPx = with(LocalDensity.current) { targetDp.toPx().toInt().coerceAtLeast(1) }
-    val bitmap by produceState<Bitmap?>(null, url, targetPx, noImage, loader) {
-        if (!noImage && url.isNotBlank()) loader.load(url, targetPx) { value = it }
+    val bitmap = remember(url, targetPx, noImage, loader) { mutableStateOf<Bitmap?>(null) }
+    DisposableEffect(url, targetPx, noImage, loader) {
+        var active = true
+        if (!noImage && url.isNotBlank()) loader.load(url, targetPx) {
+            if (active) bitmap.value = it
+        }
+        onDispose { active = false }
     }
+    val image = remember(bitmap.value) { bitmap.value?.asImageBitmap() }
     Box(
         modifier = modifier.clip(shape)
             .background(if (theme.dark) Color(0xFF2A2B2D) else Color(0xFFE8EAEC)),
         contentAlignment = Alignment.Center,
     ) {
-        if (bitmap != null) {
-            Image(bitmap!!.asImageBitmap(), contentDescription, Modifier.fillMaxSize(),
+        if (image != null) {
+            Image(image, contentDescription, Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop)
         }
     }
@@ -265,10 +280,9 @@ internal fun ComposePill(text: String, theme: ComposeThemeState, accent: Boolean
 }
 
 @Composable
-private fun ComposeGameCard(item: FeedItem, theme: ComposeThemeState, noImage: Boolean) {
-    val content = remember(item.contentPreload) {
-        composeGameCardPresentation(item.contentPreload)
-    } ?: return
+private fun ComposeGameCard(content: ComposeGameCardPresentation?, theme: ComposeThemeState,
+                            noImage: Boolean, imageLoader: ComposeImageLoader) {
+    if (content == null) return
     Row(
         modifier = Modifier.fillMaxWidth()
             .padding(top = (7 * theme.uiScale).dp)
@@ -282,7 +296,7 @@ private fun ComposeGameCard(item: FeedItem, theme: ComposeThemeState, noImage: B
         if (content.coverUrl.isNotEmpty()) {
             ComposeRemoteImage(content.coverUrl, theme, noImage, (42 * theme.uiScale).dp,
                 RoundedCornerShape((6 * theme.uiScale).dp), "游戏封面",
-                Modifier.size((42 * theme.uiScale).dp))
+                Modifier.size((42 * theme.uiScale).dp), loader = imageLoader)
             Spacer(modifier = Modifier.width((8 * theme.uiScale).dp))
         }
         Column(modifier = Modifier.weight(1f)) {
@@ -418,15 +432,23 @@ internal fun ObserveFeedLoadMore(
     val currentLoading = rememberUpdatedState(loading)
     val currentNoMore = rememberUpdatedState(noMore)
     LaunchedEffect(listState) {
-        var lastSeen = -1
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
-            .collect { last ->
-                if (last != lastSeen) {
-                    lastSeen = last
-                    if (!currentLoading.value && !currentNoMore.value && currentCount.value > 0
-                        && last >= currentCount.value - 3) latest.value()
-                }
+        var requestedCount = -1
+        snapshotFlow {
+            val count = currentCount.value
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            when {
+                count <= 0 || last < count - 3 -> 0
+                currentLoading.value || currentNoMore.value -> -1
+                else -> count
             }
+        }.collect { count ->
+            // A busy/declined request must not loop while the same page stays visible.
+            if (count == 0) requestedCount = -1
+            else if (count > 0 && count != requestedCount) {
+                requestedCount = count
+                latest.value()
+            }
+        }
     }
 }
 

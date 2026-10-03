@@ -1,6 +1,14 @@
 package com.ronan.heyboxlite;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
+
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 
 final class CheckinBilling {
     private CheckinBilling() {}
@@ -14,10 +22,20 @@ final class CheckinBilling {
         final boolean checkoutAvailable;
         final boolean voluntarySponsorship;
         final Plan plan;
+        final List<Product> products;
+        final String checkoutProvider;
 
         Membership(String mode, boolean required, boolean entitled, boolean admin,
                    String expiresAt, boolean checkoutAvailable,
                    boolean voluntarySponsorship, Plan plan) {
+            this(mode, required, entitled, admin, expiresAt, checkoutAvailable,
+                    voluntarySponsorship, plan, Collections.emptyList(), "");
+        }
+
+        Membership(String mode, boolean required, boolean entitled, boolean admin,
+                   String expiresAt, boolean checkoutAvailable,
+                   boolean voluntarySponsorship, Plan plan, List<Product> products,
+                   String checkoutProvider) {
             this.mode = mode;
             this.required = required;
             this.entitled = entitled;
@@ -26,11 +44,32 @@ final class CheckinBilling {
             this.checkoutAvailable = checkoutAvailable;
             this.voluntarySponsorship = voluntarySponsorship;
             this.plan = plan;
+            this.products = Collections.unmodifiableList(new ArrayList<>(products));
+            this.checkoutProvider = checkoutProvider;
         }
 
         static Membership freeDefault() {
             return new Membership("free", false, true, false, "", false,
                     true, Plan.empty());
+        }
+    }
+
+    static final class Product {
+        final String sku;
+        final String name;
+        final int amountCents;
+        final String currency;
+        final int durationDays;
+        final boolean active;
+
+        Product(String sku, String name, int amountCents, String currency,
+                int durationDays, boolean active) {
+            this.sku = sku;
+            this.name = name;
+            this.amountCents = amountCents;
+            this.currency = currency;
+            this.durationDays = durationDays;
+            this.active = active;
         }
     }
 
@@ -99,10 +138,23 @@ final class CheckinBilling {
         final boolean manualReview;
         final String expiresAt;
         final Review review;
+        final String checkoutUrl;
+        final String productSku;
+        final String productName;
+        final int durationDays;
+        final String createdAt;
 
         Order(String id, String provider, int amountCents, int payableAmountCents,
               String currency, String status, boolean qrReady, boolean manualReview,
               String expiresAt, Review review) {
+            this(id, provider, amountCents, payableAmountCents, currency, status,
+                    qrReady, manualReview, expiresAt, review, "", "", "", 0, "");
+        }
+
+        Order(String id, String provider, int amountCents, int payableAmountCents,
+              String currency, String status, boolean qrReady, boolean manualReview,
+              String expiresAt, Review review, String checkoutUrl, String productSku,
+              String productName, int durationDays, String createdAt) {
             this.id = id;
             this.provider = provider;
             this.amountCents = amountCents;
@@ -113,6 +165,11 @@ final class CheckinBilling {
             this.manualReview = manualReview;
             this.expiresAt = expiresAt;
             this.review = review;
+            this.checkoutUrl = checkoutUrl;
+            this.productSku = productSku;
+            this.productName = productName;
+            this.durationDays = durationDays;
+            this.createdAt = createdAt;
         }
 
         boolean pending() {
@@ -129,13 +186,47 @@ final class CheckinBilling {
                     && qrReady == other.qrReady
                     && manualReview == other.manualReview
                     && expiresAt.equals(other.expiresAt)
+                    && checkoutUrl.equals(other.checkoutUrl)
+                    && productSku.equals(other.productSku)
+                    && productName.equals(other.productName)
+                    && durationDays == other.durationDays
+                    && createdAt.equals(other.createdAt)
                     && sameReview(review, other.review);
+        }
+    }
+
+    static final class OrderRecord {
+        final String orderId;
+        final String productSku;
+        final String productName;
+        final int amountCents;
+        final int payableAmountCents;
+        final String currency;
+        final String status;
+        final String createdAt;
+        final String expiresAt;
+        final int durationDays;
+
+        OrderRecord(String orderId, String productSku, String productName, int amountCents,
+                    int payableAmountCents, String currency, String status, String createdAt,
+                    String expiresAt, int durationDays) {
+            this.orderId = orderId;
+            this.productSku = productSku;
+            this.productName = productName;
+            this.amountCents = amountCents;
+            this.payableAmountCents = payableAmountCents;
+            this.currency = currency;
+            this.status = status;
+            this.createdAt = createdAt;
+            this.expiresAt = expiresAt;
+            this.durationDays = durationDays;
         }
     }
 
     static Membership parseMembership(JSONObject value) {
         JSONObject plan = value.optJSONObject("plan");
         String mode = value.optString("billing_mode", "free");
+        boolean required = value.optBoolean("subscription_required", "paid".equals(mode));
         Plan parsedPlan = plan == null ? Plan.empty() : new Plan(
                 plan.optString("name", "服务器自愿赞助"),
                 boundedAmount(plan.optInt("amount_cents", 500), 500),
@@ -147,25 +238,100 @@ final class CheckinBilling {
                         100_000_000));
         return new Membership(
                 mode,
-                value.optBoolean("subscription_required", false),
-                value.optBoolean("entitled", true),
+                required,
+                value.optBoolean("entitled", "free".equals(mode) && !required),
                 value.optBoolean("is_admin", false),
                 nullable(value, "expires_at"),
                 value.optBoolean("checkout_available", false),
                 value.optBoolean("voluntary_sponsorship", "free".equals(mode)),
-                parsedPlan);
+                parsedPlan, parseProducts(value.optJSONArray("products")),
+                nullable(value, "checkout_provider"));
     }
 
     static Order parseOrder(JSONObject value) throws CheckinCenterClient.ApiError {
+        return parseOrder(value, CheckinCenterClient.Operation.BILLING_STATUS);
+    }
+
+    static Order parseOrder(JSONObject value, CheckinCenterClient.Operation operation)
+            throws CheckinCenterClient.ApiError {
         String id = value.optString("order_id", "");
-        if (!validOrderId(id)) throw new CheckinCenterClient.ApiError(
-                CheckinCenterClient.Operation.BILLING_STATUS, 0, "赞助记录响应异常");
+        if (!validOrderId(id)) throw CheckinCenterClient.protocolError(operation);
+        String checkoutUrl = nullable(value, "checkout_url");
+        if (!checkoutUrl.isEmpty() && !isTrustedCheckoutUrl(checkoutUrl)) {
+            throw CheckinCenterClient.protocolError(operation);
+        }
         return new Order(id, value.optString("provider", ""),
                 boundedAmount(value.optInt("amount_cents", 0), 0),
                 boundedAmount(value.optInt("payable_amount_cents", 0), 0),
                 value.optString("currency", "CNY"), value.optString("status", ""),
                 value.optBoolean("qr_ready", false), value.optBoolean("manual_review", false),
-                value.optString("expires_at", ""), parseReview(value.optJSONObject("review")));
+                nullable(value, "expires_at"), parseReview(value.optJSONObject("review")),
+                checkoutUrl, nullable(value, "product_sku"), nullable(value, "product_name"),
+                boundedInt(value.optInt("duration_days", 0)), nullable(value, "created_at"));
+    }
+
+    static List<OrderRecord> parseOrderRecords(JSONObject value)
+            throws CheckinCenterClient.ApiError {
+        CheckinCenterClient.Operation operation = CheckinCenterClient.Operation.BILLING_HISTORY;
+        JSONArray items = value.optJSONArray("items");
+        if (items == null) throw CheckinCenterClient.protocolError(operation);
+        List<OrderRecord> records = new ArrayList<>();
+        for (int index = 0; index < items.length(); index++) {
+            JSONObject item = items.optJSONObject(index);
+            if (item == null || !validOrderId(item.optString("order_id", ""))) {
+                throw CheckinCenterClient.protocolError(operation);
+            }
+            records.add(new OrderRecord(item.optString("order_id"),
+                    nullable(item, "product_sku"), nullable(item, "product_name"),
+                    boundedAmount(item.optInt("amount_cents", 0), 0),
+                    boundedAmount(item.optInt("payable_amount_cents", 0), 0),
+                    item.optString("currency", "CNY"), item.optString("status", ""),
+                    nullable(item, "created_at"), nullable(item, "expires_at"),
+                    boundedInt(item.optInt("duration_days", 0))));
+        }
+        return Collections.unmodifiableList(records);
+    }
+
+    static boolean isTrustedCheckoutUrl(String value) {
+        if (value == null || value.isEmpty() || value.length() > 4096) return false;
+        try {
+            URI uri = new URI(value);
+            String host = uri.getHost();
+            if (host == null) return false;
+            host = host.toLowerCase(Locale.ROOT);
+            boolean trustedHost = "afdian.com".equals(host) || "afdian.net".equals(host)
+                    || CheckinCenterClient.TRUSTED_HOST.equals(host);
+            String authority = uri.getRawAuthority();
+            // Validate only; checkout links are QR data, never network destinations.
+            return "https".equals(uri.getScheme()) && trustedHost
+                    && uri.getRawUserInfo() == null && uri.getRawFragment() == null
+                    && (uri.getPort() == -1 || uri.getPort() == 443)
+                    && (host.equalsIgnoreCase(authority)
+                    || (host + ":443").equalsIgnoreCase(authority));
+        } catch (URISyntaxException error) {
+            return false;
+        }
+    }
+
+    private static List<Product> parseProducts(JSONArray values) {
+        List<Product> products = new ArrayList<>();
+        if (values == null) return products;
+        for (int index = 0; index < values.length(); index++) {
+            JSONObject item = values.optJSONObject(index);
+            if (item == null) continue;
+            String sku = nullable(item, "sku");
+            String name = nullable(item, "name");
+            String currency = nullable(item, "currency");
+            long amount = item.optLong("amount_cents", -1);
+            long days = item.optLong("duration_days", -1);
+            if (sku.isEmpty() || name.isEmpty() || currency.isEmpty()
+                    || amount < 0 || amount > 100_000_000 || days < 0 || days > 1_000_000) {
+                continue;
+            }
+            products.add(new Product(sku, name, (int) amount, currency, (int) days,
+                    item.optBoolean("active", false)));
+        }
+        return products;
     }
 
     static Review parseClaim(JSONObject value) throws CheckinCenterClient.ApiError {
