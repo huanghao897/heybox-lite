@@ -31,18 +31,10 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -280,13 +272,5 @@ internal fun WatchEmptyState(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 internal fun WatchActionText(text: String, onClick: () -> Unit) {
-    CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
-        TextButton(
-            onClick = onClick,
-            modifier = Modifier.height(watchDp(36)),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-        ) {
-            Text(text, color = MaterialTheme.colorScheme.primary, fontSize = watchSp(11f))
-        }
-    }
+    WatchActionButton(text, onClick)
 }

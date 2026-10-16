@@ -22,10 +22,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,12 +53,21 @@ internal fun ComposeInlineText(
     cy: Boolean = false,
     maxLines: Int = Int.MAX_VALUE,
     ellipsize: TextUtils.TruncateAt? = null,
-    imageLoader: ComposeImageLoader = ExistingComposeImageLoader,
+    imageLoader: ComposeImageLoader = ExistingComposeInlineEmojiImageLoader,
     emojiCatalog: ComposeInlineTextEmojiCatalog = ExistingComposeInlineTextEmojiCatalog,
+    prefix: AnnotatedString = AnnotatedString(""),
+    suffix: AnnotatedString = AnnotatedString(""),
 ) {
     var catalogRevision by remember(source, darkMode, emojiCatalog) { mutableIntStateOf(0) }
     val model = remember(source, darkMode, linkColor, cy, emojiCatalog, catalogRevision) {
         buildComposeInlineTextModel(source, darkMode, linkColor, cy, emojiCatalog)
+    }
+    val displayText = remember(model.text, prefix, suffix) {
+        buildAnnotatedString {
+            append(prefix)
+            append(model.text)
+            append(suffix)
+        }
     }
     DisposableEffect(source, darkMode, emojiCatalog, model.hasEmojiTokens) {
         val ready = ComposeInlineTextReadyCallback { catalogRevision++ }
@@ -119,7 +130,7 @@ internal fun ComposeInlineText(
     }
 
     BasicText(
-        text = model.text,
+        text = displayText,
         modifier = modifier,
         style = TextStyle(color = textColor, fontSize = fontSize, lineHeight = lineHeight,
             fontWeight = fontWeight, fontFamily = FontFamily.SansSerif,

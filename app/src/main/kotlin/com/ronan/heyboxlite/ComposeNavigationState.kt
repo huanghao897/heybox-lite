@@ -232,6 +232,6 @@ internal class ComposeNavigationState {
 
     private fun isSettingsRoute(route: String): Boolean = route.startsWith("settings") || route in setOf(
         "display_settings", "display_preview", "startup_settings", "app_settings",
-        "video_settings", "splash_preview", "about", "announcement_board", "feedback_group",
+        "video_settings", "splash_preview", "about", "announcement_board",
     )
 }

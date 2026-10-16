@@ -15,13 +15,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 
 @Composable
@@ -32,6 +32,7 @@ internal fun ComposeAboutScreen(
 ) {
     var checking by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateChecker.Result?>(null) }
+    var showFeedbackGroup by rememberSaveable { mutableStateOf(false) }
     var live by remember { mutableStateOf(true) }
     DisposableEffect(Unit) {
         live = true
@@ -80,7 +81,7 @@ internal fun ComposeAboutScreen(
             WatchRow(
                 title = "交流群",
                 icon = R.drawable.il_qr,
-                onClick = { onNavigate("feedback_group") },
+                onClick = { showFeedbackGroup = true },
             )
             WatchRow(
                 title = "检查更新",
@@ -143,16 +144,28 @@ internal fun ComposeAboutScreen(
             }
         }
     }
-    update?.let { result ->
-        ComposeUpdateDialog(
-            result = result,
-            onDismiss = { update = null },
-            onDownload = {
-                update = null
-                val url = result.downloadUrl.ifEmpty { result.releaseUrl }
-                onNavigate("update_download?url=${android.net.Uri.encode(url)}")
-            },
-        )
+    ComposeAboutDialogs(showFeedbackGroup, update,
+        onFeedbackDismiss = { showFeedbackGroup = false },
+        onUpdateDismiss = { update = null },
+        onDownload = { result ->
+            update = null
+            val url = result.downloadUrl.ifEmpty { result.releaseUrl }
+            onNavigate("update_download?url=${android.net.Uri.encode(url)}")
+        },
+    )
+}
+
+@Composable
+internal fun ComposeAboutDialogs(
+    feedbackVisible: Boolean,
+    update: UpdateChecker.Result?,
+    onFeedbackDismiss: () -> Unit,
+    onUpdateDismiss: () -> Unit,
+    onDownload: (UpdateChecker.Result) -> Unit,
+) {
+    if (feedbackVisible) ComposeFeedbackGroupDialog(onFeedbackDismiss)
+    else update?.let { result ->
+        ComposeUpdateDialog(result, onUpdateDismiss) { onDownload(result) }
     }
 }
 
@@ -184,24 +197,6 @@ private fun ComposeUpdateDialog(
                 WatchActionText("下载", onDownload)
             }
         }
-    }
-}
-
-@Composable
-internal fun ComposeFeedbackGroupScreen(onBack: () -> Unit) {
-    WatchPage("交流群", onBack) {
-        Text(
-            text = "QQ群：781941517",
-            color = LocalHeyboxTheme.current.text,
-            fontSize = watchSp(12f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Image(
-            painter = painterResource(R.drawable.qq_feedback_group_qr),
-            contentDescription = "QQ群 781941517 二维码",
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 

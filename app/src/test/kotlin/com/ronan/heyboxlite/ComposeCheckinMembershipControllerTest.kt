@@ -72,6 +72,25 @@ class ComposeCheckinMembershipControllerTest {
         fixture.controller.close()
     }
 
+    @Test fun selectingAPlanDoesNotHideACatalogFailureAndRetryClearsItOnSuccess() {
+        val fixture = Fixture()
+        fixture.controller.open(membership())
+        fixture.catalog.single().onError(error(503))
+
+        fixture.controller.selectProduct("quarterly")
+        assertEquals("quarterly", fixture.state.selectedSku)
+        assertEquals("Unavailable", fixture.state.message)
+        assertEquals(1, fixture.catalog.size)
+        assertTrue(fixture.lost.isEmpty())
+
+        fixture.controller.refreshCatalog()
+        fixture.catalog.last().onSuccess(membership(entitled = true))
+        assertEquals("quarterly", fixture.state.selectedSku)
+        assertEquals("", fixture.state.message)
+        assertTrue(fixture.state.catalog!!.entitled)
+        fixture.controller.close()
+    }
+
     @Test fun lateCatalogAndRedemptionCallbacksAreIgnoredAfterLeavingOrClosing() {
         val fixture = Fixture()
         fixture.open()

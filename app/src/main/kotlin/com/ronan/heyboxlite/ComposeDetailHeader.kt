@@ -1,9 +1,8 @@
 package com.ronan.heyboxlite
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -20,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,23 +77,28 @@ internal fun ComposeDetailHeader(
         ComposeInlineText(content.title, theme.dark, theme.text, theme.link,
             fontSize = 18.sp * theme.textScale, lineHeight = 24.sp * theme.textScale,
             fontWeight = FontWeight.Bold)
-        Row(Modifier.fillMaxWidth().clickable(enabled = authorId.isNotBlank()) {
-            onOpenUser(authorId, author, avatar)
-        }, verticalAlignment = Alignment.CenterVertically) {
-            ComposeMediaImage(avatar, media, Modifier.size(30.dp * theme.uiScale), CircleShape,
-                placeholderLabel = author.take(1), ensureTouchTarget = false)
-            Spacer(Modifier.width(7.dp * theme.uiScale))
-            Column(Modifier.weight(1f)) {
-                ComposeCommentName(author, postAuthor = false, level = content.level)
-                if (meta.isNotBlank()) Text(meta,
-                    fontSize = 10.sp * theme.textScale, color = theme.muted)
-            }
-            if (showFollow && authorId.isNotBlank()) Box(contentAlignment = Alignment.Center,
-                modifier = Modifier.size(watchDp(28).coerceAtLeast(24.dp)).clip(CircleShape)
-                    .background(theme.panelElevated).clickable(onClick = onFollow)) {
-                Icon(painterResource(if (item.following) R.drawable.ic_check else R.drawable.il_plus),
-                    if (item.following) "取消关注" else "关注作者", tint = theme.text,
-                    modifier = Modifier.size(watchDp(14)))
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val followVisible = showFollow && authorId.isNotBlank()
+            val wrapFollow = followVisible &&
+                maxWidth < 180.dp * theme.textScale * LocalDensity.current.fontScale
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp * theme.uiScale)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    ComposeUserAvatar(avatar, author, media, 30.dp * theme.uiScale,
+                        if (authorId.isNotBlank()) { { onOpenUser(authorId, author, avatar) } } else null)
+                    Spacer(Modifier.width(7.dp * theme.uiScale))
+                    Column(Modifier.weight(1f)) {
+                        ComposeCommentName(author, postAuthor = false, level = content.level)
+                        if (meta.isNotBlank()) Text(meta,
+                            fontSize = 10.sp * theme.textScale, color = theme.muted)
+                    }
+                    if (followVisible && !wrapFollow) {
+                        Spacer(Modifier.width(6.dp * theme.uiScale))
+                        ComposeDetailFollowButton(item.following, item.followPending, onFollow)
+                    }
+                }
+                if (wrapFollow) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    ComposeDetailFollowButton(item.following, item.followPending, onFollow)
+                }
             }
         }
         if (content.section.isNotBlank() || content.tags.isNotEmpty()) {

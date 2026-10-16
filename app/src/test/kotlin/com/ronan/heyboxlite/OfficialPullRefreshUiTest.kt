@@ -10,8 +10,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollDispatcher
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -20,9 +24,13 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.airbnb.lottie.LottieCompositionFactory
 import com.airbnb.lottie.LottieDrawable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -172,6 +180,37 @@ class OfficialPullRefreshUiTest {
         compose.runOnIdle { enabled.value = false }
         compose.onNodeWithTag("pull-surface").performTouchInput { swipeDown() }
         compose.runOnIdle { assertEquals(0, requests) }
+    }
+
+    @Test fun anIdleRefreshHeaderDoesNotDelayAnOrdinaryChildFling() {
+        compose.mainClock.autoAdvance = false
+        val dispatcher = NestedScrollDispatcher()
+        val childConnection = object : NestedScrollConnection {}
+        lateinit var scope: CoroutineScope
+        compose.setContent {
+            scope = rememberCoroutineScope()
+            HeyboxComposeTheme(composePreviewTheme(false).copy(motionLevel = MotionLevel.REDUCED)) {
+                OfficialPullRefreshBox(false, true, true, onRefresh = { requests++ }) {
+                    Box(Modifier.fillMaxSize().nestedScroll(childConnection, dispatcher))
+                }
+            }
+        }
+        compose.runOnIdle {
+            for (speed in listOf(-900f, 900f, -250f)) {
+                var consumed: Velocity? = null
+                val release = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    consumed = dispatcher.dispatchPreFling(Velocity(0f, speed))
+                }
+                try {
+                    assertTrue("An untouched header must not insert a 250ms settle before a fling",
+                        release.isCompleted)
+                    assertEquals(Velocity.Zero, consumed)
+                } finally {
+                    release.cancel()
+                }
+            }
+            assertEquals(0, requests)
+        }
     }
 
     @Test

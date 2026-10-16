@@ -36,6 +36,8 @@ internal fun ComposeSearchScreen(
     onLoadMore: () -> Unit,
     listState: LazyListState = rememberLazyListState(),
     observeLoadMore: Boolean = true,
+    history: List<String> = emptyList(),
+    onClearHistory: () -> Unit = {},
 ) {
     HeyboxComposeTheme(services.theme) {
         val rotary = services.theme.rotaryRequest
@@ -53,6 +55,9 @@ internal fun ComposeSearchScreen(
                 ComposePageHeader("搜索", onBack)
                 ComposeSearchInput(query, "搜索帖子、作者或关键词", onQueryChange)
                 when {
+                    query.isBlank() && history.isNotEmpty() -> ComposeSearchHistory(
+                        history, onQueryChange, onClearHistory, listState,
+                    )
                     loading && items.isEmpty() -> FeedLoading(services.theme)
                     items.isEmpty() -> SearchEmpty(
                         message = if (query.isBlank()) "输入关键词开始搜索" else "没有找到相关帖子",
@@ -79,10 +84,10 @@ internal fun ComposeSearchScreen(
                                 noImage = services.session.noImage(),
                                 currentUserId = services.session.userId(),
                                 onOpen = onOpen,
-                            onAction = null,
-                            showActions = false,
-                            showFollow = false,
-                            gameCardNoImage = services.session.gameCardNoImage(),
+                                onAction = null,
+                                showActions = false,
+                                showFollow = false,
+                                gameCardNoImage = services.session.gameCardNoImage(),
                             )
                         }
                         item { FeedFooter(loading, noMore, services.theme, onLoadMore) }

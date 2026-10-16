@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,7 +18,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -149,16 +147,9 @@ private fun TaskSettingsInputDialog(
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(watchDp(4))) {
-            TextButton(onClick = onDismiss, modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(horizontal = 0.dp, vertical = watchDp(4))) {
-                Text("\u53d6\u6d88", color = theme.muted, fontSize = watchSp(12f))
-            }
-            TextButton(onClick = onConfirm, enabled = enabled && valid,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(horizontal = 0.dp, vertical = watchDp(4))) {
-                Text("\u786e\u8ba4", color = if (enabled && valid) theme.text else theme.subtle,
-                    fontSize = watchSp(12f))
-            }
+            WatchActionButton("\u53d6\u6d88", onDismiss, Modifier.weight(1f), fontSize = 12f)
+            WatchActionButton("\u786e\u8ba4", onConfirm, Modifier.weight(1f),
+                enabled = enabled && valid, fontSize = 12f)
         }
     }
 }

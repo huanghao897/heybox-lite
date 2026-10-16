@@ -74,9 +74,11 @@ final class ImageDiskCache {
         File target = exactFile(url);
         if (target == null || bytes == null || bytes.length == 0) return;
         File temp = new File(target.getParentFile(), target.getName() + ".tmp");
-        try (FileOutputStream output = new FileOutputStream(temp, false)) {
-            output.write(bytes);
-            output.flush();
+        try {
+            try (FileOutputStream output = new FileOutputStream(temp, false)) {
+                output.write(bytes);
+                output.flush();
+            }
             if (target.exists()) target.delete();
             if (!temp.renameTo(target)) temp.delete();
         } catch (Exception error) {

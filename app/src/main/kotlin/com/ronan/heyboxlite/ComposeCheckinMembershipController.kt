@@ -60,7 +60,7 @@ internal class ComposeCheckinMembershipController(
 
     fun selectProduct(sku: String) {
         if (state().requestInFlight || state().catalog?.products?.none { it.active && it.sku == sku } != false) return
-        update(state().copy(selectedSku = sku, message = ""))
+        update(state().copy(selectedSku = sku))
     }
 
     fun setAmount(value: String) { update(state().copy(amount = value)) }

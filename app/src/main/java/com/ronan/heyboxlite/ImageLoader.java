@@ -1,8 +1,5 @@
 package com.ronan.heyboxlite;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
-import android.animation.ValueAnimator;
 import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
@@ -17,7 +14,6 @@ import android.os.SystemClock;
 import android.util.LruCache;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
 
 import java.io.BufferedInputStream;
@@ -30,7 +26,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -88,7 +83,6 @@ final class ImageLoader {
             ImageMemoryBudget.decodeThreadCount(MAX_HEAP_BYTES));
     private static final ExecutorService LARGE_EXECUTOR = Executors.newSingleThreadExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
-    private static final WeakHashMap<ImageView, ValueAnimator> REVEAL_ANIMATORS = new WeakHashMap<>();
     private static final AtomicInteger PERFORMANCE_SAMPLES = new AtomicInteger();
     private static volatile Logger performanceLogger;
 
@@ -181,7 +175,7 @@ final class ImageLoader {
         if (cached == null) cached = CACHE.get(cacheKey);
         if (cached != null) {
             CACHE.put(url, cached);
-            clearReveal(view);
+            ImageRevealAnimation.clear(view);
             view.setImageBitmap(cached);
             view.setAlpha(1f);
             view.setScaleX(1f);
@@ -201,10 +195,10 @@ final class ImageLoader {
                 if (url.equals(view.getTag())) {
                     if (bitmap != null) {
                         if (!cacheKey.isEmpty()) CACHE.put(cacheKey, bitmap);
-                        if (animate) showLoaded(view, bitmap);
+                        if (animate) ImageRevealAnimation.show(view, bitmap);
                         else {
                             view.animate().cancel();
-                            clearReveal(view);
+                            ImageRevealAnimation.clear(view);
                             view.setAlpha(1f);
                             view.setScaleX(1f);
                             view.setScaleY(1f);
@@ -215,68 +209,6 @@ final class ImageLoader {
                 }
             });
         });
-    }
-
-    private static void showLoaded(ImageView view, Bitmap bitmap) {
-        view.animate().cancel();
-        clearReveal(view);
-        view.setAlpha(1f);
-        view.setScaleX(1f);
-        view.setScaleY(1f);
-        view.setImageBitmap(bitmap);
-        Object marker = view.getTag();
-        if (view.getWidth() <= 0 || view.getHeight() <= 0) {
-            view.post(() -> {
-                if (marker == view.getTag()) startReveal(view);
-            });
-            return;
-        }
-        startReveal(view);
-    }
-
-    private static void startReveal(ImageView view) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) return;
-        int width = view.getWidth();
-        int height = view.getHeight();
-        if (width <= 0 || height <= 0) {
-            view.setClipBounds(null);
-            return;
-        }
-        ValueAnimator animator = ValueAnimator.ofInt(0, height);
-        REVEAL_ANIMATORS.put(view, animator);
-        animator.setDuration(260);
-        animator.setInterpolator(new DecelerateInterpolator());
-        animator.addUpdateListener(animation -> {
-            int bottom = (Integer) animation.getAnimatedValue();
-            view.setClipBounds(new Rect(0, 0, width, bottom));
-        });
-        animator.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator animation) {
-                if (REVEAL_ANIMATORS.get(view) == animation) {
-                    REVEAL_ANIMATORS.remove(view);
-                    view.setClipBounds(null);
-                }
-            }
-
-            @Override
-            public void onAnimationCancel(Animator animation) {
-                if (REVEAL_ANIMATORS.get(view) == animation) {
-                    REVEAL_ANIMATORS.remove(view);
-                    view.setClipBounds(null);
-                }
-            }
-        });
-        view.setClipBounds(new Rect(0, 0, width, 0));
-        animator.start();
-    }
-
-    private static void clearReveal(ImageView view) {
-        ValueAnimator animator = REVEAL_ANIMATORS.remove(view);
-        if (animator != null) animator.cancel();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-            view.setClipBounds(null);
-        }
     }
 
     static void load(String sourceUrl, int targetPx, Callback callback) {
@@ -327,6 +259,29 @@ final class ImageLoader {
 
     static void loadOriginal(String sourceUrl, int targetPx, Callback callback) {
         requestBitmap(originalUrl(sourceUrl), Math.min(targetPx, MAX_BITMAP_SIDE), LARGE_EXECUTOR, callback);
+    }
+
+    static Bitmap cachedExactOriginal(String sourceUrl) {
+        String url = originalUrl(sourceUrl);
+        return url.isEmpty() ? null : CACHE.get(exactOriginalCacheKey(url));
+    }
+
+    /** Alpha-sensitive media must not reuse a JPEG fallback cached under the ordinary URL. */
+    static ImageLoadRequest loadExactOriginalCancellable(String sourceUrl, int targetPx,
+                                                        Callback callback) {
+        String url = originalUrl(sourceUrl);
+        Bitmap cached = cachedExactOriginal(url);
+        if (url.isEmpty() || cached != null) return ImageLoadRequest.deliver(MAIN, cached, callback);
+        return ImageLoadRequest.submit(SMALL_EXECUTOR, MAIN,
+                () -> downloadExactOriginal(url, safeTarget(targetPx)), callback);
+    }
+
+    private static String exactOriginalCacheKey(String url) {
+        return "exact-original:" + url;
+    }
+
+    private static Bitmap downloadExactOriginal(String url, int targetPx) {
+        return download(url, targetPx, exactOriginalCacheKey(url), false);
     }
 
     static void loadLongImageTiles(String sourceUrl, int targetWidthPx,
@@ -531,7 +486,7 @@ final class ImageLoader {
 
     static void cancel(ImageView view) {
         if (view != null) {
-            clearReveal(view);
+            ImageRevealAnimation.clear(view);
             GifSupport.setRunning(view.getDrawable(), false);
             view.setTag(null);
         }
@@ -557,16 +512,21 @@ final class ImageLoader {
     }
 
     private static Bitmap download(String url, int targetPx) {
-        Bitmap cached = CACHE.get(url);
+        return download(url, targetPx, url, true);
+    }
+
+    private static Bitmap download(String url, int targetPx, String cacheKey,
+                                   boolean allowVariantFallback) {
+        Bitmap cached = CACHE.get(cacheKey);
         if (cached != null) return cached;
         byte[] exact = ImageDiskCache.read(
                 ImageDiskCache.exactFile(url), MAX_DECODE_BYTES);
         Bitmap stored = decode(exact, targetPx);
         if (stored != null) {
-            CACHE.put(url, stored);
+            CACHE.put(cacheKey, stored);
             return stored;
         }
-        if (!isNetworkConnected()) return offlineFallback(url, targetPx);
+        if (!isNetworkConnected()) return offlineFallback(url, targetPx, cacheKey, allowVariantFallback);
         HttpURLConnection connection = null;
         try {
             long networkStartedAt = SystemClock.elapsedRealtime();
@@ -578,7 +538,7 @@ final class ImageLoader {
             int status = connection.getResponseCode();
             if (status < 200 || status >= 300) {
                 logFailure("download", url, status, null);
-                return offlineFallback(url, targetPx);
+                return offlineFallback(url, targetPx, cacheKey, allowVariantFallback);
             }
             byte[] bytes;
             try (InputStream input = new BufferedInputStream(connection.getInputStream());
@@ -587,7 +547,7 @@ final class ImageLoader {
                 int count;
                 while ((count = input.read(buffer)) >= 0) {
                     if (output.size() + count > MAX_DECODE_BYTES) {
-                        return offlineFallback(url, targetPx);
+                        return offlineFallback(url, targetPx, cacheKey, allowVariantFallback);
                     }
                     output.write(buffer, 0, count);
                 }
@@ -599,7 +559,7 @@ final class ImageLoader {
 
             ImageDiskCache.write(url, bytes);
             Bitmap bitmap = decode(bytes, targetPx);
-            if (bitmap != null) CACHE.put(url, bitmap);
+            if (bitmap != null) CACHE.put(cacheKey, bitmap);
             return bitmap;
         } catch (OutOfMemoryError error) {
             CACHE.evictAll();
@@ -607,16 +567,18 @@ final class ImageLoader {
             return null;
         } catch (Exception error) {
             logFailure("download", url, 0, error);
-            return offlineFallback(url, targetPx);
+            return offlineFallback(url, targetPx, cacheKey, allowVariantFallback);
         } finally {
             if (connection != null) connection.disconnect();
         }
     }
 
-    private static Bitmap offlineFallback(String url, int targetPx) {
+    private static Bitmap offlineFallback(String url, int targetPx, String cacheKey,
+                                          boolean allowVariantFallback) {
+        if (!allowVariantFallback) return null;
         Bitmap fallback = decode(ImageDiskCache.read(
                 ImageDiskCache.fallbackFile(url), MAX_DECODE_BYTES), targetPx);
-        if (fallback != null) CACHE.put(url, fallback);
+        if (fallback != null) CACHE.put(cacheKey, fallback);
         return fallback;
     }
 

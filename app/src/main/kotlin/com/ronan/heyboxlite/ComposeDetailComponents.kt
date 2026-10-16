@@ -3,6 +3,7 @@ package com.ronan.heyboxlite
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,10 +48,12 @@ internal fun ComposeDetailBlock(
     media: ComposeMediaSettings,
     services: ComposeServices?,
     onOpenImage: (String) -> Unit,
+    onOpenPreview: ((String, android.widget.ImageView) -> Unit)? = null,
 ) {
     val display = remember(block) { ArticleText.stripMarkdownEmphasis(block.value) }
     when (block.kind) {
-        RichContent.Block.IMAGE -> ComposeDetailImage(block.value, media, onOpenImage)
+        RichContent.Block.IMAGE -> ComposeDetailImage(block.value, media, onOpenImage,
+            onOpenPreview = onOpenPreview)
         RichContent.Block.GAME_CARD -> ComposeDetailGameCard(block, media, services)
         RichContent.Block.QUOTE -> Row(Modifier.fillMaxWidth()) {
             val theme = LocalHeyboxTheme.current
@@ -149,11 +152,14 @@ private fun ComposeDetailGameCard(
 @Composable
 internal fun ComposeDetailSortTab(text: String, selected: Boolean, onSelect: () -> Unit) {
     val theme = LocalHeyboxTheme.current
-    Text(text, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-        color = if (selected) theme.background else theme.muted,
-        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onSelect)
-            .background(if (selected) theme.text else androidx.compose.ui.graphics.Color.Transparent)
-            .padding(horizontal = watchDp(7), vertical = watchDp(5)))
+    Box(Modifier.testTag("comment-sort-$text").clip(RoundedCornerShape(3.dp))
+        .selectable(selected, role = Role.Tab, onClick = onSelect)
+        .heightIn(min = 24.dp).padding(horizontal = watchDp(4), vertical = watchDp(3)),
+        contentAlignment = Alignment.Center) {
+        Text(text, fontSize = watchSp(10.5f), lineHeight = watchSp(14f), letterSpacing = 0.sp,
+            maxLines = 1, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) theme.text else theme.subtle)
+    }
 }
 
 @Composable

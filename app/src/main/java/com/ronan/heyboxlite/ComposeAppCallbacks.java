@@ -27,6 +27,10 @@ interface ComposeAppCallbacks {
         if (urls != null && index >= 0 && index < urls.length) requestImage(urls[index]);
     }
 
+    default void requestImages(android.widget.ImageView source, String[] urls, int index) {
+        requestImages(urls, index);
+    }
+
     void requestVideo(VideoData video);
 
     void feedAction(FeedItem item, int action);

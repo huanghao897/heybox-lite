@@ -91,7 +91,11 @@ internal fun ComposeSwipeContainer(
             thresholdPx = with(density) { 44.dp.toPx() * services.theme.uiScale },
             touchSlopPx = touchSlop,
             maxDragPx = width,
-            canStart = { !settling.value && !handoff.value && host.composeSwipeTarget(route, it) != null },
+            canStart = {
+                !settling.value && !handoff.value
+                    && (route != "feed" || !host.feedListState.isScrollInProgress)
+                    && host.composeSwipeTarget(route, it) != null
+            },
             onStart = { dragDirection ->
                 val next = host.composeSwipeTarget(route, dragDirection)
                 if (next == null || settling.value || handoff.value) false else {

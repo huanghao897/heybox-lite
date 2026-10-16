@@ -1,29 +1,22 @@
 package com.ronan.heyboxlite
 
-import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -32,17 +25,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.RowScope
-import java.util.Locale
+import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun ComposeCheckinPrimaryButton(
@@ -50,23 +39,14 @@ internal fun ComposeCheckinPrimaryButton(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    Button(
+    WatchActionButton(
+        text = text,
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth().height(watchDp(40)),
-        shape = RoundedCornerShape(watchDp(9)),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = LocalHeyboxTheme.current.accent,
-            contentColor = LocalHeyboxTheme.current.onAccent,
-            disabledContainerColor = LocalHeyboxTheme.current.panelElevated,
-            disabledContentColor = LocalHeyboxTheme.current.subtle,
-        ),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            horizontal = watchDp(10),
-        ),
-    ) {
-        Text(text, fontSize = watchSp(12f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
+        modifier = Modifier.fillMaxWidth(),
+        fontSize = 12f,
+        primary = true,
+    )
 }
 
 @Composable
@@ -75,19 +55,12 @@ internal fun ComposeCheckinQuietButton(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    TextButton(
+    WatchActionButton(
+        text = text,
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth().height(watchDp(36)),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-    ) {
-        Text(
-            text,
-            color = if (enabled) LocalHeyboxTheme.current.muted else LocalHeyboxTheme.current.subtle,
-            fontSize = watchSp(11f),
-            maxLines = 1,
-        )
-    }
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
@@ -102,6 +75,7 @@ internal fun ComposeCheckinTextField(
     focusRequester: FocusRequester? = null,
 ) {
     val theme = LocalHeyboxTheme.current
+    val fieldStyle = TextStyle(color = theme.text, fontSize = watchSp(12f), letterSpacing = 0.sp)
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
@@ -109,19 +83,22 @@ internal fun ComposeCheckinTextField(
         singleLine = true,
         modifier = modifier
             .fillMaxWidth()
-            .height(watchDp(40))
+            .heightIn(min = watchDp(40))
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .background(theme.panelElevated, RoundedCornerShape(watchDp(9)))
             .padding(horizontal = watchDp(10), vertical = watchDp(9)),
-        textStyle = TextStyle(color = theme.text, fontSize = watchSp(12f)),
+        textStyle = fieldStyle,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         visualTransformation = if (password) PasswordVisualTransformation()
         else VisualTransformation.None,
         decorationBox = { field ->
-            if (value.isEmpty()) {
-                Text(placeholder, color = theme.subtle, fontSize = watchSp(12f), maxLines = 1)
+            Box(contentAlignment = Alignment.CenterStart) {
+                if (value.isEmpty()) {
+                    Text(placeholder, style = fieldStyle.copy(color = theme.subtle),
+                        maxLines = 1, softWrap = false)
+                }
+                field()
             }
-            field()
         },
     )
 }
@@ -296,24 +273,13 @@ internal fun ComposeCheckinPairingScreen(
                                 modifier = Modifier.weight(1f),
                             )
                             Spacer(modifier = Modifier.width(watchDp(6)))
-                            TextButton(
+                            WatchActionButton(
+                                text = state.serviceEmailButton,
                                 onClick = controller::sendRegistrationEmail,
                                 enabled = state.serviceEmailButtonEnabled,
-                                modifier = Modifier.widthIn(min = watchDp(94)).height(watchDp(40)),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                    horizontal = watchDp(5),
-                                ),
-                            ) {
-                                Text(
-                                    state.serviceEmailButton,
-                                    color = if (state.serviceEmailButtonEnabled) {
-                                        LocalHeyboxTheme.current.accent
-                                    } else LocalHeyboxTheme.current.subtle,
-                                    fontSize = watchSp(10f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
+                                modifier = Modifier.weight(1f).heightIn(min = watchDp(40)),
+                                fontSize = 10f,
+                            )
                         }
                     }
                 }
@@ -380,24 +346,13 @@ internal fun ComposeCheckinMobileLoginScreen(
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(modifier = Modifier.width(watchDp(6)))
-                    TextButton(
+                    WatchActionButton(
+                        text = state.mobileSmsButton,
                         onClick = controller::sendSmsCode,
                         enabled = state.mobileSmsButtonEnabled,
-                        modifier = Modifier.widthIn(min = watchDp(94)).height(watchDp(40)),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            horizontal = watchDp(5),
-                        ),
-                    ) {
-                        Text(
-                            state.mobileSmsButton,
-                            color = if (state.mobileSmsButtonEnabled) {
-                                LocalHeyboxTheme.current.accent
-                            } else LocalHeyboxTheme.current.subtle,
-                            fontSize = watchSp(10f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                        modifier = Modifier.weight(1f).heightIn(min = watchDp(40)),
+                        fontSize = 10f,
+                    )
                 }
                 Spacer(modifier = Modifier.height(watchDp(7)))
                 ComposeCheckinTextField(

@@ -24,7 +24,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -395,9 +394,8 @@ internal fun FeedEmpty(message: String, action: String, theme: ComposeThemeState
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = message, color = theme.muted, fontSize = (13 * theme.textScale).sp)
-        TextButton(onClick = onAction) {
-            Text(text = action, color = theme.accent, fontSize = (12 * theme.textScale).sp)
-        }
+        WatchActionButton(action, onAction,
+            Modifier.padding(top = (8 * theme.uiScale).dp), fontSize = 12f, theme = theme)
     }
 }
 
@@ -408,17 +406,16 @@ internal fun FeedFooter(
     theme: ComposeThemeState,
     onLoadMore: () -> Unit,
 ) {
-    TextButton(onClick = onLoadMore, enabled = !loading && !noMore,
-        modifier = Modifier.fillMaxWidth().padding(top = (2 * theme.uiScale).dp)) {
-        Text(
-            text = when {
-                loading -> "正在加载更多…"
-                noMore -> "没有更多内容"
-                else -> "上滑加载更多"
-            },
-            color = theme.muted,
-            fontSize = (11 * theme.textScale).sp)
-    }
+    WatchActionButton(
+        text = when {
+            loading -> "正在加载更多…"
+            noMore -> "没有更多内容"
+            else -> "上滑加载更多"
+        },
+        onClick = onLoadMore, enabled = !loading && !noMore,
+        modifier = Modifier.fillMaxWidth().padding(top = (2 * theme.uiScale).dp),
+        theme = theme,
+    )
 }
 
 @Composable

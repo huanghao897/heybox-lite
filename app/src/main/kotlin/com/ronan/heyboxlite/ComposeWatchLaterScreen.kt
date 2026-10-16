@@ -10,7 +10,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,9 +47,7 @@ internal fun ComposeWatchLaterScreen(
                             Text("$size · 更新于 ${Format.offlineTime(entry.updatedAt)}",
                                 color = theme.muted, fontSize = watchSp(10f), maxLines = 2,
                                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            TextButton(onClick = { onRemove(entry) }, enabled = !state.loading) {
-                                Text("移除", color = theme.accent, fontSize = watchSp(11f))
-                            }
+                            WatchActionButton("移除", { onRemove(entry) }, enabled = !state.loading)
                         }
                     }
                 }

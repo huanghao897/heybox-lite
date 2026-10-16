@@ -129,7 +129,9 @@ internal abstract class ComposeMembershipUiRegressionHarness {
         node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertTrue("TextLayoutResult missing for $value", layouts.isNotEmpty())
         val semantics = node.fetchSemanticsNode()
-        layouts.forEach { layout ->
+        layouts.forEach { raw ->
+            writeTextDiagnostic(value, semantics, raw)
+            val layout = paintedTextLayout(raw)
             val diagnostic = writeTextDiagnostic(value, semantics, layout)
             val context = "label $value; diagnostic: ${diagnostic.absolutePath}"
             assertEquals("Stale or unrelated TextLayoutResult: $context", value, layout.layoutInput.text.text)
@@ -160,7 +162,7 @@ internal abstract class ComposeMembershipUiRegressionHarness {
                     assertTrue("Character $offset is clipped by its Text node: $glyph; $context",
                         glyph.left >= -0.5f && glyph.top >= -0.5f &&
                             glyph.right <= width + 0.5f && glyph.bottom <= height + 0.5f)
-                    val windowGlyph = glyph.translate(origin)
+                    val windowGlyph = transformedBounds(semantics, glyph)
                     assertTrue("Character $offset is clipped by an ancestor: $windowGlyph / $visible; $context",
                         windowGlyph.left >= visible.left - 0.5f && windowGlyph.top >= visible.top - 0.5f &&
                             windowGlyph.right <= visible.right + 0.5f && windowGlyph.bottom <= visible.bottom + 0.5f)
@@ -273,6 +275,15 @@ internal abstract class ComposeMembershipUiRegressionHarness {
     private fun boundsInWindow(node: SemanticsNode): Rect = Rect(node.positionInWindow.x,
         node.positionInWindow.y, node.positionInWindow.x + node.size.width,
         node.positionInWindow.y + node.size.height)
+
+    private fun transformedBounds(node: SemanticsNode, rect: Rect): Rect {
+        // Position plus size is insufficient for labels drawn in a rotated graphics layer.
+        val coordinates = node.layoutInfo.coordinates
+        val corners = listOf(rect.topLeft, rect.topRight, rect.bottomLeft, rect.bottomRight)
+            .map(coordinates::localToWindow)
+        return Rect(corners.minOf { it.x }, corners.minOf { it.y },
+            corners.maxOf { it.x }, corners.maxOf { it.y })
+    }
 
     private fun overlaps(a: Rect, b: Rect): Boolean =
         minOf(a.right, b.right) - maxOf(a.left, b.left) > 0.5f &&

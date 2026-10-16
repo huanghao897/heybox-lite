@@ -127,6 +127,8 @@ internal class OfficialPullRefreshState : PullToRefreshState {
     override suspend fun snapTo(targetValue: Float) { position.snapTo(targetValue) }
 
     private suspend fun settle(target: Float) {
+        // Material awaits this before every child fling, even when no header was pulled.
+        if (position.value == target && !position.isRunning) return
         position.animateTo(target, tween(if (animateTransitions) 250 else 0,
             easing = LinearOutSlowInEasing))
     }

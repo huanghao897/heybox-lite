@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -287,7 +288,11 @@ internal class ComposeDetailVisualUiTest : ComposeMembershipUiRegressionHarness(
         listOf("\u7f6e\u9876", "\u4f5c\u8005", "Lv.24", "12", "Shanghai").forEach(::assertLabelFits)
         tap(like)
         assertEquals("root", (actions.last() as ComposeDetailAction.LikeComment).comment.getString("commentid"))
-        tap(description("Ronan\u7684\u5934\u50cf"))
+        val avatar = reach(description("Ronan\u7684\u5934\u50cf"))
+        tap(avatar)
+        assertTrue(openedUsers.isEmpty())
+        avatar.performTouchInput { longClick() }
+        compose.waitForIdle()
         assertEquals(listOf("author-id"), openedUsers)
     }
 
@@ -306,9 +311,9 @@ internal class ComposeDetailVisualUiTest : ComposeMembershipUiRegressionHarness(
         assertEquals("reply-1", (actions.last() as ComposeDetailAction.OpenCommentImage).comment.getString("commentid"))
         assertEquals(DetailVisualFixture.GIF_ORIGINAL, openedImages.last())
         assertTrue(DetailVisualImageShadow.animatedUrls.contains(DetailVisualFixture.GIF_ORIGINAL))
-        val relation = "Iris \u56de\u590d Mira"
+        val relation = "Iris \u56de\u590d Mira：Reply body 1  ${Format.relativeTime(1)} · Hangzhou"
         assertLabelFits(relation)
-        val reply = reach(text("Reply body 1"))
+        val reply = reach(text(relation))
         assertInDisplay(windowBounds(reply.fetchSemanticsNode()), "reply gesture", corners = true)
         reply.performTouchInput { doubleClick() }
         compose.waitForIdle()
@@ -318,10 +323,11 @@ internal class ComposeDetailVisualUiTest : ComposeMembershipUiRegressionHarness(
         tapReachable("\u5c55\u5f00 5 \u6761\u56de\u590d")
         assertEquals(1, actions.filterIsInstance<ComposeDetailAction.LoadReplies>().size)
         assertTrue(DetailVisualApiShadow.paths.contains(EndpointProvider.subComments()))
-        assertLabelFits("Reply body 6")
+        val expandedReply = "Iris \u56de\u590d Mira：Reply body 6  ${Format.relativeTime(6)} · Hangzhou"
+        assertLabelFits(expandedReply)
         capture("comments-expanded-replies")
         tapReachable("\u6536\u8d77\u56de\u590d")
-        text("Reply body 6").assertDoesNotExist()
+        text(expandedReply).assertDoesNotExist()
     }
 
     private fun assertInlineFits(value: String, attachments: Int) {
@@ -415,6 +421,12 @@ internal class DetailVisualImageShadow {
             callback: ImageLoader.Callback): ImageLoadRequest =
             ImageLoadRequest.deliver(Handler(Looper.getMainLooper()), bitmap(url), callback)
 
+        @JvmStatic @Implementation fun cachedExactOriginal(url: String): Bitmap = bitmap(url)
+
+        @JvmStatic @Implementation fun loadExactOriginalCancellable(url: String, targetPx: Int,
+            callback: ImageLoader.Callback): ImageLoadRequest =
+            ImageLoadRequest.deliver(Handler(Looper.getMainLooper()), bitmap(url), callback)
+
         @JvmStatic @Implementation fun intoMeasuredStable(view: ImageView, url: String,
             targetPx: Int, callback: ImageLoader.IntoBitmapCallback) {
             val bitmap = bitmap(url)
@@ -456,6 +468,7 @@ private object DetailVisualFixture {
         .put("username", name).put("userid", id).put("avatar", HOST + "avatar-$id.png").put("level", level)
 
     fun reply(index: Int) = JSONObject().put("commentid", "reply-$index").put("create_at", index)
+        .put("ip_location", "Hangzhou")
         .put("text", "Reply body $index").put("replyid", "other-reply")
         .put("replyuser", JSONObject().put("username", "Mira")).put("user", user("Iris", "reply-user-$index"))
 

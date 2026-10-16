@@ -8,10 +8,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -52,7 +57,11 @@ class ComposeDetailBehaviorUiTest {
         compose.onNodeWithText("Lv.24", useUnmergedTree = true).assertExists()
         compose.onNodeWithText(Format.relativeTime(1_600_000_000L) + " · Detail signature",
             useUnmergedTree = true).assertExists()
-        compose.onNodeWithText("Detail author").performClick()
+        compose.onNodeWithText("Detail author").performTouchInput { click() }
+        assertTrue(opened.isEmpty())
+        compose.onNodeWithContentDescription("Detail author的头像").performClick()
+        assertTrue(opened.isEmpty())
+        compose.onNodeWithContentDescription("Detail author的头像").performTouchInput { longClick() }
         assertEquals(listOf(listOf("detail-author", "Detail author", "https://example.invalid/detail.png")), opened)
     }
 
@@ -69,7 +78,7 @@ class ComposeDetailBehaviorUiTest {
                     { id, name, avatar -> opened += listOf(id, name, avatar) }, link)
             }
         }
-        compose.onNodeWithText("Detail author").performClick()
+        compose.onNodeWithContentDescription("Detail author的头像").performTouchInput { longClick() }
         assertEquals(listOf(listOf("detail-author", "Detail author", "https://example.invalid/alias.png")), opened)
     }
 
@@ -85,7 +94,7 @@ class ComposeDetailBehaviorUiTest {
                     { id, _, _ -> opened += id }, link)
             }
         }
-        compose.onNodeWithText("Detail author").performClick()
+        compose.onNodeWithContentDescription("Detail author的头像").performTouchInput { longClick() }
         assertEquals(listOf("nested-author"), opened)
     }
 
@@ -108,10 +117,10 @@ class ComposeDetailBehaviorUiTest {
                 }
             }
         }
-        compose.onNodeWithText("Reply 6").assertDoesNotExist()
+        compose.onNodeWithTag("comment-reply-6").assertDoesNotExist()
         compose.onNodeWithText("展开 5 条回复").performScrollTo().performClick()
         compose.runOnIdle { assertTrue(actions.isEmpty()) }
-        compose.onNodeWithText("Reply 7").assertExists()
+        compose.onNodeWithTag("comment-reply-7").assertExists()
         compose.onNodeWithText("展开 5 条回复").performScrollTo().performClick()
         compose.runOnIdle {
             assertSame(root, (actions.single() as ComposeDetailAction.LoadReplies).root)
@@ -136,11 +145,11 @@ class ComposeDetailBehaviorUiTest {
         compose.onNodeWithText("回复加载失败，重试").assertDoesNotExist()
         compose.onNodeWithText("加载回复中…").assertDoesNotExist()
         compose.onNodeWithText("Network unavailable").assertDoesNotExist()
-        compose.onNodeWithText("Reply 12").assertExists()
-        compose.onNodeWithText("Reply 13").assertDoesNotExist()
+        compose.onNodeWithTag("comment-reply-12").assertExists()
+        compose.onNodeWithTag("comment-reply-13").assertDoesNotExist()
         compose.onNodeWithText("展开 1 条回复").assertExists()
         compose.onNodeWithText("收起回复").performScrollTo().performClick()
-        compose.onNodeWithText("Reply 6").assertDoesNotExist()
+        compose.onNodeWithTag("comment-reply-6").assertDoesNotExist()
     }
 
     private fun replyGroup(count: Int): JSONObject {

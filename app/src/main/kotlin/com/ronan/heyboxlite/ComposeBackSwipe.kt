@@ -53,6 +53,7 @@ internal fun Modifier.composeBackSwipe(
                 break
             }
             val change = event.changes.firstOrNull() ?: break
+            if (!accepted && change.isConsumed) break
             val delta = change.positionChangeIgnoreConsumed()
             totalX += delta.x
             totalY += delta.y
@@ -70,6 +71,12 @@ internal fun Modifier.composeBackSwipe(
                 onProgress(ComposeSwipePolicy.dragOffset(totalX, direction, maxDragPx))
             }
             if (!change.pressed) break
+            if (!accepted) {
+                // A child may claim a sub-slop move, for example when catching a fling.
+                // Keep that ownership for the entire touch stream.
+                val finalEvent = awaitPointerEvent(PointerEventPass.Final)
+                if (finalEvent.changes.any { it.isConsumed }) break
+            }
         }
 
         if (accepted && abs(ComposeSwipePolicy.dragOffset(totalX, direction, maxDragPx)) >= thresholdPx) {

@@ -124,7 +124,7 @@ final class ZoomImageView extends ImageView {
 
     void setRoundDisplay(boolean value) {
         roundDisplay = value;
-        if (getDrawable() != null) post(this::fitImage);
+        if (getDrawable() != null) fitImage();
     }
 
     void cancelMotion() {
@@ -141,6 +141,7 @@ final class ZoomImageView extends ImageView {
     void cancelZoomAnimation() {
         cancelMatrixAnimation();
     }
+    void replaceBitmap(android.graphics.Bitmap bitmap) { ImageViewerBitmapSwap.replace(this, matrix, bitmap); }
 
     boolean isSecondTapCandidate(float x, float y, long eventTime) {
         return isSecondTap(x, y, eventTime);
@@ -165,7 +166,7 @@ final class ZoomImageView extends ImageView {
 
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        post(this::fitImage);
+        fitImage();
     }
 
     @SuppressLint("ClickableViewAccessibility")

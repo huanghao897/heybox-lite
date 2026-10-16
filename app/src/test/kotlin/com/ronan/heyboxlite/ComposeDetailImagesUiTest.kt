@@ -41,6 +41,31 @@ import org.robolectric.annotation.GraphicsMode
 class ComposeDetailImagesUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun openingAnArticleImagePassesItsActualThumbnailToTheViewer() {
+        val requests = Images()
+        var preview: ImageView? = null
+        var selected = ""
+        var fallbackCalls = 0
+        compose.setContent {
+            HeyboxComposeTheme(composePreviewTheme(false)) {
+                Box(Modifier.width(200.dp)) {
+                    ComposeDetailImage("original.jpg", ComposeMediaSettings(), { fallbackCalls++ },
+                        requests, onOpenPreview = { url, source -> selected = url; preview = source })
+                }
+            }
+        }
+        compose.onNodeWithTag("detail-image-original.jpg").performClick()
+        compose.runOnIdle {
+            assertEquals("original.jpg", selected)
+            assertEquals(0, fallbackCalls)
+            assertNotNull(preview)
+            assertTrue(requireNotNull(preview).isAttachedToWindow)
+            assertNotNull(requireNotNull(preview).drawable)
+            val bounds = ImageTransitionSource.visibleBoundsOnScreen(preview)
+            assertTrue(bounds.width() > 0 && bounds.height() > 0)
+        }
+    }
+
     @Test fun decodedDimensionsResizeTheArticleImageAndClickKeepsItsOriginalUrl() {
         val url = "https://example.invalid/original.jpg?quality=original"
         val requests = Images()

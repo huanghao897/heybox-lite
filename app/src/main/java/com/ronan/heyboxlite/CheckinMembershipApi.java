@@ -27,7 +27,8 @@ final class CheckinMembershipApi {
     void getMembershipCatalog(String deviceToken,
                               CheckinCenterClient.Callback<CheckinBilling.Membership> callback) {
         CheckinCenterClient.Operation operation = CheckinCenterClient.Operation.BILLING_CATALOG;
-        request(operation, "GET", "/billing/catalog", deviceToken, null,
+        // The deployed status response already includes the complete membership catalog.
+        request(operation, "GET", "/status/heybox", deviceToken, null,
                 value -> parseMembership(value, operation), callback);
     }
 

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -87,8 +86,6 @@ internal fun SavedLoadError(message: String, cached: Boolean, onRetry: () -> Uni
         Text(if (cached) "离线缓存" else message, modifier = Modifier.weight(1f),
             color = theme.muted, fontSize = watchSp(11f), maxLines = 2,
             overflow = TextOverflow.Ellipsis)
-        TextButton(onClick = onRetry) {
-            Text("重试", color = theme.accent, fontSize = watchSp(11f))
-        }
+        WatchActionButton("重试", onRetry)
     }
 }

@@ -25,7 +25,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -71,6 +73,53 @@ class ComposeInlineTextUiTest {
         assertContains(android.graphics.Color.MAGENTA)
         assertContains(android.graphics.Color.BLUE)
         compose.runOnIdle { assertNoNativeText(compose.activity.findViewById(android.R.id.content)) }
+    }
+
+    @Test fun richNamePrefixMovesEmojiCyAndGameAnnotationsTogetherWithTheirStyles() {
+        val catalog = ComposeInlineTextTestCatalog().apply { register("cube_wave", "wave") }
+        images.cache["wave" to 16] = magenta
+        val name = mutableStateOf("Iris")
+        compose.setContent {
+            val prefix = buildAnnotatedString {
+                append(name.value)
+                addStyle(SpanStyle(color = Color.Green, fontWeight = FontWeight.Bold), 0, length)
+                addStringAnnotation("user", "author-id", 0, length)
+                append(" replies Mira: ")
+            }
+            Box(Modifier.width(200.dp).background(Color.Black)) {
+                ComposeInlineText("A [cube_wave] \uE100Game\uE101 Z", false, Color.White, Color.Blue,
+                    Modifier.fillMaxWidth().testTag("inline"), cy = true,
+                    imageLoader = images, emojiCatalog = catalog, prefix = prefix)
+            }
+        }
+
+        for (currentName in listOf("Iris", "LongerName")) {
+            compose.runOnIdle { name.value = currentName }
+            val prefix = "$currentName replies Mira: "
+            val layout = layout()
+            val text = layout.layoutInput.text
+            assertEquals(prefix + "Cy A [cube_wave] \uFFFCGame Z", text.text)
+            assertEquals(3, layout.placeholderRects.filterNotNull().size)
+            val user = text.getStringAnnotations("user", 0, text.length).single()
+            assertEquals(0, user.start)
+            assertEquals(currentName.length, user.end)
+            assertEquals("author-id", user.item)
+            val nameStyle = text.spanStyles.single { it.item.fontWeight == FontWeight.Bold }
+            assertEquals(Color.Green, nameStyle.item.color)
+            assertEquals(currentName.length, nameStyle.end)
+            val gameStyle = text.spanStyles.single { it.item.color == Color.Blue }
+            assertEquals("\uFFFCGame", text.text.substring(gameStyle.start, gameStyle.end))
+            val cy = text.getStringAnnotations(prefix.length, prefix.length + 2)
+                .single { it.item == "cy" }
+            assertEquals(prefix.length, cy.start)
+            val emojiStart = prefix.length + "Cy A ".length
+            val emoji = text.getStringAnnotations(emojiStart, emojiStart + "[cube_wave]".length)
+                .single { it.item.startsWith("emoji:") }
+            assertEquals(emojiStart, emoji.start)
+            assertContains(android.graphics.Color.MAGENTA)
+            assertContains(android.graphics.Color.BLUE)
+        }
+        assertTrue(images.requests.isEmpty())
     }
 
     @Test fun lateCatalogAndImageCompletionKeepCyGameColorAndReadableLoadingFallback() {
@@ -184,6 +233,55 @@ class ComposeInlineTextUiTest {
         assertMissing(android.graphics.Color.MAGENTA)
         assertEquals(28f, layout().placeholderRects.single()!!.height, 0.01f)
         assertEquals(24.sp, layout().layoutInput.style.fontSize)
+    }
+
+    @Test
+    @Config(shadows = [ComposeInlineEmojiImageShadow::class])
+    fun defaultEmojiLoaderKeepsTransparentEdgesOnLightAndDarkCommentSurfaces() {
+        ComposeInlineEmojiImageShadow.requests.clear()
+        ComposeInlineEmojiImageShadow.cached.clear()
+        val catalog = ComposeInlineTextTestCatalog().apply {
+            register("cube_alpha", ComposeInlineEmojiImageLoaderTest.LIGHT_URL,
+                ComposeInlineEmojiImageLoaderTest.DARK_URL)
+        }
+        val dark = mutableStateOf(false)
+        val lightSurface = 0xFFEDEEF0.toInt()
+        val darkSurface = 0xFF17191C.toInt()
+        compose.setContent {
+            Box(Modifier.size(200.dp).background(Color(if (dark.value) darkSurface else lightSurface))) {
+                ComposeInlineText("[cube_alpha]", dark.value, Color.Red, Color.Blue,
+                    Modifier.testTag("inline"), emojiCatalog = catalog)
+            }
+        }
+        for (darkMode in listOf(false, true)) {
+            compose.runOnIdle { dark.value = darkMode }
+            compose.waitForIdle()
+            val request = ComposeInlineEmojiImageShadow.requests.last()
+            assertEquals(if (darkMode) ComposeInlineEmojiImageLoaderTest.DARK_URL else
+                ComposeInlineEmojiImageLoaderTest.LIGHT_URL, request.url)
+            compose.runOnIdle {
+                request.callback.onLoaded(ComposeInlineEmojiImageLoaderTest.pngWithTransparentEdges())
+            }
+
+            val placeholder = layout().placeholderRects.single()!!
+            val node = compose.onNodeWithTag("inline").fetchSemanticsNode()
+            compose.runOnIdle {
+                val root = compose.activity.window.decorView
+                val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+                root.draw(Canvas(bitmap))
+                val origin = IntArray(2).also(root::getLocationInWindow)
+                val left = node.positionInWindow.x - origin[0] + placeholder.left
+                val top = node.positionInWindow.y - origin[1] + placeholder.top
+                assertEquals("Transparent emoji corner must show the comment surface",
+                    if (darkMode) darkSurface else lightSurface,
+                    bitmap.getPixel((left + 1).toInt(), (top + 1).toInt()))
+                assertEquals("Opaque white artwork must remain white", android.graphics.Color.WHITE,
+                    bitmap.getPixel((left + placeholder.width / 2).toInt(),
+                        (top + placeholder.height / 2).toInt()))
+                bitmap.recycle()
+            }
+        }
+        assertEquals(2, ComposeInlineEmojiImageShadow.requests.size)
     }
 
     @Test

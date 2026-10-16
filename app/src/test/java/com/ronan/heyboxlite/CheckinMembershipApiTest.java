@@ -18,14 +18,14 @@ public class CheckinMembershipApiTest {
     private static final String ORDER_ID = "HBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     @Test
-    public void catalogUsesDeviceTokenAndReturnsTheServerMembership() throws Exception {
+    public void catalogUsesDeployedStatusEndpointAndReturnsTheServerMembership() throws Exception {
         RecordingRequests requests = new RecordingRequests(catalogResponse(false));
         Result<CheckinBilling.Membership> result = new Result<>();
 
         new CheckinMembershipApi(requests).getMembershipCatalog(TOKEN, result);
 
         assertRequest(requests, CheckinCenterClient.Operation.BILLING_CATALOG,
-                "GET", "/billing/catalog");
+                "GET", "/status/heybox");
         assertNull(requests.body);
         assertNull(result.error);
         assertFalse(result.value.entitled);
@@ -34,6 +34,7 @@ public class CheckinMembershipApiTest {
         assertEquals("heybox_custom", result.value.products.get(0).sku);
         assertEquals(1887, result.value.products.get(0).amountCents);
         assertEquals(93, result.value.products.get(0).durationDays);
+        assertEquals(1, requests.calls);
     }
 
     @Test
@@ -200,6 +201,24 @@ public class CheckinMembershipApiTest {
         assertTrue(result.error.authorizationInvalid());
         assertNull(result.value);
         assertEquals(1, requests.calls);
+    }
+
+    @Test
+    public void catalogFailuresStayVisibleWithoutFallbackRequestsOrInventedPlans() throws Exception {
+        for (int status : new int[]{401, 404, 429, 503}) {
+            RecordingRequests requests = new RecordingRequests(catalogResponse(true));
+            requests.failure = new CheckinCenterClient.ApiError(
+                    CheckinCenterClient.Operation.BILLING_CATALOG, status, "Unavailable");
+            Result<CheckinBilling.Membership> result = new Result<>();
+
+            new CheckinMembershipApi(requests).getMembershipCatalog(TOKEN, result);
+
+            assertRequest(requests, CheckinCenterClient.Operation.BILLING_CATALOG,
+                    "GET", "/status/heybox");
+            assertEquals(requests.failure, result.error);
+            assertNull(result.value);
+            assertEquals(1, requests.calls);
+        }
     }
 
     @Test

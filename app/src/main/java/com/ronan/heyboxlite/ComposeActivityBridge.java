@@ -202,6 +202,10 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         activity.openImage(null, urls, index);
     }
 
+    @Override public void requestImages(android.widget.ImageView source, String[] urls, int index) {
+        activity.openImage(source, urls, index);
+    }
+
     private void returnFromLegacyDetail() {
         returnFromLegacyDetail(false);
     }

@@ -123,42 +123,20 @@ internal fun ComposeCommentName(
     postAuthor: Boolean,
     level: Int,
     modifier: Modifier = Modifier,
-    target: String = "",
 ) {
     val theme = LocalHeyboxTheme.current
-    val separateTarget = target.isNotBlank() && (postAuthor || level > 0)
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val availableWidth = maxWidth
         FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp * theme.uiScale),
             verticalArrangement = Arrangement.spacedBy(2.dp * theme.uiScale),
             modifier = Modifier.fillMaxWidth()) {
-            Text(buildAnnotatedString {
-                withStyle(SpanStyle(color = theme.text, fontWeight = FontWeight.SemiBold)) {
-                    append(author.ifBlank { "匿名用户" })
-                }
-                if (target.isNotBlank() && !separateTarget) withStyle(SpanStyle(color = theme.muted)) {
-                    append(" 回复 $target")
-                }
-            }, modifier = Modifier.widthIn(max = availableWidth),
+            Text(author.ifBlank { "匿名用户" }, modifier = Modifier.widthIn(max = availableWidth),
+                color = theme.text, fontWeight = FontWeight.SemiBold,
                 fontSize = 11.sp * theme.textScale, lineHeight = 16.sp * theme.textScale,
                 letterSpacing = 0.sp)
             if (postAuthor) ComposeCommentAuthorBadge()
             if (level > 0) ComposeCommentLevelBadge(level)
-            if (separateTarget) Text("回复 $target", color = theme.muted,
-                modifier = Modifier.widthIn(max = availableWidth),
-                fontSize = 11.sp * theme.textScale, lineHeight = 16.sp * theme.textScale,
-                letterSpacing = 0.sp)
         }
-    }
-}
-
-@Composable
-internal fun ComposeCommentPinnedBadge() {
-    val theme = LocalHeyboxTheme.current
-    Box(Modifier.clip(RoundedCornerShape(3.dp)).background(theme.panelElevated)
-        .padding(horizontal = 4.dp * theme.uiScale, vertical = 1.dp * theme.uiScale)) {
-        Text("置顶", color = theme.text, fontSize = 8.sp * theme.textScale,
-            lineHeight = 11.sp * theme.textScale, fontWeight = FontWeight.Medium, letterSpacing = 0.sp)
     }
 }
 
@@ -197,17 +175,30 @@ internal fun ComposeCommentReplyText(
     meta: String,
     modifier: Modifier = Modifier,
     postAuthor: Boolean = false,
-    level: Int = 0,
 ) {
     val theme = LocalHeyboxTheme.current
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        ComposeCommentName(author, postAuthor, level, target = target)
-        if (text.isNotBlank() || cy) ComposeInlineText(text, theme.dark, theme.text, theme.link,
-            modifier = Modifier.fillMaxWidth(),
-            fontSize = 11.sp * theme.textScale, lineHeight = 17.sp * theme.textScale, cy = cy)
-        if (meta.isNotBlank()) Text(meta, color = theme.muted, fontSize = 9.sp * theme.textScale,
-            letterSpacing = 0.sp)
+    val prefix = remember(author, target, postAuthor, theme) {
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = theme.text, fontWeight = FontWeight.SemiBold)) {
+                append(author.ifBlank { "匿名用户" })
+            }
+            if (postAuthor) withStyle(SpanStyle(color = theme.text, background = theme.panelElevated,
+                fontSize = 8.sp * theme.textScale)) { append(" 作者") }
+            withStyle(SpanStyle(color = theme.muted)) {
+                if (target.isNotBlank()) append(" 回复 $target")
+                append("：")
+            }
+        }
     }
+    val suffix = remember(meta, theme) {
+        buildAnnotatedString {
+            if (meta.isNotBlank()) withStyle(SpanStyle(color = theme.muted,
+                fontSize = 9.sp * theme.textScale)) { append("  $meta") }
+        }
+    }
+    ComposeInlineText(text, theme.dark, theme.text, theme.link,
+        modifier = modifier.fillMaxWidth(), fontSize = 11.sp * theme.textScale,
+        lineHeight = 16.sp * theme.textScale, cy = cy, prefix = prefix, suffix = suffix)
 }
 
 @Composable
@@ -217,6 +208,7 @@ internal fun ComposeCommentImageGrid(
     reply: Boolean,
     onOpenImage: (String) -> Unit,
     requests: ComposeMediaImageRequests = ExistingComposeMediaImageRequests,
+    onOpenPreview: ((String, android.widget.ImageView) -> Unit)? = null,
 ) {
     if (images.isEmpty() || !media.enabled) return
     val theme = LocalHeyboxTheme.current
@@ -228,7 +220,9 @@ internal fun ComposeCommentImageGrid(
         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
             images.chunked(columns).forEach { rowImages ->
                 Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    rowImages.forEach { image -> ComposeCommentThumbnail(image, media, size, onOpenImage, requests) }
+                    rowImages.forEach { image ->
+                        ComposeCommentThumbnail(image, media, size, onOpenImage, requests, onOpenPreview)
+                    }
                     for (index in rowImages.size until columns) Spacer(Modifier.size(size))
                 }
             }
@@ -243,14 +237,14 @@ private fun ComposeCommentThumbnail(
     size: Dp,
     onOpenImage: (String) -> Unit,
     requests: ComposeMediaImageRequests,
+    onOpenPreview: ((String, android.widget.ImageView) -> Unit)?,
 ) {
     val theme = LocalHeyboxTheme.current
     val previewUrl = image.previewUrl.ifBlank { image.originalUrl }
     val originalUrl = image.originalUrl.ifBlank { previewUrl }
     var failed by remember(previewUrl, originalUrl) { mutableStateOf(false) }
     var retry by remember(previewUrl, originalUrl) { mutableStateOf(0) }
-    Box(Modifier.size(size).clip(RoundedCornerShape(6.dp)).background(theme.panelElevated)
-        .clickable(enabled = originalUrl.isNotBlank()) { onOpenImage(originalUrl) },
+    Box(Modifier.size(size).clip(RoundedCornerShape(6.dp)).background(theme.panelElevated),
         contentAlignment = Alignment.Center) {
         if (previewUrl.isBlank()) {
             Text("图片", color = theme.muted, fontSize = 9.sp, letterSpacing = 0.sp)
@@ -266,6 +260,8 @@ private fun ComposeCommentThumbnail(
                 ensureTouchTarget = false,
                 requests = requests,
                 onLoaded = { failed = !it },
+                onClick = { onOpenImage(originalUrl) },
+                onPreviewClick = onOpenPreview?.let { open -> { view -> open(originalUrl, view) } },
             )
             if (failed) Box(Modifier.fillMaxSize().clickable { failed = false; retry++ },
                 contentAlignment = Alignment.Center) {

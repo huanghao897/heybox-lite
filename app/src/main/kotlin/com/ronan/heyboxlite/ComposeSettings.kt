@@ -49,7 +49,6 @@ internal @Composable fun ComposeSettingsScreen(
         "video_settings" -> ComposeVideoSettingsScreen(
             services, onBack, onSettingsChanged,
         )
-        "feedback_group" -> ComposeFeedbackGroupScreen(onBack)
         "splash_preview" -> ComposeSplashPreviewScreen(services, onBack)
         "about" -> ComposeAboutScreen(services, onNavigate, onBack)
         "announcement_board" -> ComposeAnnouncementBoardScreen(services, onBack)

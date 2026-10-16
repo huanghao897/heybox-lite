@@ -1,7 +1,6 @@
 package com.ronan.heyboxlite
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,10 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -35,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.painterResource
@@ -64,7 +61,8 @@ internal sealed class ComposeDetailAction {
     data class LikeComment(val comment: JSONObject) : ComposeDetailAction()
     data class Reply(val comment: JSONObject, val rootId: String = "") : ComposeDetailAction()
     data class LoadReplies(val root: JSONObject) : ComposeDetailAction()
-    data class OpenCommentImage(val comment: JSONObject, val url: String) : ComposeDetailAction()
+    data class OpenCommentImage(val comment: JSONObject, val url: String,
+        val source: android.widget.ImageView? = null) : ComposeDetailAction()
 }
 
 @Composable
@@ -92,6 +90,7 @@ internal fun ComposeDetailScreen(
     notice: String = "",
     useImagePager: Boolean = false,
     onSettingsChanged: () -> Unit = {},
+    onOpenImagePreview: ((String, android.widget.ImageView) -> Unit)? = null,
 ) {
     HeyboxComposeTheme(services.theme) {
         val preview = LocalInspectionMode.current
@@ -119,7 +118,8 @@ internal fun ComposeDetailScreen(
         ComposeDetailLayout(item, content, videos, comments, loading, settings, onBack, onOpenImage,
             onOpenVideo, onCommentAction, listState, onOpenUser, services, link, active, replyStates,
             error, onRetry, actionRevision, visible = !active || loading || restored, notice = notice,
-            useImagePager = useImagePager, onVideoSettings = { videoSettings = true })
+            useImagePager = useImagePager, onVideoSettings = { videoSettings = true },
+            onOpenImagePreview = onOpenImagePreview)
         if (active && videoSettings) Dialog(onDismissRequest = { videoSettings = false },
             properties = DialogProperties(usePlatformDefaultWidth = false)) {
             ComposeVideoSettingsScreen(services, { videoSettings = false }, onSettingsChanged)
@@ -152,6 +152,7 @@ private fun ComposeDetailLayout(
     notice: String = "",
     useImagePager: Boolean = false,
     onVideoSettings: () -> Unit = {},
+    onOpenImagePreview: ((String, android.widget.ImageView) -> Unit)? = null,
 ) {
     val theme = LocalHeyboxTheme.current
     val roundScreen = theme.roundScreen
@@ -189,8 +190,9 @@ private fun ComposeDetailLayout(
             }
             itemsIndexed(bodyRows, key = { _, row -> "body-${row.index}" },
                 contentType = { _, row -> row.blocks.first().kind }) { _, row ->
-                if (row.blocks.size > 1) ComposeDetailImagePager(row.blocks.map { it.value }, media, onOpenImage)
-                else ComposeDetailBlock(row.blocks.first(), media, services, onOpenImage)
+                if (row.blocks.size > 1) ComposeDetailImagePager(row.blocks.map { it.value }, media,
+                    onOpenImage, onOpenPreview = onOpenImagePreview)
+                else ComposeDetailBlock(row.blocks.first(), media, services, onOpenImage, onOpenImagePreview)
             }
             itemsIndexed(videos, key = { index, _ -> "video-$index" }) { _, video ->
                 ComposeVideoCard(video, media, onVideoSettings = onVideoSettings, onOpenVideo = onOpenVideo)
@@ -202,7 +204,7 @@ private fun ComposeDetailLayout(
                     if (fallback.isNotBlank()) ComposeInlineText(fallback, theme.dark, theme.text, theme.link,
                         fontSize = 13.sp * bodyScale, lineHeight = 20.sp * bodyScale)
                     if (media.enabled) item.images.forEach { url ->
-                        ComposeDetailImage(url, media, onOpenImage)
+                        ComposeDetailImage(url, media, onOpenImage, onOpenPreview = onOpenImagePreview)
                     }
                 }
             }
@@ -230,9 +232,10 @@ private fun ComposeDetailLayout(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("评论 ${maxOf(item.comments, ordered.size)}", Modifier.weight(1f), fontSize = watchSp(13f),
                             color = theme.text, fontWeight = FontWeight.Bold)
-                        Row(Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(watchDp(7)))
-                            .background(theme.panelElevated).padding(watchDp(2))) {
+                        Row(Modifier.testTag("comment-sort-tabs"),
+                            verticalAlignment = Alignment.CenterVertically) {
                             ComposeDetailCommentSortTab("热门", !latest) { latest = false }
+                            Box(Modifier.width(0.5.dp).height(watchDp(9)).background(theme.hairline))
                             ComposeDetailCommentSortTab("最新", latest) { latest = true }
                         }
                     }

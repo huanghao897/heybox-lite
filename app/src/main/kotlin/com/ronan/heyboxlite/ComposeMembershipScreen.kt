@@ -21,7 +21,6 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -242,12 +241,6 @@ internal fun MembershipNotice(message: String) {
 
 @Composable
 internal fun MembershipRetry(onRetry: () -> Unit, enabled: Boolean) {
-    TextButton(onClick = onRetry, enabled = enabled,
-        modifier = Modifier.fillMaxWidth().heightIn(min = watchDp(36))) {
-        Icon(painterResource(R.drawable.il_refresh), "\u91cd\u8bd5",
-            tint = if (enabled) LocalHeyboxTheme.current.text else LocalHeyboxTheme.current.subtle,
-            modifier = Modifier.size(watchDp(15)))
-        Spacer(Modifier.width(watchDp(6)))
-        MembershipBodyText("\u91cd\u8bd5", fontSize = 12f)
-    }
+    WatchActionButton("\u91cd\u8bd5", onRetry, Modifier.fillMaxWidth(),
+        enabled = enabled, fontSize = 12f, icon = R.drawable.il_refresh)
 }

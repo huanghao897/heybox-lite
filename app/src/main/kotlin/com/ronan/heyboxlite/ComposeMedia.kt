@@ -4,6 +4,7 @@ import android.widget.ImageView as AndroidImageView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,12 +17,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,13 +62,21 @@ internal fun ComposeMediaImage(
     onLoaded: (Boolean) -> Unit = {},
     onImageSize: (Int, Int) -> Unit = { _, _ -> },
     onClick: (() -> Unit)? = null,
+    onPreviewClick: ((AndroidImageView) -> Unit)? = null,
 ) {
     val theme = LocalHeyboxTheme.current
     val surface = theme.panelElevated
-    val clickModifier = if (onClick == null) {
+    val source = remember { ComposeMediaPreviewSource() }
+    val clickModifier = if (onClick == null && onPreviewClick == null) {
         Modifier
     } else {
-        Modifier.clickable(onClick = onClick)
+        Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+        ) {
+            val view = source.view
+            if (view != null && onPreviewClick != null) onPreviewClick(view) else onClick?.invoke()
+        }
     }
     val targetModifier = if (ensureTouchTarget) {
         Modifier.heightIn(min = 48.dp)
@@ -113,9 +122,10 @@ internal fun ComposeMediaImage(
                         setBackgroundColor(surface.toArgb())
                     }
                 },
-                onReset = ::resetComposeMediaImage,
-                onRelease = ::resetComposeMediaImage,
+                onReset = { view -> source.clear(view); resetComposeMediaImage(view) },
+                onRelease = { view -> source.clear(view); resetComposeMediaImage(view) },
                 update = { view ->
+                    source.view = view
                     view.scaleType = if (contentScale == ContentScale.Fit) {
                         AndroidImageView.ScaleType.FIT_CENTER
                     } else {
@@ -127,6 +137,13 @@ internal fun ComposeMediaImage(
                 },
             )
         }
+    }
+}
+
+private class ComposeMediaPreviewSource {
+    var view: AndroidImageView? = null
+    fun clear(released: AndroidImageView) {
+        if (view === released) view = null
     }
 }
 

@@ -452,7 +452,7 @@ internal class ComposeAppHost(
             is ComposeDetailAction.LoadReplies -> detailComments.replies(action.root)
             is ComposeDetailAction.OpenCommentImage -> {
                 val gallery = composeCommentGallery(action.comment, action.url)
-                callbacks.requestImages(gallery.urls.toTypedArray(), gallery.index)
+                callbacks.requestImages(action.source, gallery.urls.toTypedArray(), gallery.index)
             }
         }
     }

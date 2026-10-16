@@ -47,6 +47,7 @@ internal fun ComposeDetailImage(
     media: ComposeMediaSettings,
     onOpenImage: (String) -> Unit,
     requests: ComposeMediaImageRequests = ExistingComposeMediaImageRequests,
+    onOpenPreview: ((String, android.widget.ImageView) -> Unit)? = null,
 ) {
     if (!media.enabled) return
     val theme = LocalHeyboxTheme.current
@@ -58,7 +59,8 @@ internal fun ComposeDetailImage(
             contentDescription = "打开正文图片", animated = GifSupport.isGifUrl(url),
             requests = requests, onImageSize = { width, imageHeight ->
                 if (width > 0 && imageHeight > 0) aspect = imageHeight.toFloat() / width
-            }, onClick = { onOpenImage(url) })
+            }, onClick = { onOpenImage(url) },
+            onPreviewClick = onOpenPreview?.let { open -> { view -> open(url, view) } })
     }
 }
 
@@ -68,6 +70,7 @@ internal fun ComposeDetailImagePager(
     media: ComposeMediaSettings,
     onOpenImage: (String) -> Unit,
     requests: ComposeMediaImageRequests = ExistingComposeMediaImageRequests,
+    onOpenPreview: ((String, android.widget.ImageView) -> Unit)? = null,
 ) {
     if (!media.enabled || urls.isEmpty()) return
     val theme = LocalHeyboxTheme.current
@@ -80,7 +83,8 @@ internal fun ComposeDetailImagePager(
                 ComposeMediaImage(urls[page], media, Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit, contentDescription = "打开正文图片",
                     animated = page == pager.settledPage && GifSupport.isGifUrl(urls[page]),
-                    requests = requests, onClick = { onOpenImage(urls[page]) })
+                    requests = requests, onClick = { onOpenImage(urls[page]) },
+                    onPreviewClick = onOpenPreview?.let { open -> { view -> open(urls[page], view) } })
             }
             Text("${pager.currentPage + 1}/${urls.size}", color = Color.White,
                 fontSize = watchSp(10f), modifier = Modifier.align(Alignment.TopEnd)

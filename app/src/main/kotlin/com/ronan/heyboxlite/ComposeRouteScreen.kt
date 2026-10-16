@@ -69,6 +69,7 @@ internal fun ComposeRouteScreen(
             val loading by host.search.loading
             val noMore by host.search.noMore
             val query by host.search.query
+            val history by host.search.history
             ComposeSearchScreen(
                 query, items, loading, noMore, services,
                 onQueryChange = host.search::setQuery,
@@ -77,6 +78,8 @@ internal fun ComposeRouteScreen(
                 onLoadMore = host.search::loadMore,
                 listState = listState,
                 observeLoadMore = active,
+                history = history,
+                onClearHistory = host.search::clearHistory,
             )
         }
         "detail" -> {
@@ -98,6 +101,10 @@ internal fun ComposeRouteScreen(
                     onOpenImage = { selected ->
                         val gallery = composeDetailGallery(state, selected)
                         host.callbacks.requestImages(gallery.urls.toTypedArray(), gallery.index)
+                    },
+                    onOpenImagePreview = { selected, source ->
+                        val gallery = composeDetailGallery(state, selected)
+                        host.callbacks.requestImages(source, gallery.urls.toTypedArray(), gallery.index)
                     },
                     onOpenVideo = { host.callbacks.requestVideo(it) },
                     onOpenUser = { id, name, avatar ->
@@ -122,7 +129,7 @@ internal fun ComposeRouteScreen(
         }
         "settings_home", "display_settings", "display_preview", "startup_settings",
         "app_settings", "video_settings", "splash_preview", "about",
-        "announcement_board", "feedback_group" -> ComposeSettingsScreen(
+        "announcement_board" -> ComposeSettingsScreen(
             route, services, host::navigate, { host.handleBack() },
             host.callbacks::settingsChanged,
         )

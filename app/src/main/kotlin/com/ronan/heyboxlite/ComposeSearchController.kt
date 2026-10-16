@@ -16,6 +16,7 @@ internal class ComposeSearchController(
     val items: MutableState<List<FeedItem>> = mutableStateOf(emptyList())
     val loading: MutableState<Boolean> = mutableStateOf(false)
     val noMore: MutableState<Boolean> = mutableStateOf(false)
+    val history: MutableState<List<String>> = mutableStateOf(session.searchHistory())
 
     private var offset = 0
     private var requestSerial = 0
@@ -50,6 +51,11 @@ internal class ComposeSearchController(
         search(lastKeyword, true)
     }
 
+    fun clearHistory() {
+        session.clearSearchHistory()
+        history.value = emptyList()
+    }
+
     fun close() {
         delayed?.let(handler::removeCallbacks)
         delayed = null
@@ -66,6 +72,7 @@ internal class ComposeSearchController(
             lastKeyword = keyword
             noMore.value = false
             session.addSearchHistory(keyword)
+            history.value = session.searchHistory()
         }
         val serial = ++requestSerial
         api.get(

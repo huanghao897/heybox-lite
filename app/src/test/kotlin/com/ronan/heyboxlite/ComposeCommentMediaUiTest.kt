@@ -38,6 +38,30 @@ class ComposeCommentMediaUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val requests = Images()
 
+    @Test fun aCommentPreviewOpensItsOriginalUsingTheDisplayedThumbnail() {
+        val images = listOf(CommentData.CommentImage("preview.jpg", "original.jpg", "image/jpeg", false))
+        var source: ImageView? = null
+        var original = ""
+        var fallbackCalls = 0
+        compose.setContent {
+            HeyboxComposeTheme(composePreviewTheme(false)) {
+                Box(Modifier.width(184.dp)) {
+                    ComposeCommentImageGrid(images, ComposeMediaSettings(), false, { fallbackCalls++ },
+                        requests, onOpenPreview = { url, view -> original = url; source = view })
+                }
+            }
+        }
+        compose.onAllNodes(hasClickAction()).assertCountEquals(1)
+        compose.onAllNodes(hasClickAction())[0].performClick()
+        compose.runOnIdle {
+            assertEquals("original.jpg", original)
+            assertEquals(0, fallbackCalls)
+            assertNotNull(source)
+            assertTrue(requireNotNull(source).isAttachedToWindow)
+            assertNotNull(requireNotNull(source).drawable)
+        }
+    }
+
     @Test fun narrowRoundReplyUsesSingleImageColumnsAndOpensOriginals() {
         val opened = mutableListOf<String>()
         val images = (1..3).map { CommentData.CommentImage("preview-$it", "original-$it", "image/jpeg", false) }
@@ -135,7 +159,7 @@ class ComposeCommentMediaUiTest {
     }
 
     @Test fun longReplyTargetWrapsWithinSmallRoundWidthRatherThanOverlappingTheBody() {
-        val heading = "Very long author name 回复 Very long target user name"
+        val heading = "Very long author name 回复 Very long target user name：Body  Today"
         compose.setContent {
             HeyboxComposeTheme(composePreviewTheme(true)) {
                 Box(Modifier.fillMaxSize(), Alignment.Center) {

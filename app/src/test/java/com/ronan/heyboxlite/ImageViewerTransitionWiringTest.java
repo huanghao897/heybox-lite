@@ -31,7 +31,9 @@ public class ImageViewerTransitionWiringTest {
     public void automaticCommentOriginalLoadingDoesNotFlashTheSpinner() throws Exception {
         String source = read("ImageViewerActivity.java");
 
-        assertTrue(source.contains("long delay = Motions.off() ? 0L"));
+        assertTrue(source.contains("private void completePageEnter(int index)"));
+        assertTrue(source.contains("pageEnter != PageEnter.FINISHED"));
+        assertFalse(source.contains("private void schedulePreviewUpgrade"));
         assertTrue(source.contains("spinner.setVisibility(View.GONE)"));
         assertTrue(source.contains("if (!automatic) spinner.setVisibility(View.GONE)"));
         assertTrue(source.contains("if (!automatic) {\n            spinner.setAlpha(1f)"));
@@ -42,7 +44,7 @@ public class ImageViewerTransitionWiringTest {
         String source = read("ImageViewerActivity.java");
 
         assertTrue(source.contains("private void applyLoadedBitmap(ZoomImageView view, Bitmap bitmap)"));
-        assertTrue(source.contains("view.setImageBitmap(bitmap);\n        if (view.getWidth() > 0"));
+        assertTrue(source.contains("view.replaceBitmap(bitmap)"));
         assertFalse(source.contains("view.animate().cancel();\n            view.setImageBitmap(bitmap)"));
     }
 

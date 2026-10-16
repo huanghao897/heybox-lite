@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.doubleClick
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -44,6 +45,7 @@ class ComposeCommentThreadUiTest {
 
     @Test fun squareMetadataBadgesOfficialLikeAndAvatarUseCurrentSnapshot() {
         val opened = mutableListOf<List<String>>()
+        val copied = mutableListOf<String>()
         val actions = mutableListOf<ComposeDetailAction>()
         val group = mutableStateOf(group("root", replies = 0, expected = 0))
         val original = group.value.getJSONArray("comment").getJSONObject(0)
@@ -53,7 +55,7 @@ class ComposeCommentThreadUiTest {
         compose.setContent {
             HeyboxComposeTheme(composePreviewTheme(false)) {
                 ComposeDetailThread(group.value, authorItem(), false, media, actions::add,
-                    { id, name, avatar -> opened += listOf(id, name, avatar) })
+                    { id, name, avatar -> opened += listOf(id, name, avatar) }, onCopyComment = copied::add)
             }
         }
         compose.onNodeWithText("置顶").assertExists()
@@ -74,7 +76,10 @@ class ComposeCommentThreadUiTest {
         compose.onNodeWithText("9", useUnmergedTree = true).assertExists()
         assertEquals("已点赞", like.fetchSemanticsNode().config[SemanticsProperties.StateDescription])
         compose.onNodeWithContentDescription("Author的头像").performClick()
+        assertTrue(opened.isEmpty())
+        compose.onNodeWithContentDescription("Author的头像").performTouchInput { longClick() }
         assertEquals(listOf(listOf("author-id", "Author", "original-avatar")), opened)
+        assertTrue("Avatar long press must not copy the surrounding comment", copied.isEmpty())
         compose.runOnIdle {
             assertFalse(containsNativeRichText(compose.activity.window.decorView))
             captureMembershipUi(compose.activity, "comment-thread-square240-metadata")
@@ -109,7 +114,8 @@ class ComposeCommentThreadUiTest {
             assertTrue(badge.left >= section.left && badge.right <= section.right)
             assertTrue(badge.bottom <= like.top)
         }
-        compose.onNodeWithText("Reply 1 回复 Long sibling name").performScrollTo().assertExists()
+        compose.onNodeWithText("Reply 1 回复 Long sibling name：Body 1", substring = true)
+            .performScrollTo().assertExists()
         compose.runOnIdle { captureMembershipUi(compose.activity, "comment-thread-round148-large-text") }
     }
 
@@ -190,15 +196,15 @@ class ComposeCommentThreadUiTest {
             state.value = ComposeReplyLoadState(hasMore = false)
         }
         compose.onNodeWithText("展开 5 条回复").assertDoesNotExist()
-        compose.onNodeWithText("Reply 3").assertExists()
+        compose.onNodeWithTag("comment-reply-3").assertExists()
         compose.runOnIdle {
             payload.value = group("root", replies = 10, expected = 10)
         }
         compose.onNodeWithText("展开 5 条回复").performScrollTo().performClick()
-        compose.onNodeWithText("Reply 10").assertExists()
+        compose.onNodeWithTag("comment-reply-10").assertExists()
         compose.runOnIdle { payload.value = group("another-root", replies = 10, expected = 10) }
-        compose.onNodeWithText("Reply 6").assertDoesNotExist()
-        compose.onNodeWithText("Reply 5").assertExists()
+        compose.onNodeWithTag("comment-reply-6").assertDoesNotExist()
+        compose.onNodeWithTag("comment-reply-5").assertExists()
     }
 
     @Test fun collapsingDuringARealRequestDoesNotReexpandWhenItsRepliesArrive() {
@@ -219,8 +225,8 @@ class ComposeCommentThreadUiTest {
             payload.value = group("root", replies = 13, expected = 13)
             state.value = ComposeReplyLoadState(hasMore = false)
         }
-        compose.onNodeWithText("Reply 6").assertDoesNotExist()
-        compose.onNodeWithText("Reply 5").assertExists()
+        compose.onNodeWithTag("comment-reply-6").assertDoesNotExist()
+        compose.onNodeWithTag("comment-reply-5").assertExists()
     }
 
     @Test fun cachedReplyExpansionSurvivesRestorationAndStillAdvancesFiveAtATime() {
@@ -235,12 +241,12 @@ class ComposeCommentThreadUiTest {
         }
         compose.onNodeWithText("展开 5 条回复").performScrollTo().performClick()
         restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithText("Reply 10").assertExists()
-        compose.onNodeWithText("Reply 11").assertDoesNotExist()
+        compose.onNodeWithTag("comment-reply-10").assertExists()
+        compose.onNodeWithTag("comment-reply-11").assertDoesNotExist()
         compose.onNodeWithText("展开 2 条回复").performScrollTo().performClick()
-        compose.onNodeWithText("Reply 12").assertExists()
+        compose.onNodeWithTag("comment-reply-12").assertExists()
         compose.onNodeWithText("收起回复").performScrollTo().performClick()
-        compose.onNodeWithText("Reply 6").assertDoesNotExist()
+        compose.onNodeWithTag("comment-reply-6").assertDoesNotExist()
     }
 
     private fun invokeCommentAction(commentId: String, label: String) {

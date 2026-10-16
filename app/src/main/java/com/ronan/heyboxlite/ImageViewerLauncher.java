@@ -38,11 +38,6 @@ final class ImageViewerLauncher {
             intent.putExtra(ImageViewerActivity.EXTRA_INDEX, currentIndex);
         }
         Rect bounds = ImageTransitionSource.visibleBoundsOnScreen(source);
-        if (bounds.width() <= 0 || bounds.height() <= 0) {
-            int width = activity.getResources().getDisplayMetrics().widthPixels;
-            int height = activity.getResources().getDisplayMetrics().heightPixels;
-            bounds.set(0, 0, Math.max(1, width), Math.max(1, height));
-        }
         intent.putExtra(ImageViewerActivity.EXTRA_ORIGIN_X, bounds.centerX());
         intent.putExtra(ImageViewerActivity.EXTRA_ORIGIN_Y, bounds.centerY());
         intent.putExtra(ImageViewerActivity.EXTRA_ORIGIN_WIDTH, bounds.width());
