@@ -35,11 +35,12 @@ final class LiteDialogPresenter {
 
         LinearLayout content = new LinearLayout(this.activity);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(16), dp(14), dp(16), dp(14));
+        int padding = this.session.usesRoundLayout() ? 8 : 16;
+        int verticalPadding = this.session.usesRoundLayout() ? 8 : 14;
+        content.setPadding(dp(padding), dp(verticalPadding), dp(padding), dp(verticalPadding));
         GradientDrawable background = UiComponents.round(
                 this.activity, this.tokens.panel, 12, uiScale());
         background.setStroke(Math.max(1, dp(1)), this.tokens.hairline);
-        Compat.setBackground(content, background);
 
         TextView titleView = text(title, 17.0f, this.tokens.text);
         titleView.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
@@ -48,17 +49,22 @@ final class LiteDialogPresenter {
             content.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
         }
 
-        MaxHeightScrollView scroll = new MaxHeightScrollView(this.activity);
-        scroll.setFillViewport(false);
-        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         TextView body = text(message, 13.0f, this.tokens.text);
         body.setLineSpacing(dp(2), 1.18f);
         body.setTextIsSelectable(true);
         body.setPadding(0, TextUtils.isEmpty(title) ? 0 : dp(10), 0, dp(2));
-        int availableHeight = this.activity.getResources().getDisplayMetrics().heightPixels - dp(230);
-        scroll.setMaxHeight(Math.max(dp(96), Math.min(availableHeight, dp(330))));
-        scroll.addView(body, new android.widget.FrameLayout.LayoutParams(-1, -2));
-        content.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+        if (this.session.usesRoundLayout()) {
+            content.addView(body, new LinearLayout.LayoutParams(-1, -2));
+        } else {
+            MaxHeightScrollView scroll = new MaxHeightScrollView(this.activity);
+            scroll.setFillViewport(false);
+            scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+            int availableHeight = this.activity.getResources().getDisplayMetrics().heightPixels
+                    - dp(230);
+            scroll.setMaxHeight(Math.max(dp(96), Math.min(availableHeight, dp(330))));
+            scroll.addView(body, new android.widget.FrameLayout.LayoutParams(-1, -2));
+            content.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+        }
 
         AlertDialog[] holder = new AlertDialog[1];
         List<TextView> actions = new ArrayList<>();
@@ -67,7 +73,13 @@ final class LiteDialogPresenter {
         addAction(actions, positiveText, true, holder, positiveAction);
         addActions(content, actions);
 
-        AlertDialog dialog = new AlertDialog.Builder(this.activity).setView(content).create();
+        boolean round = this.session.usesRoundLayout();
+        View dialogContent = round
+                ? new NativeDialogLayout(this.activity, true, uiScale(), content) : content;
+        Compat.setBackground(dialogContent, background);
+        AlertDialog dialog = new AlertDialog.Builder(this.activity).create();
+        if (round) dialog.setView(dialogContent, 0, 0, 0, 0);
+        else dialog.setView(dialogContent);
         holder[0] = dialog;
         dialog.setCanceledOnTouchOutside(true);
         dialog.show();
@@ -75,8 +87,9 @@ final class LiteDialogPresenter {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0));
             dialog.getWindow().setDimAmount(this.session.darkMode() ? 0.46f : 0.32f);
             dialog.getWindow().setLayout(dialogWidth(), -2);
+            if (round) ((NativeDialogLayout) dialogContent).bindWindow(dialog.getWindow());
         }
-        Motions.dialogIn(content);
+        Motions.dialogIn(dialogContent);
         return dialog;
     }
 
@@ -96,8 +109,8 @@ final class LiteDialogPresenter {
         actions.setPadding(0, dp(8), 0, 0);
         for (int i = 0; i < actionViews.size(); i++) {
             LinearLayout.LayoutParams params = compact
-                    ? new LinearLayout.LayoutParams(-2, dp(36))
-                    : new LinearLayout.LayoutParams(-1, dp(36));
+                    ? new LinearLayout.LayoutParams(-2, -2)
+                    : new LinearLayout.LayoutParams(-1, -2);
             if (i > 0) {
                 if (compact) params.leftMargin = dp(7);
                 else params.topMargin = dp(7);
@@ -117,7 +130,7 @@ final class LiteDialogPresenter {
         view.setGravity(Gravity.CENTER);
         view.setMinWidth(dp(72));
         view.setMinHeight(dp(36));
-        view.setPadding(dp(12), 0, dp(12), 0);
+        view.setPadding(dp(12), dp(6), dp(12), dp(6));
         Compat.setBackground(view, UiComponents.round(
                 this.activity, fill, 11, uiScale()));
         view.setOnClickListener(ignored -> {
@@ -138,13 +151,12 @@ final class LiteDialogPresenter {
             requiredWidth += Math.max(dp(72), textWidth
                     + action.getPaddingLeft() + action.getPaddingRight());
         }
-        return requiredWidth <= dialogWidth() - dp(32);
+        int padding = this.session.usesRoundLayout() ? 16 : 32;
+        return requiredWidth <= dialogWidth() - dp(padding);
     }
 
     private int dialogWidth() {
-        int screenWidth = this.activity.getResources().getDisplayMetrics().widthPixels;
-        int preferred = Math.max(dp(220), Math.min(screenWidth - dp(28), dp(360)));
-        return Math.max(1, Math.min(screenWidth - dp(8), preferred));
+        return NativeDialogLayout.width(this.activity, this.session.usesRoundLayout(), uiScale());
     }
 
     private TextView text(String value, float size, int color) {

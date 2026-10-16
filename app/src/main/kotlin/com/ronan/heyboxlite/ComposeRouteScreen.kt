@@ -122,6 +122,7 @@ internal fun ComposeRouteScreen(
                     notice = state.body?.optString("_fallback_notice").orEmpty(),
                     useImagePager = state.useImagePager,
                     onSettingsChanged = host.callbacks::settingsChanged,
+                    onPageNavigation = { host.setDetailPage(state.entryKey, it) },
                 )
                 val editor by host.detailComments.editor
                 if (active && editor != null) ComposeCommentEditor(editor!!, host.detailComments)

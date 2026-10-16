@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,11 +20,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -349,38 +355,20 @@ internal fun ComposeThemeDialog(
     val session = services.session
     val currentPrimary = ThemePalette.currentPrimary(session)
     val currentSecondary = ThemePalette.currentSecondary(session)
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        WatchCard(modifier = Modifier.padding(watchDp(10))) {
-            Text(
-                text = "颜色主题",
-                color = LocalHeyboxTheme.current.text,
-                fontSize = watchSp(15f),
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = watchDp(11), vertical = watchDp(8)),
-            )
-            (0 until ThemePalette.count()).chunked(3).forEach { row ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = watchDp(8)),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    row.forEach { index ->
-                        val selected = currentPrimary == ThemePalette.primary(index)
-                                && currentSecondary == ThemePalette.secondary(index)
-                        Column(
-                            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(vertical = watchDp(5)),
-                        ) {
-                            androidx.compose.foundation.layout.Box(
-                                modifier = Modifier
-                                    .size(watchDp(40))
-                                    .padding(watchDp(3))
-                                    .then(
-                                        if (selected) Modifier.background(
-                                            LocalHeyboxTheme.current.text,
-                                            androidx.compose.foundation.shape.CircleShape,
-                                        ) else Modifier,
-                                    )
-                                    .padding(watchDp(2))
+    WatchDialog("颜色主题", onDismiss) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val columns = (maxWidth / watchDp(56)).toInt().coerceIn(1, 3)
+            Column(verticalArrangement = Arrangement.spacedBy(watchDp(5))) {
+                (0 until ThemePalette.count()).chunked(columns).forEach { row ->
+                    Row(Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(watchDp(4))) {
+                        row.forEach { index ->
+                            val selected = currentPrimary == ThemePalette.primary(index)
+                                    && currentSecondary == ThemePalette.secondary(index)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.weight(1f)
+                                    .semantics { contentDescription = ThemePalette.name(index) }
                                     .clickable {
                                         session.setTheme(
                                             Format.colorHex(ThemePalette.primary(index)),
@@ -388,15 +376,20 @@ internal fun ComposeThemeDialog(
                                         )
                                         onSettingsChanged()
                                         onDismiss()
-                                    },
+                                    }
+                                    .padding(vertical = watchDp(5)),
                             ) {
-                                ThemeSwatch(index, selected)
+                                Box(Modifier.size(watchDp(40)).padding(watchDp(3))
+                                    .then(if (selected) Modifier.background(
+                                        LocalHeyboxTheme.current.text,
+                                        androidx.compose.foundation.shape.CircleShape,
+                                    ) else Modifier).padding(watchDp(2))) {
+                                    ThemeSwatch(index, selected)
+                                }
+                                Text(ThemePalette.name(index),
+                                    color = LocalHeyboxTheme.current.muted,
+                                    fontSize = watchSp(9f), textAlign = TextAlign.Center)
                             }
-                            Text(
-                                ThemePalette.name(index),
-                                color = LocalHeyboxTheme.current.muted,
-                                fontSize = watchSp(9f),
-                            )
                         }
                     }
                 }

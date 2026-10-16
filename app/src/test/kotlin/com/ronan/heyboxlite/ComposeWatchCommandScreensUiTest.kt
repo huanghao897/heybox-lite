@@ -5,33 +5,47 @@ import android.os.Handler
 import android.os.Looper
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.text.TextLayoutResult
+import kotlin.math.roundToInt
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], application = Application::class, qualifiers = "w240dp-h320dp-mdpi")
+@Config(sdk = [28], application = Application::class, qualifiers = "w240dp-h320dp-mdpi",
+    shadows = [WatchCommandCheckinControllerShadow::class])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 internal class ComposeWatchCommandScreensUiTest : ComposeWatchActionButtonTestHarness() {
     private var api: ApiClient? = null
     private var coordinator: CheckinCenterCoordinator? = null
     private var controller: ComposeCheckinController? = null
+
+    @Before fun clearCommands() { WatchCommandCheckinControllerShadow.commands.clear() }
 
     @After fun closeServices() {
         controller?.close()
@@ -49,7 +63,7 @@ internal class ComposeWatchCommandScreensUiTest : ComposeWatchActionButtonTestHa
     fun lightRoundEmailActionHasAVisibleSurface() = verifyCodeAction(email = true, dark = false)
 
     @Test @Config(qualifiers = "w160dp-h240dp-mdpi")
-    fun narrowBigTextSmsActionWrapsWithoutTakingTheInputWidth() =
+    fun narrowBigTextSmsActionStacksWithoutTruncation() =
         verifyCodeAction(email = false, dark = false, large = true)
 
     @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
@@ -57,15 +71,23 @@ internal class ComposeWatchCommandScreensUiTest : ComposeWatchActionButtonTestHa
         verifyCodeAction(email = true, dark = true, large = true)
 
     @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
-    fun darkReducedScaleSmallRoundEmailActionWrapsInsideTheCircle() =
+    fun darkReducedScaleSmallRoundEmailActionStacksInsideTheCircle() =
         verifyCodeAction(email = true, dark = true, large = true, uiScale = 0.5f)
 
     @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
-    fun lightReducedScaleSmallRoundSmsActionWrapsInsideTheCircle() =
+    fun lightReducedScaleSmallRoundSmsActionStacksInsideTheCircle() =
         verifyCodeAction(email = false, dark = false, large = true, uiScale = 0.5f)
 
+    @Test @Config(qualifiers = "w360dp-h480dp-mdpi")
+    fun wideSquareEmailActionStaysBesideItsInput() =
+        verifyCodeAction(email = true, dark = true, stacked = false)
+
+    @Test @Config(qualifiers = "w360dp-h480dp-mdpi")
+    fun wideSquareSmsActionStaysBesideItsInput() =
+        verifyCodeAction(email = false, dark = false, stacked = false)
+
     private fun verifyCodeAction(email: Boolean, dark: Boolean, large: Boolean = false,
-                                 uiScale: Float? = null) {
+                                 uiScale: Float? = null, stacked: Boolean = true) {
         val palette = theme(dark, large, uiScale)
         val services = services(palette)
         val center = CheckinCenterCoordinator(compose.activity, services.cache)
@@ -84,14 +106,18 @@ internal class ComposeWatchCommandScreensUiTest : ComposeWatchActionButtonTestHa
         }
         val label = if (email) state.value.serviceEmailButton else state.value.mobileSmsButton
         val enabled = reach(label).assertIsEnabled()
-        assertFits(label, wrapped = large)
+        assertFits(label)
         assertSurface(enabled, palette, true, "send-enabled")
         val fieldLabel = if (email) "6 \u4f4d\u90ae\u7bb1\u9a8c\u8bc1\u7801" else "+86 \u624b\u673a\u53f7"
-        val input = bounds(text(fieldLabel, unmerged = true))
-        val action = bounds(enabled)
-        assertTrue("Send button must leave useful input width", input.width >= 35)
-        assertTrue("Input and command may not overlap", input.right <= action.left)
-        assertPlaceholderVerticalFit(fieldLabel, palette)
+        assertCodeControlsSeparated(fieldLabel, label, stacked, palette)
+        reach(fieldLabel)
+        assertFits(fieldLabel)
+        val layouts = mutableListOf<TextLayoutResult>()
+        text(fieldLabel, unmerged = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertEquals("Placeholder ink", palette.subtle.toArgb(), layouts.single().layoutInput.style.color.toArgb())
+        val command = if (email) "email" else "sms"
+        reach(label).assertIsEnabled().performTouchInput { click() }
+        compose.runOnIdle { assertEquals(listOf(command), WatchCommandCheckinControllerShadow.commands) }
         val retryLabel = "60 s \u540e\u91cd\u8bd5"
         compose.runOnIdle {
             state.value = if (email) state.value.copy(serviceEmailButton = retryLabel,
@@ -101,12 +127,41 @@ internal class ComposeWatchCommandScreensUiTest : ComposeWatchActionButtonTestHa
         val disabled = reach(retryLabel).assertIsNotEnabled()
         assertFits(retryLabel)
         assertSurface(disabled, palette, false, "send-countdown-disabled")
+        assertCodeControlsSeparated(fieldLabel, retryLabel, stacked, palette)
         val previous = state.value
         val ownerState = owner.uiState
         disabled.performClick().performTouchInput { click() }
         compose.runOnIdle {
             assertEquals(previous, state.value)
             assertEquals("Disabled command may not enter its controller", ownerState, owner.uiState)
+            assertEquals("Disabled command must not dispatch", listOf(command), WatchCommandCheckinControllerShadow.commands)
+        }
+    }
+
+    private fun codeField(label: String): SemanticsNodeInteraction {
+        return compose.onNodeWithTag("checkin-field-$label", useUnmergedTree = true)
+    }
+
+    private fun assertCodeControlsSeparated(fieldLabel: String, actionLabel: String, stacked: Boolean,
+                                           theme: ComposeThemeState) {
+        // BasicTextField exposes its editable area, inside the painted field's padding.
+        val editable = bounds(codeField(fieldLabel))
+        val density = compose.activity.resources.displayMetrics.density
+        val horizontalPadding = (10 * theme.uiScale * density).roundToInt()
+        val verticalPadding = (9 * theme.uiScale * density).roundToInt()
+        val input = Rect(editable.left - horizontalPadding, editable.top - verticalPadding,
+            editable.right + horizontalPadding, editable.bottom + verticalPadding)
+        val action = bounds(text(actionLabel))
+        val horizontal = input.right <= action.left || action.right <= input.left
+        val vertical = input.bottom <= action.top || action.bottom <= input.top
+        assertTrue("Send button must leave useful input width: $editable", editable.width >= 35)
+        assertTrue("Input and command may not overlap: $input / $action", horizontal || vertical)
+        if (stacked) {
+            assertTrue("Narrow action must follow its input vertically: $input / $action", input.bottom <= action.top)
+            assertEquals("Stacked action must use the input's full width", input.left, action.left, 0.5f)
+            assertEquals("Stacked action must use the input's full width", input.right, action.right, 0.5f)
+        } else {
+            assertTrue("Wide action must remain beside its input: $input / $action", input.right <= action.left)
         }
     }
 
@@ -217,4 +272,13 @@ internal class ComposeWatchCommandScreensUiTest : ComposeWatchActionButtonTestHa
         return ComposeServices(context, session, client, GameDetailClient(client), LocalCache(context),
             Handler(Looper.getMainLooper()), ReadingTimeTracker(context), null, theme, ComposeToast {})
     }
+}
+
+/** Record real form-button dispatch without sending email, SMS, or credentials. */
+@Implements(value = ComposeCheckinController::class, isInAndroidSdk = false)
+internal class WatchCommandCheckinControllerShadow {
+    @Implementation fun sendRegistrationEmail() { commands += "email" }
+    @Implementation fun sendSmsCode() { commands += "sms" }
+
+    companion object { val commands = mutableListOf<String>() }
 }

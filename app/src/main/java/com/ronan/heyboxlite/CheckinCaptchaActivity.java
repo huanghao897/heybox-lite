@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -91,28 +92,30 @@ public final class CheckinCaptchaActivity extends Activity {
     }
 
     private void buildContent() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
+        NativeCaptchaLayout root = new NativeCaptchaLayout(this, roundLayout);
         GradientDrawable background = new GradientDrawable();
         background.setColor(Color.rgb(18, 18, 18));
         background.setCornerRadius(dp(14));
         Compat.setBackground(root, background);
 
         FrameLayout toolbar = new FrameLayout(this);
-        toolbar.setPadding(dp(14), 0, dp(6), 0);
+        toolbar.setPadding(dp(roundLayout ? 4 : 14), 0, dp(roundLayout ? 4 : 6), 0);
         root.addView(toolbar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
 
         statusView = new TextView(this);
         statusView.setText("正在加载安全验证");
         statusView.setTextColor(Color.WHITE);
-        statusView.setTextSize(13.0f);
+        statusView.setTextSize(roundLayout ? 11.0f : 13.0f);
         statusView.setGravity(Gravity.CENTER_VERTICAL);
-        statusView.setSingleLine(true);
+        statusView.setSingleLine(!roundLayout);
+        if (roundLayout) statusView.setMaxLines(2);
+        statusView.setEllipsize(TextUtils.TruncateAt.END);
         statusView.setPadding(0, 0, dp(82), 0);
         toolbar.addView(statusView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
+        root.bindToolbar(toolbar, statusView);
 
         retryButton = new ImageButton(this);
         retryButton.setImageDrawable(
@@ -157,8 +160,8 @@ public final class CheckinCaptchaActivity extends Activity {
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
         int edgeInset = roundLayout ? 4 : 12;
         int bottomInset = roundLayout ? 4 : 20;
-        int availableWidth = Math.max(dp(120), screenWidth - dp(edgeInset));
-        int availableHeight = Math.max(dp(160), screenHeight - dp(bottomInset));
+        int availableWidth = Math.max(1, screenWidth - dp(edgeInset));
+        int availableHeight = Math.max(1, screenHeight - dp(bottomInset));
         int width = roundLayout ? availableWidth : Math.min(availableWidth, dp(420));
         int preferredHeight = Math.min(Math.round(screenHeight * 0.72f), dp(520));
         int height = roundLayout

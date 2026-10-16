@@ -120,7 +120,8 @@ public class GestureOwnershipWiringTest {
         assertTrue(bridge.contains("activity.content.setVisibility(View.INVISIBLE);"));
         assertTrue(bridge.contains("createReturnPreview(legacyReturnRoute)"));
         int openStart = host.indexOf("internal fun openDetail(item: FeedItem)");
-        int openEnd = host.indexOf("internal fun detailAction", openStart);
+        int openEnd = host.indexOf("fun likeDetailComment", openStart);
+        assertTrue("The detail entry and its following method must exist", openStart >= 0 && openEnd > openStart);
         assertFalse(host.substring(openStart, openEnd).contains("navigation.showDetailLoading(item)"));
         assertTrue(bridge.contains("if (activity.composeAppHost != null) activity.composeAppHost.close();"));
     }

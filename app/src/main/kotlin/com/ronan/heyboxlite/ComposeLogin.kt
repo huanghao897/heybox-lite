@@ -6,7 +6,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,8 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.util.concurrent.Executors
 
 /** QR login rendered entirely in Compose; polling remains in the existing controller. */
@@ -37,7 +42,6 @@ internal fun ComposeLoginScreen(
     onGuest: () -> Unit,
     onLoggedIn: () -> Unit,
 ) {
-    val theme = LocalHeyboxTheme.current
     val controller = remember(services.api, services.handler) {
         QrLoginController(services.api, services.handler)
     }
@@ -100,6 +104,13 @@ internal fun ComposeLoginScreen(
         controller.start(listener)
     }
 
+    ComposeLoginContent(bitmap, status, onBack, onGuest) { retry++ }
+}
+
+@Composable
+internal fun ComposeLoginContent(bitmap: Bitmap?, status: String, onBack: () -> Unit,
+    onGuest: () -> Unit, onRetry: () -> Unit) {
+    val theme = LocalHeyboxTheme.current
     WatchPage("登录小黑盒", onBack) {
         WatchCard {
             Column(
@@ -108,28 +119,34 @@ internal fun ComposeLoginScreen(
                 verticalArrangement = Arrangement.spacedBy(watchDp(7)),
             ) {
                 Text("heybox Lite", color = theme.text, fontSize = watchSp(18f),
-                    fontWeight = FontWeight.SemiBold)
+                    fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
                 Text(status, color = if (status.contains("失败") || status.contains("过期"))
-                    theme.accent else theme.muted, fontSize = watchSp(11f))
-                Box(
-                    modifier = Modifier
-                        .size(watchDp(150))
-                        .background(Color.White, RoundedCornerShape(watchDp(7)))
-                        .border(watchDp(1), theme.hairline, RoundedCornerShape(watchDp(7)))
-                        .padding(watchDp(7)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val current = bitmap
-                    if (current != null && !current.isRecycled) {
-                        Image(current.asImageBitmap(), "登录二维码", Modifier.size(watchDp(136)),
-                            contentScale = ContentScale.FillBounds)
-                    } else {
-                        Text("二维码", color = Color.DarkGray, fontSize = watchSp(12f))
-                    }
-                }
-                Text("请使用小黑盒 App 扫码登录", color = theme.muted, fontSize = watchSp(11f))
-                WatchActionText("重新获取") { retry++ }
+                    theme.accent else theme.muted, fontSize = watchSp(11f), letterSpacing = 0.sp)
+                ComposeLoginQr(bitmap)
+                Text("请使用小黑盒 App 扫码登录", color = theme.muted, fontSize = watchSp(11f), letterSpacing = 0.sp)
+                WatchActionText("重新获取", onRetry)
                 WatchActionText("游客浏览", onGuest)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ComposeLoginQr(bitmap: Bitmap?) {
+    val theme = LocalHeyboxTheme.current
+    val config = LocalConfiguration.current
+    BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        val diameter = minOf(config.screenWidthDp, config.screenHeightDp).dp
+        val side = minOf(maxWidth, watchDp(150), if (theme.roundScreen) diameter * 0.55f else maxWidth)
+        Box(Modifier.size(side).testTag("login-qr-frame")
+            .background(Color.White, RoundedCornerShape(watchDp(7)))
+            .border(watchDp(1), theme.hairline, RoundedCornerShape(watchDp(7)))
+            .padding(watchDp(7)), contentAlignment = Alignment.Center) {
+            if (bitmap != null && !bitmap.isRecycled) {
+                Image(bitmap.asImageBitmap(), "登录二维码", Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit)
+            } else {
+                Text("二维码", color = Color.DarkGray, fontSize = watchSp(12f))
             }
         }
     }

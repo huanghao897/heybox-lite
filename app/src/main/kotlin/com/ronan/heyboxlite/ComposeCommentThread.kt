@@ -3,7 +3,6 @@ package com.ronan.heyboxlite
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -82,7 +81,9 @@ internal fun ComposeDetailThread(
         }
     }
 
-    Box(Modifier.fillMaxWidth().testTag("comment-thread-$rootId")) {
+    BoxWithConstraints(Modifier.fillMaxWidth().testTag("comment-thread-$rootId")) {
+        val layout = composeCommentLayout(maxWidth - 8.dp * theme.uiScale, roundScreen,
+            theme.uiScale, theme.textScale, LocalDensity.current.fontScale)
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp * theme.uiScale,
                 vertical = 5.dp * theme.uiScale)
@@ -90,10 +91,11 @@ internal fun ComposeDetailThread(
             verticalArrangement = Arrangement.spacedBy(5.dp * theme.uiScale),
         ) {
             ComposeDetailComment(thread.root, item, rootId, false, roundScreen, media,
-                onAction, onOpenUser, doubleTapReplyEnabled, onCopyComment, thread.cy)
+                onAction, onOpenUser, doubleTapReplyEnabled, onCopyComment, layout, thread.cy)
             if (replies.isNotEmpty() || remoteMore || loading || error.isNotBlank()) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().testTag("comment-replies-$rootId")
+                    modifier = Modifier.fillMaxWidth().padding(start = layout.bodyInset)
+                        .testTag("comment-replies-$rootId")
                         .clip(RoundedCornerShape(6.dp)).background(theme.panel)
                         .padding(horizontal = 5.dp * theme.uiScale, vertical = 3.dp * theme.uiScale),
                     verticalArrangement = Arrangement.spacedBy(4.dp * theme.uiScale),
@@ -101,7 +103,7 @@ internal fun ComposeDetailThread(
                     replies.take(shown).forEachIndexed { index, reply ->
                         key(replyKeys[index]) {
                             ComposeDetailComment(reply, item, rootId, true, roundScreen, media,
-                                onAction, onOpenUser, doubleTapReplyEnabled, onCopyComment)
+                                onAction, onOpenUser, doubleTapReplyEnabled, onCopyComment, layout)
                         }
                     }
                     when {
@@ -145,6 +147,7 @@ private fun ComposeDetailComment(
     onOpenUser: (String, String, String) -> Unit,
     doubleTapReplyEnabled: Boolean,
     onCopyComment: ((String) -> Unit)?,
+    layout: ComposeCommentLayout,
     groupCy: Boolean = false,
 ) {
     val theme = LocalHeyboxTheme.current
@@ -162,33 +165,34 @@ private fun ComposeDetailComment(
     val openUser = if (identity.userId.isNotBlank()) {
         { onOpenUser(identity.userId, identity.author, identity.avatar) }
     } else null
-    BoxWithConstraints(
+    Column(
         modifier = Modifier.fillMaxWidth().testTag("comment-${CommentData.commentId(comment)}")
             .then(gesture),
+        verticalArrangement = Arrangement.spacedBy(4.dp * theme.uiScale),
     ) {
-        val compactHeader = maxWidth < 180.dp * theme.textScale * LocalDensity.current.fontScale
-        val contentInset = if (reply || roundScreen || compactHeader) 0.dp else 32.dp * theme.uiScale
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp * theme.uiScale)) {
-            if (reply) {
-                ComposeCommentReplyText(identity.author, CommentData.replyTarget(comment, rootId),
-                    value, cy, identity.meta, Modifier.fillMaxWidth(), identity.postAuthor)
-            } else {
-                ComposeCommentHeader(identity, comment, media, compactHeader, openUser) {
-                    onAction(ComposeDetailAction.LikeComment(comment))
-                }
+        if (!reply) ComposeCommentHeader(identity, comment, media, layout, openUser) {
+            onAction(ComposeDetailAction.LikeComment(comment))
+        }
+        if (reply || value.isNotBlank() || cy || (images.isNotEmpty() && media.enabled)) Column(
+            Modifier.fillMaxWidth().padding(start = if (reply) 0.dp else layout.bodyInset),
+            verticalArrangement = Arrangement.spacedBy(4.dp * theme.uiScale)) {
+            if (reply) ComposeCommentReplyText(identity.author, CommentData.replyTarget(comment, rootId),
+                value, cy, identity.meta, Modifier.fillMaxWidth(), identity.postAuthor)
+            else {
                 if (value.isNotBlank() || cy) ComposeInlineText(
                     source = value,
                     darkMode = theme.dark,
                     textColor = theme.text,
                     linkColor = theme.link,
-                    modifier = Modifier.fillMaxWidth().padding(start = contentInset, top = 1.dp),
-                    fontSize = 12.sp * theme.textScale,
+                    modifier = Modifier.fillMaxWidth().padding(top = 1.dp)
+                        .testTag("comment-body-${CommentData.commentId(comment)}"),
+                    fontSize = (if (roundScreen) 12.5.sp else 13.sp) * theme.textScale,
                     lineHeight = 18.sp * theme.textScale,
                     fontWeight = FontWeight.Medium,
                     cy = cy,
                 )
             }
-            if (images.isNotEmpty() && media.enabled) Column(Modifier.fillMaxWidth().padding(start = contentInset)) {
+            if (images.isNotEmpty() && media.enabled) {
                 ComposeCommentImageGrid(images, media, reply, onOpenImage = { url ->
                     onAction(ComposeDetailAction.OpenCommentImage(comment, url))
                 }, onOpenPreview = { url, source ->
@@ -204,25 +208,25 @@ private fun ComposeCommentHeader(
     identity: ComposeCommentIdentity,
     comment: JSONObject,
     media: ComposeMediaSettings,
-    compact: Boolean,
+    layout: ComposeCommentLayout,
     onOpenUser: (() -> Unit)?,
     onLike: () -> Unit,
 ) {
     val theme = LocalHeyboxTheme.current
     Column(verticalArrangement = Arrangement.spacedBy(3.dp * theme.uiScale)) {
         Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
-            ComposeUserAvatar(identity.avatar, identity.author, media, 26.dp * theme.uiScale, onOpenUser)
-            Spacer(Modifier.width(6.dp * theme.uiScale))
+            ComposeUserAvatar(identity.avatar, identity.author, media, layout.avatarSize, onOpenUser)
+            Spacer(Modifier.width(layout.avatarGap))
             Column(Modifier.weight(1f)) {
                 ComposeCommentName(identity.author, identity.postAuthor, identity.level)
-                if (!compact) ComposeCommentMetadata(identity.meta)
+                if (!layout.compactHeader) ComposeCommentMetadata(identity.meta)
             }
-            if (!compact) {
+            if (!layout.compactHeader) {
                 Spacer(Modifier.width(3.dp * theme.uiScale))
                 ComposeCommentLike(comment, onLike)
             }
         }
-        if (compact) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (layout.compactHeader) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             ComposeCommentMetadata(identity.meta, Modifier.weight(1f))
             Spacer(Modifier.width(3.dp * theme.uiScale))
             ComposeCommentLike(comment, onLike)

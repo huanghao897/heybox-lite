@@ -51,13 +51,17 @@ internal fun ComposeSearchScreen(
             if (observeLoadMore) {
                 ObserveFeedLoadMore(listState, items.size, loading, noMore, onLoadMore)
             }
-            Column(modifier = Modifier.fillMaxSize().padding(horizontal = horizontal)) {
+            Column(modifier = Modifier.fillMaxSize()) {
                 ComposePageHeader("搜索", onBack)
-                ComposeSearchInput(query, "搜索帖子、作者或关键词", onQueryChange)
+                Box(Modifier.fillMaxWidth().padding(horizontal = horizontal)) {
+                    ComposeSearchInput(query, "搜索帖子、作者或关键词", onQueryChange)
+                }
                 when {
-                    query.isBlank() && history.isNotEmpty() -> ComposeSearchHistory(
-                        history, onQueryChange, onClearHistory, listState,
-                    )
+                    query.isBlank() && history.isNotEmpty() -> Box(
+                        Modifier.weight(1f).padding(horizontal = horizontal),
+                    ) {
+                        ComposeSearchHistory(history, onQueryChange, onClearHistory, listState)
+                    }
                     loading && items.isEmpty() -> FeedLoading(services.theme)
                     items.isEmpty() -> SearchEmpty(
                         message = if (query.isBlank()) "输入关键词开始搜索" else "没有找到相关帖子",
@@ -65,10 +69,10 @@ internal fun ComposeSearchScreen(
                     )
                     else -> LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = horizontal),
                         contentPadding = PaddingValues(
                             top = (8 * services.theme.uiScale).dp,
-                            bottom = (14 * services.theme.uiScale).dp,
+                            bottom = watchListEndPadding(),
                         ),
                         verticalArrangement = Arrangement.spacedBy(
                             (7 * services.theme.uiScale).dp,

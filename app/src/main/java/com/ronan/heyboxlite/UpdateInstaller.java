@@ -66,19 +66,27 @@ final class UpdateInstaller {
     }
 
     private void startDownload(String url) {
+        TextView state = text("准备下载...", 12.0f, this.tokens.muted);
+        ProgressBar progress = new ProgressBar(
+                this.activity, null, android.R.attr.progressBarStyleHorizontal);
+        AlertDialog dialog = showDownloadDialog(progress, state);
+        new Thread(() -> download(url, progress, state, dialog),
+                "heybox-update-download").start();
+    }
+
+    AlertDialog showDownloadDialog(ProgressBar progress, TextView state) {
+        boolean round = this.session.usesRoundLayout();
         LinearLayout box = new LinearLayout(this.activity);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(16), dp(14), dp(16), dp(14));
+        int horizontal = round ? 8 : 16;
+        int vertical = round ? 8 : 14;
+        box.setPadding(dp(horizontal), dp(vertical), dp(horizontal), dp(vertical));
         GradientDrawable background = UiComponents.round(
                 this.activity, this.tokens.panel, 14, uiScale());
         background.setStroke(Math.max(1, dp(1)), this.tokens.hairline);
-        Compat.setBackground(box, background);
         TextView title = boldText("正在下载更新", 16.0f, this.tokens.text);
         box.addView(title, new LinearLayout.LayoutParams(-1, -2));
-        TextView state = text("准备下载...", 12.0f, this.tokens.muted);
         addTop(box, state, 8);
-        ProgressBar progress = new ProgressBar(
-                this.activity, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
         if (Build.VERSION.SDK_INT >= 21) {
             progress.setProgressTintList(ColorStateList.valueOf(this.tokens.primary));
@@ -94,18 +102,21 @@ final class UpdateInstaller {
         hint.setGravity(Gravity.CENTER);
         addTop(box, hint, 10);
 
-        AlertDialog dialog = new AlertDialog.Builder(this.activity).setView(box).create();
+        NativeDialogLayout content = new NativeDialogLayout(this.activity, round, uiScale(), box);
+        Compat.setBackground(content, background);
+        AlertDialog dialog = new AlertDialog.Builder(this.activity).create();
+        if (round) dialog.setView(content, 0, 0, 0, 0);
+        else dialog.setView(content);
         dialog.setCanceledOnTouchOutside(false);
         dialog.show();
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0));
             dialog.getWindow().setDimAmount(this.session.darkMode() ? 0.46f : 0.32f);
-            int width = this.activity.getResources().getDisplayMetrics().widthPixels;
-            dialog.getWindow().setLayout(
-                    Math.max(dp(220), Math.min(width - dp(28), dp(360))), -2);
+            dialog.getWindow().setLayout(NativeDialogLayout.width(
+                    this.activity, round, uiScale()), -2);
+            content.bindWindow(dialog.getWindow());
         }
-        new Thread(() -> download(url, progress, state, dialog),
-                "heybox-update-download").start();
+        return dialog;
     }
 
     private void download(String url, ProgressBar progress,

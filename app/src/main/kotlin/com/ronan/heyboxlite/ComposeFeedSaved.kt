@@ -66,8 +66,7 @@ internal fun SavedPage(title: String, theme: ComposeThemeState, onBack: () -> Un
                        content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().background(theme.background)) {
         ComposePageHeader(title, onBack)
-        Column(Modifier.fillMaxSize().padding(
-            horizontal = watchDp(if (theme.roundScreen) 14 else 12), vertical = watchDp(4)),
+        Column(Modifier.fillMaxSize().watchHorizontalPadding().padding(vertical = watchDp(4)),
             content = content)
     }
 }

@@ -3,7 +3,6 @@
 package com.ronan.heyboxlite
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,12 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -28,6 +23,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
@@ -203,126 +201,70 @@ private fun ComposeNumericSettingDialog(
     }
     var error by remember { mutableStateOf<String?>(null) }
     val state = LocalHeyboxTheme.current
-    val maxHeight = if (state.roundScreen) watchDp(170) else watchDp(300)
 
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        WatchCard(
-            modifier = Modifier
-                .padding(watchDp(8))
-                .widthIn(max = watchDp(320)),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = maxHeight)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                Text(
-                    text = title,
-                    color = state.text,
-                    fontSize = watchSp(15f),
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(
-                        horizontal = watchDp(11),
-                        vertical = watchDp(8),
-                    ),
-                )
-                Text(
-                    text = if (setting.allowAboveSliderMaximum) {
-                        "滑杆显示常用范围，可直接输入更高数值"
-                    } else {
-                        "拖动调整，或点击数值直接输入"
-                    },
-                    color = state.muted,
-                    fontSize = watchSp(11f),
-                    modifier = Modifier.padding(horizontal = watchDp(11)),
-                )
-                Spacer(modifier = Modifier.height(watchDp(7)))
-                BasicTextField(
-                    value = input,
-                    onValueChange = {
-                        input = it.filter(Char::isDigit)
-                        error = null
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(watchDp(44))
-                        .padding(horizontal = watchDp(11))
-                        .background(
-                            color = state.panelElevated,
-                            shape = RoundedCornerShape(watchDp(10)),
-                        )
-                        .padding(horizontal = watchDp(10), vertical = watchDp(9)),
-                    textStyle = TextStyle(
-                        color = state.text,
-                        fontSize = watchSp(18f),
-                        fontWeight = FontWeight.Bold,
-                    ),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                )
-                if (error != null) {
-                    Text(
-                        text = error.orEmpty(),
-                        color = state.accent,
-                        fontSize = watchSp(10f),
-                        modifier = Modifier.padding(horizontal = watchDp(11), vertical = watchDp(3)),
-                    )
+    WatchDialog(title, onDismiss, actions = {
+        WatchActionButton("取消", onDismiss, Modifier.weight(1f))
+        WatchActionButton("确定", {
+            when (val parsed = setting.parse(input)) {
+                is NumericValueParseResult.Valid -> {
+                    onValueChange(parsed.value)
+                    onDismiss()
                 }
-                CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
-                    Slider(
-                        value = slider,
-                        onValueChange = { raw ->
-                            val bounded = setting.snapSliderValue(raw)
-                            slider = bounded.toFloat()
-                            input = bounded.toString()
-                            error = null
-                            onValueChange(bounded)
-                        },
-                        valueRange = setting.lowerBound.toFloat()..setting.upperBound.toFloat(),
-                        steps = 0,
-                        colors = composeSettingSliderColors(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(watchDp(32))
-                            .padding(horizontal = watchDp(11)),
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = watchDp(11)),
-                ) {
-                    Text(
-                        setting.display(setting.lowerBound, unit),
-                        color = state.muted,
-                        fontSize = watchSp(10f),
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text(
-                        setting.display(setting.upperBound, unit) +
-                                if (setting.allowAboveSliderMaximum) "+" else "",
-                        color = state.muted,
-                        fontSize = watchSp(10f),
-                    )
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = watchDp(11)),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    WatchActionText("取消", onDismiss)
-                    Spacer(modifier = Modifier.width(watchDp(10)))
-                    WatchActionText("确定") {
-                        when (val parsed = setting.parse(input)) {
-                            is NumericValueParseResult.Valid -> {
-                                onValueChange(parsed.value)
-                                onDismiss()
-                            }
-                            is NumericValueParseResult.Invalid -> error = parsed.message
-                        }
-                    }
-                }
+                is NumericValueParseResult.Invalid -> error = parsed.message
             }
+        }, Modifier.weight(1f))
+    }) {
+        Text(
+            text = if (setting.allowAboveSliderMaximum) {
+                "滑杆显示常用范围，可直接输入更高数值"
+            } else {
+                "拖动调整，或点击数值直接输入"
+            },
+            color = state.muted,
+            fontSize = watchSp(11f),
+        )
+        BasicTextField(
+            value = input,
+            onValueChange = {
+                input = it.filter(Char::isDigit)
+                error = null
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = watchDp(44))
+                .background(state.panelElevated, RoundedCornerShape(watchDp(10)))
+                .padding(horizontal = watchDp(10), vertical = watchDp(9))
+                .semantics { contentDescription = title },
+            textStyle = TextStyle(color = state.text, fontSize = watchSp(18f),
+                fontWeight = FontWeight.Bold),
+            cursorBrush = SolidColor(state.text),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        )
+        if (error != null) {
+            Text(error.orEmpty(), color = state.accent, fontSize = watchSp(10f))
+        }
+        CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
+            Slider(
+                value = slider,
+                onValueChange = { raw ->
+                    val bounded = setting.snapSliderValue(raw)
+                    slider = bounded.toFloat()
+                    input = bounded.toString()
+                    error = null
+                    onValueChange(bounded)
+                },
+                valueRange = setting.lowerBound.toFloat()..setting.upperBound.toFloat(),
+                steps = 0,
+                colors = composeSettingSliderColors(),
+                modifier = Modifier.fillMaxWidth().height(watchDp(32)),
+            )
+        }
+        Row(Modifier.fillMaxWidth()) {
+            Text(setting.display(setting.lowerBound, unit),
+                color = state.muted, fontSize = watchSp(10f))
+            Spacer(Modifier.weight(1f))
+            Text(setting.display(setting.upperBound, unit) +
+                if (setting.allowAboveSliderMaximum) "+" else "",
+                color = state.muted, fontSize = watchSp(10f))
         }
     }
 }

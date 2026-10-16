@@ -71,4 +71,43 @@ public class GameCardDataTest {
                         .put("name", "other"))));
         org.junit.Assert.assertNull(GameCardData.from(body, "42"));
     }
+
+    @Test
+    public void partialDetailsKeepEmbeddedMetadataAndOriginalPrice() throws Exception {
+        GameCardData embedded = embedded();
+        GameCardData partial = GameCardData.from(new JSONObject().put("appid", "42")
+                .put("name", "Updated").put("price", new JSONObject().put("current", "17")), "42");
+
+        GameCardData merged = embedded.withDetails(partial);
+
+        assertEquals("Updated", merged.name);
+        assertEquals("https://img.example/cover.png", merged.coverUrl);
+        assertEquals("PC", merged.platforms);
+        assertEquals("9.2", merged.score);
+        assertEquals("12", merged.followers);
+        assertEquals("17", merged.currentPrice);
+        assertEquals("50", merged.originalPrice);
+        assertEquals("25", embedded.currentPrice);
+    }
+
+    @Test
+    public void absentPriceDoesNotClearFreeButNewPaidPriceDoes() throws Exception {
+        GameCardData free = GameCardData.from(new JSONObject().put("appid", "42")
+                .put("is_free", true), "42");
+        GameCardData nameOnly = GameCardData.from(new JSONObject().put("appid", "42")
+                .put("name", "Updated"), "42");
+        org.junit.Assert.assertTrue(free.withDetails(nameOnly).free);
+        org.junit.Assert.assertSame(free, free.withDetails(null));
+        GameCardData merged = free.withDetails(embedded());
+        org.junit.Assert.assertFalse(merged.free);
+        assertEquals("25", merged.currentPrice);
+    }
+
+    private static GameCardData embedded() throws Exception {
+        return GameCardData.from(new JSONObject().put("appid", "42").put("name", "Embedded")
+                .put("image", "https://img.example/cover.png")
+                .put("platforms", new org.json.JSONArray().put("steam"))
+                .put("score", "9.2").put("follow_num", "12")
+                .put("price", new JSONObject().put("current", "25").put("initial", "50")), "42");
+    }
 }

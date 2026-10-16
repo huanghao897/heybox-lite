@@ -2,7 +2,6 @@ package com.ronan.heyboxlite
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -175,28 +174,18 @@ private fun ComposeUpdateDialog(
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
 ) {
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        WatchCard(modifier = Modifier.padding(watchDp(10))) {
-            Text(
-                text = "发现新版本 ${result.version}",
-                color = LocalHeyboxTheme.current.text,
-                fontSize = watchSp(15f),
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "当前版本：${BuildConfig.VERSION_NAME}\n最新版本：${result.version}" +
-                        (if (result.title.isNotBlank()) "\n发布标题：${result.title.trim()}" else "") +
-                        "\n\n更新内容：\n" + result.notes.ifBlank { "暂无更新内容说明" }.take(1800),
-                color = LocalHeyboxTheme.current.muted,
-                fontSize = watchSp(12f),
-                lineHeight = watchSp(16f),
-            )
-            Row(modifier = Modifier.fillMaxWidth()) {
-                WatchActionText("稍后", onDismiss)
-                Spacer(modifier = Modifier.weight(1f))
-                WatchActionText("下载", onDownload)
-            }
-        }
+    WatchDialog("发现新版本 ${result.version}", onDismiss, actions = {
+        WatchActionButton("稍后", onDismiss, Modifier.weight(1f))
+        WatchActionButton("下载", onDownload, Modifier.weight(1f))
+    }) {
+        Text(
+            text = "当前版本：${BuildConfig.VERSION_NAME}\n最新版本：${result.version}" +
+                    (if (result.title.isNotBlank()) "\n发布标题：${result.title.trim()}" else "") +
+                    "\n\n更新内容：\n" + result.notes.ifBlank { "暂无更新内容说明" }.take(1800),
+            color = LocalHeyboxTheme.current.muted,
+            fontSize = watchSp(12f),
+            lineHeight = watchSp(16f),
+        )
     }
 }
 
@@ -277,32 +266,18 @@ internal fun ComposeAnnouncementBoardScreen(services: ComposeServices, onBack: (
 }
 
 @Composable
-private fun ComposeAnnouncementDialog(
+internal fun ComposeAnnouncementDialog(
     item: AnnouncementChecker.Item,
     onDismiss: () -> Unit,
     onAcknowledge: () -> Unit,
     onSuppress: () -> Unit,
 ) {
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        WatchCard(modifier = Modifier.padding(watchDp(10))) {
-            Text(
-                text = item.title,
-                color = LocalHeyboxTheme.current.text,
-                fontSize = watchSp(15f),
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = item.content,
-                color = LocalHeyboxTheme.current.muted,
-                fontSize = watchSp(12f),
-                lineHeight = watchSp(16f),
-            )
-            Row(modifier = Modifier.fillMaxWidth()) {
-                WatchActionText("不再提醒", onSuppress)
-                Spacer(modifier = Modifier.weight(1f))
-                WatchActionText("知道了", onAcknowledge)
-            }
-        }
+    WatchDialog(item.title, onDismiss, actions = {
+        WatchActionButton("不再提醒", onSuppress, Modifier.weight(1f))
+        WatchActionButton("知道了", onAcknowledge, Modifier.weight(1f))
+    }) {
+        Text(item.content, color = LocalHeyboxTheme.current.muted,
+            fontSize = watchSp(12f), lineHeight = watchSp(16f))
     }
 }
 

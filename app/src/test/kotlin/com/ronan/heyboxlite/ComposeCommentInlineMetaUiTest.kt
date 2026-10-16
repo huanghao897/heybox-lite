@@ -63,7 +63,7 @@ class ComposeCommentInlineMetaUiTest {
         val text = layout.layoutInput.text
         assertEquals("${heading}ok  $meta", text.text)
         assertEquals(1, layout.lineCount)
-        assertEquals(11.sp, layout.layoutInput.style.fontSize)
+        assertEquals(12.5.sp, layout.layoutInput.style.fontSize)
         val suffix = text.spanStyles.single { it.item.fontSize == 9.sp }
         assertEquals(theme.muted, suffix.item.color)
         assertEquals("${heading}ok".length, suffix.start)
@@ -232,7 +232,7 @@ class ComposeCommentInlineMetaUiTest {
         compose.onNodeWithText(replyMeta, useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithText("Lv.24", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("Lv.56", useUnmergedTree = true).assertDoesNotExist()
-        val rootBounds = compose.onNodeWithTag("comment-root").fetchSemanticsNode().boundsInRoot
+        val rootBounds = compose.onNodeWithText("Root body").fetchSemanticsNode().boundsInRoot
         val frame = compose.onNodeWithTag("comment-replies-root").fetchSemanticsNode().boundsInRoot
         assertEquals(rootBounds.left, frame.left, 0.5f)
         assertEquals(rootBounds.right, frame.right, 0.5f)

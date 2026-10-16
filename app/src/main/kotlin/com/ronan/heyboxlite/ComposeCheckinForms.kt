@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -32,6 +36,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 
 @Composable
 internal fun ComposeCheckinPrimaryButton(
@@ -84,6 +89,7 @@ internal fun ComposeCheckinTextField(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = watchDp(40))
+            .testTag("checkin-field-$placeholder")
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .background(theme.panelElevated, RoundedCornerShape(watchDp(9)))
             .padding(horizontal = watchDp(10), vertical = watchDp(9)),
@@ -95,12 +101,33 @@ internal fun ComposeCheckinTextField(
             Box(contentAlignment = Alignment.CenterStart) {
                 if (value.isEmpty()) {
                     Text(placeholder, style = fieldStyle.copy(color = theme.subtle),
-                        maxLines = 1, softWrap = false)
+                        maxLines = 3)
                 }
                 field()
             }
         },
     )
+}
+
+@Composable
+private fun CheckinCodeRow(
+    field: @Composable (Modifier) -> Unit,
+    button: @Composable (Modifier) -> Unit,
+) {
+    val theme = LocalHeyboxTheme.current
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < (210 * theme.textScale * fontScale).dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(watchDp(6))) {
+                field(Modifier.fillMaxWidth())
+                button(Modifier.fillMaxWidth())
+            }
+        } else Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(watchDp(6))) {
+            field(Modifier.weight(1f))
+            button(Modifier.weight(1f))
+        }
+    }
 }
 
 @Composable
@@ -259,10 +286,7 @@ internal fun ComposeCheckinPairingScreen(
                             keyboardType = KeyboardType.Email,
                         )
                         Spacer(modifier = Modifier.height(watchDp(6)))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        CheckinCodeRow(field = { modifier ->
                             ComposeCheckinTextField(
                                 value = state.serviceEmailCode,
                                 placeholder = "6 位邮箱验证码",
@@ -270,17 +294,17 @@ internal fun ComposeCheckinPairingScreen(
                                 enabled = state.serviceControlsEnabled,
                                 keyboardType = KeyboardType.Number,
                                 focusRequester = emailCodeRequester,
-                                modifier = Modifier.weight(1f),
+                                modifier = modifier,
                             )
-                            Spacer(modifier = Modifier.width(watchDp(6)))
+                        }, button = { modifier ->
                             WatchActionButton(
                                 text = state.serviceEmailButton,
                                 onClick = controller::sendRegistrationEmail,
                                 enabled = state.serviceEmailButtonEnabled,
-                                modifier = Modifier.weight(1f).heightIn(min = watchDp(40)),
+                                modifier = modifier.heightIn(min = watchDp(40)),
                                 fontSize = 10f,
                             )
-                        }
+                        })
                     }
                 }
                 Spacer(modifier = Modifier.height(watchDp(10)))
@@ -333,27 +357,24 @@ internal fun ComposeCheckinMobileLoginScreen(
             )
             Spacer(modifier = Modifier.height(watchDp(9)))
             if (state.mobileMode == CheckinMobileLoginFlow.Mode.SMS) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                CheckinCodeRow(field = { modifier ->
                     ComposeCheckinTextField(
                         value = state.mobilePhone,
                         placeholder = "+86 手机号",
                         onValueChange = controller::setMobilePhone,
                         enabled = state.mobileControlsEnabled && !state.mobileHasSession,
                         keyboardType = KeyboardType.Phone,
-                        modifier = Modifier.weight(1f),
+                        modifier = modifier,
                     )
-                    Spacer(modifier = Modifier.width(watchDp(6)))
+                }, button = { modifier ->
                     WatchActionButton(
                         text = state.mobileSmsButton,
                         onClick = controller::sendSmsCode,
                         enabled = state.mobileSmsButtonEnabled,
-                        modifier = Modifier.weight(1f).heightIn(min = watchDp(40)),
+                        modifier = modifier.heightIn(min = watchDp(40)),
                         fontSize = 10f,
                     )
-                }
+                })
                 Spacer(modifier = Modifier.height(watchDp(7)))
                 ComposeCheckinTextField(
                     value = state.mobileCode,

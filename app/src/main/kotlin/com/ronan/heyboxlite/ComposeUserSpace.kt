@@ -64,26 +64,11 @@ internal fun ComposeUserSpaceScreen(
 
     WatchPage(state.name, onBack) {
         WatchCard {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(watchDp(11)),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            ComposeAccountIdentity(state.name, "ID ${route.userId}", state.signature, nameSize = 15f) {
                 ComposeRemoteImage(
                     state.avatar, theme, services.session.noImage(), watchDp(48), CircleShape,
                     "用户头像", Modifier.size(watchDp(48)),
                 )
-                Column(Modifier.weight(1f).padding(start = watchDp(9))) {
-                    Text(state.name, color = theme.text, fontSize = watchSp(15f),
-                        fontWeight = FontWeight.SemiBold, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis)
-                    Text("ID ${route.userId}", color = theme.muted, fontSize = watchSp(10f),
-                        modifier = Modifier.padding(top = watchDp(2)))
-                    if (state.signature.isNotBlank()) Text(
-                        state.signature, color = theme.muted, fontSize = watchSp(10f),
-                        maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = watchDp(3)),
-                    )
-                }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = watchDp(11), vertical = watchDp(5))) {
                 UserStat("关注", state.follows, theme, Modifier.weight(1f))

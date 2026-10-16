@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -356,7 +357,7 @@ internal fun FeedToolbar(
     Row(
         modifier = Modifier.fillMaxWidth()
             .padding(top = (5 * theme.uiScale).dp)
-            .height((34 * theme.uiScale).dp)
+            .heightIn(min = (34 * theme.uiScale).dp.coerceAtLeast(28.dp))
             .clip(RoundedCornerShape((10 * theme.uiScale).dp))
             .background(theme.panel.copy(alpha = if (theme.dark) 0.86f else 0.72f))
             .clickable(onClick = onSearch)

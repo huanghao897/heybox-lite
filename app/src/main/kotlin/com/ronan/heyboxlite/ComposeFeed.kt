@@ -103,6 +103,8 @@ internal fun ComposeFeedScreen(
                 .background(theme.background),
         ) {
             val horizontal = feedHorizontalPadding(maxWidth, theme)
+            val top = if (theme.roundScreen) watchHeaderTop(maxWidth, theme) else (8 * theme.uiScale).dp
+            val searchInset = if (theme.roundScreen) watchHeaderHorizontal(maxWidth, theme) - horizontal else 0.dp
             if (observeLoadMore) {
                 ObserveFeedLoadMore(listState, items.size, loading, noMore, onLoadMore)
             }
@@ -118,18 +120,17 @@ internal fun ComposeFeedScreen(
                     userScrollEnabled = interactive,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        top = (8 * theme.uiScale).dp,
-                        bottom = (14 * theme.uiScale).dp,
+                        top = top,
+                        bottom = watchListEndPadding(),
                     ),
                     verticalArrangement = Arrangement.spacedBy(
                         (7 * theme.uiScale).dp,
                     ),
                 ) {
                     item(key = "feed-search", contentType = "feed-search") {
-                        FeedToolbar(
-                            theme = theme,
-                            onSearch = onSearch,
-                        )
+                        androidx.compose.foundation.layout.Box(Modifier.padding(horizontal = searchInset)) {
+                            FeedToolbar(theme = theme, onSearch = onSearch)
+                        }
                     }
                     if (loading && items.isEmpty()) {
                         item(key = "feed-loading") {

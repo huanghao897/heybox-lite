@@ -3,6 +3,7 @@ package com.ronan.heyboxlite
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.SaveableStateHolder
 
@@ -14,6 +15,15 @@ internal class ComposeRouteResources(
 ) {
     private val userSpaces = mutableMapOf<String, ComposeUserSpaceController>()
     private val listStates = mutableMapOf("feed" to feedListState)
+    private val detailPages = mutableStateMapOf<Long, ComposeDetailPagerNavigation>()
+
+    fun setDetailPage(entryKey: Long, navigation: ComposeDetailPagerNavigation?) {
+        if (navigation == null) detailPages.remove(entryKey) else detailPages[entryKey] = navigation
+    }
+
+    fun canSwipeDetailBack(entryKey: Long): Boolean = detailPages[entryKey]?.canSwipeBack != false
+
+    fun returnToDetailBody(entryKey: Long): Boolean = detailPages[entryKey]?.returnToBody() == true
 
     fun listState(route: String, navigation: ComposeNavigationState, folderId: String): LazyListState {
         val key = when (route.substringBefore('?')) {
@@ -37,6 +47,7 @@ internal class ComposeRouteResources(
             .mapTo(mutableSetOf()) { "detail:${android.net.Uri.parse(it).getQueryParameter("entry")}" }
         listStates.keys.removeAll { key -> key.startsWith("detail:") && key !in details ||
             key.startsWith("user_space?") && key !in routes }
+        detailPages.keys.removeAll { "detail:$it" !in details }
     }
 
     fun clear() {
@@ -44,6 +55,7 @@ internal class ComposeRouteResources(
         userSpaces.clear()
         listStates.clear()
         listStates["feed"] = feedListState
+        detailPages.clear()
     }
 }
 

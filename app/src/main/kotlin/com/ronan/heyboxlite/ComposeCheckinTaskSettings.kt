@@ -5,29 +5,23 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -49,7 +43,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
@@ -78,7 +71,7 @@ internal fun ComposeCheckinTaskSettingsContent(
     val task = state.status?.task
     var editingTime by rememberSaveable { mutableStateOf(false) }
     var editingOffset by rememberSaveable { mutableStateOf(false) }
-    TaskSettingsPage(onBack) {
+    WatchPage("签到设置", onBack) {
         if (state.errorMessage.isNotBlank()) TaskSettingsNotice(state.errorMessage)
         if (task == null) {
             WatchEmptyState("签到设置暂不可用")
@@ -147,32 +140,6 @@ internal fun ComposeCheckinTaskSettingsContent(
                 }
             },
         )
-    }
-}
-
-@Composable
-private fun TaskSettingsPage(onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    val theme = LocalHeyboxTheme.current
-    val scrollState = rememberScrollState()
-    val rotary = LocalHeyboxRotaryRequest.current
-    LaunchedEffect(rotary?.serial) {
-        if (rotary != null) scrollState.scrollBy(rotary.distance.toFloat())
-    }
-    BoxWithConstraints(Modifier.fillMaxSize().background(theme.background)) {
-        val bottomInset = if (theme.roundScreen) minOf(maxWidth, maxHeight) * 0.25f else 0.dp
-        Column(Modifier.fillMaxSize()) {
-            ComposePageHeader("签到设置", onBack)
-            Column(
-                modifier = Modifier.weight(1f)
-                    // Reserve the narrow lower chord outside the scrolling viewport.
-                    .padding(bottom = bottomInset)
-                    .verticalScroll(scrollState)
-                    .watchHorizontalPadding()
-                    .padding(bottom = watchListEndPadding()),
-                verticalArrangement = Arrangement.spacedBy(watchDp(9)),
-                content = content,
-            )
-        }
     }
 }
 

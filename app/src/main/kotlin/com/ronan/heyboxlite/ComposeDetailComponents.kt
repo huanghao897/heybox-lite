@@ -1,13 +1,14 @@
 package com.ronan.heyboxlite
 
+import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,30 +18,28 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 
 @Composable
 internal fun ComposeDetailBlock(
@@ -57,21 +56,17 @@ internal fun ComposeDetailBlock(
         RichContent.Block.GAME_CARD -> ComposeDetailGameCard(block, media, services)
         RichContent.Block.QUOTE -> Row(Modifier.fillMaxWidth()) {
             val theme = LocalHeyboxTheme.current
+            val typography = composeDetailBodyTypography(block.kind, services?.session)
             Box(Modifier.width(3.dp).height(40.dp).background(theme.hairline))
-            SelectionContainer {
+            SelectionContainer(Modifier.weight(1f)) {
                 ComposeInlineText(display, theme.dark, theme.muted, theme.link,
-                    Modifier.padding(start = 8.dp), fontSize = 12.sp * theme.textScale,
-                    lineHeight = 18.sp * theme.textScale)
+                    Modifier.padding(start = watchDp(8)), fontSize = typography.fontSize,
+                    lineHeight = typography.lineHeight)
             }
         }
         else -> {
             val theme = LocalHeyboxTheme.current
-            val bodyScale = theme.textScale * (services?.session?.bodyTextScale() ?: 100) / 100f
-            val fontSize = when (block.kind) {
-                RichContent.Block.HEADING -> 15.sp * bodyScale
-                RichContent.Block.CAPTION -> 10.sp * bodyScale
-                else -> 13.sp * bodyScale
-            }
+            val typography = composeDetailBodyTypography(block.kind, services?.session)
             val paragraphs = remember(display, block.kind) {
                 if (block.kind == RichContent.Block.TEXT) ArticleText.articleParagraphs(display) else listOf(display)
             }
@@ -81,12 +76,9 @@ internal fun ComposeDetailBlock(
                     paragraphs.forEach { paragraph ->
                         ComposeInlineText(paragraph, theme.dark,
                             if (block.kind == RichContent.Block.CAPTION) theme.muted else theme.text, theme.link,
-                            fontSize = fontSize,
-                            fontWeight = if (block.kind == RichContent.Block.HEADING) FontWeight.Bold else FontWeight.Normal,
-                            lineHeight = if (block.kind == RichContent.Block.TEXT)
-                                (fontSize.value * maxOf(1.18f,
-                                    (services?.session?.bodyLineSpacing() ?: 122) / 100f) + 1f).sp
-                                else (if (block.kind == RichContent.Block.CAPTION) 15.sp else 20.sp) * bodyScale,
+                            fontSize = typography.fontSize,
+                            fontWeight = typography.fontWeight ?: FontWeight.Normal,
+                            lineHeight = typography.lineHeight,
                             modifier = Modifier.fillMaxWidth())
                     }
                 }
@@ -96,57 +88,34 @@ internal fun ComposeDetailBlock(
 }
 
 @Composable
-private fun ComposeDetailGameCard(
-    block: RichContent.Block,
-    media: ComposeMediaSettings,
-    services: ComposeServices?,
-) {
+internal fun composeDetailBodyTypography(kind: Int, session: SessionStore?): TextStyle {
     val theme = LocalHeyboxTheme.current
-    var data by remember(block.value, block.gameObject) {
-        mutableStateOf(GameCardData.fromEmbedded(block.gameObject, block.value))
+    val size = when (kind) {
+        RichContent.Block.HEADING -> if (theme.roundScreen) 15f else 16f
+        RichContent.Block.CAPTION -> 11f
+        RichContent.Block.QUOTE -> if (theme.roundScreen) 12.5f else 13.5f
+        else -> if (theme.roundScreen) 13f else 14.5f
     }
-    var active by remember(block.value, block.gameObject) { mutableStateOf(true) }
-    DisposableEffect(block.value, block.gameObject) {
-        onDispose { active = false }
+    val fontSize = (size * theme.textScale * (session?.bodyTextScale() ?: 100) / 100f).sp
+    val spacing = (session?.bodyLineSpacing() ?: 122) / 100f
+    val multiplier = when (kind) {
+        RichContent.Block.HEADING -> 1.16f
+        RichContent.Block.CAPTION -> 1.3f
+        RichContent.Block.QUOTE -> maxOf(1.14f, spacing)
+        else -> maxOf(1.18f, spacing)
     }
-    LaunchedEffect(block.value, block.gameObject) {
-        val appId = block.value.trim()
-        if (appId.isEmpty() || data?.hasVisibleDetails() == true) return@LaunchedEffect
-        val client = services?.gameDetails ?: return@LaunchedEffect
-        client.loadBatch(
-            listOf(RichLinkClassifier.GameLinkInfo(appId, "pc", "", "")),
-            object : GameDetailClient.BatchCallback {
-                override fun onComplete(value: Map<String, GameCardData>) {
-                    if (active) data = value[appId] ?: data
-                }
-            },
-        )
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-            .background(theme.panelElevated).padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (media.enabled && !media.gameCardNoImage && !data?.coverUrl.isNullOrBlank()) {
-            ComposeRemoteImage(
-                data?.coverUrl.orEmpty(), theme, false, 44.dp,
-                RoundedCornerShape(6.dp), "游戏封面", Modifier.size(44.dp),
-            )
-        } else {
-            Icon(painterResource(R.drawable.ic_game_link), null,
-                tint = theme.accent, modifier = Modifier.size(25.dp))
+    val density = LocalDensity.current
+    val extra = with(density) { watchDp(1).roundToPx() }
+    val lineHeight = remember(fontSize, density, extra, multiplier) {
+        // TextView's old renderer applies line spacing to font metrics, not the nominal sp size.
+        val paint = Paint().apply {
+            typeface = Typeface.DEFAULT
+            textSize = with(density) { fontSize.toPx() }
         }
-        Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
-            Text(data?.name?.ifBlank { "游戏" } ?: "游戏内容", fontSize = 12.sp,
-                color = theme.text, maxLines = 2,
-                overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-            val meta = listOf(data?.platforms, data?.score, data?.currentPrice)
-                .filter { !it.isNullOrBlank() }.joinToString(" · ")
-            Text(meta.ifBlank { "正在获取游戏信息" },
-                fontSize = 10.sp, color = theme.muted)
-        }
+        with(density) { (paint.getFontMetricsInt(null) * multiplier + extra).roundToInt().toSp() }
     }
+    return TextStyle(fontSize = fontSize, lineHeight = lineHeight,
+        fontWeight = if (kind == RichContent.Block.HEADING) FontWeight.Bold else FontWeight.Normal)
 }
 
 @Composable

@@ -1,15 +1,10 @@
 package com.ronan.heyboxlite
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
@@ -18,14 +13,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 
 internal @Composable fun ComposeSettingsScreen(
     route: String,
@@ -133,29 +128,13 @@ private fun ComposeChoiceDialog(
     onDismiss: () -> Unit,
     onSelected: (Int) -> Unit,
 ) {
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        WatchCard(modifier = Modifier.padding(watchDp(10))) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = watchDp(if (LocalHeyboxTheme.current.roundScreen) 170 else 300))
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                Text(
-                    text = title,
-                    color = LocalHeyboxTheme.current.text,
-                    fontSize = watchSp(15f),
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = watchDp(11), vertical = watchDp(8)),
-                )
-                options.forEachIndexed { index, option ->
-                    WatchRow(
-                        title = option,
-                        value = if (index == selected) "当前" else "",
-                        onClick = { onSelected(index) },
-                    )
-                }
-            }
+    WatchDialog(title, onDismiss) {
+        options.forEachIndexed { index, option ->
+            WatchRow(
+                title = option,
+                value = if (index == selected) "当前" else "",
+                onClick = { onSelected(index) },
+            )
         }
     }
 }
@@ -194,52 +173,29 @@ private fun ComposeTextDialog(
 ) {
     var text by remember(initial) { mutableStateOf(initial) }
     val style = LocalHeyboxTheme.current
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        WatchCard(modifier = Modifier.padding(watchDp(10))) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = watchDp(if (style.roundScreen) 170 else 300))
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                Text(
-                    title,
-                    color = style.text,
-                    fontSize = watchSp(15f),
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = watchDp(11), vertical = watchDp(8)),
-                )
-                BasicTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(watchDp(44))
-                        .padding(horizontal = watchDp(11))
-                        .background(
-                            color = style.panelElevated,
-                            shape = RoundedCornerShape(watchDp(9)),
-                        )
-                        .padding(horizontal = watchDp(10), vertical = watchDp(9)),
-                    textStyle = TextStyle(color = style.text, fontSize = watchSp(13f)),
-                    singleLine = true,
-                    decorationBox = { field ->
-                        if (text.isEmpty()) {
-                            Text(hint, color = style.subtle, fontSize = watchSp(12f))
-                        }
-                        field()
-                    },
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = watchDp(11)),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    WatchActionText("取消", onDismiss)
-                    Spacer(modifier = Modifier.width(watchDp(10)))
-                    WatchActionText("确定") { onConfirm(text.trim()) }
+    WatchDialog(title, onDismiss, actions = {
+        WatchActionButton("取消", onDismiss, Modifier.weight(1f))
+        WatchActionButton("确定", { onConfirm(text.trim()) }, Modifier.weight(1f))
+    }) {
+        BasicTextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier.fillMaxWidth().heightIn(min = watchDp(44))
+                .background(style.panelElevated, RoundedCornerShape(watchDp(9)))
+                .padding(horizontal = watchDp(10), vertical = watchDp(9))
+                .semantics { contentDescription = title },
+            textStyle = TextStyle(color = style.text, fontSize = watchSp(13f)),
+            cursorBrush = SolidColor(style.text),
+            singleLine = true,
+            decorationBox = { field ->
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+                    if (text.isEmpty()) {
+                        Text(hint, color = style.subtle, fontSize = watchSp(12f))
+                    }
+                    field()
                 }
-            }
-        }
+            },
+        )
     }
 }
 
@@ -250,41 +206,15 @@ internal fun ComposeConfirmDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        WatchCard(modifier = Modifier.padding(watchDp(10))) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = watchDp(if (LocalHeyboxTheme.current.roundScreen) 170 else 300))
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                Text(
-                    title,
-                    color = LocalHeyboxTheme.current.text,
-                    fontSize = watchSp(15f),
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = watchDp(11), vertical = watchDp(8)),
-                )
-                Text(
-                    message,
-                    color = LocalHeyboxTheme.current.muted,
-                    fontSize = watchSp(12f),
-                    lineHeight = watchSp(16f),
-                    modifier = Modifier.padding(horizontal = watchDp(11)),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = watchDp(11)),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    WatchActionText("取消", onDismiss)
-                    Spacer(modifier = Modifier.width(watchDp(10)))
-                    WatchActionText("确认") {
-                        onConfirm()
-                        onDismiss()
-                    }
-                }
-            }
-        }
+    WatchDialog(title, onDismiss, actions = {
+        WatchActionButton("取消", onDismiss, Modifier.weight(1f))
+        WatchActionButton("确认", {
+            onConfirm()
+            onDismiss()
+        }, Modifier.weight(1f))
+    }) {
+        Text(message, color = LocalHeyboxTheme.current.muted,
+            fontSize = watchSp(12f), lineHeight = watchSp(16f))
     }
 }
 

@@ -10,6 +10,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
@@ -212,7 +214,7 @@ class ComposeCheckinTaskSettingsUiTest {
         val theme = composePreviewTheme(true)
         show(theme = theme)
         assertCompactSwitch(theme.uiScale)
-        val last = text("\u5206\u4eab\u8bc4\u4ef7").performScrollTo().assertIsDisplayed()
+        val last = circleReach(text("\u5206\u4eab\u8bc4\u4ef7"))
         assertInsideCircle(last.fetchSemanticsNode().boundsInRoot)
         assertInsideCircle(description("\u8fd4\u56de").fetchSemanticsNode().boundsInRoot)
         val track = compose.onNodeWithTag("task-switch-\u5206\u4eab\u8bc4\u4ef7", useUnmergedTree = true)
@@ -258,7 +260,7 @@ class ComposeCheckinTaskSettingsUiTest {
             text = Color.Black, muted = Color.DarkGray, subtle = Color.Gray,
             textScale = 1.4f, uiScale = 1.2f))
         assertOffsetGeometry("task-settings-small-round-light-offset")
-        val last = text("\u5206\u4eab\u8bc4\u4ef7").performScrollTo().assertIsDisplayed()
+        val last = circleReach(text("\u5206\u4eab\u8bc4\u4ef7"))
         assertInsideCircle(last.fetchSemanticsNode().boundsInRoot)
         last.performClick()
         capture("task-settings-small-round-light")
@@ -269,7 +271,7 @@ class ComposeCheckinTaskSettingsUiTest {
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun roundSwitchTrackAndBackRespondToRealTouch() {
         show(theme = composePreviewTheme(true))
-        text("\u5206\u4eab\u8bc4\u4ef7").performScrollTo().assertIsDisplayed()
+        circleReach(text("\u5206\u4eab\u8bc4\u4ef7"))
         val track = compose.onNodeWithTag("task-switch-\u5206\u4eab\u8bc4\u4ef7", useUnmergedTree = true)
         assertInsideCircle(track.fetchSemanticsNode().boundsInRoot, corners = true)
         track.performTouchInput { click(center) }
@@ -289,14 +291,13 @@ class ComposeCheckinTaskSettingsUiTest {
     fun smallRoundMaximumOffsetAt150PercentTextRemainsReadableAndTappable() {
         show(task(offset = 720), composePreviewTheme(true).copy(textScale = 1.5f, uiScale = 1.2f))
         assertOffsetGeometry("task-settings-small-round-large-text-offset")
-        val value = description("\u8f93\u5165\u968f\u673a\u504f\u79fb")
-            .performScrollTo().assertIsDisplayed()
+        val value = circleReach(description("\u8f93\u5165\u968f\u673a\u504f\u79fb"))
         assertInsideCircle(value.fetchSemanticsNode().boundsInRoot)
         value.performTouchInput { click(center) }
         description("\u8f93\u5165\u968f\u673a\u504f\u79fb\u5206\u949f").assertTextContains("720")
         text("\u53d6\u6d88").performScrollTo().performClick()
         compose.runOnIdle { assertTrue(offsetChanges.isEmpty()) }
-        val last = text("\u5206\u4eab\u8bc4\u4ef7").performScrollTo().assertIsDisplayed()
+        val last = circleReach(text("\u5206\u4eab\u8bc4\u4ef7"))
         val track = compose.onNodeWithTag("task-switch-\u5206\u4eab\u8bc4\u4ef7", useUnmergedTree = true)
         assertInsideCircle(track.fetchSemanticsNode().boundsInRoot, corners = true)
         last.performTouchInput { click(center) }
@@ -341,6 +342,24 @@ class ComposeCheckinTaskSettingsUiTest {
 
     private fun text(value: String) = compose.onNodeWithText(value)
     private fun description(value: String) = compose.onNodeWithContentDescription(value)
+
+    private fun circleReach(target: SemanticsNodeInteraction): SemanticsNodeInteraction {
+        target.performScrollTo()
+        val node = target.fetchSemanticsNode()
+        val parent = generateSequence(node.parent) { it.parent }.first {
+            it.config.contains(SemanticsActions.ScrollBy) &&
+                it.config.contains(SemanticsProperties.VerticalScrollAxisRange)
+        }
+        val viewport = parent.boundsInRoot
+        val center = (compose.activity.window.decorView.height / 2f)
+            .coerceIn(viewport.top + node.size.height / 2f, viewport.bottom - node.size.height / 2f)
+        compose.onNode(SemanticsMatcher("vertical viewport ${parent.id}") { it.id == parent.id },
+            useUnmergedTree = true).performSemanticsAction(SemanticsActions.ScrollBy) {
+                it(0f, node.positionInWindow.y + node.size.height / 2f - center)
+            }
+        compose.waitForIdle()
+        return target.assertIsDisplayed()
+    }
 
     private fun assertCompactSwitch(scale: Float = 1f) {
         compose.onNodeWithTag("task-switch-\u81ea\u52a8\u7b7e\u5230", useUnmergedTree = true)

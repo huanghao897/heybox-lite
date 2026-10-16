@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import com.google.zxing.BinaryBitmap
@@ -258,6 +259,11 @@ internal class ComposeMembershipCheckoutUiTest : ComposeMembershipUiRegressionHa
         capture("rendered-qr")
         assertInDisplay(bounds, "full QR with its quiet zone", corners = true)
         assertEquals("QR must stay square", bounds.width, bounds.height, 1f)
+        val back = compose.onNodeWithContentDescription("\u8fd4\u56de", useUnmergedTree = true).fetchSemanticsNode()
+        val backBounds = Rect(back.positionInWindow.x, back.positionInWindow.y,
+            back.positionInWindow.x + back.size.width, back.positionInWindow.y + back.size.height)
+        assertFalse("The fixed return icon must not paint over the QR or its quiet zone",
+            bounds.overlaps(backBounds))
         val result = compose.runOnIdle {
             val view = compose.activity.window.decorView
             val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)

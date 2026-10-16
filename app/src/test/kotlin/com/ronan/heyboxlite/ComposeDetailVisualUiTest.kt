@@ -63,7 +63,7 @@ internal class ComposeDetailVisualUiTest : ComposeMembershipUiRegressionHarness(
     @Test fun square240DetailAndCommentsStayReachable() = verifyScreen()
 
     @Test @Config(qualifiers = "w227dp-h227dp-round-mdpi")
-    fun round227DetailAndCommentsStayInsideTheCircle() = verifyScreen()
+    fun round227DetailAndCommentsStayInsideTheCircle() = verifyScreen(expectTwoRows = true)
 
     @Test @Config(qualifiers = "w160dp-h240dp-mdpi")
     fun narrowLargeTextDetailAndCommentsDoNotOverflow() = verifyScreen(largeText = true)

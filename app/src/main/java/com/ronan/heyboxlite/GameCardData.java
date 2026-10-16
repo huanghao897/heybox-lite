@@ -97,6 +97,21 @@ final class GameCardData {
         return from(gameCard, fallbackAppId);
     }
 
+    GameCardData withDetails(GameCardData details) {
+        if (details == null) return this;
+        boolean hasPrice = details.free || !details.currentPrice.isEmpty();
+        return new GameCardData(appId,
+                details.name.isEmpty() ? name : details.name,
+                details.coverUrl.isEmpty() ? coverUrl : details.coverUrl,
+                details.platforms.isEmpty() ? platforms : details.platforms,
+                details.score.isEmpty() ? score : details.score,
+                details.followers.isEmpty() ? followers : details.followers,
+                hasPrice ? details.currentPrice : currentPrice,
+                details.originalPrice.isEmpty() ? originalPrice : details.originalPrice,
+                details.discount.isEmpty() ? discount : details.discount,
+                hasPrice ? details.free : free);
+    }
+
     boolean hasVisibleDetails() {
         return !this.coverUrl.isEmpty() || !this.score.isEmpty()
                 || !this.followers.isEmpty() || !this.currentPrice.isEmpty()

@@ -58,8 +58,8 @@ internal fun composeThemeState(
     accent = tokens.accent.asComposeColor(),
     link = tokens.link.asComposeColor(),
     onAccent = tokens.onPrimary.asComposeColor(),
-    uiScale = uiScale.coerceIn(0.5f, 1.6f),
-    textScale = textScale.coerceIn(0.75f, 1.8f),
+    uiScale = uiScale,
+    textScale = textScale,
     roundScreen = roundScreen,
     motionLevel = Motions.level(),
 )

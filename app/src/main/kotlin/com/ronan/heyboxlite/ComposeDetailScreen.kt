@@ -1,41 +1,22 @@
 package com.ronan.heyboxlite
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -91,6 +72,9 @@ internal fun ComposeDetailScreen(
     useImagePager: Boolean = false,
     onSettingsChanged: () -> Unit = {},
     onOpenImagePreview: ((String, android.widget.ImageView) -> Unit)? = null,
+    commentsListState: LazyListState = rememberLazyListState(),
+    pagerState: PagerState = rememberPagerState { 2 },
+    onPageNavigation: (ComposeDetailPagerNavigation?) -> Unit = {},
 ) {
     HeyboxComposeTheme(services.theme) {
         val preview = LocalInspectionMode.current
@@ -101,7 +85,9 @@ internal fun ComposeDetailScreen(
             imageTargetPx = if (theme.roundScreen) 720 else 900,
             gameCardNoImage = services.session.gameCardNoImage(),
         )
-        if (active && rotaryInput != null) ObserveFeedRotaryInput(rotaryInput, listState)
+        if (active && rotaryInput != null && !pagerState.isScrollInProgress) key(pagerState.settledPage) {
+            ObserveFeedRotaryInput(rotaryInput, if (pagerState.settledPage == 0) listState else commentsListState)
+        }
         var restored by remember(entryKey) { mutableStateOf(false) }
         var videoSettings by remember(entryKey) { mutableStateOf(false) }
         LaunchedEffect(entryKey, loading, active) {
@@ -119,7 +105,8 @@ internal fun ComposeDetailScreen(
             onOpenVideo, onCommentAction, listState, onOpenUser, services, link, active, replyStates,
             error, onRetry, actionRevision, visible = !active || loading || restored, notice = notice,
             useImagePager = useImagePager, onVideoSettings = { videoSettings = true },
-            onOpenImagePreview = onOpenImagePreview)
+            onOpenImagePreview = onOpenImagePreview, commentsListState = commentsListState,
+            pagerState = pagerState, onPageNavigation = onPageNavigation)
         if (active && videoSettings) Dialog(onDismissRequest = { videoSettings = false },
             properties = DialogProperties(usePlatformDefaultWidth = false)) {
             ComposeVideoSettingsScreen(services, { videoSettings = false }, onSettingsChanged)
@@ -153,117 +140,21 @@ private fun ComposeDetailLayout(
     useImagePager: Boolean = false,
     onVideoSettings: () -> Unit = {},
     onOpenImagePreview: ((String, android.widget.ImageView) -> Unit)? = null,
+    commentsListState: LazyListState = rememberLazyListState(),
+    pagerState: PagerState = rememberPagerState { 2 },
+    onPageNavigation: (ComposeDetailPagerNavigation?) -> Unit = {},
 ) {
-    val theme = LocalHeyboxTheme.current
-    val roundScreen = theme.roundScreen
-    var latest by remember(item.id) { mutableStateOf(false) }
-    val ordered = remember(comments, latest) { composeOrderedComments(comments, latest) }
-    val commentKeys = remember(ordered) { composeCommentKeys(ordered) }
-    val bodyRows = remember(content, useImagePager) { composeDetailBodyRows(content, useImagePager) }
-    val inset = 12.dp * theme.uiScale
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(theme.background)) {
-        val headerTop = if (roundScreen) maxWidth * 0.08f else watchDp(5)
-        val headerStart = if (roundScreen) maxWidth * 0.16f else watchDp(10)
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().testTag("compose-detail-list").graphicsLayer { alpha = if (visible) 1f else 0f },
-            userScrollEnabled = active,
-            contentPadding = PaddingValues(start = inset, end = inset,
-                top = headerTop + watchDp(42), bottom = watchListEndPadding()),
-            verticalArrangement = Arrangement.spacedBy(watchDp(10)),
-            state = listState,
-        ) {
-            item(key = "header", contentType = "header") {
-                Box(Modifier.padding(horizontal = if (roundScreen) watchDp(18) else 0.dp)) {
-                    ComposeDetailHeader(item, media, onOpenUser, link,
-                        onFollow = { onCommentAction(ComposeDetailAction.FollowAuthor(item)) },
-                        showFollow = services?.session?.userId() != item.authorId,
-                        actionRevision = actionRevision)
-                }
-            }
-            if (notice.isNotBlank()) item(key = "detail-notice") {
-                Text(notice, color = theme.muted, fontSize = watchSp(11f), lineHeight = watchSp(16f))
-            }
-            if (loading) item(key = "loading") {
-                Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                }
-            }
-            itemsIndexed(bodyRows, key = { _, row -> "body-${row.index}" },
-                contentType = { _, row -> row.blocks.first().kind }) { _, row ->
-                if (row.blocks.size > 1) ComposeDetailImagePager(row.blocks.map { it.value }, media,
-                    onOpenImage, onOpenPreview = onOpenImagePreview)
-                else ComposeDetailBlock(row.blocks.first(), media, services, onOpenImage, onOpenImagePreview)
-            }
-            itemsIndexed(videos, key = { index, _ -> "video-$index" }) { _, video ->
-                ComposeVideoCard(video, media, onVideoSettings = onVideoSettings, onOpenVideo = onOpenVideo)
-            }
-            if (!loading && content.isEmpty()) item(key = "fallback-body") {
-                val fallback = composeDetailFallbackText(item.description)
-                val bodyScale = theme.textScale * (services?.session?.bodyTextScale() ?: 100) / 100f
-                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    if (fallback.isNotBlank()) ComposeInlineText(fallback, theme.dark, theme.text, theme.link,
-                        fontSize = 13.sp * bodyScale, lineHeight = 20.sp * bodyScale)
-                    if (media.enabled) item.images.forEach { url ->
-                        ComposeDetailImage(url, media, onOpenImage, onOpenPreview = onOpenImagePreview)
-                    }
-                }
-            }
-            if (!loading && content.isEmpty() && videos.isEmpty()
-                && item.description.isBlank() && item.images.isEmpty()) item(key = "empty-body") {
-                Text("正文为空", color = theme.muted, fontSize = 12.sp)
-            }
-            if (error.isNotBlank()) item(key = "detail-error") {
-                Column(verticalArrangement = Arrangement.spacedBy(watchDp(6))) {
-                    Text(error, color = theme.muted, fontSize = watchSp(11f))
-                    ComposeDetailButton("重试", onRetry, icon = R.drawable.il_refresh)
-                }
-            }
-            item(key = "post-actions", contentType = "actions") {
-                ComposeDetailDock(item, item.liked, item.likes, 0.dp,
-                    onLike = { onCommentAction(ComposeDetailAction.LikePost(item)) },
-                    onComment = { onCommentAction(ComposeDetailAction.WriteComment(item)) },
-                    onFavorite = { onCommentAction(ComposeDetailAction.FavoritePost(item)) },
-                    onCache = { onCommentAction(ComposeDetailAction.CachePost(item)) },
-                    actionRevision = actionRevision)
-            }
-            item(key = "comment-heading") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HorizontalDivider(color = theme.hairline)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("评论 ${maxOf(item.comments, ordered.size)}", Modifier.weight(1f), fontSize = watchSp(13f),
-                            color = theme.text, fontWeight = FontWeight.Bold)
-                        Row(Modifier.testTag("comment-sort-tabs"),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            ComposeDetailCommentSortTab("热门", !latest) { latest = false }
-                            Box(Modifier.width(0.5.dp).height(watchDp(9)).background(theme.hairline))
-                            ComposeDetailCommentSortTab("最新", latest) { latest = true }
-                        }
-                    }
-                }
-            }
-            itemsIndexed(ordered, key = { index, _ ->
-                commentKeys[index]
-            }, contentType = { _, _ -> "comment-thread" }) { _, group -> ComposeDetailThread(
-                group, item, roundScreen, media, onCommentAction, onOpenUser,
-                replyState = replyStates[ComposeCommentThreadData.from(group).rootId],
-                doubleTapReplyEnabled = services?.session?.doubleTapCommentReply() ?: true,
-            ) }
-            if (!loading && ordered.isEmpty()) item(key = "empty-comments") {
-                Text("暂无评论", color = theme.muted, fontSize = 12.sp,
-                    modifier = Modifier.padding(vertical = 8.dp))
-            }
-        }
-        IconButton(onClick = onBack, modifier = Modifier.padding(start = headerStart, top = headerTop)
-            .size(watchDp(34)).clip(CircleShape).background(theme.panel.copy(alpha = 0.92f))) {
-            Icon(painterResource(R.drawable.ic_arrow_back), "返回", tint = theme.text,
-                modifier = Modifier.size(watchDp(18)))
-        }
-    }
-}
-
-@Composable
-private fun ComposeDetailCommentSortTab(text: String, selected: Boolean, onSelect: () -> Unit) {
-    ComposeDetailSortTab(text, selected, onSelect)
+    ComposeDetailPager(pagerState, active, visible, onBack, onPageNavigation,
+        body = { padding, pageActive ->
+            ComposeDetailBody(item, content, videos, comments, loading, media, services, listState,
+                padding, pageActive, onOpenImage, onOpenVideo, onCommentAction, onOpenUser,
+                link, replyStates, error, onRetry, actionRevision, notice, useImagePager,
+                onVideoSettings, onOpenImagePreview)
+        },
+        comments = { padding, pageActive ->
+            ComposeDetailCommentsPage(item, comments, loading, media, services, commentsListState,
+                padding, pageActive, replyStates, error, onRetry, onCommentAction, onOpenUser)
+        })
 }
 
 @Preview(name = "Detail Square", showBackground = true, widthDp = 240, heightDp = 320)

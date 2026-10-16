@@ -92,11 +92,15 @@ class ComposeCommentCompactUiTest {
         compose.onNodeWithText("Lv.56", useUnmergedTree = true).assertDoesNotExist()
         val section = compose.onNodeWithTag("comment-thread-root").fetchSemanticsNode().boundsInRoot
         val replyBounds = compose.onNodeWithTag("comment-reply").fetchSemanticsNode().boundsInRoot
-        val rootBounds = compose.onNodeWithTag("comment-root").fetchSemanticsNode().boundsInRoot
+        val rootBody = compose.onNodeWithText("Root body").fetchSemanticsNode().boundsInRoot
         val replyFrame = compose.onNodeWithTag("comment-replies-root").fetchSemanticsNode().boundsInRoot
-        assertEquals("The reply frame must align with its top-level comment", rootBounds.left, replyFrame.left, 0.5f)
-        assertEquals(rootBounds.right, replyFrame.right, 0.5f)
-        assertTrue("Replies must not waste the watch width", replyBounds.width >= section.width * 0.83f)
+        assertEquals("The reply frame must align with the primary body, not its avatar",
+            rootBody.left, replyFrame.left, 0.5f)
+        assertEquals(rootBody.right, replyFrame.right, 0.5f)
+        assertTrue("Only the reply frame's compact padding should reduce body width",
+            rootBody.width - replyBounds.width <= 11f)
+        if (round) assertTrue("Round replies must not waste the watch width",
+            replyBounds.width >= section.width * 0.83f)
         val text = compose.onNodeWithText("Bo：ok").fetchSemanticsNode().boundsInRoot
         assertTrue("A short reply must not reserve a separate author row", text.height <= 19f)
         assertTrue("An empty image wrapper must not add reply height", replyBounds.height <= 20f)

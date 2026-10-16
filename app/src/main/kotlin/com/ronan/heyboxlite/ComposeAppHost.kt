@@ -139,6 +139,8 @@ internal class ComposeAppHost(
      */
     fun composeSwipeTarget(route: String, direction: Int): String? {
         val key = route.substringBefore('?')
+        if (key == "detail" && direction > 0 &&
+            !routeResources.canSwipeDetailBack(currentDetailEntryKey())) return null
         val checkinPage = ComposeCheckinNavigation.page(route)
         if (checkinPage != null && direction > 0 && servicesState.value.session.shellBackSwipe()) {
             ComposeCheckinNavigation.parent(checkinPage)?.let { return ComposeCheckinNavigation.key(it) }
@@ -220,6 +222,9 @@ internal class ComposeAppHost(
 
     internal fun userSpaceController(route: ComposeUserSpaceRoute): ComposeUserSpaceController =
         routeResources.userSpace(route)
+
+    internal fun setDetailPage(entryKey: Long, page: ComposeDetailPagerNavigation?) =
+        routeResources.setDetailPage(entryKey, page)
 
     fun updateTheme(tokens: ThemeTokens, roundScreen: Boolean, uiScale: Float, textScale: Float) {
         feedRotaryInput.clear()
@@ -382,6 +387,7 @@ internal class ComposeAppHost(
         }
         if (current == "feed") return false
         if (current == "detail") {
+            if (routeResources.returnToDetailBody(currentDetailEntryKey())) return true
             saveDetailProgress()
             val targetSpec = navigation.backTarget()
             navigation.restoreSavedDetailIfNeeded(targetSpec)
@@ -428,33 +434,6 @@ internal class ComposeAppHost(
     internal fun openDetail(item: FeedItem) {
         clearRotaryInput()
         callbacks.openDetail(item)
-    }
-
-    internal fun feedAction(item: FeedItem, action: FeedAction) {
-        callbacks.feedAction(item, when (action) {
-            FeedAction.LIKE -> ComposeAppCallbacks.ACTION_LIKE
-            FeedAction.FAVORITE -> ComposeAppCallbacks.ACTION_FAVORITE
-            FeedAction.CACHE -> ComposeAppCallbacks.ACTION_CACHE
-            FeedAction.FOLLOW -> ComposeAppCallbacks.ACTION_FOLLOW
-            FeedAction.COMMENT -> ComposeAppCallbacks.ACTION_COMMENT
-        })
-    }
-
-    internal fun detailAction(action: ComposeDetailAction) {
-        when (action) {
-            is ComposeDetailAction.LikePost -> callbacks.feedAction(action.item, ComposeAppCallbacks.ACTION_LIKE)
-            is ComposeDetailAction.FavoritePost -> callbacks.feedAction(action.item, ComposeAppCallbacks.ACTION_FAVORITE)
-            is ComposeDetailAction.CachePost -> callbacks.feedAction(action.item, ComposeAppCallbacks.ACTION_CACHE)
-            is ComposeDetailAction.FollowAuthor -> callbacks.feedAction(action.item, ComposeAppCallbacks.ACTION_FOLLOW)
-            is ComposeDetailAction.WriteComment -> detailComments.edit(null, "")
-            is ComposeDetailAction.LikeComment -> detailComments.like(action.comment)
-            is ComposeDetailAction.Reply -> detailComments.edit(action.comment, action.rootId)
-            is ComposeDetailAction.LoadReplies -> detailComments.replies(action.root)
-            is ComposeDetailAction.OpenCommentImage -> {
-                val gallery = composeCommentGallery(action.comment, action.url)
-                callbacks.requestImages(action.source, gallery.urls.toTypedArray(), gallery.index)
-            }
-        }
     }
 
     fun likeDetailComment(comment: org.json.JSONObject) { detailComments.like(comment) }
