@@ -47,19 +47,20 @@ internal fun ComposeUserSpaceScreen(
     services: ComposeServices,
     onBack: () -> Unit,
     onOpen: (FeedItem) -> Unit,
+    retainedController: ComposeUserSpaceController? = null,
 ) {
     val theme = LocalHeyboxTheme.current
-    val controller = remember(route.userId) {
-        ComposeUserSpaceController(services.api, services.cache)
+    val controller = remember(route.userId, retainedController) {
+        retainedController ?: ComposeUserSpaceController(services.api, services.cache)
     }
     val state by controller.state
     var articlesOnly by androidx.compose.runtime.remember(route.userId) {
         androidx.compose.runtime.mutableStateOf(false)
     }
-    DisposableEffect(controller) {
-        onDispose { controller.close() }
+    DisposableEffect(controller, retainedController) {
+        onDispose { if (retainedController == null) controller.close() }
     }
-    LaunchedEffect(route.userId, route.name, route.avatar) { controller.load(route) }
+    LaunchedEffect(controller, route) { if (retainedController == null) controller.load(route) }
 
     WatchPage(state.name, onBack) {
         WatchCard {

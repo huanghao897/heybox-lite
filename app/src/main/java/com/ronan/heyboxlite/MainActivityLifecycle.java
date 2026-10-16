@@ -72,6 +72,8 @@ final class MainActivityLifecycle {
     }
 
     void onDestroy() {
+        activity.saveCurrentDetailProgress();
+        if (activity.composeBridge != null) activity.composeBridge.close();
         if (activity.composeAppHost != null) activity.composeAppHost.close();
         if (activity.crownInput != null) activity.crownInput.cancel();
         if (activity.readingTimeTracker != null) activity.readingTimeTracker.pause();

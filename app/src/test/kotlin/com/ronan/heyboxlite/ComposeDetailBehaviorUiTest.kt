@@ -89,8 +89,9 @@ class ComposeDetailBehaviorUiTest {
         assertEquals(listOf("nested-author"), opened)
     }
 
-    @Test fun cachedRepliesExpandBeforeRemoteLoadingAndLateRepliesClearTheFailure() {
+    @Test fun cachedRepliesExpandBeforeExplicitRequestFailureRetryAndSuccess() {
         val group = mutableStateOf(replyGroup(7))
+        val replyState = mutableStateOf(ComposeReplyLoadState())
         val root = group.value.getJSONArray("comment").getJSONObject(0)
         val actions = mutableListOf<ComposeDetailAction>()
         val item = FeedItem.from(JSONObject().put("linkid", "post"))
@@ -98,7 +99,12 @@ class ComposeDetailBehaviorUiTest {
             HeyboxComposeTheme(composePreviewTheme(false)) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     ComposeDetailThread(group.value, item, false, ComposeMediaSettings(enabled = false),
-                        {}, actions::add)
+                        { action ->
+                            actions += action
+                            if (action is ComposeDetailAction.LoadReplies) {
+                                replyState.value = ComposeReplyLoadState(loading = true)
+                            }
+                        }, replyState = replyState.value)
                 }
             }
         }
@@ -110,10 +116,26 @@ class ComposeDetailBehaviorUiTest {
         compose.runOnIdle {
             assertSame(root, (actions.single() as ComposeDetailAction.LoadReplies).root)
         }
-        compose.mainClock.advanceTimeBy(5_001L)
-        compose.onNodeWithText("回复加载失败，重试").assertExists()
-        compose.runOnIdle { group.value = replyGroup(13) }
+        compose.onNodeWithText("加载回复中…").assertExists()
+        compose.mainClock.advanceTimeBy(30_000L)
         compose.onNodeWithText("回复加载失败，重试").assertDoesNotExist()
+        compose.onNodeWithText("加载回复中…").assertExists()
+        compose.runOnIdle { replyState.value = ComposeReplyLoadState(error = "Network unavailable") }
+        compose.onNodeWithText("Network unavailable").assertExists()
+        compose.onNodeWithText("回复加载失败，重试").assertExists()
+        compose.onNodeWithText("回复加载失败，重试").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(2, actions.size)
+            assertSame(root, (actions.last() as ComposeDetailAction.LoadReplies).root)
+        }
+        compose.onNodeWithText("加载回复中…").assertExists()
+        compose.runOnIdle {
+            group.value = replyGroup(13)
+            replyState.value = ComposeReplyLoadState(hasMore = false)
+        }
+        compose.onNodeWithText("回复加载失败，重试").assertDoesNotExist()
+        compose.onNodeWithText("加载回复中…").assertDoesNotExist()
+        compose.onNodeWithText("Network unavailable").assertDoesNotExist()
         compose.onNodeWithText("Reply 12").assertExists()
         compose.onNodeWithText("Reply 13").assertDoesNotExist()
         compose.onNodeWithText("展开 1 条回复").assertExists()

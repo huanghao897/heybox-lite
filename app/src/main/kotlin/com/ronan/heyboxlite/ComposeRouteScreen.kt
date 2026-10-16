@@ -15,10 +15,10 @@ internal fun ComposeRouteScreen(
     active: Boolean,
     previewListState: LazyListState? = null,
 ) {
-    val userRoute by host.navigation.userSpaceRoute
     val detailState by host.navigation.detail
     val listState = previewListState ?: host.listState(route)
-    when (route) {
+    val routeKey = route.substringBefore('?')
+    when (routeKey) {
         "feed" -> {
             val actionRevision by host.feedRevision
             val items by host.feed.items
@@ -57,10 +57,12 @@ internal fun ComposeRouteScreen(
             },
         )
         "user_space" -> ComposeUserSpaceScreen(
-            route = composeUserSpaceRoute(userRoute),
+            route = composeUserSpaceRoute(route.takeIf { '?' in it } ?: host.navigation.userSpaceRoute.value),
             services = services,
             onBack = { host.handleBack() },
             onOpen = host::openDetail,
+            retainedController = host.userSpaceController(composeUserSpaceRoute(
+                route.takeIf { '?' in it } ?: host.navigation.userSpaceRoute.value)),
         )
         "search" -> {
             val items by host.search.items
@@ -78,7 +80,9 @@ internal fun ComposeRouteScreen(
             )
         }
         "detail" -> {
-            val state = detailState
+            val actionRevision by host.feedRevision
+            val state = if (route == "detail" || route == host.navigation.presentationRoute()) detailState
+                else host.navigation.detailForPresentation(route)
             if (state == null) {
                 WatchEmptyState("正在打开…", Modifier.background(services.theme.background))
             } else {
@@ -91,13 +95,29 @@ internal fun ComposeRouteScreen(
                     link = state.link,
                     services = services,
                     onBack = { host.handleBack() },
-                    onOpenImage = { host.callbacks.requestImage(it) },
+                    onOpenImage = { selected ->
+                        val gallery = composeDetailGallery(state, selected)
+                        host.callbacks.requestImages(gallery.urls.toTypedArray(), gallery.index)
+                    },
                     onOpenVideo = { host.callbacks.requestVideo(it) },
                     onOpenUser = { id, name, avatar ->
                         host.navigate("user_space?user=${android.net.Uri.encode(id)}&name=${android.net.Uri.encode(name)}&avatar=${android.net.Uri.encode(avatar)}")
                     },
                     onCommentAction = host::detailAction,
+                    listState = listState,
+                    active = active,
+                    replyStates = state.replyStates,
+                    error = state.error,
+                    onRetry = { host.callbacks.openDetail(state.item) },
+                    entryKey = state.entryKey,
+                    actionRevision = actionRevision,
+                    rotaryInput = if (active) host.detailRotaryInput else null,
+                    notice = state.body?.optString("_fallback_notice").orEmpty(),
+                    useImagePager = state.useImagePager,
+                    onSettingsChanged = host.callbacks::settingsChanged,
                 )
+                val editor by host.detailComments.editor
+                if (active && editor != null) ComposeCommentEditor(editor!!, host.detailComments)
             }
         }
         "settings_home", "display_settings", "display_preview", "startup_settings",

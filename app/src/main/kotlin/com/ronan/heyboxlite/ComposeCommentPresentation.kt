@@ -3,6 +3,30 @@ package com.ronan.heyboxlite
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal data class ComposeCommentIdentity(
+    val author: String,
+    val userId: String,
+    val avatar: String,
+    val postAuthor: Boolean,
+    val level: Int,
+    val meta: String,
+)
+
+internal fun composeCommentIdentity(comment: JSONObject, item: FeedItem): ComposeCommentIdentity {
+    val user = comment.optJSONObject("user")
+    val author = Json.first(user?.optString("username"), user?.optString("nickname"),
+        user?.optString("name")).ifBlank { "匿名用户" }
+    return ComposeCommentIdentity(
+        author = author,
+        userId = composeCommentUserId(user),
+        avatar = Json.first(user?.optString("avatar"), user?.optString("avartar"),
+            user?.optString("avatar_url")),
+        postAuthor = composeCommentIsPostAuthor(item, user, author),
+        level = CommentData.userLevel(user),
+        meta = composeCommentMeta(comment, CommentData.commentTime(comment)),
+    )
+}
+
 /** Parsing does not annotate or otherwise mutate the server's comment payload. */
 internal data class ComposeCommentThreadData(
     val root: JSONObject,

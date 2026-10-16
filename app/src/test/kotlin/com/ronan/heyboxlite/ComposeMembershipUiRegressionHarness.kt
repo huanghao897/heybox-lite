@@ -120,8 +120,10 @@ internal abstract class ComposeMembershipUiRegressionHarness {
         return node.assertIsDisplayed()
     }
 
-    protected fun assertLabelFits(value: String) {
-        val node = reach(text(value, unmerged = true))
+    protected fun assertLabelFits(value: String) = assertLabelFits(value, text(value, unmerged = true))
+
+    protected fun assertLabelFits(value: String, target: SemanticsNodeInteraction) {
+        val node = reach(target)
         compose.waitForIdle()
         val layouts = mutableListOf<TextLayoutResult>()
         node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }

@@ -55,14 +55,19 @@ public class GestureOwnershipWiringTest {
     }
 
     @Test
-    public void composeDetailCapturesReturnLayerBeforeHidingCompose() throws Exception {
+    public void composeDetailUsesTheNewRuntimeWithoutConstructingANativePage() throws Exception {
         String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
-        String activity = source("java/com/ronan/heyboxlite/MainActivity.java");
-        assertTrue(bridge.contains("activity.captureComposeReturnSnapshot();"));
-        assertTrue(bridge.indexOf("captureReturnFallback(legacyReturnRoute)")
-                < bridge.indexOf("hideComposeSurface()"));
-        assertTrue(bridge.contains("!activity.composeAppHost.hasLiveReturnPreview(route)"));
-        assertTrue(activity.contains("!this.composeBridge.isLegacyDetailActive()"));
+        String runtime = source("java/com/ronan/heyboxlite/ComposeDetailRuntime.java");
+        int start = bridge.indexOf("boolean openComposeDetail(FeedItem item)");
+        int end = bridge.indexOf("boolean showComposeDetailResult", start);
+        assertTrue(start >= 0 && end > start);
+        String entry = bridge.substring(start, end);
+        assertTrue(entry.contains("composeDetail.open(item)"));
+        assertFalse(entry.contains("hideComposeSurface()"));
+        assertFalse(runtime.contains("new DetailPageAssembler"));
+        assertFalse(runtime.contains("createLikeControl"));
+        assertTrue(runtime.contains("ComposeDetailDocument.parse"));
+        assertTrue(runtime.contains("parser.shutdownNow()"));
     }
 
     @Test
@@ -76,12 +81,14 @@ public class GestureOwnershipWiringTest {
     public void feedSearchAndScrollStateBelongToTheScrollableFeed() throws Exception {
         String feed = source("kotlin/com/ronan/heyboxlite/ComposeFeed.kt");
         String host = source("kotlin/com/ronan/heyboxlite/ComposeAppHost.kt");
+        String resources = source("kotlin/com/ronan/heyboxlite/ComposeRouteResources.kt");
         int list = feed.indexOf("LazyColumn(");
         int searchItem = feed.indexOf("item(key = \"feed-search\"");
         assertTrue(list >= 0 && searchItem > list);
         assertTrue(feed.indexOf("FeedToolbar(", searchItem) > searchItem);
         assertTrue(host.contains("internal val feedListState = LazyListState()"));
-        assertTrue(host.contains("mutableMapOf(\"feed\" to feedListState)"));
+        assertTrue(host.contains("ComposeRouteResources(api, cache, feedListState)"));
+        assertTrue(resources.contains("mutableMapOf(\"feed\" to feedListState)"));
         assertTrue(host.contains("SaveableStateProvider(page)"));
     }
 
@@ -110,7 +117,7 @@ public class GestureOwnershipWiringTest {
         String host = source("kotlin/com/ronan/heyboxlite/ComposeAppHost.kt");
         assertTrue(factory.indexOf("if (livePreview != null) return livePreview;")
                 < factory.indexOf("new ImageView(activity)"));
-        assertTrue(bridge.contains("activity.content.removeAllViews();"));
+        assertTrue(bridge.contains("activity.content.setVisibility(View.INVISIBLE);"));
         assertTrue(bridge.contains("createReturnPreview(legacyReturnRoute)"));
         int openStart = host.indexOf("internal fun openDetail(item: FeedItem)");
         int openEnd = host.indexOf("internal fun detailAction", openStart);

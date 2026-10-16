@@ -100,12 +100,36 @@ class ComposeCommentMediaUiTest {
             }
         }
         compose.onAllNodes(hasClickAction()).assertCountEquals(2)
+        compose.onNodeWithText("GIF").assertExists()
         compose.runOnIdle {
             assertEquals(listOf("gif-preview.jpg", "static-preview.jpg"), requests.urls)
             assertTrue(requests.animatedUrls.isEmpty())
             playGif.value = true
         }
         compose.runOnIdle { assertEquals(listOf("original.gif"), requests.animatedUrls) }
+        compose.onAllNodes(hasClickAction())[0].performClick()
+        assertEquals(listOf("original.gif"), opened)
+    }
+
+    @Test fun failedGifPreviewCanRetryWithoutChangingTheOriginalOrAnimationUrl() {
+        val opened = mutableListOf<String>()
+        requests.failNext = true
+        compose.setContent {
+            HeyboxComposeTheme(composePreviewTheme(false)) {
+                Box(Modifier.width(80.dp)) {
+                    ComposeCommentImageGrid(listOf(CommentData.CommentImage(
+                        "preview.jpg", "original.gif", "image/gif", true)),
+                        ComposeMediaSettings(), false, opened::add, requests)
+                }
+            }
+        }
+        compose.onNodeWithText("重试").performClick()
+        compose.onNodeWithText("重试").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(listOf("preview.jpg", "preview.jpg"), requests.urls)
+            assertEquals(listOf("original.gif"), requests.animatedUrls)
+        }
+        compose.onAllNodes(hasClickAction()).assertCountEquals(1)
         compose.onAllNodes(hasClickAction())[0].performClick()
         assertEquals(listOf("original.gif"), opened)
     }
@@ -135,11 +159,14 @@ class ComposeCommentMediaUiTest {
         val urls = mutableListOf<String>()
         val targets = mutableListOf<Int>()
         val animatedUrls = mutableListOf<String>()
+        var failNext = false
         override fun load(view: ImageView, url: String, targetPx: Int, complete: (Boolean, Bitmap?) -> Unit) {
             urls += url
             targets += targetPx
             view.setImageDrawable(ColorDrawable(Color.GREEN))
-            complete(true, null)
+            val success = !failNext
+            failNext = false
+            complete(success, null)
         }
         override fun animate(view: ImageView, url: String) { animatedUrls += url }
         override fun cancel(view: ImageView) { }

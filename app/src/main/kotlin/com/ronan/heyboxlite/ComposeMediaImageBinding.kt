@@ -34,13 +34,18 @@ internal class ComposeMediaImageBinding(
     private var current: ComposeMediaImageRequest? = null
     private var generation = 0
 
-    fun bind(next: ComposeMediaImageRequest, complete: (Boolean) -> Unit) {
+    fun bind(next: ComposeMediaImageRequest, complete: (Boolean) -> Unit) =
+        bind(next, complete) { _, _ -> }
+
+    fun bind(next: ComposeMediaImageRequest, complete: (Boolean) -> Unit,
+             imageSize: (Int, Int) -> Unit) {
         if (next == current) return
         reset()
         current = next
         val serial = generation
-        requests.load(view, next.url, next.targetPx) { success, _ ->
+        requests.load(view, next.url, next.targetPx) { success, bitmap ->
             if (serial != generation || next != current) return@load
+            if (success && bitmap != null) imageSize(bitmap.width, bitmap.height)
             complete(success)
             if (success && next.animatedUrl.isNotBlank()) requests.animate(view, next.animatedUrl)
         }
@@ -65,13 +70,14 @@ internal fun bindComposeMediaImage(
     request: ComposeMediaImageRequest,
     requests: ComposeMediaImageRequests,
     complete: (Boolean) -> Unit,
+    imageSize: (Int, Int) -> Unit = { _, _ -> },
 ) {
     val previous = view.getTag(MEDIA_BINDING_TAG) as? ComposeMediaImageBinding
     val binding = if (previous?.requests === requests) previous else {
         previous?.reset()
         ComposeMediaImageBinding(view, requests).also { view.setTag(MEDIA_BINDING_TAG, it) }
     }
-    binding.bind(request, complete)
+    binding.bind(request, complete, imageSize)
 }
 
 internal fun resetComposeMediaImage(view: ImageView) {

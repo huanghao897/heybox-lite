@@ -50,12 +50,22 @@ public class ComposeSwipePresentationTest {
         assertEquals(-320f, ComposeSwipePolicy.dragOffset(-800f, -1, 320f), 0f);
     }
 
-    @Test public void parameterizedTargetsUseTheScreenKeyDuringLiveHandoff() {
-        assertEquals(Arrays.asList("profile", "favorite_folder"),
+    @Test public void parameterizedTargetsKeepTheirIdentityDuringLiveHandoff() {
+        assertEquals(Arrays.asList("profile", "favorite_folder?folder=42&name=games"),
                 ComposeSwipePresentation.routes("profile", "favorite_folder?folder=42&name=games"));
-        assertEquals(-224f, position("favorite_folder", "favorite_folder?folder=42", 1, 96f), 0f);
-        assertEquals(Collections.singletonList("favorite_folder"),
-                ComposeSwipePresentation.routes("favorite_folder", "favorite_folder?folder=42"));
+        assertEquals(-224f, position("favorite_folder?folder=42", "favorite_folder?folder=42", 1, 96f), 0f);
+        assertEquals(Collections.singletonList("favorite_folder?folder=42"),
+                ComposeSwipePresentation.routes("favorite_folder?folder=42", "favorite_folder?folder=42"));
+    }
+
+    @Test public void nestedDetailsHaveSeparateLiveLayersAndMeetAtTheEdge() {
+        String child = "detail?entry=2";
+        String parent = "detail?entry=1";
+        assertEquals(Arrays.asList(child, parent), ComposeSwipePresentation.routes(child, parent));
+        assertEquals(96f, position(child, parent, 1, 96f), 0f);
+        assertEquals(-224f, position(parent, parent, 1, 96f), 0f);
+        assertEquals(0f, position(parent, parent, 1, 320f), 0f);
+        assertEquals(Collections.singletonList(parent), ComposeSwipePresentation.routes(parent, parent));
     }
 
     private static float position(String page, String target, int direction, float drag) {

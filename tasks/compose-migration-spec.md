@@ -10,7 +10,7 @@
 
 - 基线提交：`8c2c906`
 - 当前版本：`2.18` / `221`，本次不修改版本号
-- 当前 UI：Compose 主壳、主要页面、播放器控制和崩溃恢复页；正文/评论运行时仍走原生详情宿主，图片查看器、验证码 WebView 和少数兼容页待继续迁移
+- 当前 UI：Compose 主壳、主要页面、播放器控制、崩溃恢复、正文和评论；帖子实际入口已切到 Compose，图片查看器、验证码 WebView 和少数兼容页保留原生边界
 - 当前 `minSdk`：21；`compileSdk`：36；AGP：8.13.2
 - 当前 APK：单 APK、原固定签名
 
@@ -18,7 +18,7 @@
 
 1. 本分支允许引入 Kotlin、Compose 编译器和 Compose 依赖。
 2. 网络、数据解析、缓存、登录和业务接口先继续使用现有 Java 实现。
-3. 主壳、列表、设置、签到、播放器控制和崩溃恢复页面已使用 Compose；详情/评论组件仍在核对行为，运行时保留原版宿主；图片查看器与必要 WebView 宿主作为独立边界继续处理。
+3. 主壳、列表、设置、签到、播放器控制、崩溃恢复、正文和评论已使用 Compose；图片查看器与必要 WebView 宿主作为独立边界继续处理。原生详情代码保留作兼容回退，不是当前 Compose 帖子入口。
 4. 旧版 `feature/ui-v2-native-view` 永远保留，任何阶段都可以切回该分支。
 
 ## Compatibility Decision
@@ -88,12 +88,12 @@ fun SettingsScreen(
     state: SettingsUiState,
     onEvent: (SettingsEvent) -> Unit,
 ) {
-    ScreenScaffold {
-        TransformingLazyColumn {
-            item { SettingsHeader(state.title) }
-            item { SettingsToggleRow("表冠滚动", state.crownEnabled) {
+    LazyColumn {
+        item { WatchSectionTitle(state.title) }
+        item {
+            WatchSwitchRow("表冠滚动", state.crownEnabled) {
                 onEvent(SettingsEvent.SetCrownEnabled(it))
-            } }
+            }
         }
     }
 }
@@ -121,10 +121,18 @@ fun SettingsScreen(
 
 ## Current Boundary
 
-- Compose 页面：应用壳、底部导航、信息流、搜索、收藏/稍后看、我的、个人动态、阅读中心、设置、签到、排行榜、视频播放器控制和崩溃恢复。
-- 待完成 UI：正文/评论的原版详情入口、图片查看器与部分旧弹窗；已有 Compose 详情组件不等于运行时已完成切换。
+### 2026-10-16 详情与评论运行时迁移
+
+- 将点击帖子的实际入口切到 Compose；不再先创建 `DetailPageAssembler` 的 View 树，也不通过隐藏的 Java 点赞控件更新评论。
+- 继续复用现有 `DetailLoadCoordinator`、`DetailContentParser`、`WriteActionClient` 与官方请求参数；UI、异步解析、写操作各自独立。
+- 评论使用惰性列表，保留官方表情/CY、游戏链接、原图/GIF、作者和等级、置顶、复制、回复关系、每次五条回复；回复进度由真实请求结果驱动，不用固定超时冒充失败。
+- 保留收藏、缓存、点赞、跟随账号与阅读位置恢复；详情进入个人主页后再打开帖子必须逐级返回，返回预览显示真实来源页。
+- 原生分支及未确认无用的兼容代码不删除。新页面通过布局/交互回归、完整测试、Lint 和固定证书构建后再提交；没有真机时不宣称帧率和所有手势已验收。
+
+- Compose 页面：应用壳、底部导航、信息流、搜索、收藏/稍后看、我的、个人动态、阅读中心、设置、签到、排行榜、视频播放器控制、崩溃恢复、正文、评论和评论编辑器。
+- 待完成 UI：原生全屏图片查看器与部分旧弹窗；图片缩略图暂保留小范围 `GifImageView` 互操作。迁移页面仍需真实手表验收。
 - Java 非 UI 业务：API、解析、缓存、加密和视频播放控制器可以保留；验证码 WebView、视频输出 SurfaceView 继续承担必要的平台互操作。
-- 主 Activity 仍是生命周期协调器，已迁移页面渲染走 `ComposeAppHost`；原生详情暂时保留，避免未完成的替换再次破坏正文、评论和返回行为。
+- 主 Activity 仍是生命周期协调器，页面渲染走 `ComposeAppHost`；`ComposeDetailRuntime` 独立处理详情加载和后台解析，`ComposeCommentActions` 与 `ComposeCommentRequests` 分别处理评论状态和业务调用，原生详情仅作兼容回退保留。
 
 ## Open Questions
 

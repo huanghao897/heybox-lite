@@ -89,7 +89,8 @@ HeyBoxCommunity/
 | `MainActivity` / `ComposeAppHost` | Activity 生命周期、Compose 导航与回退状态协调 |
 | `ComposeFeed*` / `ComposeSearch*` / `ComposeProfile*` | 信息流、搜索、我的和个人动态页面及其控制器 |
 | `ComposeSettings*` / `ComposeCheckin*` | 设置、签到、排行榜和相关表单页面 |
-| `ComposeDetail*` / `ComposeReadingStats` | 帖子详情、评论、游戏卡片、阅读中心 |
+| `ComposeDetail*` / `ComposeComment*` | 正文与评论布局、后台解析、回复、草稿与点赞状态 |
+| `ComposeReading*` / `ComposeRouteResources` | 阅读中心、阅读位置与返回链资源管理 |
 | `QrLoginController` / `WriteActionClient` | 二维码登录轮询、写操作节流与请求编排 |
 | `SavedPostParser` | 收藏、历史等不稳定响应结构的纯 JSON 解析 |
 | `FeedCollection` / `SearchState` | 帖子响应解析、关键词过滤、去重与搜索分页状态 |
@@ -103,7 +104,7 @@ HeyBoxCommunity/
 | `CheckinCenter*` | 云端签到连接、账号登录、任务设置和日志展示 |
 | `NativeSignBridge` / `NativeSignService` | 官方请求安全参数兼容层，独立进程运行 |
 
-`feature/compose-migration` 已将主壳、底部导航、信息流、搜索、我的、设置、签到、阅读中心和帖子详情迁移到 Compose；页面状态和网络工作由独立控制器管理，避免把请求和磁盘 IO 放进组合函数。图片查看器、视频播放器、验证码 WebView 以及少数旧 ROM 兼容页仍保留 Java View 兼容层，因为它们依赖现有媒体手势、WebView 生命周期或设备特性，后续会在真机验证后逐项替换。原 `feature/ui-v2-native-view` 分支作为可回退基线保留。
+`feature/compose-migration` 的正常入口已使用 Compose 主壳、信息流、搜索、我的、设置、签到、阅读中心、正文、评论和评论编辑器；播放器控制与崩溃恢复界面也使用 Compose。详情加载、后台解析、评论请求和返回状态分别由独立组件管理，不再先创建原生详情 View 树，也不借用隐藏的 Java 控件提交评论操作。全屏图片查看器与部分旧弹窗仍保留原生实现；GIF 缩略图、视频 SurfaceView 和验证码 WebView 保留必要的平台互操作。原生详情兼容代码和 `feature/ui-v2-native-view` 回退分支暂不删除，迁移页面仍需真实手表验收。
 
 ---
 

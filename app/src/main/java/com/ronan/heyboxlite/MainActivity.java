@@ -61,7 +61,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     DiagnosticsController diagnosticsController;
     private DetailContentRenderer detailContentRenderer;
     private DetailHeaderRenderer detailHeaderRenderer;
-    private DetailActionBar detailActionBar;
+    DetailActionBar detailActionBar;
     DetailLoadCoordinator detailLoader;
     private DetailPageAssembler detailPageAssembler;
     private DetailCommentsSection detailCommentsSection;
@@ -85,7 +85,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     FrameLayout content;
     FrameLayout composeLayer;
     ComposeAppHost composeAppHost;
-    private ComposeActivityBridge composeBridge;
+    ComposeActivityBridge composeBridge;
     BottomNavigationController bottomNavigation;
     TextView title;
     TextView leading;
@@ -124,7 +124,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     String currentLinkId = "";
     String currentLinkHsrc = "";
     String currentAuthCode = "";
-    private String lastDetailDiagnostics = "";
+    String lastDetailDiagnostics = "";
     JSONObject currentDetailBody;
     boolean activityResumed;
     boolean accountBlockedScreen;
@@ -1658,7 +1658,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         openImage(source, new String[]{url}, 0);
     }
 
-    private void openImage(ImageView source, String[] urls, int index) {
+    void openImage(ImageView source, String[] urls, int index) {
         ImageViewerLauncher.open(this, source, urls, index);
     }
 
@@ -1940,6 +1940,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     }
 
     void saveCurrentDetailProgress() {
+        if (this.composeBridge != null) this.composeBridge.saveDetailProgress();
         if (!"detail".equals(this.screen) || this.detailScroll == null || this.currentLinkId.isEmpty() || this.localCache == null || !this.session.rememberDetailScroll()) {
             return;
         }

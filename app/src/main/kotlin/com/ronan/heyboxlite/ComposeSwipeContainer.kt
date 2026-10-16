@@ -73,7 +73,7 @@ internal fun ComposeSwipeContainer(
     }
 
     LaunchedEffect(route, handoff.value) {
-        if (!handoff.value || route != target.value?.substringBefore('?')) return@LaunchedEffect
+        if (!handoff.value || route != target.value) return@LaunchedEffect
         // The target is the same keyed composition before and after the route change.
         withFrameNanos { }
         reset()

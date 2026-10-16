@@ -9,14 +9,16 @@ import org.json.JSONObject;
 /** Route and action adapter kept outside MainActivity so the Compose shell does not grow it again. */
 final class ComposeActivityBridge implements ComposeAppCallbacks {
     private final MainActivity activity;
-    private boolean openingLegacyDetail;
+    private final ComposeCommentRequests commentRequests;
     private boolean legacyDetailActive;
     private String legacyReturnRoute = "feed";
     private boolean returningLegacyDetail;
     private NativeDetailReturnHandoff returnHandoff;
+    private ComposeDetailRuntime composeDetail;
 
     ComposeActivityBridge(MainActivity activity) {
         this.activity = activity;
+        this.commentRequests = new ComposeCommentRequests(activity);
     }
 
     void mount(FrameLayout body) {
@@ -108,11 +110,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     boolean openComposeDetail(FeedItem item) {
-        // The native detail surface owns the complete content, comment, emoji and
-        // image pipeline. Prepare that surface for every caller, including the
-        // legacy reading-center and favorites callbacks, but let MainActivity run
-        // its normal detail setup exactly once.
-        if (openingLegacyDetail || activity.composeAppHost == null
+        if (activity.composeAppHost == null
                 || !activity.composeAppHost.isMounted()) return false;
         if (!isComposeSurfaceVisible()) {
             // A post opened from a native user page/detail page must remain in
@@ -121,17 +119,16 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
             clearLegacyDetailOwnership();
             return false;
         }
-        if (!legacyDetailActive) {
-            legacyDetailActive = true;
-            legacyReturnRoute = nativeReturnRoute();
-            captureReturnFallback(legacyReturnRoute);
-            hideComposeSurface();
-        }
-        return false;
+        if (composeDetail == null) composeDetail = new ComposeDetailRuntime(activity);
+        composeDetail.open(item);
+        legacyDetailActive = false;
+        syncChrome("detail");
+        EmojiStore.load(activity.api, () -> { });
+        return true;
     }
 
     boolean showComposeDetailResult(DetailPageAssembler.Result detail, FeedItem fallback) {
-        if (legacyDetailActive) return false;
+        if (legacyDetailActive || !isComposeSurfaceVisible()) return false;
         if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()
                 || !"detail".equals(activity.screen)) return false;
         activity.composeAppHost.showDetailResult(detail, fallback);
@@ -189,28 +186,20 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
             activity.currentDetailBody = null;
         }
         showRoute(route);
+        if (composeDetail != null) composeDetail.routeChanged();
     }
 
     @Override public void openDetail(FeedItem item) {
         if (item == null) return;
-        // Compose cards remain the entry point, but comments, emoji, thumbnails,
-        // original-image opening and reply actions use the stable native detail host.
-        if (!legacyDetailActive && isComposeSurfaceVisible()) {
-            captureReturnFallback(nativeReturnRoute());
-        }
-        legacyDetailActive = true;
-        legacyReturnRoute = nativeReturnRoute();
-        openingLegacyDetail = true;
-        hideComposeSurface();
-        try {
-            activity.showDetail(item);
-        } finally {
-            openingLegacyDetail = false;
-        }
+        activity.showDetail(item);
     }
 
     @Override public void requestImage(String url) {
         activity.openImage(null, url);
+    }
+
+    @Override public void requestImages(String[] urls, int index) {
+        activity.openImage(null, urls, index);
     }
 
     private void returnFromLegacyDetail() {
@@ -273,30 +262,6 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
                 && activity.composeLayer.getVisibility() == View.VISIBLE;
     }
 
-    private String nativeReturnRoute() {
-        if (activity.composeAppHost == null) return activity.screen;
-        String route = activity.composeAppHost.currentRouteSpec();
-        if ("detail".equals(route)) route = activity.composeAppHost.detailReturnRouteSpec();
-        return route == null || route.isEmpty() ? activity.screen : route;
-    }
-
-    private void hideComposeSurface() {
-        disposeReturnHandoff();
-        if (activity.composeAppHost != null) activity.composeAppHost.setSurfaceActive(false);
-        if (activity.composeLayer != null) activity.composeLayer.setVisibility(View.INVISIBLE);
-        if (activity.content != null) {
-            activity.pageTransitions.finishNow();
-            activity.content.removeAllViews();
-            activity.content.setVisibility(View.VISIBLE);
-        }
-    }
-
-    private void captureReturnFallback(String route) {
-        if (activity.composeAppHost == null || !activity.composeAppHost.hasLiveReturnPreview(route)) {
-            activity.captureComposeReturnSnapshot();
-        }
-    }
-
     @Override public void requestVideo(VideoData video) {
         activity.openVideo(video);
     }
@@ -306,11 +271,19 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         if (action == ComposeAppCallbacks.ACTION_LIKE) {
             activity.postActions.toggleFeedLike(item);
         } else if (action == ComposeAppCallbacks.ACTION_FOLLOW) {
-            activity.postActions.toggleFeedFollow(item, !item.following, success -> { });
+            boolean following = !item.following;
+            activity.postActions.toggleFeedFollow(item, following, success -> {
+                if (success) item.following = following;
+                if (activity.composeAppHost != null) activity.composeAppHost.invalidateFeed();
+            });
         } else if (action == ComposeAppCallbacks.ACTION_FAVORITE) {
             activity.postActions.toggleFeedFavorite(item);
         } else if (action == ComposeAppCallbacks.ACTION_CACHE) {
             activity.postActions.toggleFeedCache(item);
+            if (activity.localCache.isWatchLater(item.id) && activity.currentDetailBody != null
+                    && item.id.equals(activity.currentLinkId)) {
+                activity.detailActionBar.refreshOffline(item, activity.currentDetailBody);
+            }
         } else if (action == ComposeAppCallbacks.ACTION_COMMENT) {
             openDetail(item);
         }
@@ -318,34 +291,33 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     @Override public void likeComment(JSONObject comment) {
-        if (activity.commentController == null || activity.commentRenderer == null) return;
-        activity.commentController.toggleLike(comment,
-                activity.commentRenderer.createLikeControl());
+        if (activity.composeAppHost != null) activity.composeAppHost.likeDetailComment(comment);
     }
 
     @Override public void replyComment(JSONObject comment) {
-        if (activity.commentController != null) activity.commentController.reply(comment);
+        if (activity.composeAppHost != null) activity.composeAppHost.editDetailComment(comment, "");
     }
 
     @Override public void loadReplies(JSONObject comment) {
-        if (comment == null || activity.api == null || activity.composeAppHost == null) return;
-        String rootId = CommentData.commentId(comment);
-        if (rootId.isEmpty()) return;
-        activity.api.get(EndpointProvider.subComments(),
-                OfficialRequestParams.subComments(rootId, "", activity.currentLinkHsrc),
-                new ApiClient.Callback() {
-                    @Override public void onSuccess(JSONObject body) {
-                        activity.composeAppHost.appendDetailReplies(rootId, extractReplies(body, rootId));
-                    }
-
-                    @Override public void onError(String message) {
-                        activity.toast("回复加载失败：" + message);
-                    }
-                });
+        if (comment != null && activity.composeAppHost != null) {
+            activity.composeAppHost.loadDetailReplies(comment);
+        }
     }
 
     @Override public void writeComment(FeedItem item) {
-        if (activity.commentController != null) activity.commentController.showDialog(null);
+        if (activity.composeAppHost != null) activity.composeAppHost.editDetailComment(null, "");
+    }
+
+    @Override public void setCommentLike(String id, boolean liked, ApiClient.Callback callback) {
+        commentRequests.like(id, liked, callback);
+    }
+
+    @Override public void requestReplies(String id, String cursor, ApiClient.Callback callback) {
+        commentRequests.replies(id, cursor, callback);
+    }
+
+    @Override public void createComment(String text, String rootId, String replyId, ApiClient.Callback callback) {
+        commentRequests.send(text, rootId, replyId, callback);
     }
 
     @Override public void loginCompleted() {
@@ -356,28 +328,6 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         activity.showTopLevel(0);
         PresenceReporter.pingNow(activity.session, activity.readingTimeTracker, status -> { });
         RemoteConfig.load(activity.session, () -> { });
-    }
-
-    private static java.util.List<JSONObject> extractReplies(JSONObject body, String rootId) {
-        java.util.ArrayList<JSONObject> values = new java.util.ArrayList<>();
-        JSONObject result = body == null ? null : body.optJSONObject("result");
-        org.json.JSONArray array = result == null ? null
-                : Json.firstArray(result, "comments", "comment", "list", "sub_comments");
-        if (array == null) return values;
-        for (int i = 0; i < array.length(); i++) {
-            JSONObject item = array.optJSONObject(i);
-            if (item == null) continue;
-            org.json.JSONArray nested = item.optJSONArray("comment");
-            if (nested == null) {
-                if (!rootId.equals(CommentData.commentId(item))) values.add(item);
-            } else {
-                for (int j = 0; j < nested.length(); j++) {
-                    JSONObject reply = nested.optJSONObject(j);
-                    if (reply != null && !rootId.equals(CommentData.commentId(reply))) values.add(reply);
-                }
-            }
-        }
-        return values;
     }
 
     @Override public void settingsChanged() {
@@ -428,5 +378,17 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         activity.composeLayer.setVisibility(View.VISIBLE);
         activity.setBottomNavVisible(topLevel, false);
         if (topLevel) activity.bottomNavigation.select(key);
+        if (composeDetail != null) composeDetail.routeChanged();
+    }
+
+    void saveDetailProgress() {
+        if (activity.composeAppHost != null && isComposeSurfaceVisible()) {
+            activity.composeAppHost.saveDetailProgress();
+        }
+    }
+
+    void close() {
+        disposeReturnHandoff();
+        if (composeDetail != null) composeDetail.close();
     }
 }

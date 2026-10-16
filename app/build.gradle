@@ -54,8 +54,8 @@ android {
         unitTests.includeAndroidResources = true
         unitTests.all {
             maxHeapSize = "1g"
-            // Bound Robolectric renderer/frame-clock state retained by one test worker.
-            forkEvery = 10
+            // Compose/native renderer state can leak across classes in a shared Robolectric worker.
+            forkEvery = 1
             testLogging.exceptionFormat = "full"
         }
     }

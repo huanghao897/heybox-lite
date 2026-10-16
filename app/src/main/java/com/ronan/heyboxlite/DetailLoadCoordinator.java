@@ -20,6 +20,7 @@ final class DetailLoadCoordinator {
         void refreshOffline(FeedItem item, JSONObject body);
         void showMessage(String message);
         void toast(String message);
+        default void requestFinished() { }
     }
 
     static final class State {
@@ -65,6 +66,7 @@ final class DetailLoadCoordinator {
         if (!networkConnected()) {
             afterEntry(() -> {
                 if (current(item, token)) {
+                    host.requestFinished();
                     host.hideLoading();
                     handleFailure(item, "当前无网络");
                 }
@@ -80,8 +82,10 @@ final class DetailLoadCoordinator {
                         host.hideLoading();
                         String blocked = blockedMessage(body);
                         if (!blocked.isEmpty()) {
+                            host.requestFinished();
                             handleFailureAfterEntry(item, token, blocked);
                         } else if (!hasLink(body)) {
+                            host.requestFinished();
                             handleFailureAfterEntry(item, token, "详情数据为空");
                         } else {
                             cacheAndRender(item, body, token);
@@ -91,6 +95,7 @@ final class DetailLoadCoordinator {
                     @Override
                     public void onError(String message) {
                         if (!current(item, token)) return;
+                        host.requestFinished();
                         host.hideLoading();
                         handleFailureAfterEntry(item, token, message);
                     }
@@ -103,6 +108,10 @@ final class DetailLoadCoordinator {
 
     boolean rendered() {
         return rendered;
+    }
+
+    boolean hasPendingRender() {
+        return pendingBody != null;
     }
 
     long loadStartedAt() {
@@ -179,18 +188,22 @@ final class DetailLoadCoordinator {
                                 if (rendered) {
                                     host.toast("详情更新失败，已保留当前内容");
                                 }
+                            } finally {
+                                host.requestFinished();
                             }
                         }
 
                         @Override
                         public void onError(String message) {
                             if (!current(item, token)) return;
+                            host.requestFinished();
                             cache.log("article web content unavailable link=" + item.id
                                     + " reason=" + message);
                         }
                         });
-            }
+            } else host.requestFinished();
         } catch (RuntimeException error) {
+            host.requestFinished();
             cache.log("detail response rejected link=" + item.id
                     + " type=" + error.getClass().getSimpleName());
             handleFailureAfterEntry(item, token, "详情内容解析失败");

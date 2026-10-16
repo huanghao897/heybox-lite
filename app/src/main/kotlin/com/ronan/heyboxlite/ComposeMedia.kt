@@ -3,6 +3,7 @@ package com.ronan.heyboxlite
 import android.widget.ImageView as AndroidImageView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -58,6 +59,7 @@ internal fun ComposeMediaImage(
     retry: Int = 0,
     requests: ComposeMediaImageRequests = ExistingComposeMediaImageRequests,
     onLoaded: (Boolean) -> Unit = {},
+    onImageSize: (Int, Int) -> Unit = { _, _ -> },
     onClick: (() -> Unit)? = null,
 ) {
     val theme = LocalHeyboxTheme.current
@@ -121,7 +123,7 @@ internal fun ComposeMediaImage(
                     }
                     view.contentDescription = contentDescription
                     view.setBackgroundColor(surface.toArgb())
-                    bindComposeMediaImage(view, request, requests, onLoaded)
+                    bindComposeMediaImage(view, request, requests, onLoaded, onImageSize)
                 },
             )
         }
@@ -129,10 +131,12 @@ internal fun ComposeMediaImage(
 }
 
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 internal fun ComposeVideoCard(
     video: VideoData,
     settings: ComposeMediaSettings,
     modifier: Modifier = Modifier,
+    onVideoSettings: (() -> Unit)? = null,
     onOpenVideo: (VideoData) -> Unit,
 ) {
     val shape = RoundedCornerShape(8.dp)
@@ -157,7 +161,8 @@ internal fun ComposeVideoCard(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.26f))
-                .clickable { onOpenVideo(video) },
+                .combinedClickable(onLongClickLabel = "视频播放设置",
+                    onLongClick = onVideoSettings, onClick = { onOpenVideo(video) }),
             contentAlignment = Alignment.Center,
         ) {
             Box(

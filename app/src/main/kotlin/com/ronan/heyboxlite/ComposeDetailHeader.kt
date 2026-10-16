@@ -3,6 +3,7 @@ package com.ronan.heyboxlite
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -55,6 +56,9 @@ internal fun ComposeDetailHeader(
     media: ComposeMediaSettings,
     onOpenUser: (String, String, String) -> Unit = { _, _, _ -> },
     link: JSONObject? = null,
+    onFollow: () -> Unit = {},
+    showFollow: Boolean = false,
+    actionRevision: Int = 0,
 ) {
     val theme = LocalHeyboxTheme.current
     val content = remember(item, link) { ComposeDetailHeaderPresentation.from(item, link) }
@@ -64,14 +68,14 @@ internal fun ComposeDetailHeader(
     val authorId = Json.first(link?.optString("userid"), link?.optString("user_id"),
         link?.optString("heybox_id"), link?.optString("heyboxid"), link?.optString("uid"),
         link?.optString("account_id"), composeCommentUserId(user), item.authorId)
-    val avatar = if (user == null) item.authorAvatar else Json.first(user.optString("avatar"), user.optString("avartar"))
+    val avatar = Json.first(user?.optString("avatar"), user?.optString("avartar"), item.authorAvatar)
     val createdAt = if (link == null) item.createdAt else link.optLong("create_at",
-        link.optLong("create_time", link.optLong("createtime")))
+        link.optLong("create_time", link.optLong("createtime", item.createdAt)))
     val published = if (createdAt > 0L) Format.relativeTime(createdAt) else ""
     val signature = Json.first(user?.optString("signature"), user?.optString("desc"))
     val meta = listOf(published, signature).filter { it.isNotBlank() }.joinToString(" · ")
     Column(verticalArrangement = Arrangement.spacedBy(8.dp * theme.uiScale)) {
-        ComposeRichText(content.title, theme.dark, theme.text, theme.link,
+        ComposeInlineText(content.title, theme.dark, theme.text, theme.link,
             fontSize = 18.sp * theme.textScale, lineHeight = 24.sp * theme.textScale,
             fontWeight = FontWeight.Bold)
         Row(Modifier.fillMaxWidth().clickable(enabled = authorId.isNotBlank()) {
@@ -81,18 +85,16 @@ internal fun ComposeDetailHeader(
                 placeholderLabel = author.take(1), ensureTouchTarget = false)
             Spacer(Modifier.width(7.dp * theme.uiScale))
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(author.ifBlank { "\u533f\u540d\u7528\u6237" },
-                        Modifier.weight(1f, fill = false), fontSize = 12.sp * theme.textScale,
-                        color = theme.text, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                    if (content.level > 0) {
-                        Spacer(Modifier.width(3.dp * theme.uiScale))
-                        ComposeCommentLevelBadge(content.level)
-                    }
-                }
+                ComposeCommentName(author, postAuthor = false, level = content.level)
                 if (meta.isNotBlank()) Text(meta,
                     fontSize = 10.sp * theme.textScale, color = theme.muted)
+            }
+            if (showFollow && authorId.isNotBlank()) Box(contentAlignment = Alignment.Center,
+                modifier = Modifier.size(watchDp(28).coerceAtLeast(24.dp)).clip(CircleShape)
+                    .background(theme.panelElevated).clickable(onClick = onFollow)) {
+                Icon(painterResource(if (item.following) R.drawable.ic_check else R.drawable.il_plus),
+                    if (item.following) "取消关注" else "关注作者", tint = theme.text,
+                    modifier = Modifier.size(watchDp(14)))
             }
         }
         if (content.section.isNotBlank() || content.tags.isNotEmpty()) {
