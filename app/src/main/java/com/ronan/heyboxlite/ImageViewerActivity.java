@@ -90,7 +90,7 @@ public final class ImageViewerActivity extends Activity {
         Motions.setLevel(session.motionLevel());
         registerSystemBackCallback();
         roundDisplay = session.usesRoundLayout();
-        loadOriginalImmediately = getIntent().getBooleanExtra(
+        loadOriginalImmediately = roundDisplay || getIntent().getBooleanExtra(
                 EXTRA_LOAD_ORIGINAL_IMMEDIATELY, false);
         claimPreview();
 
@@ -177,6 +177,7 @@ public final class ImageViewerActivity extends Activity {
         downloadBg.setShape(GradientDrawable.OVAL);
         Compat.setBackground(download, downloadBg);
         download.setOnClickListener(view -> saveImage());
+        download.setContentDescription("下载图片");
         FrameLayout.LayoutParams downloadParams = new FrameLayout.LayoutParams(dp(40), dp(40),
                 Gravity.BOTTOM | Gravity.START);
         downloadParams.leftMargin = chromeInset();
@@ -221,7 +222,7 @@ public final class ImageViewerActivity extends Activity {
                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         originalParams.bottomMargin = chromeInset();
         root.addView(original, originalParams);
-        original.setVisibility(session.originalImages() && !loadOriginalImmediately
+        original.setVisibility(!roundDisplay && session.originalImages() && !loadOriginalImmediately
                 ? View.VISIBLE : View.GONE);
 
         setContentView(root);
@@ -830,7 +831,7 @@ public final class ImageViewerActivity extends Activity {
             if (destroyed || closing || isFinishing()) return;
             if (!automatic) spinner.setVisibility(View.GONE);
             if (bitmap == null) {
-                if (index == current) {
+                if (index == current && !roundDisplay) {
                     original.setVisibility(View.VISIBLE);
                     original.setEnabled(true);
                     original.setText("重试原图");

@@ -42,6 +42,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -254,11 +256,12 @@ internal fun ComposeRemoteImage(
 @Composable
 internal fun ComposePill(text: String, theme: ComposeThemeState, accent: Boolean = false) {
     Text(text = text, color = if (accent) theme.accent else theme.muted,
-        fontSize = (9 * theme.textScale).sp,
+        fontSize = (9 * theme.textScale).sp, lineHeight = (12 * theme.textScale).sp,
+        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.clip(RoundedCornerShape((8 * theme.uiScale).dp))
+        modifier = Modifier.clip(RoundedCornerShape(50))
             .background(theme.panelElevated)
-            .padding(horizontal = (6 * theme.uiScale).dp, vertical = (4 * theme.uiScale).dp))
+            .padding(horizontal = (4 * theme.uiScale).dp, vertical = (1 * theme.uiScale).dp))
 }
 
 @Composable

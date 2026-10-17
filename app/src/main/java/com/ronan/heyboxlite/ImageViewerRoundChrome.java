@@ -1,20 +1,19 @@
 package com.ronan.heyboxlite;
 
 import android.content.Context;
-import android.graphics.Paint;
-import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.InsetDrawable;
 import android.text.TextUtils;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
-/** Repositions measured chrome on every layout, including asynchronous size labels. */
+/** Small painted controls share the bottom arc; the image keeps its full viewport. */
 final class ImageViewerRoundChrome extends FrameLayout {
     private View close;
     private TextView counter;
     private View download;
     private TextView original;
-    private final Rect closeBounds = new Rect();
 
     private ImageViewerRoundChrome(Context context) {
         super(context);
@@ -32,13 +31,14 @@ final class ImageViewerRoundChrome extends FrameLayout {
         layout.counter = counter;
         layout.download = download;
         layout.original = original;
+        original.setVisibility(GONE);
+        counter.setTextSize(10);
+        counter.setIncludeFontPadding(false);
+        counter.setPadding(layout.dp(6), layout.dp(2), layout.dp(6), layout.dp(2));
         counter.setSingleLine(true);
         counter.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-        original.setMinWidth(layout.dp(44));
-        original.setMinHeight(layout.dp(44));
-        original.setPadding(layout.dp(10), original.getPaddingTop(),
-                layout.dp(10), original.getPaddingBottom());
-        original.setEllipsize(TextUtils.TruncateAt.END);
+        layout.compactIcon(close);
+        layout.compactIcon(download);
         layout.requestLayout();
     }
 
@@ -46,29 +46,11 @@ final class ImageViewerRoundChrome extends FrameLayout {
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int diameter = Math.min(MeasureSpec.getSize(widthMeasureSpec),
                 MeasureSpec.getSize(heightMeasureSpec));
-        if (original != null && diameter > 0) {
-            int maxWidth = Math.max(1, (int) (diameter * 0.68f));
-            if (original.getMaxWidth() != maxWidth) original.setMaxWidth(maxWidth);
-            Paint.FontMetricsInt font = original.getPaint().getFontMetricsInt();
-            int fontPadding = Math.max(0, font.bottom - font.top - font.descent + font.ascent);
-            int textHeight = (int) (diameter * 0.38f) - original.getCompoundPaddingTop()
-                    - original.getCompoundPaddingBottom() - fontPadding;
-            int lines = Math.max(1, Math.min(3, (int) (textHeight
-                    / Math.max(1f, original.getPaint().getFontSpacing()))));
-            if (original.getMaxLines() != lines) original.setMaxLines(lines);
-            int counterWidth = Math.max(1, (int) (diameter * 0.4f));
-            if (counter.getMaxWidth() != counterWidth) counter.setMaxWidth(counterWidth);
-            sizeIcon(close);
-            sizeIcon(download);
+        if (counter != null && diameter > 0) {
+            counter.setMaxWidth(Math.max(1, Math.round(diameter * 0.6f)));
+            original.setVisibility(GONE);
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-        if (visible(original) && visible(close) && visible(download)) {
-            while (original.getMaxLines() > 1 && original.getMeasuredHeight()
-                    > maximumOriginalHeight(getMeasuredWidth(), getMeasuredHeight())) {
-                original.setMaxLines(original.getMaxLines() - 1);
-                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-            }
-        }
     }
 
     @Override
@@ -78,89 +60,42 @@ final class ImageViewerRoundChrome extends FrameLayout {
         float centerY = getHeight() / 2f;
         int diameter = Math.min(getWidth(), getHeight());
         float radius = Math.max(1f, diameter / 2f - dp(2));
-        int edge = Math.max(dp(10), Math.round(diameter * 0.06f));
         int gap = dp(4);
-        closeBounds.setEmpty();
-        if (visible(close)) {
-            int x = (getWidth() - close.getMeasuredWidth()) / 2;
-            float halfWidth = Math.max(centerX - x, x + close.getMeasuredWidth() - centerX);
-            int y = Math.max(edge, (int) Math.ceil(centerY - chord(radius, halfWidth)));
-            place(close, x, y);
-            closeBounds.set(close.getLeft(), close.getTop(), close.getRight(), close.getBottom());
-        }
-
-        float rowY = centerY;
-        if (visible(original)) {
-            int x = (getWidth() - original.getMeasuredWidth()) / 2;
-            float halfWidth = Math.max(centerX - x, x + original.getMeasuredWidth() - centerX);
-            int y = (int) Math.floor(centerY + chord(radius, halfWidth))
-                    - original.getMeasuredHeight();
-            place(original, x, y);
-            int rowHeight = Math.max(visible(download) ? download.getMeasuredHeight() : 0,
-                    visible(counter) ? counter.getMeasuredHeight() : 0);
-            rowY = Math.min(rowY, y - gap - rowHeight / 2f);
-        }
-        if (visible(download)) {
-            int y = Math.round(rowY - download.getMeasuredHeight() / 2f);
-            float farY = Math.max(Math.abs(y - centerY),
-                    Math.abs(y + download.getMeasuredHeight() - centerY));
-            int x = Math.max(edge, (int) Math.ceil(centerX - chord(radius, farY)));
-            place(download, x, y);
-        }
+        int rowWidth = width(close) + width(download)
+                + (visible(close) && visible(download) ? gap : 0);
+        int rowHeight = Math.max(height(close), height(download));
+        int rowLeft = (getWidth() - rowWidth) / 2;
+        float farX = Math.max(centerX - rowLeft, rowLeft + rowWidth - centerX);
+        int rowBottom = Math.min(getHeight() - dp(6),
+                (int) Math.floor(centerY + chord(radius, farX)));
+        if (visible(close)) place(close, rowLeft, rowBottom - rowHeight);
+        if (visible(download)) place(download, rowLeft + rowWidth - width(download),
+                rowBottom - rowHeight);
         if (visible(counter)) {
-            int y = Math.round(rowY - counter.getMeasuredHeight() / 2f);
-            float farY = Math.max(Math.abs(y - centerY),
-                    Math.abs(y + counter.getMeasuredHeight() - centerY));
-            int end = Math.min(getWidth() - edge,
-                    (int) Math.floor(centerX + chord(radius, farY)));
-            if (!closeBounds.isEmpty() && y < closeBounds.bottom + gap
-                    && y + counter.getMeasuredHeight() > closeBounds.top - gap) {
-                // Keep large-font page counts beside, rather than beneath, the close target.
-                counter.measure(MeasureSpec.makeMeasureSpec(
-                        Math.max(1, end - closeBounds.right - gap), MeasureSpec.AT_MOST),
-                        MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-            }
-            place(counter, end - counter.getMeasuredWidth(), y);
+            int x = (getWidth() - counter.getMeasuredWidth()) / 2;
+            float halfWidth = Math.max(centerX - x, x + counter.getMeasuredWidth() - centerX);
+            int y = Math.max(dp(6), (int) Math.ceil(centerY - chord(radius, halfWidth)));
+            place(counter, x, y);
         }
     }
 
-    private void sizeIcon(View view) {
+    private void compactIcon(View view) {
         if (view == null) return;
         LayoutParams params = (LayoutParams) view.getLayoutParams();
+        // Paint a 28dp circle and a 16dp icon inside the existing 44dp touch target.
         params.width = dp(44);
         params.height = dp(44);
-    }
-
-    private int maximumOriginalHeight(int width, int height) {
-        float centerX = width / 2f;
-        float centerY = height / 2f;
-        int diameter = Math.min(width, height);
-        float radius = Math.max(1f, diameter / 2f - dp(2));
-        int edge = Math.max(dp(10), Math.round(diameter * 0.06f));
-        int closeX = (width - close.getMeasuredWidth()) / 2;
-        float closeHalfWidth = Math.max(centerX - closeX,
-                closeX + close.getMeasuredWidth() - centerX);
-        int closeTop = Math.max(edge, (int) Math.ceil(centerY - chord(radius, closeHalfWidth)));
-        int downloadTop = closeTop + close.getMeasuredHeight() + dp(4);
-        int sideX = closeX - download.getMeasuredWidth();
-        if (sideX >= edge) {
-            // An earlier row is safe only while the whole download target fits beside close.
-            downloadTop = Math.min(downloadTop,
-                    (int) Math.ceil(centerY - chord(radius, centerX - sideX)));
-        }
-        int rowHeight = Math.max(download.getMeasuredHeight(),
-                visible(counter) ? counter.getMeasuredHeight() : 0);
-        int originalTop = (int) Math.ceil(downloadTop + dp(4)
-                + (rowHeight + download.getMeasuredHeight()) / 2f);
-        int originalX = (width - original.getMeasuredWidth()) / 2;
-        float halfWidth = Math.max(centerX - originalX,
-                originalX + original.getMeasuredWidth() - centerX);
-        return (int) Math.floor(centerY + chord(radius, halfWidth)) - originalTop;
+        Drawable background = view.getBackground();
+        if (background != null) Compat.setBackground(view, new InsetDrawable(background, dp(8)));
+        view.setPadding(dp(14), dp(14), dp(14), dp(14));
     }
 
     private static boolean visible(View view) {
         return view != null && view.getVisibility() != GONE;
     }
+
+    private static int width(View view) { return visible(view) ? view.getMeasuredWidth() : 0; }
+    private static int height(View view) { return visible(view) ? view.getMeasuredHeight() : 0; }
 
     private static float chord(float radius, float distance) {
         return (float) Math.sqrt(Math.max(0f, radius * radius - distance * distance));
