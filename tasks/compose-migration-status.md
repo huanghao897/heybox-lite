@@ -28,7 +28,7 @@
 ## 回退与验证
 
 - 原生 View 基线：`feature/ui-v2-native-view`。
-- 当前分支不修改版本号，保持 `2.18 / 221`。
+- 按用户 2026-10-17 的明确要求，当前版本更新为 `2.19 / 222`；下方较早阶段的版本号为当时构建记录。
 - 代码提交前必须通过 `:app:lintDebug`、`:app:testDebugUnitTest` 和签名 Release 构建。
 - 圆屏、方屏、低内存设备、图片手势和播放器仍需要真机验证；构建通过不等于这些交互已经验收。
 
@@ -268,3 +268,12 @@ ADB 核对未连接设备，未启动模拟器；仪器测试仅完成编译，�
 - v1/v2 签名校验通过，证书 SHA-256 保持 `fbd5642c3c1b5882545f6f1227cf2dc38a54bcd18609203935eedbef408d1382`；三个 APK 副本 SHA-256 一致且更新为 `63EF73702FD585E877DA6B2E8E642DC84913E5DD1DCA4BCBF67554DD9EA3A147`。
 
 本批次未启动或操作模拟器；不部署、不上传测试后台、不创建 GitHub Release。
+
+## 2026-10-17 版本更新至 2.19
+
+- 按用户明确要求，将 versionName 从 `2.18` 更新为 `2.19`，versionCode 从 `221` 增至 `222`。设置页预览也读取 `BuildConfig.VERSION_NAME`，同步 README、工程说明和版本更新日志。
+- `:app:lintDebug :app:assembleRelease` 成功，版本检查专项 `UpdateCheckerTest` 全部 5 项通过；未重跑完整测试套件。Lint 保持 0 errors / 141 warnings / 15 hints，文件大小、编码及 `git diff --check` 通过。
+- 从实际 APK 核验 `2.19 / 222`、`com.ronan.heyboxlite.preview`、minSdk 21 和 targetSdk 35。v1/v2 签名通过，证书 SHA-256 仍为 `fbd5642c3c1b5882545f6f1227cf2dc38a54bcd18609203935eedbef408d1382`。
+- `app-release.apk`、`dist/heybox-Lite-2.19.apk`、`dist/heybox-Lite-latest.apk` 的 SHA-256 一致：`736550D0406ED4581D5AC70D97FD02FD9B338BF82BA172B1E8E3D67EDF5C1F7B`。
+
+本次仅更新版本元数据、预览版本展示与文档；不部署、不上传测试后台、不创建 GitHub Release。

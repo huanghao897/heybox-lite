@@ -25,8 +25,8 @@ android {
         minSdk 21
         targetSdk 35
         testInstrumentationRunner "com.ronan.heyboxlite.CheckinCenterDeviceTestRunner"
-        versionCode 221
-        versionName "2.18"
+        versionCode 222
+        versionName "2.19"
         buildConfigField "String", "RELEASE_CERT_SHA256",
                 "\"7b163883d570408505d820174fb9565471efde8d863508fd390e4f4eb1645eb8\""
         buildConfigField "String", "UPDATE_CERT_SHA256",

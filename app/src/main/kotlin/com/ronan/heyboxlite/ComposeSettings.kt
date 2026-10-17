@@ -243,7 +243,7 @@ private fun ComposeSettingsPreview() {
                 WatchRow("显示", "深色", R.drawable.il_palette)
                 WatchRow("内容与缓存", icon = R.drawable.il_globe)
                 WatchRow("视频播放", icon = R.drawable.il_gif)
-                WatchRow("关于", "2.18", R.drawable.il_info)
+                WatchRow("关于", BuildConfig.VERSION_NAME, R.drawable.il_info)
             }
         }
     }

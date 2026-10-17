@@ -1,6 +1,6 @@
 # heybox Lite 工程文档
 
-面向后续维护、构建、发布与排查的工程说明。目标是让接手者能快速理解项目结构、核心流程与风险点，少踩坑。所有内容以仓库当前代码为准（版本 `2.18` / versionCode `221`）。
+面向后续维护、构建、发布与排查的工程说明。目标是让接手者能快速理解项目结构、核心流程与风险点，少踩坑。所有内容以仓库当前代码为准（版本 `2.19` / versionCode `222`）。
 
 > 本文尽量只描述**项目本身**，不写入任何本机绝对路径、keystore 密码或服务器内部路径。这类信息属于各自环境的私有配置，请勿写进公开仓库。
 
@@ -21,7 +21,7 @@ heybox Lite 是面向 **Android 手表和小屏设备**的小黑盒（HeyBox）�
 | 语言 / UI | Kotlin + Jetpack Compose 主界面；Java 业务与兼容层 |
 | `applicationId` | `com.ronan.heyboxlite.preview` |
 | `namespace` / 包名 | `com.ronan.heyboxlite` |
-| `versionName` / `versionCode` | `2.18` / `221` |
+| `versionName` / `versionCode` | `2.19` / `222` |
 | `minSdk` / `targetSdk` / `compileSdk` | `21` / `35` / `36` |
 | JDK | 17 |
 | 第三方依赖 | `cnwearoverlay-runtime`、`com.google.zxing:core:3.3.3`、Jetpack Compose（BOM 管理） |
@@ -325,7 +325,7 @@ heybox-admin/
 apksigner verify --print-certs dist\heybox-Lite-<版本>.apk
 ```
 
-**版本号**：`versionCode` 需单调递增；`versionName` 遵循既定节奏（当前 2.0.x）。仅在明确要发新版时才改版本号。
+**版本号**：`versionCode` 需单调递增；`versionName` 遵循既定节奏（当前 2.x）。仅在明确要发新版时才改版本号。
 
 **发布分层**：代码提交推送到 GitHub 与「发布到更新服务器」是两件独立的事 —— 推 GitHub 不等于发布上线，服务器发布需单独执行（后台上传 APK 并设为最新版）。发布前核对：APK 签名正确、版本号与日志正确、`latest.apk` 指向新版、App 内更新弹窗能显示日志、后台接口返回 200。
 
