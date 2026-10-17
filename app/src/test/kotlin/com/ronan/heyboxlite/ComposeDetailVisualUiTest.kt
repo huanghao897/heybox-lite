@@ -96,8 +96,8 @@ internal class ComposeDetailVisualUiTest : ComposeMembershipUiRegressionHarness(
             assertLabelFits(DetailVisualFixture.SECTION)
             tap(description("\u5173\u6ce8\u4f5c\u8005"))
             assertTrue(actions.single() is ComposeDetailAction.FollowAuthor)
-            assertBackReachable()
-            assertEquals(1, backs)
+            description("\u8fd4\u56de").assertDoesNotExist()
+            assertEquals(0, backs)
         }
         checkSection("detail-inline") {
             scrollTo("body-0")

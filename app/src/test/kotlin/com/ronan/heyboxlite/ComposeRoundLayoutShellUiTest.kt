@@ -4,6 +4,10 @@ import android.app.Application
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,6 +22,29 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [28], application = Application::class, qualifiers = "w240dp-h320dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 internal class ComposeRoundLayoutShellUiTest : ComposeRoundLayoutHarness() {
+    @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
+    fun returnSharesTheTitleRowAndScrollsAwayWithoutReservingAToolbar() {
+        val services = layoutServices()
+        var backs = 0
+        showLayout(services) {
+            WatchPage("阅读中心", { backs++ }) {
+                repeat(8) { Text("Scrollable row $it", Modifier.height(32.dp)) }
+                WatchActionButton("最后操作", {})
+            }
+        }
+        val back = compose.onNodeWithContentDescription("返回")
+        val backBounds = back.fetchSemanticsNode().boundsInRoot
+        val title = text("阅读中心").fetchSemanticsNode().boundsInRoot
+        assertTrue("A separate row must not push the title below the return icon", title.top < backBounds.bottom)
+        assertTrue("The return icon must remain alongside the title", title.bottom > backBounds.top)
+        touchReachable("最后操作")
+        back.assertIsNotDisplayed()
+        val target = circleReach(back)
+        assertTouchable(target, "inline return")
+        target.performTouchInput { click() }
+        compose.runOnIdle { assertEquals(1, backs) }
+    }
+
     @Test fun squarePageKeepsFirstAndLastCommandsTouchable() = verifyPage()
 
     @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")

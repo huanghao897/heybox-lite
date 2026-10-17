@@ -1,6 +1,5 @@
 package com.ronan.heyboxlite
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -8,20 +7,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONObject
@@ -74,9 +68,12 @@ internal fun ComposeDetailHeader(
     val signature = Json.first(user?.optString("signature"), user?.optString("desc"))
     val meta = listOf(published, signature).filter { it.isNotBlank() }.joinToString(" · ")
     Column(verticalArrangement = Arrangement.spacedBy(8.dp * theme.uiScale)) {
-        ComposeInlineText(content.title, theme.dark, theme.text, theme.link,
-            fontSize = 18.sp * theme.textScale, lineHeight = 24.sp * theme.textScale,
-            fontWeight = FontWeight.Bold)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            ComposeInlineText(content.title, theme.dark, theme.text, theme.link,
+                modifier = Modifier.padding(horizontal = watchLeadingHeadingHorizontal(maxWidth, theme)),
+                fontSize = 18.sp * theme.textScale, lineHeight = 24.sp * theme.textScale,
+                fontWeight = FontWeight.Bold)
+        }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val followVisible = showFollow && authorId.isNotBlank()
             val wrapFollow = followVisible &&
@@ -105,22 +102,12 @@ internal fun ComposeDetailHeader(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp * theme.uiScale)) {
                 if (content.section.isNotBlank()) {
-                    Row(Modifier.weight(1f, fill = false).clip(RoundedCornerShape(12.dp * theme.uiScale))
-                        .background(theme.panelElevated).padding(horizontal = 6.dp * theme.uiScale,
-                            vertical = 5.dp * theme.uiScale), verticalAlignment = Alignment.CenterVertically) {
-                        if (content.sectionIcon.isNotBlank()) {
-                            ComposeMediaImage(content.sectionIcon, media, Modifier.size(16.dp * theme.uiScale),
-                                RoundedCornerShape(4.dp), placeholderLabel = "", ensureTouchTarget = false)
-                        } else Icon(painterResource(R.drawable.il_globe), null, tint = theme.muted,
-                            modifier = Modifier.size(16.dp * theme.uiScale))
-                        Spacer(Modifier.width(4.dp * theme.uiScale))
-                        Text(content.section, fontSize = 10.5.sp * theme.textScale, color = theme.text,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+                    ComposeSectionChip(content.section, content.sectionIcon, theme, !media.enabled,
+                        Modifier.weight(1f, fill = false))
                 }
                 if (content.tags.isNotEmpty()) Text(content.tags.joinToString("  ") {
                     if (it.startsWith("#")) it else "#$it"
-                }, Modifier.weight(1f), fontSize = 10.5.sp * theme.textScale,
+                }, Modifier.weight(1f).testTag("detail-tags"), fontSize = 10.5.sp * theme.textScale,
                     lineHeight = 15.sp * theme.textScale, color = theme.muted)
             }
         }

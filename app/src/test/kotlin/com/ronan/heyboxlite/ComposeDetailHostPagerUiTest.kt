@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -57,13 +58,19 @@ class ComposeDetailHostPagerUiTest {
         }
     }
 
-    @Test fun realRouteReturnButtonUsesTheSamePagerPriority() {
+    @Test fun realRouteWithoutReturnToolbarKeepsSystemBackPagerPriority() {
         showHost()
+        compose.runOnUiThread {
+            compose.activity.onBackPressedDispatcher.addCallback(compose.activity, object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() { host.handleBack() }
+            })
+        }
         comments()
-        compose.onNodeWithContentDescription("返回").performClick()
+        compose.onNodeWithContentDescription("返回").assertDoesNotExist()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithTag("compose-detail-list").assertIsDisplayed()
         assertTrue(backs.isEmpty())
-        compose.onNodeWithContentDescription("返回").performClick()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.runOnIdle { assertEquals(listOf("feed"), backs) }
     }
 

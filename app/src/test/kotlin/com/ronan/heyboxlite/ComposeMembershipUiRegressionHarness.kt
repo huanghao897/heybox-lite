@@ -233,7 +233,10 @@ internal abstract class ComposeMembershipUiRegressionHarness {
     }
 
     protected fun assertBackReachable() {
-        val back = description("\u8fd4\u56de").assertIsDisplayed()
+        val target = description("\u8fd4\u56de")
+        val hasScrollParent = generateSequence(target.fetchSemanticsNode().parent) { it.parent }
+            .any { it.config.contains(SemanticsActions.ScrollBy) }
+        val back = if (hasScrollParent) reach(target) else target.assertIsDisplayed()
         assertInDisplay(boundsInWindow(back.fetchSemanticsNode()), "back button", corners = false)
         back.performTouchInput { click() }
         compose.waitForIdle()

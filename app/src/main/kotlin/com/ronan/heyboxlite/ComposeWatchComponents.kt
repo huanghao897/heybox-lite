@@ -11,7 +11,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -69,6 +68,7 @@ internal fun WatchPage(
     title: String,
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    withBottomNavigation: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val state = LocalHeyboxTheme.current
@@ -78,23 +78,14 @@ internal fun WatchPage(
         if (rotary != null) scrollState.scrollBy(rotary.distance.toFloat())
     }
     if (state.roundScreen) {
-        BoxWithConstraints(modifier.fillMaxSize().background(state.background)) {
-            val backSize = watchDp(34).coerceAtLeast(28.dp)
-            val top = watchHeaderTop(maxWidth, state) + if (onBack != null) backSize else 0.dp
-            val titleInset = if (onBack == null) watchHeaderHorizontal(maxWidth, state)
-                else watchPageHorizontal(maxWidth, state)
-            // Only the return control reserves a strip. Tall titles scroll away, and media
-            // can reach the lower central chord without ever being covered by the control.
-            Column(Modifier.fillMaxSize().padding(top = top).verticalScroll(scrollState)) {
-                Text(title, Modifier.fillMaxWidth().padding(horizontal = titleInset)
-                    .padding(vertical = watchDp(4)), color = state.text,
-                    fontSize = watchSp(17f), fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
+        Box(modifier.fillMaxSize().background(state.background)) {
+            // The return control shares the title row and scrolls with it, without a reserved strip.
+            Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
+                ComposePageHeader(title, onBack)
                 Column(Modifier.fillMaxWidth().watchHorizontalPadding()
-                    .padding(bottom = watchListEndPadding()),
+                    .padding(bottom = watchListEndPadding(withBottomNavigation)),
                     verticalArrangement = Arrangement.spacedBy(watchDp(9)), content = content)
             }
-            if (onBack != null) ComposePageBackButton(onBack, Modifier.padding(
-                start = watchHeaderHorizontal(maxWidth, state), top = watchHeaderTop(maxWidth, state)))
         }
         return
     }
@@ -109,7 +100,7 @@ internal fun WatchPage(
                 .fillMaxSize()
                 .verticalScroll(scrollState)
                 .watchHorizontalPadding()
-                .padding(bottom = watchListEndPadding()),
+                .padding(bottom = watchListEndPadding(withBottomNavigation)),
             verticalArrangement = Arrangement.spacedBy(watchDp(9)),
             content = content,
         )

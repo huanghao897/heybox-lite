@@ -216,7 +216,6 @@ class ComposeCheckinTaskSettingsUiTest {
         assertCompactSwitch(theme.uiScale)
         val last = circleReach(text("\u5206\u4eab\u8bc4\u4ef7"))
         assertInsideCircle(last.fetchSemanticsNode().boundsInRoot)
-        assertInsideCircle(description("\u8fd4\u56de").fetchSemanticsNode().boundsInRoot)
         val track = compose.onNodeWithTag("task-switch-\u5206\u4eab\u8bc4\u4ef7", useUnmergedTree = true)
         capture("task-settings-round-last-switch")
         assertInsideCircle(track.fetchSemanticsNode().boundsInRoot)
@@ -275,7 +274,7 @@ class ComposeCheckinTaskSettingsUiTest {
         val track = compose.onNodeWithTag("task-switch-\u5206\u4eab\u8bc4\u4ef7", useUnmergedTree = true)
         assertInsideCircle(track.fetchSemanticsNode().boundsInRoot, corners = true)
         track.performTouchInput { click(center) }
-        val back = description("\u8fd4\u56de")
+        val back = circleReach(description("\u8fd4\u56de"))
         assertInsideCircle(back.fetchSemanticsNode().boundsInRoot)
         back.performTouchInput { click(center) }
         compose.runOnIdle {

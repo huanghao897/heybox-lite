@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -24,6 +25,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -49,40 +53,52 @@ internal fun ComposeFavoritesScreen(
     val theme = services.theme
     ObserveSavedRotary(listState, services)
     SavedPage("我的收藏", theme, onBack) {
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(watchDp(10)))
-            .background(theme.panel).padding(watchDp(3))) {
-            FavoriteTab("帖子", selectedTab == ComposeFavoriteTab.POSTS, Modifier.weight(1f)) {
-                onTabChange(ComposeFavoriteTab.POSTS)
-            }
-            FavoriteTab("收藏夹", selectedTab == ComposeFavoriteTab.FOLDERS, Modifier.weight(1f)) {
-                onTabChange(ComposeFavoriteTab.FOLDERS)
-            }
-        }
-        if (selectedTab == ComposeFavoriteTab.POSTS) {
-            SavedFavoritePosts(state, services, listState, onOpen, onAction, onRetry, actionRevision)
-        } else {
-            if (foldersError.isNotBlank()) SavedLoadError(foldersError, folders.isNotEmpty(), onRetryFolders)
-            when {
-                folders.isEmpty() && foldersLoading -> FeedLoading(theme)
-                folders.isEmpty() -> SavedEmpty(if (foldersError.isBlank()) "暂无收藏夹" else "加载失败", theme)
-                else -> LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentPadding = PaddingValues(bottom = watchListEndPadding()),
-                    verticalArrangement = Arrangement.spacedBy(watchDp(6))) {
-                    items(folders, key = { it.id.ifEmpty { it.name } }) { folder ->
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(watchDp(10)))
-                            .background(theme.panel).clickable { onOpenFolder(folder) }
-                            .padding(horizontal = watchDp(12), vertical = watchDp(11)),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Icon(androidx.compose.ui.res.painterResource(R.drawable.il_bookmark),
-                                null, tint = theme.muted, modifier = Modifier.size(watchDp(18)))
-                            Text(folder.name.ifBlank { "默认收藏夹" }, color = theme.text,
-                                fontSize = watchSp(13f), fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f).padding(start = watchDp(9)),
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (folder.count > 0) Text(folder.count.toString(),
-                                color = theme.muted, fontSize = watchSp(11f))
-                        }
+        LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)
+            .testTag("favorites-list"),
+            contentPadding = PaddingValues(bottom = watchListEndPadding()),
+            verticalArrangement = Arrangement.spacedBy(watchDp(7))) {
+            item(key = "favorites-tabs", contentType = "tabs") {
+                Row(Modifier.fillMaxWidth().testTag("favorites-tabs")
+                    .clip(RoundedCornerShape(watchDp(10)))
+                    .background(theme.panel).padding(watchDp(3))) {
+                    FavoriteTab("帖子", selectedTab == ComposeFavoriteTab.POSTS, Modifier.weight(1f)) {
+                        onTabChange(ComposeFavoriteTab.POSTS)
                     }
+                    FavoriteTab("收藏夹", selectedTab == ComposeFavoriteTab.FOLDERS, Modifier.weight(1f)) {
+                        onTabChange(ComposeFavoriteTab.FOLDERS)
+                    }
+                }
+            }
+            val posts = selectedTab == ComposeFavoriteTab.POSTS
+            val error = if (posts) state.error else foldersError
+            val empty = if (posts) state.items.isEmpty() else folders.isEmpty()
+            val loading = if (posts) state.loading else foldersLoading
+            if (error.isNotBlank()) item(key = "favorites-error", contentType = "error") {
+                SavedLoadError(error, !empty, if (posts) onRetry else onRetryFolders)
+            }
+            if (empty) item(key = "favorites-empty", contentType = "empty") {
+                Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.55f), Alignment.Center) {
+                    if (loading) FeedLoading(theme)
+                    else Text(if (error.isNotBlank()) "加载失败" else if (posts) "暂无内容" else "暂无收藏夹",
+                        color = theme.muted, fontSize = watchSp(12f))
+                }
+            } else if (posts) items(state.items, key = { "post:${it.id}" }, contentType = { "post" }) { item ->
+                ComposeFeedCard(item, theme, services.session.noImage(), services.session.userId(),
+                    onOpen, onAction, favorite = item.favorited,
+                    gameCardNoImage = services.session.gameCardNoImage(), actionRevision = actionRevision)
+            } else items(folders, key = { "folder:${it.id.ifEmpty { it.name }}" }, contentType = { "folder" }) { folder ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(watchDp(10)))
+                    .background(theme.panel).clickable { onOpenFolder(folder) }
+                    .padding(horizontal = watchDp(12), vertical = watchDp(11)),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(androidx.compose.ui.res.painterResource(R.drawable.il_bookmark),
+                        null, tint = theme.muted, modifier = Modifier.size(watchDp(18)))
+                    Text(folder.name.ifBlank { "默认收藏夹" }, color = theme.text,
+                        fontSize = watchSp(13f), fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f).padding(start = watchDp(9)),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (folder.count > 0) Text(folder.count.toString(),
+                        color = theme.muted, fontSize = watchSp(11f))
                 }
             }
         }
@@ -112,7 +128,8 @@ private fun FavoriteTab(label: String, selected: Boolean, modifier: Modifier, on
     val theme = LocalHeyboxTheme.current
     val fraction by animateFloatAsState(if (selected) 1f else 0f,
         tween(if (Motions.off()) 0 else 160), label = "favorite-tab")
-    TextButton(onClick, modifier.height(watchDp(34)).clip(RoundedCornerShape(watchDp(8)))
+    TextButton(onClick, modifier.semantics { this.selected = selected }
+        .height(watchDp(34)).clip(RoundedCornerShape(watchDp(8)))
         .background(androidx.compose.ui.graphics.lerp(theme.panel, theme.panelElevated, fraction)),
         contentPadding = PaddingValues(0.dp)) {
         Text(label, color = if (selected) theme.text else theme.muted,

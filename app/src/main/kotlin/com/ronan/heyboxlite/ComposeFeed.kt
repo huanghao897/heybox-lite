@@ -121,7 +121,7 @@ internal fun ComposeFeedScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         top = top,
-                        bottom = watchListEndPadding(),
+                        bottom = watchListEndPadding(withBottomNavigation = true),
                     ),
                     verticalArrangement = Arrangement.spacedBy(
                         (7 * theme.uiScale).dp,

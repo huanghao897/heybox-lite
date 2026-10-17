@@ -17,3 +17,11 @@ internal fun watchHeaderHorizontal(width: Dp, theme: ComposeThemeState): Dp {
 
 internal fun watchPageHorizontal(width: Dp, theme: ComposeThemeState): Dp =
     if (theme.roundScreen) width * 0.08f else (12 * theme.uiScale).dp
+
+/** Leading headings fit the upper chord while the article below retains its normal width. */
+internal fun watchLeadingHeadingHorizontal(contentWidth: Dp, theme: ComposeThemeState): Dp {
+    if (!theme.roundScreen) return 0.dp
+    val pageWidth = contentWidth / 0.84f
+    return (watchHeaderHorizontal(pageWidth, theme) - watchPageHorizontal(pageWidth, theme))
+        .coerceAtLeast(0.dp)
+}

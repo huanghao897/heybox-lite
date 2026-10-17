@@ -117,7 +117,7 @@ internal class ComposeRoundLayoutServiceUiTest : ComposeRoundLayoutHarness() {
         val lastField = "Server detail \u00b7 Archived failure field"
         circleReach(lastField)
         assertPaintedLabelInsideDisplay(lastField)
-        val back = compose.onNodeWithContentDescription("\u8fd4\u56de", useUnmergedTree = true)
+        val back = circleReach(compose.onNodeWithContentDescription("\u8fd4\u56de", useUnmergedTree = true))
         back.performTouchInput { click() }
         compose.runOnIdle { assertEquals(1, backs) }
         assertBackAnchor()

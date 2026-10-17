@@ -102,12 +102,11 @@ internal abstract class ComposeRoundLayoutHarness : ComposeWatchActionButtonTest
     }
 
     protected fun assertBackAnchor() {
-        val target = compose.onNodeWithContentDescription("\u8fd4\u56de", useUnmergedTree = true)
-            .assertIsDisplayed()
+        val target = circleReach(compose.onNodeWithContentDescription("\u8fd4\u56de", useUnmergedTree = true))
         val node = target.fetchSemanticsNode()
         val rect = screenBounds(node)
-        rectCorners(rect).forEach { assertDisplayPoint(it, "fixed return icon") }
-        assertTouchable(target, "fixed return icon")
+        rectCorners(rect).forEach { assertDisplayPoint(it, "inline return icon") }
+        assertTouchable(target, "inline return icon")
     }
 
     protected fun assertPaintedLabelInsideDisplay(label: String) {

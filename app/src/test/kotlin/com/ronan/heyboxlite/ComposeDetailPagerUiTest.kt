@@ -23,8 +23,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertWidthIsAtLeast
-import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
@@ -152,10 +150,12 @@ class ComposeDetailPagerUiTest {
     }
 
     @Test @Config(qualifiers = "w227dp-h227dp-round-mdpi")
-    fun roundCommentsKeepTheirReturnControlReachable() {
+    fun roundCommentsHaveNoReturnToolbarAndSystemBackStillReturnsToBody() {
         showDetail()
         left()
-        compose.onNodeWithContentDescription("返回").assertIsDisplayed().performTouchInput { click() }
+        compose.onNodeWithContentDescription("返回").assertDoesNotExist()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
         compose.runOnIdle {
             assertEquals(0, pager.settledPage)
             assertEquals(0, routeBacks)
@@ -163,13 +163,17 @@ class ComposeDetailPagerUiTest {
     }
 
     @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
-    fun minimumUiScaleKeepsAReturnTargetWithoutCoveringTheBody() {
+    fun minimumUiScaleRemovesTheToolbarSpaceAndKeepsTheTitleInsideTheCircle() {
         showDetail(uiScale = 0.4f)
-        val back = compose.onNodeWithContentDescription("返回")
-        back.assertWidthIsAtLeast(28.dp).assertHeightIsAtLeast(28.dp)
+        compose.onNodeWithContentDescription("返回").assertDoesNotExist()
         val title = compose.onNode(hasText("Detail 1")).fetchSemanticsNode().boundsInRoot
-        assertTrue(back.fetchSemanticsNode().boundsInRoot.bottom <= title.top)
-        back.performTouchInput { click() }
+        assertEquals("Only circular heading space remains above the first line", 192f * 0.12f + 8f * 0.4f,
+            title.top, 2f)
+        listOf(title.topLeft, title.topRight, title.bottomLeft, title.bottomRight).forEach {
+            assertTrue("Title must fit the upper circular chord: $title",
+                kotlin.math.hypot(it.x - 96f, it.y - 96f) <= 96f)
+        }
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.runOnIdle { assertEquals(1, routeBacks) }
     }
 

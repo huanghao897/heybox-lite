@@ -3,6 +3,7 @@ package com.ronan.heyboxlite
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -91,15 +92,18 @@ internal fun LazyListScope.composeDetailCommentItems(
     showDivider: Boolean,
 ) {
     item(key = "comment-heading", contentType = "comment-heading") {
-        Column(verticalArrangement = Arrangement.spacedBy(watchDp(8))) {
-            if (showDivider) HorizontalDivider(color = theme.hairline)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("评论 ${maxOf(item.comments, ordered.size)}", Modifier.weight(1f), fontSize = watchSp(13f),
-                    color = theme.text, fontWeight = FontWeight.Bold)
-                Row(Modifier.testTag("comment-sort-tabs"), verticalAlignment = Alignment.CenterVertically) {
-                    ComposeDetailSortTab("热门", !latest) { onLatest(false) }
-                    Box(Modifier.width(0.5.dp).height(watchDp(9)).background(theme.hairline))
-                    ComposeDetailSortTab("最新", latest) { onLatest(true) }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val inset = if (showDivider) 0.dp else watchLeadingHeadingHorizontal(maxWidth, theme)
+            Column(Modifier.padding(horizontal = inset), verticalArrangement = Arrangement.spacedBy(watchDp(8))) {
+                if (showDivider) HorizontalDivider(color = theme.hairline)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("评论 ${maxOf(item.comments, ordered.size)}", Modifier.weight(1f), fontSize = watchSp(13f),
+                        color = theme.text, fontWeight = FontWeight.Bold)
+                    Row(Modifier.testTag("comment-sort-tabs"), verticalAlignment = Alignment.CenterVertically) {
+                        ComposeDetailSortTab("热门", !latest) { onLatest(false) }
+                        Box(Modifier.width(0.5.dp).height(watchDp(9)).background(theme.hairline))
+                        ComposeDetailSortTab("最新", latest) { onLatest(true) }
+                    }
                 }
             }
         }

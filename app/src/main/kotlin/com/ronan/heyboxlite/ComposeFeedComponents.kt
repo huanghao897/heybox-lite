@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -179,29 +178,10 @@ internal fun ComposeFeedCard(
                 modifier = Modifier.fillMaxWidth().padding(top = (5 * scale).dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (item.topicName.isNotEmpty()) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        Row(
-                            modifier = Modifier.align(Alignment.CenterStart)
-                                .widthIn(max = (120 * scale).dp)
-                                .clip(RoundedCornerShape((8 * scale).dp))
-                                .background(theme.panelElevated)
-                                .padding(horizontal = (6 * scale).dp, vertical = (3 * scale).dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (!noImage && item.topicIcon.isNotEmpty()) {
-                                ComposeRemoteImage(
-                                    item.topicIcon, theme, false, (13 * scale).dp,
-                                    CircleShape, "分区图标",
-                                    Modifier.size((13 * scale).dp),
-                                    loader = imageLoader,
-                                )
-                                Spacer(Modifier.width((4 * scale).dp))
-                            }
-                            Text(text = item.topicName, color = theme.muted,
-                                fontSize = (9.5f * theme.textScale).sp,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
+                if (item.topicName.isNotBlank()) {
+                    Box(modifier = Modifier.weight(1f).padding(end = (4 * scale).dp)) {
+                        ComposeSectionChip(item.topicName, item.topicIcon, theme, noImage,
+                            imageLoader = imageLoader)
                     }
                 } else {
                     Spacer(modifier = Modifier.weight(1f))
@@ -323,7 +303,7 @@ private fun ComposeActionButton(
 ) {
     Row(
         modifier = Modifier
-            .height((29 * theme.uiScale).dp)
+            .heightIn(min = (29 * theme.uiScale).dp)
             .clip(RoundedCornerShape((7 * theme.uiScale).dp))
             .clickable(onClick = onClick)
             .semantics { contentDescription = description }
@@ -341,6 +321,8 @@ private fun ComposeActionButton(
                 text = label,
                 color = if (active) theme.accent else theme.muted,
                 fontSize = ((if (theme.roundScreen) 9 else 10) * theme.textScale).sp,
+                lineHeight = (14 * theme.textScale).sp,
+                letterSpacing = 0.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Clip,
                 modifier = Modifier.padding(start = (2 * theme.uiScale).dp),

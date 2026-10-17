@@ -144,13 +144,15 @@ private fun OfficialRefreshHeader(
 ) {
     val theme = LocalHeyboxTheme.current
     val result = rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.official_pull_refresh))
-    val playing = active && theme.motionLevel != MotionLevel.OFF &&
-        (refreshing || state.distanceFraction > 0.4f)
+    // Refresh is live status feedback, not a decorative page transition. Low-RAM
+    // watches default to motion OFF and may also set the system animator scale to 0.
+    val playing = active && (refreshing || state.distanceFraction > 0.4f)
     val animatedProgress by animateLottieCompositionAsState(
         composition = result.value,
         isPlaying = playing,
         iterations = LottieConstants.IterateForever,
         restartOnPlay = true,
+        ignoreSystemAnimatorScale = true,
     )
     Box(modifier.semantics {
         if (refreshing || state.distanceFraction > 0f) {
@@ -171,7 +173,7 @@ private fun OfficialRefreshHeader(
             LottieAnimation(
                 composition = result.value,
                 progress = {
-                    if (state.distanceFraction == 0f || theme.motionLevel == MotionLevel.OFF) 0f
+                    if (state.distanceFraction == 0f && !refreshing) 0f
                     else animatedProgress
                 },
                 modifier = Modifier.size(animationSize),

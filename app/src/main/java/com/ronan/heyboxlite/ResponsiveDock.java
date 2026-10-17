@@ -1,8 +1,8 @@
 package com.ronan.heyboxlite;
 
 final class ResponsiveDock {
-    private static final float RECTANGULAR_WIDTH_RATIO = 0.28f;
-    private static final float ROUND_WIDTH_RATIO = 0.27f;
+    private static final float RECTANGULAR_WIDTH_RATIO = 0.40f;
+    private static final float ROUND_WIDTH_RATIO = 0.38f;
     private static final float HEIGHT_TO_WIDTH_RATIO = 0.34f;
     private static final float RECTANGULAR_BOTTOM_MARGIN_RATIO = 0.01f;
     private static final float ROUND_BOTTOM_MARGIN_RATIO = 0.022f;
@@ -29,6 +29,14 @@ final class ResponsiveDock {
         int height = scaled(width, HEIGHT_TO_WIDTH_RATIO);
         int marginBottom = scaled(shortEdge, (roundScreen
                 ? ROUND_BOTTOM_MARGIN_RATIO : RECTANGULAR_BOTTOM_MARGIN_RATIO) * scale);
+        if (roundScreen) {
+            // Keep the whole hit area inside the lower chord, including pixel-aligned centering.
+            double radius = shortEdge / 2.0;
+            double halfWidth = Math.ceil(width / 2.0);
+            int chordInset = (int) Math.ceil(radius
+                    - Math.sqrt(radius * radius - halfWidth * halfWidth));
+            marginBottom = Math.max(marginBottom, chordInset);
+        }
         int paddingHorizontal = Math.max(1, Math.round(height * 0.08f));
         int paddingVertical = Math.max(1, Math.round(height * 0.05f));
         int itemMargin = Math.max(1, Math.round(height * 0.05f));

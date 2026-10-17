@@ -187,7 +187,7 @@ class ComposeFeedImageUiTest {
         assertEquals(4, requests.size)
         assertEquals(mapOf("$prefix-avatar" to (26 * scale).toInt(),
             "$prefix-content" to (68 * scale).toInt(),
-            "$prefix-topic" to (13 * scale).toInt(),
+            "$prefix-topic" to (12 * scale).coerceIn(10f, 14f).toInt(),
             "$prefix-game" to (42 * scale).toInt()), requests.associate { it.source to it.targetPx })
     }
 
