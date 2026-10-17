@@ -11,15 +11,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import org.json.JSONObject
@@ -102,6 +109,13 @@ class ComposeCommentCompactUiTest {
         if (round) assertTrue("Round replies must not waste the watch width",
             replyBounds.width >= section.width * 0.83f)
         val text = compose.onNodeWithText("Bo：ok").fetchSemanticsNode().boundsInRoot
+        val primary = textLayout("Root body")
+        val secondary = textLayout("Bo：ok")
+        assertEquals(FontWeight.Medium, primary.layoutInput.style.fontWeight)
+        assertEquals("Replies must use a lighter body weight than primary comments",
+            FontWeight.Light, secondary.layoutInput.style.fontWeight)
+        assertEquals("Reply authors must not restore the primary header's bold weight",
+            FontWeight.Normal, secondary.layoutInput.text.spanStyles.first().item.fontWeight)
         assertTrue("A short reply must not reserve a separate author row", text.height <= 19f)
         assertTrue("An empty image wrapper must not add reply height", replyBounds.height <= 20f)
         compose.runOnIdle { captureMembershipUi(compose.activity, "compact-replies-${if (round) "round" else "square"}") }
@@ -180,30 +194,65 @@ class ComposeCommentCompactUiTest {
         compose.runOnIdle { captureMembershipUi(compose.activity, "comment-compact-sort") }
     }
 
-    @Test fun followUsesTheOfficialTextPatternAndDisablesOnlyWhilePending() {
+    @Test fun followIsFlatAndDisablesOnlyWhilePending() = verifyFollow()
+
+    @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
+    fun roundFollowIsFlatAndKeepsItsOriginalWidth() = verifyFollow(round = true)
+
+    @Test fun largeFontFollowGrowsToKeepTheLabelVisible() = verifyFollow(large = true)
+
+    private fun verifyFollow(round: Boolean = false, large: Boolean = false) {
         val following = mutableStateOf(false)
         val pending = mutableStateOf(false)
         var toggles = 0
         compose.setContent {
-            HeyboxComposeTheme(composePreviewTheme(false)) {
-                ComposeDetailFollowButton(following.value, pending.value) { toggles++ }
+            CompositionLocalProvider(LocalDensity provides Density(1f, if (large) 1.25f else 1f)) {
+                HeyboxComposeTheme(composePreviewTheme(round).copy(textScale = if (large) 1.4f else 1f)) {
+                    ComposeDetailFollowButton(following.value, pending.value) { toggles++ }
+                }
             }
         }
         val button = compose.onNodeWithTag("detail-follow")
         compose.onNodeWithText("关注", useUnmergedTree = true).assertExists()
         val size = button.fetchSemanticsNode().size
+        compose.runOnIdle { captureMembershipUi(compose.activity,
+            "comment-flat-follow-${if (round) "round" else if (large) "large" else "square"}") }
         assertTrue("Follow must be a compact text button, not a circular plus", size.width > size.height)
-        assertTrue("Follow icon and padding should keep the button narrow", size.width <= 44)
+        if (!large) {
+            assertTrue("The follow button must be flatter, without shrinking its width", size.width >= if (round) 44 else 48)
+            assertTrue("The painted follow button must lose its tall vertical padding: $size",
+                size.height <= 20)
+        }
+        assertFollowLabelFits("关注")
         button.performClick()
         assertEquals(1, toggles)
         compose.runOnIdle { following.value = true; pending.value = true }
         compose.onNodeWithText("已关注", useUnmergedTree = true).assertExists()
+        assertFollowLabelFits("已关注")
         button.performClick()
         assertEquals(1, toggles)
         compose.runOnIdle { pending.value = false }
         compose.onNodeWithContentDescription("取消关注").performClick()
         assertEquals(2, toggles)
         compose.runOnIdle { captureMembershipUi(compose.activity, "comment-official-follow-button") }
+    }
+
+    private fun textLayout(label: String): TextLayoutResult {
+        val results = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText(label, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
+        return paintedTextLayout(results.single())
+    }
+
+    private fun assertFollowLabelFits(label: String) {
+        val layout = textLayout(label)
+        assertTrue("Follow text must stay fully laid out: ${layout.size}, " +
+            "paragraph=${layout.multiParagraph.width}x${layout.multiParagraph.height}", !layout.hasVisualOverflow)
+        val button = compose.onNodeWithTag("detail-follow").fetchSemanticsNode().boundsInRoot
+        val text = compose.onNodeWithText(label, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("Follow text must remain inside the painted button",
+            text.left >= button.left && text.right <= button.right &&
+                text.top >= button.top && text.bottom <= button.bottom)
     }
 
     private fun user(name: String, level: Int) = JSONObject().put("userid", name)

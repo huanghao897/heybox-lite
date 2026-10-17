@@ -179,7 +179,7 @@ internal fun ComposeCommentReplyText(
     val theme = LocalHeyboxTheme.current
     val prefix = remember(author, target, postAuthor, theme) {
         buildAnnotatedString {
-            withStyle(SpanStyle(color = theme.text, fontWeight = FontWeight.SemiBold)) {
+            withStyle(SpanStyle(color = theme.text, fontWeight = FontWeight.Normal)) {
                 append(author.ifBlank { "匿名用户" })
             }
             if (postAuthor) withStyle(SpanStyle(color = theme.text, background = theme.panelElevated,
@@ -198,7 +198,8 @@ internal fun ComposeCommentReplyText(
     }
     ComposeInlineText(text, theme.dark, theme.text, theme.link,
         modifier = modifier.fillMaxWidth(), fontSize = 12.5.sp * theme.textScale,
-        lineHeight = 18.sp * theme.textScale, cy = cy, prefix = prefix, suffix = suffix)
+        lineHeight = 18.sp * theme.textScale, fontWeight = FontWeight.Light,
+        cy = cy, prefix = prefix, suffix = suffix)
 }
 
 @Composable
