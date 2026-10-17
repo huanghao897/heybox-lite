@@ -70,7 +70,7 @@ internal fun ComposeFeedCard(
     actionRevision: Int = 0,
 ) {
     val scale = theme.uiScale
-    val shape = RoundedCornerShape((if (theme.roundScreen) 9 else 10).dp)
+    val shape = RoundedCornerShape((if (theme.roundScreen) 13 else 14).dp)
     val content = remember(item, presentationCache, precomputedPresentation) {
         precomputedPresentation ?: presentationCache?.get(item) ?: composeFeedPresentation(item)
     }
@@ -84,11 +84,13 @@ internal fun ComposeFeedCard(
         item.article -> "文章"
         else -> "帖子"
     }
+    // Surfaces are separated by tone (panel over background), not by an outline on
+    // every card; borders stay reserved for controls that need their edge visible.
     Column(
         modifier = modifier.fillMaxWidth().clip(shape).background(theme.panel)
-            .border(BorderStroke((1 * scale).dp, theme.hairline), shape)
             .clickable { onOpen(item) }
-            .padding((if (theme.roundScreen) 9 else 10).dp * scale),
+            .padding(horizontal = (if (theme.roundScreen) 10 else 12).dp * scale,
+                vertical = (if (theme.roundScreen) 9 else 10).dp * scale),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             // Keep the avatar bounded even before the async image loader has a bitmap.
@@ -97,27 +99,28 @@ internal fun ComposeFeedCard(
                 item.authorAvatar,
                 theme,
                 noImage,
-                (26 * scale).dp,
+                (28 * scale).dp,
                 CircleShape,
                 "作者头像",
-                modifier = Modifier.size((26 * scale).dp),
+                modifier = Modifier.size((28 * scale).dp),
                 loader = imageLoader,
             )
             Column(modifier = Modifier.weight(1f).padding(start = (8 * scale).dp)) {
                 Text(text = item.author.ifEmpty { "小黑盒社区" }, color = theme.text,
-                    fontSize = (11 * theme.textScale).sp, fontWeight = FontWeight.Bold,
+                    fontSize = (12 * theme.textScale).sp, fontWeight = FontWeight.Bold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (item.createdAt > 0L) {
                     Text(text = Format.relativeTime(item.createdAt), color = theme.subtle,
-                        fontSize = (10 * theme.textScale).sp, maxLines = 1)
+                        fontSize = (10.5f * theme.textScale).sp, maxLines = 1)
                 }
             }
             ComposePill(if (item.pinned) "置顶 · $type" else type, theme, item.pinned)
             if (showFollow && item.authorId.isNotEmpty() && item.authorId != currentUserId) {
                 Box(
-                    modifier = Modifier.size((25 * scale).dp)
+                    modifier = Modifier.size((26 * scale).dp)
                         .clip(CircleShape)
-                        .background(theme.panelElevated)
+                        .background(if (actions.following) theme.accent.copy(alpha = 0.18f)
+                            else theme.panelElevated)
                         .clickable(enabled = !actions.followPending) {
                             onAction?.invoke(item, FeedAction.FOLLOW)
                         }
@@ -129,7 +132,7 @@ internal fun ComposeFeedCard(
                     Text(text = if (actions.following) "✓" else "+",
                         color = if (actions.following) theme.accent else theme.muted,
                         fontSize = (14 * theme.textScale).sp,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1)
                 }
             }
@@ -144,16 +147,16 @@ internal fun ComposeFeedCard(
                     rich = content.richTitle,
                     theme = theme,
                     color = theme.text,
-                    fontSize = ((if (theme.roundScreen) 14 else 15) * theme.textScale).sp,
-                    lineHeight = ((if (theme.roundScreen) 18 else 19) * theme.textScale).sp,
+                    fontSize = ((if (theme.roundScreen) 15 else 16) * theme.textScale).sp,
+                    lineHeight = ((if (theme.roundScreen) 19 else 20) * theme.textScale).sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
                 )
                 if (description.isNotEmpty()) {
                     ComposeFeedText(source = description, rich = content.richDescription,
                         theme = theme, color = theme.muted,
-                        fontSize = ((if (theme.roundScreen) 10 else 11) * theme.textScale).sp,
-                        lineHeight = (15 * theme.textScale).sp,
+                        fontSize = ((if (theme.roundScreen) 11.5f else 12f) * theme.textScale).sp,
+                        lineHeight = (16 * theme.textScale).sp,
                         maxLines = if (theme.roundScreen) 1 else 2,
                         modifier = Modifier.padding(top = (4 * scale).dp))
                 }
@@ -256,7 +259,7 @@ internal fun ComposeRemoteImage(
 @Composable
 internal fun ComposePill(text: String, theme: ComposeThemeState, accent: Boolean = false) {
     Text(text = text, color = if (accent) theme.accent else theme.muted,
-        fontSize = (9 * theme.textScale).sp, lineHeight = (12 * theme.textScale).sp,
+        fontSize = (10 * theme.textScale).sp, lineHeight = (13 * theme.textScale).sp,
         style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
         modifier = Modifier.clip(RoundedCornerShape(50))
@@ -271,11 +274,9 @@ private fun ComposeGameCard(content: ComposeGameCardPresentation?, theme: Compos
     Row(
         modifier = Modifier.fillMaxWidth()
             .padding(top = (7 * theme.uiScale).dp)
-            .clip(RoundedCornerShape((8 * theme.uiScale).dp))
+            .clip(RoundedCornerShape((10 * theme.uiScale).dp))
             .background(theme.panelElevated)
-            .border(BorderStroke((1 * theme.uiScale).dp, theme.hairline),
-                RoundedCornerShape((8 * theme.uiScale).dp))
-            .padding((8 * theme.uiScale).dp),
+            .padding((9 * theme.uiScale).dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (content.coverUrl.isNotEmpty()) {
@@ -286,10 +287,10 @@ private fun ComposeGameCard(content: ComposeGameCardPresentation?, theme: Compos
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(text = content.name.ifEmpty { "游戏内容" }, color = theme.text,
-                fontSize = (12 * theme.textScale).sp, fontWeight = FontWeight.SemiBold,
+                fontSize = (12.5f * theme.textScale).sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(text = content.metadata.ifEmpty { "游戏卡片 · ${content.count} 个" }, color = theme.muted,
-                fontSize = (10 * theme.textScale).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontSize = (11 * theme.textScale).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = (2 * theme.uiScale).dp))
         }
     }
@@ -342,9 +343,9 @@ internal fun FeedToolbar(
     Row(
         modifier = Modifier.fillMaxWidth()
             .padding(top = (5 * theme.uiScale).dp)
-            .heightIn(min = (34 * theme.uiScale).dp.coerceAtLeast(28.dp))
-            .clip(RoundedCornerShape((10 * theme.uiScale).dp))
-            .background(theme.panel.copy(alpha = if (theme.dark) 0.86f else 0.72f))
+            .heightIn(min = (36 * theme.uiScale).dp.coerceAtLeast(30.dp))
+            .clip(RoundedCornerShape((12 * theme.uiScale).dp))
+            .background(theme.panel)
             .clickable(onClick = onSearch)
             .padding(horizontal = (9 * theme.uiScale).dp),
         verticalAlignment = Alignment.CenterVertically,

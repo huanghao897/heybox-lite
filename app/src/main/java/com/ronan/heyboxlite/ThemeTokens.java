@@ -17,40 +17,52 @@ final class ThemeTokens {
     final int link;
     final int glassStroke;
     final int onPrimary;
+    /** Text/icon colour that sits on top of {@link #accent}. */
+    final int onAccent;
 
-    private ThemeTokens(boolean dark, int primary, int secondary) {
+    private ThemeTokens(boolean dark, int primary, int secondary, boolean defaultPalette) {
         this.dark = dark;
         this.primary = primary;
         this.secondary = secondary;
         if (dark) {
-            background = Color.rgb(11, 11, 12);
-            panel = Color.rgb(25, 25, 27);
-            panelElevated = Color.rgb(32, 32, 35);
+            background = Color.rgb(10, 10, 11);
+            panel = Color.rgb(22, 22, 24);
+            panelElevated = Color.rgb(38, 38, 42);
             text = Color.rgb(245, 245, 247);
-            muted = Color.rgb(165, 165, 170);
-            subtle = Color.rgb(116, 116, 121);
-            hairline = Color.rgb(43, 43, 46);
+            muted = Color.rgb(178, 178, 184);
+            subtle = Color.rgb(132, 132, 139);
+            hairline = Color.rgb(44, 44, 48);
         } else {
-            background = Color.rgb(244, 244, 246);
+            background = Color.rgb(243, 243, 245);
             panel = Color.rgb(255, 255, 255);
-            panelElevated = Color.rgb(248, 248, 250);
+            panelElevated = Color.rgb(234, 235, 239);
             text = Color.rgb(25, 25, 27);
-            muted = Color.rgb(99, 99, 104);
-            subtle = Color.rgb(142, 142, 147);
-            hairline = Color.rgb(224, 224, 227);
+            muted = Color.rgb(92, 92, 98);
+            subtle = Color.rgb(126, 126, 132);
+            hairline = Color.rgb(226, 226, 230);
         }
-        accent = secondary;
+        // The untouched default palette used to fall back to grey, which left every
+        // highlight, toggle and selected state colourless. Give it one real accent.
+        accent = defaultPalette ? brandAccent(dark) : secondary;
         link = dark ? Color.rgb(89, 169, 235) : Color.rgb(0, 103, 173);
         glassStroke = blend(hairline, text, dark ? 0.06f : 0.04f);
         onPrimary = contrast(primary);
+        onAccent = contrast(accent);
     }
 
     static ThemeTokens of(boolean dark, int primary, int secondary) {
-        int normalizedPrimary = dark ? Color.WHITE : Color.rgb(20, 21, 23);
-        int normalizedSecondary = dark ? Color.rgb(196, 198, 201) : Color.rgb(87, 91, 96);
-        if (primary != 0) normalizedPrimary = primary;
-        if (secondary != 0) normalizedSecondary = secondary;
-        return new ThemeTokens(dark, normalizedPrimary, normalizedSecondary);
+        int defaultPrimary = dark ? Color.WHITE : Color.rgb(20, 21, 23);
+        int defaultSecondary = dark ? Color.rgb(196, 198, 201) : Color.rgb(87, 91, 96);
+        int normalizedPrimary = primary != 0 ? primary : defaultPrimary;
+        int normalizedSecondary = secondary != 0 ? secondary : defaultSecondary;
+        boolean defaultPalette = normalizedPrimary == defaultPrimary
+                && normalizedSecondary == defaultSecondary;
+        return new ThemeTokens(dark, normalizedPrimary, normalizedSecondary, defaultPalette);
+    }
+
+    /** Warm brand accent used while no palette has been picked in settings. */
+    static int brandAccent(boolean dark) {
+        return dark ? Color.rgb(255, 122, 69) : Color.rgb(194, 65, 12);
     }
 
     int softAccent() {

@@ -185,7 +185,7 @@ class ComposeFeedImageUiTest {
 
     private fun assertRequests(prefix: String, scale: Float, requests: List<Request>) {
         assertEquals(4, requests.size)
-        assertEquals(mapOf("$prefix-avatar" to (26 * scale).toInt(),
+        assertEquals(mapOf("$prefix-avatar" to (28 * scale).toInt(),
             "$prefix-content" to (68 * scale).toInt(),
             "$prefix-topic" to (12 * scale).coerceIn(10f, 14f).toInt(),
             "$prefix-game" to (42 * scale).toInt()), requests.associate { it.source to it.targetPx })

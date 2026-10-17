@@ -57,7 +57,7 @@ internal fun composeThemeState(
     hairline = tokens.hairline.asComposeColor(),
     accent = tokens.accent.asComposeColor(),
     link = tokens.link.asComposeColor(),
-    onAccent = tokens.onPrimary.asComposeColor(),
+    onAccent = tokens.onAccent.asComposeColor(),
     uiScale = uiScale,
     textScale = textScale,
     roundScreen = roundScreen,

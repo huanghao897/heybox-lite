@@ -39,9 +39,8 @@ internal fun CheckinPanel(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val theme = LocalHeyboxTheme.current
-    val shape = RoundedCornerShape(watchDp(12))
-    Column(modifier.fillMaxWidth().clip(shape).background(theme.panel)
-        .border(BorderStroke(0.5.dp, theme.hairline), shape), content = content)
+    val shape = RoundedCornerShape(watchDp(15))
+    Column(modifier.fillMaxWidth().clip(shape).background(theme.panel), content = content)
 }
 
 @Composable

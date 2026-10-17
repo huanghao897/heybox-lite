@@ -59,7 +59,7 @@ internal fun ComposeProfileScreen(
                         start = watchDp(11), end = watchDp(11), bottom = watchDp(6),
                     ),
                     color = LocalHeyboxTheme.current.accent,
-                    fontSize = watchSp(11f),
+                    fontSize = watchSp(11.5f),
                 )
                 if (profileState.signature.isNotBlank()) {
                     Text(
@@ -68,7 +68,7 @@ internal fun ComposeProfileScreen(
                             start = watchDp(11), end = watchDp(11), bottom = watchDp(9),
                         ),
                         color = LocalHeyboxTheme.current.text,
-                        fontSize = watchSp(12f),
+                        fontSize = watchSp(13f),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )

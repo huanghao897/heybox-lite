@@ -124,7 +124,7 @@ internal fun ComposeFeedScreen(
                         bottom = watchListEndPadding(withBottomNavigation = true),
                     ),
                     verticalArrangement = Arrangement.spacedBy(
-                        (7 * theme.uiScale).dp,
+                        (10 * theme.uiScale).dp,
                     ),
                 ) {
                     item(key = "feed-search", contentType = "feed-search") {
@@ -172,14 +172,14 @@ internal fun ComposeFeedScreen(
 
 internal fun composePreviewTheme(roundScreen: Boolean): ComposeThemeState = ComposeThemeState(
     dark = true,
-    background = Color(0xFF0B0B0C),
-    panel = Color(0xFF19191B),
-    panelElevated = Color(0xFF202023),
+    background = Color(0xFF0A0A0B),
+    panel = Color(0xFF161618),
+    panelElevated = Color(0xFF26262A),
     text = Color(0xFFF5F5F7),
-    muted = Color(0xFFA5A5AA),
-    subtle = Color(0xFF747479),
-    hairline = Color(0xFF2B2B2E),
-    accent = Color(0xFFC4C6C9),
+    muted = Color(0xFFB2B2B8),
+    subtle = Color(0xFF84848B),
+    hairline = Color(0xFF2C2C30),
+    accent = Color(0xFFFF7A45),
     link = Color(0xFF59A9EB),
     onAccent = Color.Black,
     uiScale = if (roundScreen) 0.82f else 1f,

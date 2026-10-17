@@ -123,15 +123,14 @@ internal fun WatchCard(
     val state = LocalHeyboxTheme.current
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(watchDp(14)),
+        shape = RoundedCornerShape(watchDp(16)),
         colors = CardDefaults.cardColors(
             containerColor = if (highlighted) state.panelElevated else state.panel,
         ),
-        border = BorderStroke(watchDp(1).coerceAtLeast(0.5.dp), state.hairline),
         content = {
             Column(
                 modifier = Modifier.padding(
-                    horizontal = watchDp(4),
+                    horizontal = watchDp(5),
                     vertical = watchDp(4),
                 ),
                 content = content,
@@ -145,8 +144,8 @@ internal fun WatchSectionTitle(text: String) {
     Text(
         text = text,
         color = LocalHeyboxTheme.current.muted,
-        fontSize = watchSp(11f),
-        fontWeight = FontWeight.Medium,
+        fontSize = watchSp(11.5f),
+        fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(start = watchDp(3), top = watchDp(2)),
     )
 }
@@ -181,7 +180,7 @@ internal fun WatchRow(
             title,
             modifier = Modifier.weight(1f),
             color = if (enabled) state.text else state.subtle,
-            fontSize = watchSp(13f),
+            fontSize = watchSp(13.5f),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -192,7 +191,7 @@ internal fun WatchRow(
                     .widthIn(max = watchDp(92))
                     .padding(start = watchDp(6)),
                 color = state.muted,
-                fontSize = watchSp(11f),
+                fontSize = watchSp(11.5f),
                 maxLines = 2,
                 textAlign = TextAlign.End,
                 overflow = TextOverflow.Ellipsis,
@@ -233,11 +232,11 @@ internal fun WatchSwitchRow(
             title,
             modifier = Modifier.weight(1f),
             color = if (enabled) state.text else state.subtle,
-            fontSize = watchSp(13f),
+            fontSize = watchSp(13.5f),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        val checkedTrack = if (state.dark) Color(0xFF77777D) else Color(0xFFA6A6AB)
+        val checkedTrack = state.accent
         val uncheckedTrack = if (state.dark) Color(0xFF3A3A3E) else Color(0xFFD1D1D6)
         val thumb = if (state.dark) Color(0xFFF5F5F7) else Color.White
         val thumbPosition by animateFloatAsState(
@@ -275,9 +274,9 @@ internal fun WatchValueCard(
         colors = CardDefaults.cardColors(containerColor = state.panelElevated),
     ) {
         Column(modifier = Modifier.padding(watchDp(11))) {
-            Text(label, color = state.subtle, fontSize = watchSp(10f), maxLines = 1)
+            Text(label, color = state.muted, fontSize = watchSp(10.5f), maxLines = 1)
             Spacer(modifier = Modifier.height(watchDp(3)))
-            Text(value, color = state.text, fontSize = watchSp(14f), fontWeight = FontWeight.SemiBold,
+            Text(value, color = state.text, fontSize = watchSp(15f), fontWeight = FontWeight.SemiBold,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
