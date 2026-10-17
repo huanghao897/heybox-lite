@@ -3,7 +3,6 @@ package com.ronan.heyboxlite
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
-import android.view.View
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.lazy.LazyListState
@@ -72,6 +71,7 @@ internal class ComposeAppHost(
     internal val detailRotaryInput = ComposeFeedRotaryInput()
     private val routeResources = ComposeRouteResources(api, cache, feedListState)
     private var accountId = session.userId()
+    private var sessionGeneration = session.sessionGeneration()
     private var feedStarted = false
     private var mounted = true
     private var suppressNextTransitionSnapshot = false
@@ -124,10 +124,6 @@ internal class ComposeAppHost(
     fun currentRoute(): String = navigation.route.value
 
     fun currentRouteSpec(): String = navigation.currentRouteSpec()
-
-    fun detailReturnRoute(): String = navigation.detailReturnRoute.value
-
-    fun detailReturnRouteSpec(): String = navigation.detailReturnRouteSpec()
 
     fun isRoute(route: String): Boolean = navigation.route.value == route
 
@@ -193,30 +189,6 @@ internal class ComposeAppHost(
         surfaceActive.value = active
     }
 
-    fun hasLiveReturnPreview(route: String): Boolean = ComposeSwipePresentation.isLiveRoute(route)
-
-    fun createReturnPreview(routeSpec: String): View? {
-        if (!mounted) return null
-        val key = routeSpec.substringBefore('?')
-        if (!hasLiveReturnPreview(key)) return null
-        val sourceState = listState(routeSpec)
-        val previewState = LazyListState(sourceState.firstVisibleItemIndex,
-            sourceState.firstVisibleItemScrollOffset)
-        return ComposeView(servicesState.value.activity).apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-            setBackgroundColor(servicesState.value.theme.background.toArgb())
-            setContent {
-                val currentServices by servicesState
-                val previewServices = currentServices.copy(
-                    theme = currentServices.theme.copy(rotaryRequest = null),
-                )
-                HeyboxComposeTheme(previewServices.theme) {
-                    ComposeRouteScreen(this@ComposeAppHost, routeSpec, previewServices, false, previewState)
-                }
-            }
-        }
-    }
-
     internal fun listState(route: String): LazyListState =
         routeResources.listState(route, navigation, saved.selectedFolder.value?.id.orEmpty())
 
@@ -261,13 +233,20 @@ internal class ComposeAppHost(
     }
 
     fun invalidateProfile() {
-        val currentAccount = servicesState.value.session.userId()
-        if (currentAccount != accountId) {
+        val session = servicesState.value.session
+        val currentAccount = session.userId()
+        val currentGeneration = session.sessionGeneration()
+        if (currentAccount != accountId || currentGeneration != sessionGeneration) {
             detailComments.dismiss()
             navigation.clearSavedState()
             navigation.clearDetail()
             routeResources.clear()
+            feed.invalidateSession()
+            search.invalidateSession()
+            feedStarted = false
             accountId = currentAccount
+            sessionGeneration = currentGeneration
+            if (isRoute("feed")) startFeedIfNeeded()
         }
         profile.invalidate()
         saved.invalidateAccount()
@@ -373,10 +352,6 @@ internal class ComposeAppHost(
         navigation.showDetailResult(result, fallback)
     }
 
-    fun appendDetailReplies(rootId: String, replies: List<org.json.JSONObject>) {
-        navigation.appendDetailReplies(rootId, replies)
-    }
-
     fun handleBack(): Boolean {
         if (detailComments.editor.value != null) { detailComments.dismiss(); return true }
         val current = navigation.route.value
@@ -440,6 +415,13 @@ internal class ComposeAppHost(
     fun editDetailComment(comment: org.json.JSONObject?, rootId: String) { detailComments.edit(comment, rootId) }
     fun loadDetailReplies(comment: org.json.JSONObject) { detailComments.replies(comment) }
 
+    private fun startFeedIfNeeded() {
+        if (feedStarted || !mounted) return
+        feedStarted = true
+        feed.restoreCache()
+        feed.loadInitial()
+    }
+
     @Composable
     private fun ComposeAppRoot(host: ComposeAppHost) {
         val services by host.servicesState
@@ -454,11 +436,7 @@ internal class ComposeAppHost(
                 host.checkinPageOwner = null
             }
             if (route == "profile") host.profile.refresh()
-            if (route == "feed" && !host.feedStarted) {
-                host.feedStarted = true
-                host.feed.restoreCache()
-                host.feed.loadInitial()
-            }
+            if (route == "feed") host.startFeedIfNeeded()
         }
         HeyboxComposeTheme(services.theme) {
             ComposeSwipeContainer(host, swipeRoute, services) { page, active ->

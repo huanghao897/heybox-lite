@@ -39,9 +39,9 @@ public class CheckinMembershipSecurityTest {
             String body = methodBody(coordinator, "void " + method + "(");
             assertTrue(method, body.contains("store.deviceToken()"));
             assertTrue(method, body.contains("token.isEmpty()"));
-            assertTrue(method, body.contains("authorizationAware(callback)"));
+            assertTrue(method, body.contains("authorizationAware(token, callback)"));
         }
-        assertTrue(coordinator.contains("handleAuthorizationError(error)"));
+        assertTrue(coordinator.contains("store.clearAuthorization(token)"));
         assertFalse(coordinator.contains("SessionStore"));
         assertFalse(coordinator.contains("Log."));
     }

@@ -89,7 +89,6 @@ final class MainActivityLifecycle {
             activity.checkinCenterCoordinator.close();
             activity.checkinCenterCoordinator = null;
         }
-        activity.saveCurrentDetailProgress();
         activity.stopQrPolling();
         if (activity.qrLoginPage != null) {
             activity.qrLoginPage.close();

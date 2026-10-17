@@ -38,7 +38,6 @@ final class MainContentFeatures {
         void showSettings();
         void showDetail(FeedItem item);
         void showUserSpace(String userId, String name, String avatar);
-        void openImage(android.widget.ImageView source, String url);
         void openImages(android.widget.ImageView source, String[] urls, int index);
         void addBottomSpace(LinearLayout page);
         void loginCompleted();

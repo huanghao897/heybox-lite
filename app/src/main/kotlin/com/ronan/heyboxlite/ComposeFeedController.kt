@@ -47,12 +47,13 @@ internal class ComposeFeedController(
     private var cursor = ""
     private var lastPull: Int? = null
     private var firstRequest = true
+    private var restoreCacheEnabled = true
     @Volatile private var requestSerial = 0
     @Volatile private var restoreSerial = 0
     @Volatile private var closed = false
 
     fun restoreCache() {
-        if (closed || items.value.isNotEmpty()) return
+        if (closed || !restoreCacheEnabled || items.value.isNotEmpty()) return
         val serial = ++restoreSerial
         io.execute {
             if (closed || serial != restoreSerial) return@execute
@@ -77,6 +78,33 @@ internal class ComposeFeedController(
     fun loadMore() {
         if (loading.value || loadingMore.value || noMore.value) return
         load(reset = false)
+    }
+
+    fun invalidateSession() {
+        if (closed) return
+        requestSerial++
+        restoreSerial++
+        restoreCacheEnabled = false
+        cursor = ""
+        lastPull = null
+        firstRequest = true
+        loading.value = false
+        refreshing.value = false
+        loadingMore.value = false
+        noMore.value = false
+        error.value = null
+        // Keep the public posts and their list positions, but detach mutable
+        // account actions from objects captured by the previous session.
+        val prepared = HashMap<FeedItem, ComposeFeedPresentation>()
+        val next = items.value.map { old ->
+            FeedItem.from(old.toJson()).apply {
+                liked = false
+                favorited = false
+                following = false
+                followPending = false
+            }.also { prepared[it] = presentations.value[old] ?: composeFeedPresentation(it) }
+        }
+        publishItems(next, prepared)
     }
 
     fun close() {

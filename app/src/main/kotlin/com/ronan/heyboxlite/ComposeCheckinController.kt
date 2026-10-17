@@ -98,7 +98,7 @@ internal class ComposeCheckinController(
                 setCenterState(clearError = true)
             }
             ComposeCheckinRoute.TASK_SETTINGS -> setCenterState(clearError = true)
-            ComposeCheckinRoute.MEMBERSHIP -> { membership.leave(); setCenterState(clearError = true) }
+            ComposeCheckinRoute.MEMBERSHIP -> setCenterState(clearError = true)
             ComposeCheckinRoute.CHECKOUT, ComposeCheckinRoute.REDEEM, ComposeCheckinRoute.PURCHASES ->
                 membership.backToMembership()
             ComposeCheckinRoute.HISTORY -> setCenterState(clearError = true)

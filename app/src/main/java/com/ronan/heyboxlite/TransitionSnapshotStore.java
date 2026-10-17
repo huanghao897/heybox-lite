@@ -15,7 +15,6 @@ import java.util.WeakHashMap;
 /** Owns transition bitmaps and makes their lifetime explicit. */
 final class TransitionSnapshotStore {
     private final Map<String, Bitmap> snapshots = new HashMap<>();
-    private final Set<Bitmap> leased = new HashSet<>();
     private final Map<ImageView, Bitmap> overlays = new WeakHashMap<>();
 
     void capture(String key, int maxCount, View view, int background, LocalCache log) {
@@ -43,17 +42,38 @@ final class TransitionSnapshotStore {
         return key == null || key.isEmpty() ? null : snapshots.get(key);
     }
 
+    boolean bindPreview(ImageView preview, String key) {
+        Bitmap bitmap = get(key);
+        if (bitmap == null || bitmap.isRecycled()) return false;
+        preview.setImageBitmap(bitmap);
+        registerOverlay(preview, bitmap);
+        preview.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View view) {
+                // Retained native pages can mount again after their old preview was released.
+                Bitmap current = get(key);
+                if (current == null || current.isRecycled()) return;
+                preview.setImageBitmap(current);
+                registerOverlay(preview, current);
+            }
+
+            @Override public void onViewDetachedFromWindow(View view) {
+                preview.setImageDrawable(null);
+                releaseOverlay(preview);
+            }
+        });
+        return true;
+    }
+
     void registerOverlay(ImageView overlay, Bitmap bitmap) {
         if (overlay == null || bitmap == null || bitmap.isRecycled()) return;
-        overlays.put(overlay, bitmap);
-        leased.add(bitmap);
+        Bitmap previous = overlays.put(overlay, bitmap);
+        releaseIfUnused(previous);
     }
 
     void releaseOverlay(ImageView overlay) {
         if (overlay == null) return;
         Bitmap bitmap = overlays.remove(overlay);
         if (bitmap == null) return;
-        leased.remove(bitmap);
         releaseIfUnused(bitmap);
     }
 
@@ -64,12 +84,11 @@ final class TransitionSnapshotStore {
     }
 
     void releaseAll() {
-        clear();
-        for (Bitmap bitmap : new HashSet<>(leased)) {
-            leased.remove(bitmap);
-            releaseIfUnused(bitmap);
-        }
+        Set<Bitmap> removed = new HashSet<>(snapshots.values());
+        removed.addAll(overlays.values());
+        snapshots.clear();
         overlays.clear();
+        for (Bitmap bitmap : removed) releaseIfUnused(bitmap);
     }
 
     private void trim(int maxCount) {
@@ -83,7 +102,7 @@ final class TransitionSnapshotStore {
     }
 
     private void releaseIfUnused(Bitmap bitmap) {
-        if (bitmap == null || leased.contains(bitmap)) return;
+        if (bitmap == null || overlays.containsValue(bitmap)) return;
         for (Bitmap stored : snapshots.values()) {
             if (stored == bitmap) return;
         }

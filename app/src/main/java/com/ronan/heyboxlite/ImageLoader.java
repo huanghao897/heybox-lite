@@ -258,7 +258,12 @@ final class ImageLoader {
     }
 
     static void loadOriginal(String sourceUrl, int targetPx, Callback callback) {
-        requestBitmap(originalUrl(sourceUrl), Math.min(targetPx, MAX_BITMAP_SIDE), LARGE_EXECUTOR, callback);
+        loadOriginalCancellable(sourceUrl, targetPx, callback);
+    }
+
+    static ImageLoadRequest loadOriginalCancellable(String sourceUrl, int targetPx, Callback callback) {
+        return requestBitmap(originalUrl(sourceUrl), Math.min(targetPx, MAX_BITMAP_SIDE),
+                LARGE_EXECUTOR, callback);
     }
 
     static Bitmap cachedExactOriginal(String sourceUrl) {

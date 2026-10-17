@@ -9,6 +9,7 @@ import android.app.Application;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ScrollView;
 
 import java.lang.reflect.Field;
 import java.time.Duration;
@@ -73,7 +74,6 @@ public class DetailPagerReturnLifecycleTest {
         assertEquals(0, pager.getScrollX());
         assertSame(pager, preview.getParent());
         assertFalse(parent.disallowed);
-        assertFalse(pager.canHandoffReturnPreview(preview));
     }
 
     @Test public void detachCancelsSettleAndRejectsItsAlreadyCapturedEndCallback() throws Exception {
@@ -87,7 +87,6 @@ public class DetailPagerReturnLifecycleTest {
         Shadows.shadowOf(activity.getMainLooper()).idleFor(Duration.ofMillis(500));
         assertEquals(0, returns);
         assertEquals(0, pager.getScrollX());
-        assertFalse(pager.canHandoffReturnPreview(preview));
     }
 
     @Test public void newGestureCancelsOldSettleWithoutLettingOldEndCompleteNewReturn() throws Exception {
@@ -105,7 +104,6 @@ public class DetailPagerReturnLifecycleTest {
         current.end();
         assertEquals(1, returns);
         assertEquals(-pager.getWidth(), pager.getScrollX());
-        assertTrue(pager.canHandoffReturnPreview(preview));
     }
 
     @Test public void pendingLayoutAlignmentCannotSnapCommittedReturnBackToArticle() throws Exception {
@@ -115,7 +113,6 @@ public class DetailPagerReturnLifecycleTest {
         layoutParent();
         Shadows.shadowOf(activity.getMainLooper()).idleFor(Duration.ofMillis(300));
         assertEquals(-pager.getWidth(), pager.getScrollX());
-        assertTrue(pager.canHandoffReturnPreview(preview));
     }
 
     @Test public void pageReplacementRejectsOldReturnAndItsQueuedAlignment() throws Exception {
@@ -131,7 +128,6 @@ public class DetailPagerReturnLifecycleTest {
         assertEquals(0, pager.getScrollX());
         assertNull(preview.getParent());
         assertSame(pager, replacement.getParent());
-        assertFalse(pager.canHandoffReturnPreview(replacement));
     }
 
     @Test public void detachedPageAlignmentDoesNotMoveAResumedNativeDetail() {
@@ -149,7 +145,7 @@ public class DetailPagerReturnLifecycleTest {
         assertEquals(1, pageChanges);
     }
 
-    @Test public void nativeReturnViewCanStillBeTakenWithoutAnyComposeCommit() {
+    @Test public void nativeReturnViewCanBeTakenBeforeAGesture() {
         View nativeReturn = new View(activity);
         nativeReturn.setTranslationX(20);
         pager.setReturnView(nativeReturn);
@@ -160,6 +156,43 @@ public class DetailPagerReturnLifecycleTest {
         assertEquals(0f, nativeReturn.getTranslationX(), 0f);
         assertNull(pager.takeReturnView());
         assertEquals(0, returns);
+    }
+
+    @Test public void nativeReturnKeepsItsScrollAfterACommittedGestureWithMotionOff() throws Exception {
+        verifyNativeReturnScroll(MotionLevel.OFF);
+    }
+
+    @Test public void nativeReturnKeepsItsScrollAfterACommittedAnimatedGesture() throws Exception {
+        verifyNativeReturnScroll(MotionLevel.REDUCED);
+    }
+
+    private void verifyNativeReturnScroll(int motion) throws Exception {
+        Motions.setLevel(motion);
+        ScrollView nativeReturn = new ScrollView(activity);
+        nativeReturn.setFocusable(false);
+        View content = new View(activity);
+        content.setMinimumHeight(1200);
+        nativeReturn.addView(content, new ScrollView.LayoutParams(-1, 1200));
+        pager.setReturnView(nativeReturn);
+        layoutParent();
+        Shadows.shadowOf(activity.getMainLooper()).idle();
+        assertTrue(nativeReturn.getChildAt(0).getHeight() > nativeReturn.getHeight());
+        nativeReturn.scrollTo(0, 127);
+        assertEquals(127, nativeReturn.getScrollY());
+
+        touch(MotionEvent.ACTION_DOWN, 16, 0);
+        touch(MotionEvent.ACTION_MOVE, 176, 300);
+        touch(MotionEvent.ACTION_UP, 176, 400);
+        if (motion != MotionLevel.OFF) animator().end();
+        assertEquals(1, returns);
+        layoutParent();
+        Shadows.shadowOf(activity.getMainLooper()).idleFor(Duration.ofMillis(300));
+        assertEquals(-pager.getWidth(), pager.getScrollX());
+        assertEquals(127, nativeReturn.getScrollY());
+        assertSame(nativeReturn, pager.takeReturnView());
+        assertEquals(127, nativeReturn.getScrollY());
+        assertNull(nativeReturn.getParent());
+        assertNull(pager.takeReturnView());
     }
 
     private void beginReturnSettle() throws Exception {
@@ -184,6 +217,8 @@ public class DetailPagerReturnLifecycleTest {
     }
 
     private void layoutParent() {
+        parent.forceLayout();
+        pager.forceLayout();
         parent.measure(View.MeasureSpec.makeMeasureSpec(240, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY));
         parent.layout(0, 0, 240, 320);

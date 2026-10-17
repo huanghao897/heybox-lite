@@ -10,10 +10,6 @@ import org.json.JSONObject;
 final class ComposeActivityBridge implements ComposeAppCallbacks {
     private final MainActivity activity;
     private final ComposeCommentRequests commentRequests;
-    private boolean legacyDetailActive;
-    private String legacyReturnRoute = "feed";
-    private boolean returningLegacyDetail;
-    private NativeDetailReturnHandoff returnHandoff;
     private ComposeDetailRuntime composeDetail;
 
     ComposeActivityBridge(MainActivity activity) {
@@ -22,7 +18,6 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     void mount(FrameLayout body) {
-        disposeReturnHandoff();
         if (activity.composeAppHost != null) activity.composeAppHost.close();
         activity.content = new BackSwipeFrameLayout(activity, activity);
         body.addView(activity.content, new FrameLayout.LayoutParams(-1, -1));
@@ -47,16 +42,8 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
 
     boolean showRouteIfMounted(String route) {
         if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()) return false;
-        // MainActivity selects a native fallback key; the bridge owns the full Compose return spec.
-        showRoute(returningLegacyDetail ? legacyReturnRoute : route);
+        showRoute(route);
         return true;
-    }
-
-    boolean isLegacyDetailActive() { return legacyDetailActive; }
-
-    void clearLegacyDetailOwnership() {
-        legacyDetailActive = false;
-        disposeReturnHandoff();
     }
 
     boolean showUserSpace(String userId, String name, String avatar) {
@@ -73,14 +60,6 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     boolean handleBack() {
-        if (legacyDetailActive && "detail".equals(activity.screen)) {
-            if (activity.detailPager != null && activity.detailPager.showingComments()) {
-                activity.detailPager.showArticle(true);
-                return true;
-            }
-            returnFromLegacyDetail();
-            return true;
-        }
         // A native fallback page can coexist with this host while the Compose
         // layer is hidden. Do not consume its back event with a stale route.
         if (activity.composeLayer == null
@@ -114,21 +93,18 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
                 || !activity.composeAppHost.isMounted()) return false;
         if (!isComposeSurfaceVisible()) {
             // A post opened from a native user page/detail page must remain in
-            // the native history. Clear the root marker so its back gesture
-            // returns to that native page instead of skipping it.
-            clearLegacyDetailOwnership();
+            // the native history so its back gesture returns to that page.
             return false;
         }
         if (composeDetail == null) composeDetail = new ComposeDetailRuntime(activity);
         composeDetail.open(item);
-        legacyDetailActive = false;
         syncChrome("detail");
         EmojiStore.load(activity.api, () -> { });
         return true;
     }
 
     boolean showComposeDetailResult(DetailPageAssembler.Result detail, FeedItem fallback) {
-        if (legacyDetailActive || !isComposeSurfaceVisible()) return false;
+        if (!isComposeSurfaceVisible()) return false;
         if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()
                 || !"detail".equals(activity.screen)) return false;
         activity.composeAppHost.showDetailResult(detail, fallback);
@@ -141,12 +117,8 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
 
     void showRoute(String route) {
         if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()) return;
-        if (!returningLegacyDetail) disposeReturnHandoff();
         String routeSpec = route == null ? "feed" : route;
         String key = route == null ? "feed" : route.split("\\?", 2)[0];
-        if (!"detail".equals(key)) {
-            legacyDetailActive = false;
-        }
         activity.screen = key;
         activity.shellBar.setVisibility(View.GONE);
         activity.content.setVisibility(View.INVISIBLE);
@@ -155,14 +127,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         boolean topLevel = "feed".equals(key) || "profile".equals(key);
         activity.setBottomNavVisible(topLevel, false);
         if (topLevel) activity.bottomNavigation.select(key);
-        if (!returningLegacyDetail || !routeSpec.equals(activity.composeAppHost.currentRouteSpec())) {
-            activity.composeAppHost.setRoute(routeSpec);
-        }
-    }
-
-    void onNativeDetailShown() {
-        if (!legacyDetailActive || activity.leading == null) return;
-        activity.leading.setOnClickListener(view -> returnFromLegacyDetail());
+        activity.composeAppHost.setRoute(routeSpec);
     }
 
     @Override public void navigate(String route) {
@@ -204,61 +169,6 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
 
     @Override public void requestImages(android.widget.ImageView source, String[] urls, int index) {
         activity.openImage(source, urls, index);
-    }
-
-    private void returnFromLegacyDetail() {
-        returnFromLegacyDetail(false);
-    }
-
-    void returnFromNativeDetail(boolean gestureOwned) {
-        returnFromLegacyDetail(gestureOwned);
-    }
-
-    View createDetailReturnPreview() {
-        return legacyDetailActive && activity.composeAppHost != null
-                ? activity.composeAppHost.createReturnPreview(legacyReturnRoute) : null;
-    }
-
-    private void returnFromLegacyDetail(boolean gestureOwned) {
-        if (returningLegacyDetail) return;
-        String route = legacyReturnRoute;
-        disposeReturnHandoff();
-        DetailPager owner = NativeDetailReturnHandoff.returningPager(activity.detailPager);
-        NativeDetailReturnHandoff handoff = gestureOwned
-                ? NativeDetailReturnHandoff.adopt(owner, NativeDetailReturnHandoff.livePreview(owner),
-                activity.composeLayer, () -> returnHandoff = null) : null;
-        returnHandoff = handoff;
-        returningLegacyDetail = true;
-        boolean restoredCompose = false;
-        try {
-            activity.returnFromDetailForCompose(gestureOwned);
-            // Returning a nested native detail restored a native user page. Keep
-            // that page visible; the root Compose route is restored only after the
-            // user backs out of the native chain.
-            if ("user_space".equals(activity.screen) && activity.composeLayer != null
-                    && activity.composeLayer.getVisibility() != View.VISIBLE) return;
-            boolean composeVisible = isComposeSurfaceVisible();
-            if (route != null && !route.isEmpty()
-                    && (!route.equals(activity.composeAppHost == null
-                    ? "" : activity.composeAppHost.currentRouteSpec()) || !composeVisible)) {
-                showRoute(route);
-            }
-            restoredCompose = isComposeSurfaceVisible();
-        } finally {
-            returningLegacyDetail = false;
-            if (handoff != null) {
-                ComposeAppHost destinationHost = activity.composeAppHost;
-                if (restoredCompose && destinationHost != null) {
-                    handoff.awaitDestination(() -> activity.composeAppHost == destinationHost
-                            && destinationHost.isMounted()
-                            && route.equals(destinationHost.currentRouteSpec()));
-                } else handoff.dispose();
-            }
-        }
-    }
-
-    private void disposeReturnHandoff() {
-        if (returnHandoff != null) returnHandoff.dispose();
     }
 
     private boolean isComposeSurfaceVisible() {
@@ -325,13 +235,15 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     @Override public void loginCompleted() {
-        if (activity.feedPage != null) activity.feedPage.clearItems();
+        activity.invalidateNativeSessionContent();
         activity.toast("登录成功");
         if (activity.composeAppHost != null) activity.composeAppHost.invalidateProfile();
         if (activity.api != null) EmojiStore.load(activity.api, () -> { });
         activity.showTopLevel(0);
-        PresenceReporter.pingNow(activity.session, activity.readingTimeTracker, status -> { });
-        RemoteConfig.load(activity.session, () -> { });
+        PresenceReporter.pingNow(activity.session, activity.readingTimeTracker,
+                activity::applyAccessStatus);
+        RemoteConfig.load(activity.session,
+                () -> activity.applyAccessStatus(RemoteConfig.accessStatus()));
     }
 
     @Override public void settingsChanged() {
@@ -350,6 +262,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
             activity.showLogin();
         } else if ("logout".equals(key)) {
             activity.session.clearSession();
+            activity.invalidateNativeSessionContent();
             activity.toast("已退出登录");
             if (activity.composeAppHost != null) activity.composeAppHost.invalidateProfile();
             showRoute("profile");
@@ -392,7 +305,6 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
     }
 
     void close() {
-        disposeReturnHandoff();
         if (composeDetail != null) composeDetail.close();
     }
 }

@@ -30,8 +30,9 @@ final class FeedPagingState {
     }
 
     void finish(boolean reset, int serial) {
+        if (!accepts(serial)) return;
         if (reset) {
-            if (accepts(serial)) refreshing = false;
+            refreshing = false;
         } else {
             loadingMore = false;
         }
@@ -42,6 +43,9 @@ final class FeedPagingState {
     }
 
     void resetForNewFeed() {
+        resetSerial = ++requestSerial;
+        refreshing = false;
+        loadingMore = false;
         lastval = "";
         lastPull = null;
         firstRequest = true;

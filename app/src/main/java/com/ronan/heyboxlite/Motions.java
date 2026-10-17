@@ -1,6 +1,5 @@
 package com.ronan.heyboxlite;
 
-import android.os.Build;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -70,7 +69,7 @@ final class Motions {
     static void listEnter(View view, int index, float translatePx) {
         if (view == null) return;
         view.animate().cancel();
-        if (off() || Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+        if (off()) {
             reset(view);
             return;
         }
@@ -112,7 +111,7 @@ final class Motions {
     static void selected(View view) {
         if (view == null) return;
         view.animate().cancel();
-        if (off() || Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+        if (off()) {
             reset(view);
             return;
         }

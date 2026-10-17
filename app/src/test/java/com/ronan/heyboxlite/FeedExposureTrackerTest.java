@@ -54,6 +54,20 @@ public class FeedExposureTrackerTest {
         assertFalse(value.contains("post-0,"));
     }
 
+    @Test
+    public void clearingTheSessionDiscardsPreviousExposureCandidates() throws Exception {
+        FeedExposureTracker tracker = new FeedExposureTracker();
+        tracker.recordLoaded(items("old-account-post"), 100L);
+        tracker.recordLoaded(items("latest-old-post"), 101L);
+        assertEquals("old-account-post", tracker.valueForRequest(true, 102L));
+
+        tracker.clear();
+
+        assertEquals(0, tracker.pendingCount());
+        tracker.recordLoaded(items("new-account-post"), 103L);
+        assertNull(tracker.valueForRequest(true, 104L));
+    }
+
     private static List<FeedItem> items(String... ids) throws Exception {
         List<FeedItem> result = new ArrayList<>();
         for (String id : Arrays.asList(ids)) result.add(item(id));

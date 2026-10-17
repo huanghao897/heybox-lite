@@ -7,41 +7,32 @@ final class HeaderProvider {
 
     private HeaderProvider() {}
 
-    static void apply(HttpURLConnection connection, SessionStore session) {
-        applyPublic(connection);
-        applyCookie(connection, session.getCookie());
+    static String captureCookie(SessionStore session, ApiClient.HeaderMode mode,
+                                boolean includeClientKeys) {
+        switch (mode) {
+            case OFFICIAL_MOBILE:
+                return session.officialMobileCookie(includeClientKeys);
+            case OFFICIAL_REQUEST:
+                return session.officialBridgeCookie(includeClientKeys);
+            case OFFICIAL_MINIMAL:
+                return session.officialMinimalCookie(includeClientKeys);
+            default:
+                return session.getCookie();
+        }
     }
 
-    static void applyMobile(HttpURLConnection connection, SessionStore session) {
-        connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9");
-        connection.setRequestProperty("User-Agent", mobileUserAgent());
-        connection.setRequestProperty("X-Requested-With", "com.max.xiaoheihe");
-        applyCookie(connection, session.getCookie());
-    }
-
-    static void applyOfficialMobile(HttpURLConnection connection, SessionStore session,
-                                    boolean addClientKey) {
-        applyOfficial(connection, session.officialMobileCookie(addClientKey));
-    }
-
-    static void applyOfficialRequest(HttpURLConnection connection, SessionStore session,
-                                     boolean includeClientKeys) {
-        applyOfficial(connection, session.officialBridgeCookie(includeClientKeys));
-    }
-
-    static void applyOfficialMinimalRequest(HttpURLConnection connection, SessionStore session,
-                                            boolean includeClientKeys) {
-        applyOfficial(connection, session.officialMinimalCookie(includeClientKeys));
-    }
-
-    static void applyOfficialMobileRawCookie(HttpURLConnection connection, SessionStore session) {
-        applyOfficial(connection, session.getCookie());
-    }
-
-    private static void applyOfficial(HttpURLConnection connection, String cookie) {
-        connection.setRequestProperty("Referer", OFFICIAL_REFERER);
-        connection.setRequestProperty("User-Agent", mobileUserAgent());
+    static void apply(HttpURLConnection connection, ApiClient.HeaderMode mode, String cookie) {
+        if (mode == ApiClient.HeaderMode.DEFAULT) {
+            applyPublic(connection);
+        } else if (mode == ApiClient.HeaderMode.MOBILE) {
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9");
+            connection.setRequestProperty("User-Agent", mobileUserAgent());
+            connection.setRequestProperty("X-Requested-With", "com.max.xiaoheihe");
+        } else {
+            connection.setRequestProperty("Referer", OFFICIAL_REFERER);
+            connection.setRequestProperty("User-Agent", mobileUserAgent());
+        }
         applyCookie(connection, cookie);
     }
 

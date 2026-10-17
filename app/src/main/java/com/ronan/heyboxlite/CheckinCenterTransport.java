@@ -186,12 +186,15 @@ final class CheckinCenterTransport {
                 message = "请开通或续费小黑盒签到会员";
                 break;
             case 403:
-                message = operation == CheckinCenterClient.Operation.PAIR_REGISTER
+                message = "share_tasks_unavailable".equals(diagnosticCode)
+                        ? "分享任务暂未开放" : operation == CheckinCenterClient.Operation.PAIR_REGISTER
                         || operation == CheckinCenterClient.Operation.REGISTRATION_EMAIL
                         ? "签到服务当前未开放注册" : "当前操作没有权限";
                 break;
             case 404:
-                if (operation == CheckinCenterClient.Operation.PAIR_POLL
+                if ("task_not_configured".equals(diagnosticCode)) {
+                    message = "签到任务尚未配置";
+                } else if (operation == CheckinCenterClient.Operation.PAIR_POLL
                         || operation == CheckinCenterClient.Operation.PAIR_APPROVE
                         || operation == CheckinCenterClient.Operation.PAIR_REGISTER
                         || operation == CheckinCenterClient.Operation.REGISTRATION_EMAIL) {
@@ -203,7 +206,8 @@ final class CheckinCenterTransport {
                 } else if (operation == CheckinCenterClient.Operation.BILLING_STATUS
                         || operation == CheckinCenterClient.Operation.BILLING_QR
                         || operation == CheckinCenterClient.Operation.BILLING_CLAIM) {
-                    message = "支付订单不存在";
+                    message = "order_not_found".equals(diagnosticCode)
+                            ? "支付订单不存在" : "服务器暂未开放此支付操作，请更新后重试";
                 } else if (operation == CheckinCenterClient.Operation.BILLING_CATALOG
                         || operation == CheckinCenterClient.Operation.BILLING_HISTORY
                         || operation == CheckinCenterClient.Operation.BILLING_REDEEM) {
@@ -213,7 +217,7 @@ final class CheckinCenterTransport {
                 } else if (operation == CheckinCenterClient.Operation.HISTORY) {
                     message = "签到历史记录暂不可用";
                 } else {
-                    message = "签到任务尚未配置";
+                    message = "服务器暂未支持此签到操作，请更新后重试";
                 }
                 break;
             case 409:
@@ -228,6 +232,12 @@ final class CheckinCenterTransport {
                     message = "registration_account_used".equals(diagnosticCode)
                             ? "签到服务账号或邮箱已被注册"
                             : "该签到服务账号已存在，或配对状态已变化";
+                } else if ("order_not_pending".equals(diagnosticCode)) {
+                    message = "订单状态已变化，正在重新确认";
+                } else if ("task_already_running".equals(diagnosticCode)) {
+                    message = "已有签到任务正在执行，请稍后刷新状态";
+                } else if ("checkout_unavailable".equals(diagnosticCode)) {
+                    message = "当前套餐或订单暂不可购买，请返回会员页检查";
                 } else if (operation == CheckinCenterClient.Operation.BILLING_CREATE) {
                     message = "支付渠道暂不可用，请稍后重试";
                 } else if (operation == CheckinCenterClient.Operation.BILLING_REDEEM) {
@@ -239,9 +249,12 @@ final class CheckinCenterTransport {
             case 410:
                 if (operation == CheckinCenterClient.Operation.SMS_SUBMIT) {
                     message = "短信验证码已过期，请重新发送";
+                } else if ("order_expired".equals(diagnosticCode)) {
+                    message = "支付订单已过期，请重新生成";
                 } else if (operation == CheckinCenterClient.Operation.BILLING_QR
-                        || operation == CheckinCenterClient.Operation.BILLING_STATUS) {
-                    message = "支付码已过期，请重新生成";
+                        || operation == CheckinCenterClient.Operation.BILLING_STATUS
+                        || operation == CheckinCenterClient.Operation.BILLING_CLAIM) {
+                    message = "支付码暂不可用，请刷新订单状态";
                 } else {
                     message = "配对已过期，请重新连接";
                 }
@@ -283,6 +296,10 @@ final class CheckinCenterTransport {
             case 503:
                 message = operation == CheckinCenterClient.Operation.REGISTRATION_EMAIL
                         ? "验证邮件暂时无法发送，请稍后重试"
+                        : operation == CheckinCenterClient.Operation.BILLING_QR
+                        ? "支付码暂不可用，请稍后重试"
+                        : operation == CheckinCenterClient.Operation.BILLING_CREATE
+                        ? "支付渠道暂不可用，请稍后重试"
                         : "签到服务暂时不可用，请稍后重试";
                 break;
             default:
@@ -305,7 +322,30 @@ final class CheckinCenterTransport {
 
     static String serverErrorCode(String response) {
         try {
-            String error = new JSONObject(response).optString("error", "");
+            JSONObject payload = new JSONObject(response);
+            String code = payload.optString("code", "");
+            switch (code) {
+                case "device_authorization_invalid":
+                case "pairing_credentials_invalid":
+                case "order_not_found":
+                case "order_expired":
+                case "order_not_pending":
+                case "payment_qr_unavailable":
+                case "payment_channel_unavailable":
+                case "checkout_unavailable":
+                case "task_not_configured":
+                case "task_already_running":
+                case "share_tasks_unavailable":
+                case "rate_limited":
+                    return code;
+                default:
+                    break;
+            }
+            String error = payload.optString("error", "");
+            if ("订单不存在".equals(error) || "Order not found".equals(error)) {
+                return "order_not_found";
+            }
+            if ("Xiaoheihe task is not configured".equals(error)) return "task_not_configured";
             if ("captcha_required".equals(error)) return "captcha_required";
             if ("registration email code is invalid".equals(error)) {
                 return "registration_email_code_invalid";

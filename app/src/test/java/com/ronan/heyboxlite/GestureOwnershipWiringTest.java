@@ -14,16 +14,18 @@ public class GestureOwnershipWiringTest {
     @Test
     public void hiddenComposeSurfaceDoesNotConsumeNativeBackEvents() throws Exception {
         String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
-        assertTrue(bridge.contains("legacyDetailActive && \"detail\".equals(activity.screen)"));
         assertTrue(bridge.contains("activity.composeLayer.getVisibility() != View.VISIBLE"));
         assertTrue(bridge.contains("if (!isComposeSurfaceVisible()) return false;"));
-        assertFalse(bridge.contains("if (legacyDetailActive) {\n            returnFromLegacyDetail();"));
+        assertFalse(bridge.contains("legacyDetailActive"));
     }
 
     @Test
-    public void restoredNativeDetailsReleaseComposeOwnership() throws Exception {
+    public void restoredNativeDetailsKeepTheirOriginalPagerAndScrollPosition() throws Exception {
         String activity = source("java/com/ronan/heyboxlite/MainActivity.java");
-        assertTrue(activity.contains("this.composeBridge.clearLegacyDetailOwnership();"));
+        assertTrue(activity.contains("this.detailPager = state.pager;"));
+        assertTrue(activity.contains("this.detailScroll = state.articleScroll;"));
+        assertTrue(activity.contains("this.detailCommentScroll = state.commentScroll;"));
+        assertFalse(activity.contains("clearLegacyDetailOwnership"));
     }
 
     @Test
@@ -71,10 +73,10 @@ public class GestureOwnershipWiringTest {
     }
 
     @Test
-    public void nativeDetailReturnRestoresComposeEvenWhenRouteIsUnchanged() throws Exception {
+    public void loginCompletionAppliesAccessStatusFromBothServerResponses() throws Exception {
         String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
-        assertTrue(bridge.contains("boolean composeVisible = isComposeSurfaceVisible();"));
-        assertTrue(bridge.contains("|| !composeVisible"));
+        assertTrue(bridge.contains("activity::applyAccessStatus"));
+        assertTrue(bridge.contains("() -> activity.applyAccessStatus(RemoteConfig.accessStatus())"));
     }
 
     @Test
@@ -111,14 +113,10 @@ public class GestureOwnershipWiringTest {
     }
 
     @Test
-    public void nativeDetailUsesLiveReturnContentAndClearsStaleNativeLayers() throws Exception {
+    public void composeDetailClearsStaleNativeLayersAndUsesItsOwnRuntime() throws Exception {
         String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
-        String factory = source("java/com/ronan/heyboxlite/DetailReturnPreviewFactory.java");
         String host = source("kotlin/com/ronan/heyboxlite/ComposeAppHost.kt");
-        assertTrue(factory.indexOf("if (livePreview != null) return livePreview;")
-                < factory.indexOf("new ImageView(activity)"));
         assertTrue(bridge.contains("activity.content.setVisibility(View.INVISIBLE);"));
-        assertTrue(bridge.contains("createReturnPreview(legacyReturnRoute)"));
         int openStart = host.indexOf("internal fun openDetail(item: FeedItem)");
         int openEnd = host.indexOf("fun likeDetailComment", openStart);
         assertTrue("The detail entry and its following method must exist", openStart >= 0 && openEnd > openStart);

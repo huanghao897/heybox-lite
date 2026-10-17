@@ -163,6 +163,12 @@ final class SearchPage {
         this.listView = null;
     }
 
+    void invalidateSession() {
+        this.state.begin("");
+        this.state.saveListPosition(0, 0);
+        this.listView = null;
+    }
+
     private SearchBar searchBar(int searchHeight, boolean roundLayout) {
         LinearLayout bar = new LinearLayout(this.activity);
         bar.setGravity(Gravity.CENTER_VERTICAL);

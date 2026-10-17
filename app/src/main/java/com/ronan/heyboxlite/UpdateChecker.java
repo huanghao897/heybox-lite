@@ -162,13 +162,16 @@ final class UpdateChecker {
         return UpdateVersionPolicy.latestVersion(payload);
     }
 
-    private static String notes(JSONObject payload) {
-        String changelogText = payload.optString("changelog");
-        if (changelogText != null && !changelogText.trim().isEmpty()
-                && !"null".equalsIgnoreCase(changelogText.trim())) {
-            return changelogText;
+    static String notes(JSONObject payload) {
+        Object value = payload.opt("changelog");
+        if (value instanceof String) {
+            String changelogText = (String) value;
+            if (!changelogText.trim().isEmpty()
+                    && !"null".equalsIgnoreCase(changelogText.trim())) {
+                return changelogText;
+            }
         }
-        JSONArray changelog = payload.optJSONArray("changelog");
+        JSONArray changelog = value instanceof JSONArray ? (JSONArray) value : null;
         if (changelog != null && changelog.length() > 0) {
             StringBuilder builder = new StringBuilder();
             for (int i = 0; i < changelog.length(); i++) {

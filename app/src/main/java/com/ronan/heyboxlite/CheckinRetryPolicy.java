@@ -13,6 +13,7 @@ final class CheckinRetryPolicy {
                             long minimumMillis) {
         long base = error != null && error.statusCode == 429 ? 4_000L : 2_000L;
         int shift = Math.max(0, Math.min(3, completedRetries));
-        return Math.max(minimumMillis, Math.min(15_000L, base << shift));
+        long serverDelay = error == null ? 0L : error.retryAfterSeconds * 1_000L;
+        return Math.max(serverDelay, Math.max(minimumMillis, Math.min(15_000L, base << shift)));
     }
 }

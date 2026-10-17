@@ -267,7 +267,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     }
 
     void applyAccessStatus(AccessStatus status) {
-        if (status == null || isFinishing()) return;
+        if (status == null || isFinishing() || isDestroyed()) return;
         this.session.setAppBlocked(status.banned, status.message);
         if (status.banned) {
             showAccountBlocked(status.message);
@@ -423,6 +423,11 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                     @Override
                     public void reloadFeed(boolean resetPaging) {
                         MainActivity.this.feedPage.resetContent(resetPaging);
+                    }
+
+                    @Override
+                    public void sessionChanged() {
+                        MainActivity.this.invalidateNativeSessionContent();
                     }
 
                     @Override
@@ -588,9 +593,6 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
             @Override public void showUserSpace(String id, String name, String avatar) {
                 MainActivity.this.showUserSpace(id, name, avatar);
             }
-            @Override public void openImage(ImageView source, String url) {
-                MainActivity.this.openImage(source, url);
-            }
             @Override public void openImages(ImageView source, String[] urls, int index) {
                 MainActivity.this.openImage(source, urls, index);
             }
@@ -598,8 +600,8 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                 addBottomNavSafeSpace(page);
             }
             @Override public void loginCompleted() {
-                feedPage.clearItems();
-                profilePage.invalidate(); if (composeAppHost != null) composeAppHost.invalidateProfile();
+                invalidateNativeSessionContent();
+                if (composeAppHost != null) composeAppHost.invalidateProfile();
                 toast("登录成功");
                 EmojiStore.load(api, () -> { });
                 showFeed();
@@ -647,6 +649,12 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         };
     }
 
+    void invalidateNativeSessionContent() {
+        NativeSessionContentReset.clear(this);
+        if (this.profilePage != null) this.profilePage.invalidate();
+        this.detailReturnView = null;
+    }
+
     private void initializeDetailFeatures() {
         MainDetailFeatures detail = new MainDetailFeatures(this, this.session, this.api,
                 this.writeActions, this.localCache, this.themeTokens, this.postActions,
@@ -678,9 +686,6 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                     }
                     @Override public void showUserSpace(String id, String name, String avatar) {
                         MainActivity.this.showUserSpace(id, name, avatar);
-                    }
-                    @Override public void openImage(ImageView source, String url) {
-                        MainActivity.this.openImage(source, url);
                     }
                     @Override public void hideLoading() { MainActivity.this.hideLoading(); }
                     @Override public void renderDetail(JSONObject body, FeedItem fallback) {
@@ -882,13 +887,6 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.fullScreenSnapshots.capture(key, 4, this.shellRoot, this.BG, this.localCache);
     }
     void captureComposeReturnSnapshot() { captureFullScreenSnapshot(this.screen); }
-
-    private Bitmap screenSnapshot(String key) {
-        if (key == null || key.isEmpty()) {
-            return null;
-        }
-        return this.screenSnapshots.get(key);
-    }
 
     Bitmap fullScreenSnapshot(String key) {
         if (key == null || key.isEmpty()) {
@@ -1100,8 +1098,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         fallback.setBackgroundColor(this.themeTokens == null
                 ? this.PANEL : this.themeTokens.panel);
         fallback.setScaleType(ImageView.ScaleType.FIT_XY);
-        Bitmap bitmap = screenSnapshot(targetKey);
-        if (bitmap != null && !bitmap.isRecycled()) fallback.setImageBitmap(bitmap);
+        this.screenSnapshots.bindPreview(fallback, targetKey);
         return new BackSwipeFrameLayout.Preview(fallback, false);
     }
 
@@ -1215,9 +1212,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         if ("search".equals(this.screen)) this.searchPage.saveListPosition();
         View sourceChild = (this.content == null || this.content.getChildCount() == 0) ? null : this.content.getChildAt(0);
         captureShellSnapshot(this.screen, sourceChild);
-        if (this.composeBridge == null || !this.composeBridge.isLegacyDetailActive()) {
-            captureFullScreenSnapshot(this.screen);
-        }
+        captureFullScreenSnapshot(this.screen);
         if (!"detail".equals(this.screen)) {
             this.detailReturn = this.screen;
             this.detailReturnTitle = this.title == null ? "" : this.title.getText().toString();
@@ -1239,7 +1234,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.leading.setVisibility(0);
         this.leading.setOnClickListener(view -> {
             returnFromDetailSmooth();
-        }); if (this.composeBridge != null) this.composeBridge.onNativeDetailShown();
+        });
         this.title.setText(R.string.title_post_body);
         this.action.setVisibility(4);
         showDetailLoadingOverlay();
@@ -1353,17 +1348,14 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                 18, this.session.uiScale() / 100.0f));
         if (Build.VERSION.SDK_INT >= 21) back.setElevation(dp(6));
         back.setContentDescription(getString(R.string.action_back));
-        back.setOnClickListener(view -> runWithPressFeedback(back, () -> {
-            if (this.composeBridge != null && this.composeBridge.isLegacyDetailActive())
-                this.composeBridge.returnFromNativeDetail(false);
-            else returnFromDetailSmooth();
-        }));
+        back.setOnClickListener(view -> runWithPressFeedback(back, this::returnFromDetailSmooth));
         return back;
     }
 
     private View detailReturnPreview() {
         String targetKey = backTargetScreenKey();
-        return DetailReturnPreviewFactory.create(this, this.themeTokens, targetKey, this::screenSnapshot, this::fullScreenSnapshot, this.composeBridge != null && this.composeBridge.isLegacyDetailActive(), this.composeBridge == null ? null : this.composeBridge.createDetailReturnPreview());
+        return DetailReturnPreviewFactory.create(this, this.themeTokens, targetKey,
+                this.screenSnapshots, this.fullScreenSnapshots);
     }
 
     private void updateDetailPagerTitle() {
@@ -1747,9 +1739,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
 
     void returnFromDetail() { returnFromDetail(false); }
 
-    private void returnFromDetailGesture() { if (this.composeBridge != null && this.composeBridge.isLegacyDetailActive()) { this.composeBridge.returnFromNativeDetail(true); return; } returnFromDetail(true); }
-
-    void returnFromDetailForCompose(boolean gestureOwned) { returnFromDetail(gestureOwned); }
+    private void returnFromDetailGesture() { returnFromDetail(true); }
 
     private void returnFromDetail(boolean gestureOwned) {
         if (this.readingTimeTracker != null) {
@@ -1850,7 +1840,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.detailPager = state.pager;
         this.detailScroll = state.articleScroll;
         this.detailCommentScroll = state.commentScroll;
-        this.screen = "detail"; if (this.composeBridge != null) this.composeBridge.clearLegacyDetailOwnership();
+        this.screen = "detail";
         if (this.shellBar != null) this.shellBar.setVisibility(View.GONE);
         setBottomNavVisible(false, false);
         this.leading.setVisibility(View.VISIBLE);

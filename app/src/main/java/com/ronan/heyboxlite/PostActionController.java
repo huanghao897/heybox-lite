@@ -65,6 +65,10 @@ final class PostActionController {
         this.host = host;
     }
 
+    void invalidateSession() {
+        this.likeOverrides.clear();
+    }
+
     LikeState linkLikeState(JSONObject link, FeedItem fallback) {
         LikeState override = linkLikeOverride(link, fallback);
         return override != null ? override

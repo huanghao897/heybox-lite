@@ -117,6 +117,145 @@ class ComposeCheckinPaymentControllerTest {
         fixture.controller.close()
     }
 
+    @Test fun missingOrderStopsPollingAndAllowsAReplacementWithoutDisconnecting() {
+        val fixture = Fixture()
+        fixture.create()
+        fixture.advance(15)
+        fixture.polls.single().onError(error(404, "order_not_found"))
+        assertNull(fixture.state.order)
+        assertFalse(fixture.state.qrLoading)
+        fixture.advance(90)
+        assertEquals(1, fixture.polls.size)
+        fixture.controller.create()
+        assertEquals(2, fixture.creates.size)
+        assertTrue(fixture.lost.isEmpty())
+        fixture.controller.close()
+    }
+
+    @Test fun unclassifiedMissingRouteKeepsTheOrder() {
+        val fixture = Fixture()
+        fixture.create()
+        fixture.advance(15)
+        val before = fixture.state.order
+        fixture.polls.single().onError(error(404, ""))
+        assertSame(before, fixture.state.order)
+        assertTrue(fixture.lost.isEmpty())
+        fixture.controller.close()
+    }
+
+    @Test fun expiredOrderClearsQrAndRejectsLateQrResultsButCanBeRegenerated() {
+        val fixture = Fixture()
+        fixture.create(order(qrReady = true))
+        assertTrue(fixture.state.qrLoading)
+        fixture.advance(15)
+        fixture.polls.single().onSuccess(order("expired"))
+        fixture.qrs.single().onSuccess(byteArrayOf(1, 2, 3))
+        fixture.advance(90)
+        assertEquals("expired", fixture.state.order!!.status)
+        assertNull(fixture.state.qrBitmap)
+        assertFalse(fixture.state.qrLoading)
+        assertEquals(1, fixture.polls.size)
+        fixture.controller.create()
+        assertEquals(2, fixture.creates.size)
+        assertEquals(0, fixture.paid)
+        fixture.controller.close()
+    }
+
+    @Test fun expiredQrConfirmsOrderStatusInsteadOfDiscardingPaymentHistory() {
+        val fixture = Fixture()
+        fixture.create(order(qrReady = true))
+        fixture.qrs.single().onError(error(410, "order_expired"))
+        assertEquals(1, fixture.polls.size)
+        assertNotNull(fixture.state.order)
+        fixture.polls.single().onSuccess(order("expired"))
+        assertEquals("expired", fixture.state.order!!.status)
+        assertTrue(fixture.lost.isEmpty())
+        fixture.controller.close()
+    }
+
+    @Test fun nonPendingQrChecksForPaidStatusWithoutGrantingMembershipLocally() {
+        val fixture = Fixture()
+        fixture.create(order(qrReady = true))
+        fixture.qrs.single().onError(error(409, "order_not_pending"))
+        assertEquals(0, fixture.paid)
+        fixture.polls.single().onSuccess(order("paid"))
+        assertEquals(1, fixture.paid)
+        assertNull(fixture.state.qrBitmap)
+        assertFalse(fixture.state.qrLoading)
+        fixture.controller.close()
+    }
+
+    @Test fun qrRetryRefetchesTheCodeWithoutCreatingAnotherPendingOrder() {
+        val fixture = Fixture()
+        fixture.create(order(qrReady = true))
+        val before = fixture.state.order
+        fixture.qrs.single().onError(error(503, "payment_qr_unavailable"))
+        fixture.controller.create()
+        assertSame(before, fixture.state.order)
+        assertEquals(1, fixture.creates.size)
+        assertEquals(2, fixture.qrs.size)
+        assertTrue(fixture.state.qrLoading)
+        assertEquals("", fixture.state.message)
+        fixture.qrs.last().onError(error(404, "order_not_found"))
+        fixture.qrs.first().onSuccess(byteArrayOf(1, 2, 3))
+        assertNull(fixture.state.order)
+        assertFalse(fixture.state.qrLoading)
+        assertTrue(fixture.lost.isEmpty())
+        fixture.controller.close()
+    }
+
+    @Test fun statusPollingDoesNotBypassTheQrRateLimitCooldown() {
+        val fixture = Fixture()
+        fixture.create(order(qrReady = true))
+        fixture.qrs.single().onError(CheckinCenterClient.statusError(
+            CheckinCenterClient.Operation.BILLING_QR, 429,
+            "{\"code\":\"rate_limited\",\"retry_after\":60}"))
+        repeat(3) {
+            fixture.advance(15)
+            fixture.polls.last().onSuccess(order(qrReady = true))
+            fixture.controller.create()
+            assertEquals(1, fixture.qrs.size)
+        }
+        fixture.advance(15)
+        fixture.polls.last().onSuccess(order(qrReady = true))
+        assertEquals(2, fixture.qrs.size)
+        assertEquals(1, fixture.creates.size)
+        assertTrue(fixture.lost.isEmpty())
+        fixture.controller.close()
+    }
+
+    @Test fun statusCooldownSurvivesPauseResumeAndPendingOrderReuse() {
+        val fixture = Fixture()
+        fixture.create()
+        fixture.advance(15)
+        fixture.polls.single().onError(CheckinCenterClient.statusError(
+            CheckinCenterClient.Operation.BILLING_STATUS, 429,
+            "{\"code\":\"rate_limited\",\"retry_after\":60}"))
+        fixture.controller.pause()
+        fixture.controller.resume()
+        fixture.controller.create()
+        fixture.advance(59)
+        assertEquals(1, fixture.polls.size)
+        fixture.advance(1)
+        assertEquals(2, fixture.polls.size)
+        fixture.controller.close()
+    }
+
+    @Test fun qrStateConflictCannotBypassTheStatusCooldown() {
+        val fixture = Fixture()
+        fixture.create(order(qrReady = true))
+        fixture.advance(15)
+        fixture.polls.single().onError(CheckinCenterClient.statusError(
+            CheckinCenterClient.Operation.BILLING_STATUS, 429,
+            "{\"code\":\"rate_limited\",\"retry_after\":60}"))
+        fixture.qrs.single().onError(error(410, "order_expired"))
+        fixture.advance(59)
+        assertEquals(1, fixture.polls.size)
+        fixture.advance(1)
+        assertEquals(2, fixture.polls.size)
+        fixture.controller.close()
+    }
+
     private class Fixture(
         catalog: CheckinBilling.Membership = CheckinBilling.Membership("paid", true, false,
             false, "", true, false, CheckinBilling.Plan.empty(),
@@ -127,6 +266,7 @@ class ComposeCheckinPaymentControllerTest {
         var route = ComposeCheckinRoute.CHECKOUT
         val creates = ArrayList<CheckinCenterClient.Callback<CheckinBilling.Order>>()
         val polls = ArrayList<CheckinCenterClient.Callback<CheckinBilling.Order>>()
+        val qrs = ArrayList<CheckinCenterClient.Callback<ByteArray>>()
         val lost = ArrayList<String>()
         val skus = ArrayList<String>()
         val legacyAmounts = ArrayList<Int>()
@@ -135,15 +275,18 @@ class ComposeCheckinPaymentControllerTest {
             { sku, callback -> skus += sku; creates += callback },
             { amount, callback -> legacyAmounts += amount; creates += callback },
             { id, callback -> assertEquals(order().id, id); polls += callback },
-            { _, _ -> fail("No legacy QR URL is supplied") }, { _, _, _ -> })
+            { _, callback -> qrs += callback }, { _, _, _ -> })
         val controller = ComposeCheckinPaymentController(requests, { state }, { state = it }, { route },
             { true }, lost::add, { paid++ }, Handler(Looper.getMainLooper()))
-        fun create() { controller.create(); creates.single().onSuccess(order()) }
+        fun create(value: CheckinBilling.Order = order()) { controller.create(); creates.single().onSuccess(value) }
         fun advance(seconds: Long) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(seconds)) }
     }
 
     companion object {
-        private fun order(status: String = "pending") = CheckinBilling.Order("HB" + "A".repeat(30), "afdian",
-            500, 500, "CNY", status, false, false, "", null, "", "monthly", "30 days", 30, "")
+        private fun order(status: String = "pending", qrReady: Boolean = false) =
+            CheckinBilling.Order("HB" + "A".repeat(30), "afdian",
+                500, 500, "CNY", status, qrReady, false, "", null, "", "monthly", "30 days", 30, "")
+        private fun error(status: Int, code: String) = CheckinCenterClient.statusError(
+            CheckinCenterClient.Operation.BILLING_QR, status, "{\"code\":\"$code\"}")
     }
 }

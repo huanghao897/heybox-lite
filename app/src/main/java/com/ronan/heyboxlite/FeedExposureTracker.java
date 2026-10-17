@@ -15,6 +15,11 @@ final class FeedExposureTracker {
     private final LinkedHashMap<String, Long> pending = new LinkedHashMap<>();
     private final Set<String> lastLoadedIds = new HashSet<>();
 
+    void clear() {
+        pending.clear();
+        lastLoadedIds.clear();
+    }
+
     void recordLoaded(List<FeedItem> items, long now) {
         lastLoadedIds.clear();
         if (items == null) return;

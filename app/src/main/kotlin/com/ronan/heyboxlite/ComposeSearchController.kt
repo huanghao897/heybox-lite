@@ -8,9 +8,10 @@ import org.json.JSONObject
 /** Owns the debounced search request and stale-response guard for the Compose search page. */
 internal class ComposeSearchController(
     private val session: SessionStore,
-    private val api: ApiClient,
+    api: ApiClient,
     private val cache: LocalCache,
     private val handler: Handler,
+    private val request: (String, Map<String, String>, ApiClient.Callback) -> Unit = api::get,
 ) {
     val query: MutableState<String> = mutableStateOf("")
     val items: MutableState<List<FeedItem>> = mutableStateOf(emptyList())
@@ -26,13 +27,13 @@ internal class ComposeSearchController(
     fun setQuery(value: String) {
         query.value = value
         delayed?.let(handler::removeCallbacks)
+        delayed = null
         val keyword = value.trim()
         requestSerial++
         loading.value = false
         if (keyword.isEmpty()) {
             lastKeyword = ""
             items.value = emptyList()
-            loading.value = false
             noMore.value = false
             return
         }
@@ -47,13 +48,22 @@ internal class ComposeSearchController(
     }
 
     fun loadMore() {
-        if (loading.value || noMore.value || lastKeyword.isEmpty()) return
+        if (delayed != null || loading.value || noMore.value || lastKeyword.isEmpty()) return
         search(lastKeyword, true)
     }
 
     fun clearHistory() {
         session.clearSearchHistory()
         history.value = emptyList()
+    }
+
+    fun invalidateSession() {
+        items.value = emptyList()
+        offset = 0
+        lastKeyword = ""
+        noMore.value = false
+        history.value = session.searchHistory()
+        setQuery(query.value)
     }
 
     fun close() {
@@ -75,7 +85,7 @@ internal class ComposeSearchController(
             history.value = session.searchHistory()
         }
         val serial = ++requestSerial
-        api.get(
+        request(
             EndpointProvider.search(), OfficialRequestParams.search(keyword, offset, 20),
             object : ApiClient.Callback {
                 override fun onSuccess(body: JSONObject) {

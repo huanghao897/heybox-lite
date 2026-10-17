@@ -48,6 +48,7 @@ final class WriteTokenProvider {
 
     private WebView webView;
     private boolean fetching;
+    private long fetchGeneration;
     private Runnable timeoutTask;
     private String promptNonce = "";
 
@@ -70,7 +71,10 @@ final class WriteTokenProvider {
     }
 
     private void fetch(boolean force, Callback callback) {
+        long generation = session.sessionGeneration();
         main.post(() -> {
+            if (!session.isCurrentSession(generation)) return;
+            if (fetching && fetchGeneration != generation) cancelFetch();
             if (!force && session.hasCookieValue(SecureStrings.xXhhTokenId())) {
                 callback.onReady();
                 return;
@@ -78,13 +82,15 @@ final class WriteTokenProvider {
             pending.add(callback);
             if (fetching) return;
             fetching = true;
+            fetchGeneration = generation;
             startTimeout();
             startWebView();
         });
     }
 
     private void startTimeout() {
-        timeoutTask = () -> finishError("写入验证 token 获取超时");
+        long generation = fetchGeneration;
+        timeoutTask = () -> finishError("写入验证 token 获取超时", generation);
         main.postDelayed(timeoutTask, TIMEOUT_MS);
     }
 
@@ -161,6 +167,7 @@ final class WriteTokenProvider {
     private void handlePrompt(String message) {
         String[] parts = message.split(":", 4);
         if (parts.length < 4 || !promptNonce.equals(parts[1])) return;
+        if (!acceptsResult(fetchGeneration)) return;
         String type = parts[2];
         String value = decode(parts[3]);
         if ("device".equals(type)) handleDeviceId(value);
@@ -189,13 +196,14 @@ final class WriteTokenProvider {
     }
 
     private void handleDeviceId(String value) {
+        long generation = fetchGeneration;
+        if (!acceptsResult(generation)) return;
         if (value == null || value.isEmpty()) {
             finishError("SMSdk 未返回设备数据");
             return;
         }
         if (value.startsWith("B") && value.length() == 89) {
-            saveToken(value);
-            finishSuccess();
+            if (saveToken(value, generation)) finishSuccess(generation);
             return;
         }
         if (value.startsWith("D")) {
@@ -206,22 +214,23 @@ final class WriteTokenProvider {
     }
 
     private void requestBoxToken(String boxData) {
+        long generation = fetchGeneration;
         Map<String, String> body = new HashMap<>();
         body.put("box_data", boxData);
         api.postForm(EndpointProvider.boxDataCallback(), Collections.emptyMap(),
                 body, new ApiClient.Callback() {
                     @Override public void onSuccess(JSONObject response) {
+                        if (!acceptsResult(generation)) return;
                         String token = tokenFrom(response);
                         if (token.isEmpty()) {
                             finishError("服务器未返回写入验证 token");
                             return;
                         }
-                        saveToken(token);
-                        finishSuccess();
+                        if (saveToken(token, generation)) finishSuccess(generation);
                     }
 
                     @Override public void onError(String message) {
-                        finishError("写入验证 token 获取失败：" + message);
+                        finishError("写入验证 token 获取失败：" + message, generation);
                     }
                 });
     }
@@ -240,13 +249,23 @@ final class WriteTokenProvider {
                 response.optString(SecureStrings.xXhhTokenId()));
     }
 
-    private void saveToken(String token) {
-        session.putCookieValue(SecureStrings.xXhhTokenId(), token);
+    private boolean acceptsResult(long generation) {
+        if (!fetching || generation != fetchGeneration) return false;
+        if (session.isCurrentSession(generation)) return true;
+        finishError("账号已切换，请重试", generation);
+        return false;
     }
 
-    private void finishSuccess() {
+    private boolean saveToken(String token, long generation) {
+        if (!acceptsResult(generation)) return false;
+        if (session.putCookieValue(SecureStrings.xXhhTokenId(), token, generation)) return true;
+        finishError("账号已切换，请重试", generation);
+        return false;
+    }
+
+    private void finishSuccess(long generation) {
         main.post(() -> {
-            if (!fetching) return;
+            if (!acceptsResult(generation)) return;
             fetching = false;
             cancelTimeout();
             destroyWebView();
@@ -256,8 +275,16 @@ final class WriteTokenProvider {
     }
 
     private void finishError(String message) {
+        finishError(message, fetchGeneration);
+    }
+
+    private void finishError(String message, long generation) {
         main.post(() -> {
-            if (!fetching) return;
+            if (!fetching || generation != fetchGeneration) return;
+            if (!session.isCurrentSession(generation)) {
+                cancelFetch();
+                return;
+            }
             fetching = false;
             cancelTimeout();
             destroyWebView();
@@ -280,12 +307,14 @@ final class WriteTokenProvider {
     }
 
     void close() {
-        main.post(() -> {
-            fetching = false;
-            cancelTimeout();
-            pending.clear();
-            destroyWebView();
-        });
+        main.post(this::cancelFetch);
+    }
+
+    private void cancelFetch() {
+        fetching = false;
+        cancelTimeout();
+        pending.clear();
+        destroyWebView();
     }
 
     private void destroyWebView() {

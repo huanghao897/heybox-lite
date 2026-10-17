@@ -102,7 +102,7 @@ final class CheckinCenterCoordinator {
             return;
         }
         client.sendSmsCode(token, phone, captchaTicket, captchaRandstr,
-                authorizationAware(callback));
+                authorizationAware(token, callback));
     }
 
     void submitSmsCode(String sessionId, String code, String captchaTicket,
@@ -115,7 +115,7 @@ final class CheckinCenterCoordinator {
             return;
         }
         client.submitSmsCode(token, sessionId, code, captchaTicket, captchaRandstr,
-                authorizationAware(callback));
+                authorizationAware(token, callback));
     }
 
     void loginWithPassword(String phone, String password, String captchaTicket,
@@ -129,7 +129,7 @@ final class CheckinCenterCoordinator {
             return;
         }
         client.loginWithPassword(token, phone, password, captchaTicket, captchaRandstr,
-                authorizationAware(callback));
+                authorizationAware(token, callback));
     }
 
     void updateTaskSettings(boolean enabled, String scheduleTime, int offsetMinutes,
@@ -143,7 +143,7 @@ final class CheckinCenterCoordinator {
         }
         client.updateTaskSettings(token, enabled, scheduleTime, offsetMinutes,
                 shareAction, shareEnabled,
-                authorizationAware(callback));
+                authorizationAware(token, callback));
     }
 
     void getHistory(CheckinCenterClient.Callback<CheckinHistory> callback) {
@@ -152,7 +152,7 @@ final class CheckinCenterCoordinator {
             fail(callback, CheckinCenterClient.Operation.HISTORY, "尚未连接签到服务");
             return;
         }
-        new CheckinAccountApi(client).history(token, authorizationAware(callback));
+        new CheckinAccountApi(client).history(token, authorizationAware(token, callback));
     }
 
     CheckinAccountApi accountApi() {
@@ -171,8 +171,7 @@ final class CheckinCenterCoordinator {
     void revokeDevice(CheckinCenterClient.Callback<Boolean> callback) {
         String token = store.deviceToken();
         if (token.isEmpty()) {
-            clearAuthorization();
-            if (callback != null) callback.onSuccess(Boolean.TRUE);
+            if (clearAuthorization(token) && callback != null) callback.onSuccess(Boolean.TRUE);
             return;
         }
         revokeAttempt(token, callback, 0);
@@ -185,7 +184,7 @@ final class CheckinCenterCoordinator {
             fail(callback, CheckinCenterClient.Operation.BILLING_CREATE, "尚未连接签到服务");
             return;
         }
-        client.createBillingOrder(token, amountCents, authorizationAware(callback));
+        client.createBillingOrder(token, amountCents, authorizationAware(token, callback));
     }
 
     void getMembershipCatalog(CheckinCenterClient.Callback<CheckinBilling.Membership> callback) {
@@ -194,7 +193,8 @@ final class CheckinCenterCoordinator {
             fail(callback, CheckinCenterClient.Operation.BILLING_CATALOG, "尚未连接签到服务");
             return;
         }
-        new CheckinMembershipApi(client).getMembershipCatalog(token, authorizationAware(callback));
+        new CheckinMembershipApi(client).getMembershipCatalog(
+                token, authorizationAware(token, callback));
     }
 
     void getPurchaseHistory(
@@ -204,7 +204,8 @@ final class CheckinCenterCoordinator {
             fail(callback, CheckinCenterClient.Operation.BILLING_HISTORY, "尚未连接签到服务");
             return;
         }
-        new CheckinMembershipApi(client).getPurchaseHistory(token, authorizationAware(callback));
+        new CheckinMembershipApi(client).getPurchaseHistory(
+                token, authorizationAware(token, callback));
     }
 
     void redeemMembership(String code,
@@ -214,7 +215,8 @@ final class CheckinCenterCoordinator {
             fail(callback, CheckinCenterClient.Operation.BILLING_REDEEM, "尚未连接签到服务");
             return;
         }
-        new CheckinMembershipApi(client).redeemMembership(token, code, authorizationAware(callback));
+        new CheckinMembershipApi(client).redeemMembership(
+                token, code, authorizationAware(token, callback));
     }
 
     void createMembershipOrder(String productSku,
@@ -225,7 +227,7 @@ final class CheckinCenterCoordinator {
             return;
         }
         new CheckinMembershipApi(client).createMembershipOrder(
-                token, productSku, authorizationAware(callback));
+                token, productSku, authorizationAware(token, callback));
     }
 
     void getBillingOrder(String orderId,
@@ -235,7 +237,7 @@ final class CheckinCenterCoordinator {
             fail(callback, CheckinCenterClient.Operation.BILLING_STATUS, "尚未连接签到服务");
             return;
         }
-        client.getBillingOrder(token, orderId, authorizationAware(callback));
+        client.getBillingOrder(token, orderId, authorizationAware(token, callback));
     }
 
     void loadBillingQr(String orderId, CheckinCenterClient.Callback<byte[]> callback) {
@@ -244,7 +246,7 @@ final class CheckinCenterCoordinator {
             fail(callback, CheckinCenterClient.Operation.BILLING_QR, "尚未连接签到服务");
             return;
         }
-        client.loadBillingQr(token, orderId, authorizationAware(callback));
+        client.loadBillingQr(token, orderId, authorizationAware(token, callback));
     }
 
     void submitBillingClaim(String orderId, String paymentReference,
@@ -255,13 +257,14 @@ final class CheckinCenterCoordinator {
             return;
         }
         client.submitBillingClaim(token, orderId, paymentReference,
-                authorizationAware(callback));
+                authorizationAware(token, callback));
     }
 
     private void statusAttempt(String token,
                                CheckinCenterClient.Callback<CheckinCenterClient.Status> callback,
                                int retries) {
-        client.getStatus(token, new CheckinCenterClient.Callback<CheckinCenterClient.Status>() {
+        if (!isCurrentToken(token)) return;
+        client.getStatus(token, authorizationAware(token, new CheckinCenterClient.Callback<>() {
             @Override
             public void onSuccess(CheckinCenterClient.Status value) {
                 if (callback != null) callback.onSuccess(value);
@@ -269,7 +272,7 @@ final class CheckinCenterCoordinator {
 
             @Override
             public void onError(CheckinCenterClient.ApiError error) {
-                if (handleAuthorizationError(error)) {
+                if (error.authorizationInvalid()) {
                     if (callback != null) callback.onError(error);
                     return;
                 }
@@ -280,13 +283,14 @@ final class CheckinCenterCoordinator {
                 }
                 if (callback != null) callback.onError(error);
             }
-        });
+        }));
     }
 
     private void runAttempt(String token,
                             CheckinCenterClient.Callback<CheckinCenterClient.RunResult> callback,
                             int retries) {
-        client.runNow(token, new CheckinCenterClient.Callback<CheckinCenterClient.RunResult>() {
+        if (!isCurrentToken(token)) return;
+        client.runNow(token, authorizationAware(token, new CheckinCenterClient.Callback<>() {
             @Override
             public void onSuccess(CheckinCenterClient.RunResult value) {
                 if (callback != null) callback.onSuccess(value);
@@ -294,7 +298,7 @@ final class CheckinCenterCoordinator {
 
             @Override
             public void onError(CheckinCenterClient.ApiError error) {
-                if (handleAuthorizationError(error)) {
+                if (error.authorizationInvalid()) {
                     if (callback != null) callback.onError(error);
                     return;
                 }
@@ -305,7 +309,7 @@ final class CheckinCenterCoordinator {
                 }
                 if (callback != null) callback.onError(error);
             }
-        });
+        }));
     }
 
     private void leaderboardAttempt(
@@ -333,17 +337,17 @@ final class CheckinCenterCoordinator {
 
     private void revokeAttempt(String token, CheckinCenterClient.Callback<Boolean> callback,
                                int retries) {
-        client.revokeDevice(token, new CheckinCenterClient.Callback<Boolean>() {
+        if (!isCurrentToken(token)) return;
+        client.revokeDevice(token, authorizationAware(token, new CheckinCenterClient.Callback<>() {
             @Override
             public void onSuccess(Boolean value) {
-                clearAuthorization();
+                if (!clearAuthorization(token)) return;
                 if (callback != null) callback.onSuccess(Boolean.TRUE);
             }
 
             @Override
             public void onError(CheckinCenterClient.ApiError error) {
                 if (error.authorizationInvalid()) {
-                    clearAuthorization();
                     if (callback != null) callback.onSuccess(Boolean.TRUE);
                     return;
                 }
@@ -354,34 +358,34 @@ final class CheckinCenterCoordinator {
                 }
                 if (callback != null) callback.onError(error);
             }
-        });
+        }));
     }
 
-    private boolean handleAuthorizationError(CheckinCenterClient.ApiError error) {
-        if (error == null || !error.authorizationInvalid()) return false;
-        clearAuthorization();
-        return true;
+    private boolean isCurrentToken(String token) {
+        return token.equals(store.deviceToken());
     }
 
     private <T> CheckinCenterClient.Callback<T> authorizationAware(
-            CheckinCenterClient.Callback<T> callback) {
+            String token, CheckinCenterClient.Callback<T> callback) {
         return new CheckinCenterClient.Callback<T>() {
             @Override
             public void onSuccess(T value) {
-                if (callback != null) callback.onSuccess(value);
+                if (isCurrentToken(token) && callback != null) callback.onSuccess(value);
             }
 
             @Override
             public void onError(CheckinCenterClient.ApiError error) {
-                handleAuthorizationError(error);
+                if (!isCurrentToken(token)) return;
+                if (error.authorizationInvalid() && !clearAuthorization(token)) return;
                 if (callback != null) callback.onError(error);
             }
         };
     }
 
-    private void clearAuthorization() {
-        store.clearAuthorization();
+    private boolean clearAuthorization(String token) {
+        if (!store.clearAuthorization(token)) return false;
         notifyAuthorizationChanged(false);
+        return true;
     }
 
     private void notifyAuthorizationChanged(boolean paired) {

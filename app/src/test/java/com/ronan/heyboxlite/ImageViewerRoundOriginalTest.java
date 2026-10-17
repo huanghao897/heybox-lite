@@ -170,12 +170,15 @@ public class ImageViewerRoundOriginalTest {
         static final List<String> originalUrls = new ArrayList<>();
         static final List<ImageLoader.Callback> callbacks = new ArrayList<>();
         @Implementation protected static void init(Context context) {}
-        @Implementation protected static void load(String url, int target, ImageLoader.Callback callback) {
-            new Handler(Looper.getMainLooper()).post(() -> callback.onLoaded(preview));
+        @Implementation protected static ImageLoadRequest loadCancellable(
+                String url, int target, ImageLoader.Callback callback) {
+            return ImageLoadRequest.deliver(new Handler(Looper.getMainLooper()), preview, callback);
         }
-        @Implementation protected static void loadOriginal(String url, int target, ImageLoader.Callback callback) {
+        @Implementation protected static ImageLoadRequest loadOriginalCancellable(
+                String url, int target, ImageLoader.Callback callback) {
             originalUrls.add(url);
             callbacks.add(callback);
+            return ImageLoadRequest.deliver(new Handler(Looper.getMainLooper()), null, ignored -> {});
         }
         @Implementation protected static void probeOriginalSize(String url, ImageLoader.SizeCallback callback) {
             sizeProbes++;

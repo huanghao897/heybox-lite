@@ -1,7 +1,5 @@
 package com.ronan.heyboxlite;
 
-import android.os.Handler;
-import android.os.Looper;
 import android.os.SystemClock;
 
 import org.json.JSONObject;
@@ -18,9 +16,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.zip.GZIPInputStream;
 
 final class ApiClient {
@@ -31,7 +26,7 @@ final class ApiClient {
 
     private enum ParamMode { COMMON, MOBILE, OFFICIAL, OFFICIAL_SPARSE }
 
-    private enum HeaderMode {
+    enum HeaderMode {
         DEFAULT, MOBILE, OFFICIAL_MOBILE, OFFICIAL_REQUEST, OFFICIAL_MINIMAL, OFFICIAL_RAW
     }
 
@@ -105,48 +100,58 @@ final class ApiClient {
         void log(String message);
     }
 
+    interface ConnectionFactory {
+        HttpURLConnection open(URL url) throws IOException;
+    }
+
     private final SessionStore session;
-    private final ExecutorService executor = Executors.newFixedThreadPool(3);
-    private final Handler main = new Handler(Looper.getMainLooper());
+    private final ApiRequestDispatcher dispatcher;
     private final Logger logger;
-    private volatile boolean closed;
+    private final ConnectionFactory connections;
 
     ApiClient(SessionStore session) {
         this(session, null);
     }
 
     ApiClient(SessionStore session, Logger logger) {
+        this(session, logger, url -> (HttpURLConnection) url.openConnection());
+    }
+
+    ApiClient(SessionStore session, Logger logger, ConnectionFactory connections) {
         this.session = session;
+        this.dispatcher = new ApiRequestDispatcher(session);
         this.logger = logger;
+        this.connections = connections;
     }
 
     void get(String path, Map<String, String> extra, Callback callback) {
-        enqueue(callback, () -> request("GET", path, extra, null,
-                HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback));
+        dispatcher.enqueue(callback, generation -> request("GET", path, extra, null,
+                HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback, generation));
     }
 
     void getSigned(String path, Map<String, String> extra,
                    HeyboxSigner.Algorithm algorithm, RequestProfile profile,
                    Callback callback) {
-        enqueue(callback, () -> request("GET", path, extra, null, algorithm, profile, callback));
+        dispatcher.enqueue(callback, generation -> request("GET", path, extra, null,
+                algorithm, profile, callback, generation));
     }
 
     void postForm(String path, Map<String, String> body, Callback callback) {
-        enqueue(callback, () -> request("POST", path, new LinkedHashMap<>(), body,
-                HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback));
+        dispatcher.enqueue(callback, generation -> request("POST", path, new LinkedHashMap<>(), body,
+                HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback, generation));
     }
 
     void postForm(String path, Map<String, String> queryExtra,
                   Map<String, String> body, Callback callback) {
-        enqueue(callback, () -> request("POST", path, queryExtra, body,
-                HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback));
+        dispatcher.enqueue(callback, generation -> request("POST", path, queryExtra, body,
+                HeyboxSigner.Algorithm.LEGACY, RequestProfile.WEB, callback, generation));
     }
 
     void postSigned(String path, Map<String, String> queryExtra,
                     Map<String, String> body, HeyboxSigner.Algorithm algorithm,
                     RequestProfile profile, Callback callback) {
-        enqueue(callback, () -> request("POST", path, queryExtra, body,
-                algorithm, profile, callback));
+        dispatcher.enqueue(callback, generation -> request("POST", path, queryExtra, body,
+                algorithm, profile, callback, generation));
     }
 
     void postSignedQueryOnly(String path, Map<String, String> queryExtra,
@@ -155,43 +160,38 @@ final class ApiClient {
         Map<String, String> query = new LinkedHashMap<>();
         if (queryExtra != null) query.putAll(queryExtra);
         if (body != null) query.putAll(body);
-        enqueue(callback, () -> request("POST", path, query, new LinkedHashMap<>(),
-                algorithm, profile, callback));
-    }
-
-    private void enqueue(Callback callback, Runnable task) {
-        if (closed) return;
-        try {
-            executor.execute(task);
-        } catch (RejectedExecutionException error) {
-            // close() may win the race after the initial closed check. Do not
-            // let that executor race escape to the caller thread.
-            if (!closed) postError(callback, "请求已关闭");
-        }
+        dispatcher.enqueue(callback, generation -> request("POST", path, query, new LinkedHashMap<>(),
+                algorithm, profile, callback, generation));
     }
 
     void close() {
-        closed = true;
-        main.removeCallbacksAndMessages(null);
-        executor.shutdownNow();
+        dispatcher.close();
         NativeSignBridge.close(session.appContext());
     }
 
     private void request(String method, String path, Map<String, String> extra,
                          Map<String, String> body, HeyboxSigner.Algorithm algorithm,
-                         RequestProfile profile, Callback callback) {
+                         RequestProfile profile, Callback callback, long generation) {
         HttpURLConnection connection = null;
         long requestStartedAt = SystemClock.elapsedRealtime();
         boolean taskRequest = isTaskPath(path);
         boolean debugRequest = taskRequest || isWritePath(path);
         try {
-            if (closed || Thread.currentThread().isInterrupted()) return;
-            Map<String, String> params = new LinkedHashMap<>(baseParams(profile));
+            Map<String, String> params;
+            String requestCookie;
+            synchronized (session.requestLock()) {
+                if (dispatcher.isClosed() || Thread.currentThread().isInterrupted()
+                        || !session.isCurrentSession(generation)) return;
+                params = new LinkedHashMap<>(baseParams(profile));
+                requestCookie = HeaderProvider.captureCookie(
+                        session, profile.headerMode, profile.includesClientKeys());
+            }
             if (extra != null) params.putAll(extra);
             params.putAll(HeyboxSigner.sign(path, algorithm));
             Map<String, String> signParams = nativeSignParams(method, profile, params, body);
             String nativeUrlOverride = addNativeSecurityParamsIfNeeded(
                     path, profile, params, signParams);
+            if (!session.isCurrentSession(generation)) return;
             if (debugRequest) {
                 logTask("api " + debugKind(path) + " request method=" + method
                         + " path=" + path
@@ -205,14 +205,14 @@ final class ApiClient {
             URL url = new URL(nativeUrlOverride == null || nativeUrlOverride.isEmpty()
                     ? endpoint() + path + "?" + encode(params)
                     : nativeUrlOverride);
-            connection = (HttpURLConnection) url.openConnection();
+            connection = connections.open(url);
             connection.setRequestMethod(method);
             connection.setUseCaches(false);
             // Authentication headers must never be forwarded to a redirect target.
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(7000);
             connection.setReadTimeout(12000);
-            applyHeaders(connection, profile);
+            HeaderProvider.apply(connection, profile.headerMode, requestCookie);
             if (debugRequest) {
                 logTask("api " + debugKind(path) + " headers path=" + path
                         + " profile=" + profile
@@ -221,6 +221,7 @@ final class ApiClient {
                         + " host=" + url.getHost()
                         + " query=" + querySummary(url));
             }
+            if (dispatcher.isClosed() || !session.isCurrentSession(generation)) return;
             if ("POST".equals(method)) {
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Content-Type",
@@ -241,7 +242,8 @@ final class ApiClient {
             if (setCookies == null) {
                 setCookies = connection.getHeaderFields().get(SecureStrings.setCookieHeaderLower());
             }
-            session.mergeCookies(setCookies);
+            generation = session.mergeCookies(setCookies, generation);
+            if (generation < 0L) return;
             InputStream stream = status >= 200 && status < 300
                     ? connection.getInputStream() : connection.getErrorStream();
             String contentEncoding = connection.getContentEncoding();
@@ -275,9 +277,9 @@ final class ApiClient {
                     Math.max(0L, bodyReadAt - responseStartedAt),
                     Math.max(0L, parsedAt - bodyReadAt),
                     -1L);
-            postSuccess(callback, json);
+            dispatcher.postSuccess(callback, json, generation);
         } catch (Exception error) {
-            if (closed) return;
+            if (dispatcher.isClosed()) return;
             String message = error.getMessage() == null
                     ? error.getClass().getSimpleName() : error.getMessage();
             if (debugRequest) {
@@ -289,7 +291,7 @@ final class ApiClient {
             logPerformance("failed", path,
                     Math.max(0L, SystemClock.elapsedRealtime() - requestStartedAt),
                     -1L, -1L, -1L, -1L);
-            postError(callback, message);
+            dispatcher.postError(callback, message, generation);
         } finally {
             if (connection != null) connection.disconnect();
         }
@@ -447,20 +449,6 @@ final class ApiClient {
                 && nativeParams.containsKey(SecureStrings.nonce())
                 && nativeParams.containsKey(SecureStrings.time())
                 && nativeParams.containsKey(SecureStrings.heyboxId());
-    }
-
-    private void postSuccess(Callback callback, JSONObject json) {
-        if (callback == null) return;
-        main.post(() -> {
-            if (!closed) callback.onSuccess(json);
-        });
-    }
-
-    private void postError(Callback callback, String message) {
-        if (callback == null) return;
-        main.post(() -> {
-            if (!closed) callback.onError(message);
-        });
     }
 
     private static String encode(Map<String, String> params) throws Exception {
@@ -641,31 +629,6 @@ final class ApiClient {
                 return session.officialMobileParams(false);
             default:
                 return session.commonParams();
-        }
-    }
-
-    private void applyHeaders(HttpURLConnection connection, RequestProfile profile) {
-        switch (profile.headerMode) {
-            case MOBILE:
-                HeaderProvider.applyMobile(connection, session);
-                return;
-            case OFFICIAL_MOBILE:
-                HeaderProvider.applyOfficialMobile(
-                        connection, session, profile.includesClientKeys());
-                return;
-            case OFFICIAL_REQUEST:
-                HeaderProvider.applyOfficialRequest(
-                        connection, session, profile.includesClientKeys());
-                return;
-            case OFFICIAL_MINIMAL:
-                HeaderProvider.applyOfficialMinimalRequest(
-                        connection, session, profile.includesClientKeys());
-                return;
-            case OFFICIAL_RAW:
-                HeaderProvider.applyOfficialMobileRawCookie(connection, session);
-                return;
-            default:
-                HeaderProvider.apply(connection, session);
         }
     }
 

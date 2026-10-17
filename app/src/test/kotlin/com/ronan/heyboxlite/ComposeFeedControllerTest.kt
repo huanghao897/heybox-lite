@@ -216,6 +216,72 @@ class ComposeFeedControllerTest {
         assertFalse(fixture.controller.presentations.value.containsKey(item))
     }
 
+    @Test fun sessionChangeReleasesBusyPaginationAndDetachesThePreviousAccountsActions() {
+        val f = Fixture()
+        f.controller.loadInitial()
+        f.finish(response("old-cursor", "same-post"))
+        val oldItem = f.controller.items.value.single().apply {
+            liked = true
+            favorited = true
+            following = true
+            followPending = true
+        }
+        val presentation = f.controller.presentations.value[oldItem]
+        f.controller.loadMore()
+        val oldRequest = f.requests.last().callback
+        assertTrue(f.controller.loadingMore.value)
+
+        f.controller.invalidateSession()
+
+        assertFalse(f.controller.loading.value)
+        assertFalse(f.controller.loadingMore.value)
+        assertFalse(f.controller.refreshing.value)
+        assertFalse(f.controller.noMore.value)
+        assertEquals(listOf("same-post"), f.ids())
+        val current = f.controller.items.value.single()
+        assertNotSame(oldItem, current)
+        assertFalse(current.liked || current.favorited || current.following || current.followPending)
+        assertSame(presentation, f.controller.presentations.value[current])
+        oldItem.following = true
+        f.controller.loadInitial()
+        assertEquals(OfficialRequestParams.feed(1, null, "", true), f.requests.last().params)
+        oldRequest.onSuccess(response("late", "old-account"))
+        oldRequest.onError("old failure")
+        assertTrue(f.controller.loading.value)
+        assertTrue(f.worker.tasks.isEmpty())
+        f.finish(response("new-cursor", "new-account"))
+        assertEquals(listOf("new-account"), f.ids())
+        assertFalse(f.controller.loading.value)
+    }
+
+    @Test fun sessionChangeRejectsAlreadyParsedPublicationsAndCannotRestoreOldActionCache() {
+        val f = Fixture()
+        f.cached = listOf(item("old-cache").apply { liked = true; following = true })
+        f.controller.restoreCache()
+        f.worker.runNext()
+        f.controller.refresh()
+        val oldRequest = f.requests.single().callback
+        oldRequest.onSuccess(response("old", "old-network"))
+        f.worker.runNext()
+
+        f.controller.invalidateSession()
+        f.controller.restoreCache()
+        f.controller.loadInitial()
+        while (f.publications.isNotEmpty()) f.publishNext()
+
+        assertTrue(f.controller.items.value.isEmpty())
+        assertTrue(f.controller.presentations.value.isEmpty())
+        assertTrue(f.controller.loading.value)
+        assertTrue(f.worker.tasks.isEmpty())
+        assertTrue(f.saved.isEmpty())
+        f.requests.last().callback.onError("new offline")
+        assertFalse(f.controller.loading.value)
+        assertEquals("new offline", f.controller.error.value)
+        assertTrue(f.worker.tasks.isEmpty())
+        f.controller.refresh()
+        assertEquals(3, f.requests.size)
+    }
+
     private class Fixture {
         val worker = QueuedExecutor()
         val publications = ArrayDeque<() -> Unit>()

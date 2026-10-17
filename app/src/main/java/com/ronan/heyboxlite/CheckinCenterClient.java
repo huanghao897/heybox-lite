@@ -105,7 +105,7 @@ final class CheckinCenterClient {
         }
 
         boolean authorizationInvalid() {
-            return statusCode == 401;
+            return statusCode == 401 && operation != Operation.PAIR_APPROVE;
         }
 
         boolean retryable() {

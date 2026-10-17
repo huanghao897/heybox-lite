@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.provider.Settings;
-import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -93,15 +92,13 @@ final class SessionStore {
 
     private final Context context;
     private final SharedPreferences prefs;
-    private final LegacyCookieCrypto legacyCookieCrypto;
+    private final SessionCookies cookies;
     private final OfficialSessionCredentials officialCredentials;
-    private volatile String cachedEncryptedCookie;
-    private volatile String cachedCookie;
 
     SessionStore(Context context) {
         this.context = context.getApplicationContext();
         prefs = context.getSharedPreferences(SecureStrings.preferencesName(), Context.MODE_PRIVATE);
-        legacyCookieCrypto = new LegacyCookieCrypto(this.context);
+        cookies = new SessionCookies(this.context, prefs);
         officialCredentials = new OfficialSessionCredentials(this, this.context);
         if (prefs.getString(SecureStrings.deviceId(), "").isEmpty()) {
             String androidId = Settings.Secure.getString(
@@ -117,49 +114,37 @@ final class SessionStore {
     }
 
     boolean isLoggedIn() {
-        return !getCookie().isEmpty() && !userId().isEmpty();
+        synchronized (prefs) {
+            return !getCookie().isEmpty() && !userId().isEmpty();
+        }
     }
 
     String getCookie() {
-        String encrypted = prefs.getString(SecureStrings.encryptedCookieKey(), "");
-        if (encrypted.isEmpty()) {
-            migratePlainCookieIfNeeded();
-            encrypted = prefs.getString(SecureStrings.encryptedCookieKey(), "");
-        }
-        if (!encrypted.isEmpty()) {
-            if (encrypted.equals(cachedEncryptedCookie) && cachedCookie != null) {
-                return cachedCookie;
-            }
-            String cookie = decrypt(encrypted);
-            if (!cookie.isEmpty() && encrypted.startsWith(LegacyCookieCrypto.PREFIX)
-                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                saveCookie(cookie);
-            }
-            String normalized = SessionCookieCodec.normalize(cookie);
-            if (!normalized.equals(cookie)) saveCookie(normalized);
-            cachedEncryptedCookie = prefs.getString(
-                    SecureStrings.encryptedCookieKey(), encrypted);
-            cachedCookie = normalized;
-            return normalized;
-        }
-        return "";
-    }
-
-    void migratePlainCookieIfNeeded() {
-        String legacy = prefs.getString(SecureStrings.cookieKey(), "");
-        if (legacy.isEmpty()) return;
-        saveCookie(legacy);
-        prefs.edit().remove(SecureStrings.cookieKey()).apply();
+        return cookies.get();
     }
 
     String userId() {
-        String saved = prefs.getString(SecureStrings.userId(), "");
-        if (!saved.isEmpty()) return saved;
-        String fromCookie = SessionCookieCodec.userId(getCookie());
-        if (!fromCookie.isEmpty()) {
-            prefs.edit().putString(SecureStrings.userId(), fromCookie).apply();
+        synchronized (prefs) {
+            String saved = prefs.getString(SecureStrings.userId(), "");
+            if (!saved.isEmpty()) return saved;
+            String fromCookie = SessionCookieCodec.userId(getCookie());
+            if (!fromCookie.isEmpty()) {
+                prefs.edit().putString(SecureStrings.userId(), fromCookie).apply();
+            }
+            return fromCookie;
         }
-        return fromCookie;
+    }
+
+    long sessionGeneration() {
+        return cookies.generation();
+    }
+
+    boolean isCurrentSession(long generation) {
+        return cookies.isCurrent(generation);
+    }
+
+    Object requestLock() {
+        return prefs;
     }
 
     Context appContext() {
@@ -814,6 +799,12 @@ final class SessionStore {
     }
 
     void saveLogin(JSONObject result) {
+        synchronized (prefs) {
+            saveLoginDetails(result);
+        }
+    }
+
+    private void saveLoginDetails(JSONObject result) {
         String id = result.optString("heyboxid",
                 result.optString(SecureStrings.userid(), result.optString(SecureStrings.heyboxId())));
         JSONObject account = result.optJSONObject("account_detail");
@@ -826,30 +817,16 @@ final class SessionStore {
             if (avatar.isEmpty()) avatar = account.optString("avatar");
         }
         if (id.isEmpty()) id = SessionCookieCodec.userId(getCookie());
-        SharedPreferences.Editor editor = prefs.edit();
+        SharedPreferences.Editor editor = prefs.edit()
+                .putLong(SessionCookies.GENERATION_KEY, sessionGeneration() + 1L);
         if (!id.isEmpty()) editor.putString(SecureStrings.userId(), id);
         if (!name.isEmpty()) editor.putString(USER_NAME, name);
         if (!avatar.isEmpty()) editor.putString(AVATAR, avatar);
         editor.apply();
     }
 
-    void mergeCookies(List<String> headers) {
-        if (headers == null || headers.isEmpty()) return;
-        Map<String, String> values = SessionCookieCodec.parse(getCookie());
-        for (String header : headers) {
-            if (header == null) continue;
-            String first = header.split(";", 2)[0];
-            int equals = first.indexOf('=');
-            if (equals <= 0) continue;
-            String key = first.substring(0, equals).trim();
-            String value = first.substring(equals + 1).trim();
-            if (value.isEmpty()) values.remove(key);
-            else values.put(key, value);
-        }
-        SessionCookieCodec.normalizeAuth(values);
-        String cookie = SessionCookieCodec.join(values);
-        saveCookie(cookie);
-        persistUserIdFromCookie(cookie);
+    long mergeCookies(List<String> headers, long generation) {
+        return cookies.merge(headers, generation);
     }
 
     boolean hasCookieValue(String key) {
@@ -857,24 +834,19 @@ final class SessionStore {
     }
 
     void putCookieValue(String key, String value) {
-        if (key == null || key.isEmpty()) return;
-        Map<String, String> values = SessionCookieCodec.parse(getCookie());
-        if (value == null || value.isEmpty()) values.remove(key);
-        else values.put(key, value);
-        SessionCookieCodec.normalizeAuth(values);
-        String cookie = SessionCookieCodec.join(values);
-        saveCookie(cookie);
-        persistUserIdFromCookie(cookie);
+        cookies.putValue(key, value);
+    }
+
+    boolean putCookieValue(String key, String value, long generation) {
+        synchronized (prefs) {
+            if (!isCurrentSession(generation)) return false;
+            cookies.putValue(key, value);
+            return true;
+        }
     }
 
     void removeCookieValue(String key) {
         putCookieValue(key, "");
-    }
-
-    private void persistUserIdFromCookie(String cookie) {
-        if (!prefs.getString(SecureStrings.userId(), "").isEmpty()) return;
-        String id = SessionCookieCodec.userId(cookie);
-        if (!id.isEmpty()) prefs.edit().putString(SecureStrings.userId(), id).apply();
     }
 
     String authCookieKeysForLog() {
@@ -882,55 +854,19 @@ final class SessionStore {
     }
 
     void saveCookie(String value) {
-        try {
-            String cookie = SessionCookieCodec.normalize(value == null ? "" : value);
-            String encrypted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                    ? ModernCookieCrypto.encrypt(cookie) : legacyCookieCrypto.encrypt(cookie);
-            prefs.edit().putString(SecureStrings.encryptedCookieKey(),
-                    encrypted)
-                    .remove(SecureStrings.cookieKey()).apply();
-            cachedEncryptedCookie = encrypted;
-            cachedCookie = cookie;
-            persistUserIdFromCookie(cookie);
-        } catch (Exception error) {
-            Log.w("SessionStore", "Unable to encrypt session cookie", error);
-            prefs.edit().remove(SecureStrings.cookieKey()).apply();
-        }
-    }
-
-    private String decrypt(String value) {
-        try {
-            if (value.startsWith(LegacyCookieCrypto.PREFIX)) return legacyCookieCrypto.decrypt(value);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                return ModernCookieCrypto.decrypt(value);
-            }
-            return "";
-        } catch (ModernCookieCrypto.InvalidPayloadException error) {
-            prefs.edit().remove(SecureStrings.encryptedCookieKey()).apply();
-            cachedEncryptedCookie = null;
-            cachedCookie = null;
-            Log.w("SessionStore", "Discarded malformed encrypted session", error);
-            return "";
-        } catch (ModernCookieCrypto.KeyUnavailableException error) {
-            Log.w("SessionStore", "Cookie key is temporarily unavailable", error);
-            return "";
-        } catch (Exception error) {
-            if (value.startsWith(LegacyCookieCrypto.PREFIX)) {
-                prefs.edit().remove(SecureStrings.encryptedCookieKey()).apply();
-            }
-            Log.w("SessionStore", "Unable to decrypt session cookie", error);
-            return "";
-        }
+        cookies.save(value);
     }
 
     void clearSession() {
-        SharedPreferences.Editor editor = prefs.edit();
-        for (String key : prefs.getAll().keySet()) {
-            if (removesOnLogout(key)) editor.remove(key);
+        synchronized (prefs) {
+            SharedPreferences.Editor editor = prefs.edit()
+                    .putLong(SessionCookies.GENERATION_KEY, sessionGeneration() + 1L);
+            for (String key : prefs.getAll().keySet()) {
+                if (removesOnLogout(key)) editor.remove(key);
+            }
+            editor.apply();
+            cookies.clearCached();
         }
-        editor.apply();
-        cachedEncryptedCookie = null;
-        cachedCookie = null;
     }
 
     static boolean removesOnLogout(String key) {

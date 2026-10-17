@@ -47,6 +47,7 @@ public final class ImageViewerActivity extends Activity {
     private FrameLayout[] imagePages;
     private ZoomImageView[] images;
     private LoadingSpinnerView[] spinners;
+    private ImageViewerPageRequests[] pageRequests;
     private boolean[] loaded;
     private boolean[] originalLoaded;
     private boolean[] longCandidates;
@@ -100,6 +101,7 @@ public final class ImageViewerActivity extends Activity {
         imagePages = new FrameLayout[count];
         images = new ZoomImageView[count];
         spinners = new LoadingSpinnerView[count];
+        pageRequests = new ImageViewerPageRequests[count];
         loaded = new boolean[count];
         originalLoaded = new boolean[count];
         longCandidates = new boolean[count];
@@ -128,6 +130,7 @@ public final class ImageViewerActivity extends Activity {
                     }
                 });
         for (int i = 0; i < count; i++) {
+            pageRequests[i] = new ImageViewerPageRequests();
             FrameLayout page = new FrameLayout(this);
             ZoomImageView view = new ZoomImageView(this);
             view.setRoundDisplay(roundDisplay);
@@ -244,7 +247,7 @@ public final class ImageViewerActivity extends Activity {
         pager.animate().cancel();
         pageEnter = PageEnter.WAITING;
         setChromeAlpha(Motions.off() ? 1.0f : 0.0f);
-        if (Motions.off() || Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+        if (Motions.off()) {
             backdrop.setAlpha(1.0f);
             setChromeAlpha(1.0f);
             return;
@@ -291,7 +294,7 @@ public final class ImageViewerActivity extends Activity {
             image.setAlpha(0.0f);
             long duration = Motions.full() ? 240L : 205L;
             image.animate().alpha(1.0f).setDuration(duration);
-            attachAnimationEndAction(image, duration, () -> completePageEnter(index));
+            attachAnimationEndAction(image, () -> completePageEnter(index));
             image.animate().start();
             backdrop.animate().alpha(1.0f).setDuration(duration).start();
             setChromeAlpha(1.0f);
@@ -482,7 +485,7 @@ public final class ImageViewerActivity extends Activity {
                     .translationX(image.getTranslationX() * 1.15f)
                     .setDuration(duration)
                     .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
-            attachAnimationEndAction(image, duration, this::finishViewer);
+            attachAnimationEndAction(image, this::finishViewer);
             image.animate().start();
             backdrop.animate().alpha(0.0f).setDuration(duration).start();
             setChromeAlpha(0.0f);
@@ -499,7 +502,7 @@ public final class ImageViewerActivity extends Activity {
                 .scaleX(1.0f).scaleY(1.0f).alpha(1.0f)
                 .setDuration(duration)
                 .setInterpolator(MotionSpec.EASE_OUT);
-        attachAnimationEndAction(image, duration, () -> resetImageTransform(image));
+        attachAnimationEndAction(image, () -> resetImageTransform(image));
         image.animate().start();
         backdrop.animate().alpha(1.0f).setDuration(duration).start();
         setChromeAlpha(1.0f);
@@ -520,7 +523,8 @@ public final class ImageViewerActivity extends Activity {
         Motions.reset(imagePages[previous]);
         resetImageTransform(images[previous]);
         if (longViews[previous] != null) resetImageTransform(longViews[previous]);
-        cancelLongLoad(previous);
+        if (longLoading[previous]) releaseLongPage(previous);
+        else cancelLongLoad(previous);
         if (preparedPreviewNeedsUpgrade) loaded[previous] = false;
         preparedPreviewNeedsUpgrade = false;
         pageEnter = PageEnter.FINISHED;
@@ -566,9 +570,12 @@ public final class ImageViewerActivity extends Activity {
         loaded[index] = true;
         final ZoomImageView view = images[index];
         final LoadingSpinnerView spinner = spinners[index];
+        final ImageViewerPageRequests requests = pageRequests[index];
+        final int generation = requests.generation();
         if (view.getDrawable() == null) spinner.setVisibility(View.VISIBLE);
-        ImageLoader.load(urls[index], previewTarget(), bitmap -> {
-            if (destroyed || closing || isFinishing()) return;
+        requests.setPreview(ImageLoader.loadCancellable(urls[index], previewTarget(), bitmap -> {
+            if (!requests.isCurrent(generation) || destroyed || closing || isFinishing()) return;
+            requests.finishPreview();
             spinner.animate().alpha(0f).setDuration(90).start();
             spinner.postDelayed(() -> spinner.setVisibility(View.GONE), 100);
             if (bitmap == null) {
@@ -584,11 +591,11 @@ public final class ImageViewerActivity extends Activity {
             }
             applyLoadedBitmap(view, bitmap);
             view.post(() -> {
-                if (destroyed || closing || isFinishing()) return;
+                if (!requests.isCurrent(generation) || destroyed || closing || isFinishing()) return;
                 if (index == current) startPageEnter(index);
             });
             updateLongCandidate(index, bitmap);
-        });
+        }));
     }
 
     private boolean showPreparedPreview(int index) {
@@ -748,6 +755,7 @@ public final class ImageViewerActivity extends Activity {
     private void releaseDistantPages() {
         for (int index = 0; index < images.length; index++) {
             if (Math.abs(index - current) <= 1) continue;
+            pageRequests[index].cancel();
             releaseLongPage(index);
             ZoomImageView view = images[index];
             view.animate().cancel();
@@ -818,7 +826,9 @@ public final class ImageViewerActivity extends Activity {
     }
 
     private void loadOriginal(final int index, boolean automatic) {
-        if (originalLoaded[index]) return;
+        final ImageViewerPageRequests requests = pageRequests[index];
+        if (originalLoaded[index] || requests.originalPending()) return;
+        final int generation = requests.generation();
         original.setEnabled(false);
         original.setText("加载中");
         final LoadingSpinnerView spinner = spinners[index];
@@ -827,8 +837,9 @@ public final class ImageViewerActivity extends Activity {
             spinner.setVisibility(View.VISIBLE);
         }
         final ZoomImageView view = images[index];
-        ImageLoader.loadOriginal(urls[index], 2400, bitmap -> {
-            if (destroyed || closing || isFinishing()) return;
+        requests.setOriginal(ImageLoader.loadOriginalCancellable(urls[index], 2400, bitmap -> {
+            if (!requests.isCurrent(generation) || destroyed || closing || isFinishing()) return;
+            requests.finishOriginal();
             if (!automatic) spinner.setVisibility(View.GONE);
             if (bitmap == null) {
                 if (index == current && !roundDisplay) {
@@ -846,7 +857,7 @@ public final class ImageViewerActivity extends Activity {
                 if (automatic) original.setVisibility(View.GONE);
                 refreshOriginalLabel();
             }
-        });
+        }));
     }
 
     private void applyLoadedBitmap(ZoomImageView view, Bitmap bitmap) {
@@ -933,7 +944,7 @@ public final class ImageViewerActivity extends Activity {
         visual.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.0f)
                 .setDuration(duration)
                 .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE);
-        attachAnimationEndAction(visual, duration, this::finishViewer);
+        attachAnimationEndAction(visual, this::finishViewer);
         visual.animate().start();
         backdrop.animate().alpha(0.0f).setDuration(duration).start();
     }
@@ -956,21 +967,12 @@ public final class ImageViewerActivity extends Activity {
         return true;
     }
 
-    private void attachAnimationEndAction(View view, long duration, Runnable action) {
+    private void attachAnimationEndAction(View view, Runnable action) {
         final int serial = ++animationSerial;
         Runnable guarded = () -> {
             if (serial == animationSerial) action.run();
         };
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            attachAnimationEndActionApi16(view, guarded);
-        } else {
-            view.postDelayed(guarded, duration);
-        }
-    }
-
-    @android.annotation.TargetApi(Build.VERSION_CODES.JELLY_BEAN)
-    private void attachAnimationEndActionApi16(View view, Runnable action) {
-        view.animate().withEndAction(action);
+        view.animate().withEndAction(guarded);
     }
 
     private void finishViewer() {
@@ -1014,6 +1016,9 @@ public final class ImageViewerActivity extends Activity {
         unregisterSystemBackCallback();
         cancelViewerAnimationCallbacks();
         restoreSourcePreview();
+        if (pageRequests != null) {
+            for (ImageViewerPageRequests requests : pageRequests) requests.cancel();
+        }
         if (root != null) root.animate().cancel();
         if (backdrop != null) backdrop.animate().cancel();
         if (pager != null) {

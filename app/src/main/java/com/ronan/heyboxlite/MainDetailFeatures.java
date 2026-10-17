@@ -24,7 +24,6 @@ final class MainDetailFeatures {
         boolean roundLayout();
         void reloadDetail();
         void showUserSpace(String userId, String name, String avatar);
-        void openImage(ImageView source, String url);
         void hideLoading();
         void renderDetail(JSONObject body, FeedItem fallback);
         void showMessage(String message);

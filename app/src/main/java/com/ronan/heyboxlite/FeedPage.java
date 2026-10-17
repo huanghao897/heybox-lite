@@ -187,9 +187,10 @@ final class FeedPage {
         invalidateView();
     }
 
-    void clearItems() {
-        this.items.clear();
-        notifyAdapter();
+    void invalidateSession() {
+        this.coldLaunchPending = true;
+        resetForColdLaunch();
+        this.host.setRefreshBusy(false);
     }
 
     void notifyItemsChanged() {
@@ -251,13 +252,11 @@ final class FeedPage {
     }
 
     private void resetForColdLaunch() {
-        this.items.clear();
-        this.paging.resetForNewFeed();
+        resetContent(true);
+        this.exposureTracker.clear();
         this.suppressNextCacheFallback = true;
         this.firstVisible = 0;
         this.firstTop = 0;
-        this.cachedContainer = null;
-        this.cachedListView = null;
     }
 
     private boolean canReuseCachedView() {

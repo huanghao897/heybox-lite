@@ -22,12 +22,17 @@ internal class ComposeCheckinPaymentController(
     private var generation = 0
     private var querying = false
     private var lastQueryAt = -POLL_INTERVAL
+    private var pollRetryAt = 0L
+    private var qrRetryAt = 0L
     private val pollTask = Runnable { poll() }
     private val images = Executors.newSingleThreadExecutor { job -> Thread(job, "heybox-payment-qr").apply { isDaemon = true } }
 
     fun resume() { foreground = true; schedule() }
     fun pause() { foreground = false; handler.removeCallbacks(pollTask) }
-    fun stop() { generation++; querying = false; handler.removeCallbacks(pollTask) }
+    fun stop() {
+        generation++; querying = false; pollRetryAt = 0L; qrRetryAt = 0L
+        handler.removeCallbacks(pollTask)
+    }
     fun close() { stop(); images.shutdownNow() }
 
     fun create() {
@@ -43,6 +48,7 @@ internal class ComposeCheckinPaymentController(
         val sameSelection = if (variableAmount) previous?.productSku == "" && previous.amountCents == amount
             else product != null && previous?.productSku == product.sku
         if (previous?.pending() == true && sameSelection) {
+            if (current.qrBitmap == null && !current.qrLoading) makeQr(previous, generation)
             schedule()
             return
         }
@@ -77,7 +83,8 @@ internal class ComposeCheckinPaymentController(
     private fun poll() {
         val order = state().order ?: return
         if (!visible() || !order.pending() || querying) return
-        val remaining = POLL_INTERVAL - (SystemClock.elapsedRealtime() - lastQueryAt)
+        val now = SystemClock.elapsedRealtime()
+        val remaining = maxOf(POLL_INTERVAL - (now - lastQueryAt), pollRetryAt - now)
         if (remaining > 0) { handler.postDelayed(pollTask, remaining); return }
         val serial = generation
         querying = true
@@ -86,9 +93,12 @@ internal class ComposeCheckinPaymentController(
             override fun onSuccess(value: CheckinBilling.Order) {
                 if (!accept(serial) || state().order?.id != order.id) return
                 querying = false
-                update(state().copy(order = value, review = value.review ?: state().review, message = ""))
+                pollRetryAt = 0L
+                update(state().copy(order = value, review = value.review ?: state().review,
+                    qrBitmap = if (value.pending()) state().qrBitmap else null,
+                    qrLoading = value.pending() && state().qrLoading,
+                    message = if (value.pending() && SystemClock.elapsedRealtime() < qrRetryAt) state().message else ""))
                 if (value.status == "paid") {
-                    update(state().copy(qrBitmap = null, qrLoading = false))
                     onPaid()
                 } else if (value.pending() && state().qrBitmap == null && !state().qrLoading) makeQr(value, serial)
                 schedule()
@@ -96,32 +106,45 @@ internal class ComposeCheckinPaymentController(
             override fun onError(error: CheckinCenterClient.ApiError) {
                 if (!accept(serial)) return
                 querying = false
+                pollRetryAt = SystemClock.elapsedRealtime() +
+                    maxOf(POLL_INTERVAL, error.retryAfterSeconds.toLong() * 1000)
                 update(state().copy(message = error.message ?: "订单状态暂不可用"))
-                if (!authorization(error)) schedule(maxOf(POLL_INTERVAL, error.retryAfterSeconds.toLong() * 1000))
+                if (!missingOrder(error) && !authorization(error)) schedule()
             }
         })
     }
 
-    private fun schedule(delay: Long = POLL_INTERVAL) {
+    private fun schedule() {
         handler.removeCallbacks(pollTask)
         if (visible() && state().order?.pending() == true && !querying) {
-            handler.postDelayed(pollTask, maxOf(delay, POLL_INTERVAL - (SystemClock.elapsedRealtime() - lastQueryAt)))
+            val now = SystemClock.elapsedRealtime()
+            handler.postDelayed(pollTask, maxOf(POLL_INTERVAL,
+                POLL_INTERVAL - (now - lastQueryAt), pollRetryAt - now))
         }
     }
 
     private fun makeQr(order: CheckinBilling.Order, serial: Int) {
-        update(state().copy(qrLoading = true))
+        if (SystemClock.elapsedRealtime() < qrRetryAt) return
+        update(state().copy(qrLoading = true, message = ""))
         if (order.checkoutUrl.isNotEmpty()) {
             decode(serial, order.id) { QrCode.create(order.checkoutUrl, 512) }
         } else if (order.qrReady) {
             requests.qr(order.id, object : CheckinCenterClient.Callback<ByteArray> {
                 override fun onSuccess(value: ByteArray) {
-                    if (accept(serial)) decode(serial, order.id) { decodeImage(value) }
+                    if (accept(serial) && state().order?.pending() == true) {
+                        qrRetryAt = 0L
+                        decode(serial, order.id) { decodeImage(value) }
+                    }
                 }
                 override fun onError(error: CheckinCenterClient.ApiError) {
-                    if (!accept(serial)) return
+                    if (!accept(serial) || state().order?.pending() != true) return
+                    qrRetryAt = SystemClock.elapsedRealtime() + error.retryAfterSeconds.toLong() * 1000
                     update(state().copy(qrLoading = false, message = error.message ?: "支付码暂不可用"))
-                    authorization(error)
+                    if (!missingOrder(error) && !authorization(error) &&
+                        error.diagnosticCode in listOf("order_expired", "order_not_pending")) {
+                        update(state().copy(qrBitmap = null))
+                        poll()
+                    }
                 }
             })
         } else {
@@ -133,7 +156,7 @@ internal class ComposeCheckinPaymentController(
         images.execute {
             val bitmap = try { build() } catch (_: WriterException) { null } catch (_: IllegalArgumentException) { null }
             handler.post {
-                if (accept(serial) && state().order?.id == orderId) {
+                if (accept(serial) && state().order?.id == orderId && state().order?.pending() == true) {
                     update(state().copy(qrBitmap = bitmap, qrLoading = false,
                         message = if (bitmap == null) "支付码无法显示" else state().message))
                 }
@@ -162,13 +185,20 @@ internal class ComposeCheckinPaymentController(
             override fun onError(error: CheckinCenterClient.ApiError) {
                 if (!accept(serial)) return
                 update(state().copy(requestInFlight = false, message = error.message ?: "提交失败"))
-                authorization(error)
+                if (!missingOrder(error)) authorization(error)
             }
         })
     }
 
     private fun visible() = active() && foreground && route() == ComposeCheckinRoute.CHECKOUT
     private fun accept(serial: Int) = active() && generation == serial
+    private fun missingOrder(error: CheckinCenterClient.ApiError): Boolean {
+        if (error.statusCode != 404 || error.diagnosticCode != "order_not_found") return false
+        stop()
+        update(state().copy(order = null, qrBitmap = null, qrLoading = false,
+            requestInFlight = false, review = null, paymentReference = ""))
+        return true
+    }
     private fun authorization(error: CheckinCenterClient.ApiError): Boolean {
         if (!error.authorizationInvalid()) return false
         stop()

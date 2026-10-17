@@ -98,25 +98,26 @@ final class WriteActionClient {
     }
 
     private void run(String name, Request request, ApiClient.Callback callback) {
+        long generation = session.sessionGeneration();
         log("write request start: " + name + " cookieKeys="
                 + this.session.authCookieKeysForLog());
-        execute(name, request, false, callback);
+        execute(name, request, false, callback, generation);
     }
 
     private void execute(String name, Request request, boolean tokenRetried,
-                         ApiClient.Callback callback) {
-        if (this.closed) return;
+                         ApiClient.Callback callback, long generation) {
+        if (this.closed || !session.isCurrentSession(generation)) return;
         request.start(new ApiClient.Callback() {
             @Override
             public void onSuccess(JSONObject body) {
-                if (closed) return;
+                if (closed || !session.isCurrentSession(generation)) return;
                 log("write request ok: " + name);
                 callback.onSuccess(body);
             }
 
             @Override
             public void onError(String message) {
-                if (closed) return;
+                if (closed || !session.isCurrentSession(generation)) return;
                 log("write request failed: " + name + ": " + message);
                 if (isRiskControlError(message)) {
                     blockedUntilAt = Math.max(blockedUntilAt,
@@ -129,11 +130,12 @@ final class WriteActionClient {
                     tokenProvider.refresh(new WriteTokenProvider.Callback() {
                         @Override
                         public void onReady() {
-                            execute(name, request, true, callback);
+                            execute(name, request, true, callback, generation);
                         }
 
                         @Override
                         public void onError(String tokenMessage) {
+                            if (closed || !session.isCurrentSession(generation)) return;
                             log("write token refresh failed: " + tokenMessage);
                             callback.onError(message);
                         }

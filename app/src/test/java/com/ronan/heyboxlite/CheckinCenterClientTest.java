@@ -46,6 +46,31 @@ public class CheckinCenterClientTest {
     }
 
     @Test
+    public void retryPolicyHonorsServerCooldownBeyondLocalBackoff() {
+        CheckinCenterClient.ApiError rateLimited = CheckinCenterClient.statusError(
+                CheckinCenterClient.Operation.STATUS, 429, "{\"retry_after\":60}");
+
+        assertEquals(60_000L, CheckinRetryPolicy.delayMillis(rateLimited, 0, 0L));
+        assertEquals(60_000L, CheckinRetryPolicy.delayMillis(rateLimited, 1, 4_000L));
+        assertEquals(90_000L, CheckinRetryPolicy.delayMillis(rateLimited, 0, 90_000L));
+        assertFalse(CheckinRetryPolicy.shouldRetry(rateLimited, 2));
+    }
+
+    @Test
+    public void retryPolicyKeepsLocalBackoffForMissingOrShortServerCooldown() {
+        CheckinCenterClient.ApiError shortCooldown = CheckinCenterClient.statusError(
+                CheckinCenterClient.Operation.STATUS, 429, "{\"retry_after\":1}");
+        CheckinCenterClient.ApiError noCooldown = CheckinCenterClient.statusError(
+                CheckinCenterClient.Operation.STATUS, 503, "{}");
+
+        assertEquals(4_000L, CheckinRetryPolicy.delayMillis(shortCooldown, 0, 0L));
+        assertEquals(8_000L, CheckinRetryPolicy.delayMillis(shortCooldown, 1, 0L));
+        assertEquals(2_000L, CheckinRetryPolicy.delayMillis(noCooldown, 0, 0L));
+        assertEquals(4_000L, CheckinRetryPolicy.delayMillis(noCooldown, 1, 0L));
+        assertEquals(7_000L, CheckinRetryPolicy.delayMillis(noCooldown, 0, 7_000L));
+    }
+
+    @Test
     public void captchaPageAcceptsOnlyPinnedHttpsEndpoint() {
         assertTrue(CheckinCaptchaContract.isTrustedPageUri(
                 "https://heyboxlite.xyz/checkin/lite/captcha?appid=2076842290"));
@@ -249,7 +274,7 @@ public class CheckinCenterClientTest {
                 CheckinCenterClient.Operation.STATUS, 404, "{\"detail\":\"Not Found\"}");
 
         assertEquals("服务器暂未支持手机号登录，请稍后重试", sms.getMessage());
-        assertEquals("签到任务尚未配置", status.getMessage());
+        assertEquals("服务器暂未支持此签到操作，请更新后重试", status.getMessage());
     }
 
     @Test

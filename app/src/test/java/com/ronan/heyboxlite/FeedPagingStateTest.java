@@ -58,4 +58,38 @@ public final class FeedPagingStateTest {
         assertTrue(state.accepts(refresh));
         state.finish(true, refresh);
     }
+
+    @Test
+    public void resettingDuringRefreshReleasesBusyStateAndRejectsTheOldCompletion() {
+        FeedPagingState state = new FeedPagingState();
+        int oldRefresh = state.begin(true);
+
+        state.resetForNewFeed();
+
+        assertFalse(state.refreshing());
+        assertFalse(state.accepts(oldRefresh));
+        int newRefresh = state.begin(true);
+        assertTrue(newRefresh > oldRefresh);
+        state.finish(true, oldRefresh);
+        assertTrue(state.refreshing());
+        state.finish(true, newRefresh);
+        assertFalse(state.refreshing());
+    }
+
+    @Test
+    public void oldLoadMoreCompletionCannotFinishTheNewSessionsLoadMore() {
+        FeedPagingState state = new FeedPagingState();
+        int oldPage = state.begin(false);
+
+        state.resetForNewFeed();
+
+        assertFalse(state.loadingMore());
+        assertFalse(state.accepts(oldPage));
+        int newPage = state.begin(false);
+        assertTrue(newPage > oldPage);
+        state.finish(false, oldPage);
+        assertTrue(state.loadingMore());
+        state.finish(false, newPage);
+        assertFalse(state.loadingMore());
+    }
 }

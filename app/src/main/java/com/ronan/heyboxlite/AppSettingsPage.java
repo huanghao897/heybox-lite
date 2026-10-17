@@ -20,6 +20,8 @@ final class AppSettingsPage {
 
         void reloadFeed(boolean resetPaging);
 
+        void sessionChanged();
+
         void exportDiagnostics();
 
         void uploadDiagnostics();
@@ -166,7 +168,7 @@ final class AppSettingsPage {
                 () -> {
                     if (this.session.isLoggedIn()) {
                         this.session.clearSession();
-                        this.host.reloadFeed(false);
+                        this.host.sessionChanged();
                         this.host.showToast("已退出登录");
                     }
                     this.host.showLogin();

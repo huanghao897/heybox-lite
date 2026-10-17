@@ -11,8 +11,11 @@ final class CheckinCenterStore {
     private static final String LEGACY_SERVER_MANAGED_CREDENTIALS =
             "server_managed_credentials";
     private static final String TOKEN_PREFIX = "CCSEC1:";
+    private static final Object AUTHORIZATION_LOCK = new Object();
 
     private final SharedPreferences preferences;
+    private String cachedEncrypted;
+    private String cachedToken;
 
     CheckinCenterStore(Context context) {
         preferences = context.getApplicationContext()
@@ -28,11 +31,29 @@ final class CheckinCenterStore {
     }
 
     String deviceToken() {
+        synchronized (AUTHORIZATION_LOCK) {
+            return readDeviceToken();
+        }
+    }
+
+    private String readDeviceToken() {
         String stored = preferences.getString(DEVICE_TOKEN, "");
-        if (stored == null || !stored.startsWith(TOKEN_PREFIX) || !supported()) return "";
+        if (stored == null || !stored.startsWith(TOKEN_PREFIX) || !supported()) {
+            cachedEncrypted = null;
+            cachedToken = null;
+            return "";
+        }
+        if (stored.equals(cachedEncrypted)) return cachedToken;
+        cachedEncrypted = null;
+        cachedToken = null;
         try {
             String token = ModernCookieCrypto.decrypt(stored.substring(TOKEN_PREFIX.length()));
-            return validToken(token) ? token : "";
+            if (!validToken(token)) return "";
+            cachedEncrypted = stored;
+            cachedToken = token;
+            return token;
+        } catch (ModernCookieCrypto.KeyUnavailableException error) {
+            return "";
         } catch (Exception error) {
             clearAuthorization();
             return "";
@@ -40,24 +61,40 @@ final class CheckinCenterStore {
     }
 
     void saveDeviceToken(String token) throws Exception {
-        if (!supported() || !validToken(token)) {
-            throw new IllegalStateException("Device authorization is unavailable");
-        }
-        String encrypted = TOKEN_PREFIX + ModernCookieCrypto.encrypt(token);
-        if (!preferences.edit().putString(DEVICE_TOKEN, encrypted)
-                .remove(LEGACY_CREDENTIAL_FINGERPRINT)
-                .remove(LEGACY_SERVER_MANAGED_CREDENTIALS)
-                .commit()) {
-            throw new IllegalStateException("Device authorization could not be persisted");
+        synchronized (AUTHORIZATION_LOCK) {
+            if (!supported() || !validToken(token)) {
+                throw new IllegalStateException("Device authorization is unavailable");
+            }
+            String encrypted = TOKEN_PREFIX + ModernCookieCrypto.encrypt(token);
+            if (!preferences.edit().putString(DEVICE_TOKEN, encrypted)
+                    .remove(LEGACY_CREDENTIAL_FINGERPRINT)
+                    .remove(LEGACY_SERVER_MANAGED_CREDENTIALS)
+                    .commit()) {
+                throw new IllegalStateException("Device authorization could not be persisted");
+            }
+            cachedEncrypted = encrypted;
+            cachedToken = token;
         }
     }
 
     void clearAuthorization() {
-        preferences.edit()
-                .remove(DEVICE_TOKEN)
-                .remove(LEGACY_CREDENTIAL_FINGERPRINT)
-                .remove(LEGACY_SERVER_MANAGED_CREDENTIALS)
-                .apply();
+        synchronized (AUTHORIZATION_LOCK) {
+            preferences.edit()
+                    .remove(DEVICE_TOKEN)
+                    .remove(LEGACY_CREDENTIAL_FINGERPRINT)
+                    .remove(LEGACY_SERVER_MANAGED_CREDENTIALS)
+                    .apply();
+            cachedEncrypted = null;
+            cachedToken = null;
+        }
+    }
+
+    boolean clearAuthorization(String expectedToken) {
+        synchronized (AUTHORIZATION_LOCK) {
+            if (!expectedToken.equals(readDeviceToken())) return false;
+            clearAuthorization();
+            return true;
+        }
     }
 
     private static boolean validToken(String value) {

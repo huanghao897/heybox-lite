@@ -90,24 +90,6 @@ final class DetailPager extends FrameLayout {
         return view;
     }
 
-    boolean canHandoffReturnPreview(View expected) {
-        return this.returnCommitted && !this.realReturnView && expected != null
-                && this.returnPreview == expected && expected.getParent() == this;
-    }
-
-    View returnPreviewForHandoff() {
-        return this.realReturnView ? null : this.returnPreview;
-    }
-
-    View detachReturnPreviewForHandoff() {
-        View view = this.returnPreview;
-        removeCallbacks(this.alignPage);
-        // Reattached by the handoff in this drawing cycle; do not dispose its composition.
-        detachViewFromParent(view);
-        this.returnPreview = null;
-        return view;
-    }
-
     boolean showingComments() {
         return this.currentPage == PAGE_COMMENTS;
     }
@@ -317,7 +299,7 @@ final class DetailPager extends FrameLayout {
             scrollTo(destination, 0);
             this.returning = false;
             this.returnCommitted = true;
-            NativeDetailReturnHandoff.dispatchReturn(this, this.listener::onReturn);
+            this.listener.onReturn();
             return;
         }
         int distance = Math.abs(destination - from);
@@ -336,7 +318,7 @@ final class DetailPager extends FrameLayout {
                 if (returning) {
                     returning = false;
                     returnCommitted = true;
-                    NativeDetailReturnHandoff.dispatchReturn(DetailPager.this, listener::onReturn);
+                    listener.onReturn();
                 }
             }
         });
