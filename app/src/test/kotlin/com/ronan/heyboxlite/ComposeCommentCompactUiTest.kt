@@ -193,6 +193,7 @@ class ComposeCommentCompactUiTest {
         compose.onNodeWithText("关注", useUnmergedTree = true).assertExists()
         val size = button.fetchSemanticsNode().size
         assertTrue("Follow must be a compact text button, not a circular plus", size.width > size.height)
+        assertTrue("Follow icon and padding should keep the button narrow", size.width <= 44)
         button.performClick()
         assertEquals(1, toggles)
         compose.runOnIdle { following.value = true; pending.value = true }

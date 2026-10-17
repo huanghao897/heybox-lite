@@ -19,9 +19,11 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +34,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 
 @Composable
 internal fun ComposeFavoritesScreen(
@@ -62,10 +65,11 @@ internal fun ComposeFavoritesScreen(
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     // The first scrolling controls fit the upper arc without a fixed toolbar.
                     val top = if (theme.roundScreen) watchHeaderTop(maxWidth / 0.84f, theme) else 0.dp
-                    Row(Modifier.fillMaxWidth().testTag("favorites-tabs")
+                    Row(Modifier.fillMaxWidth().padding(top = top)
                         .padding(horizontal = watchLeadingHeadingHorizontal(maxWidth, theme))
+                        .testTag("favorites-tabs")
                         .clip(RoundedCornerShape(watchDp(10)))
-                        .background(theme.panel).padding(top = top)
+                        .background(theme.panel)
                         .padding(watchDp(3))) {
                         FavoriteTab("帖子", selectedTab == ComposeFavoriteTab.POSTS, Modifier.weight(1f)) {
                             onTabChange(ComposeFavoriteTab.POSTS)
@@ -135,12 +139,14 @@ private fun FavoriteTab(label: String, selected: Boolean, modifier: Modifier, on
     val theme = LocalHeyboxTheme.current
     val fraction by animateFloatAsState(if (selected) 1f else 0f,
         tween(if (Motions.off()) 0 else 160), label = "favorite-tab")
-    TextButton(onClick, modifier.semantics { this.selected = selected }
-        .heightIn(min = watchDp(34)).clip(RoundedCornerShape(watchDp(8)))
-        .background(androidx.compose.ui.graphics.lerp(theme.panel, theme.panelElevated, fraction)),
-        contentPadding = PaddingValues(0.dp)) {
-        Text(label, color = if (selected) theme.text else theme.muted,
-            fontSize = watchSp(12f), fontWeight = FontWeight.SemiBold)
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
+        TextButton(onClick, modifier.semantics { this.selected = selected }
+            .heightIn(min = watchDp(34).coerceAtLeast(28.dp)).clip(RoundedCornerShape(watchDp(8)))
+            .background(androidx.compose.ui.graphics.lerp(theme.panel, theme.panelElevated, fraction)),
+            contentPadding = PaddingValues(0.dp)) {
+            Text(label, color = if (selected) theme.text else theme.muted,
+                fontSize = watchSp(12f), fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 

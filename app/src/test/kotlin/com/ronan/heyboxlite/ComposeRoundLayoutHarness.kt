@@ -120,8 +120,11 @@ internal abstract class ComposeRoundLayoutHarness : ComposeWatchActionButtonTest
         compose.waitForIdle()
     }
 
-    protected fun assertPaintedLabelInsideDisplay(label: String) {
-        val target = text(label, unmerged = true).assertIsDisplayed()
+    protected fun assertPaintedLabelInsideDisplay(
+        label: String,
+        target: SemanticsNodeInteraction = text(label, unmerged = true),
+    ) {
+        target.assertIsDisplayed()
         val layouts = mutableListOf<TextLayoutResult>()
         target.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertEquals("A real painted Text layout is required: $label", 1, layouts.size)

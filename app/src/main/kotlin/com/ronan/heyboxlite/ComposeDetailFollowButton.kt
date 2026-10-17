@@ -40,13 +40,13 @@ internal fun ComposeDetailFollowButton(following: Boolean, pending: Boolean, onF
                 stateDescription = if (pending) "正在更新" else if (following) "已关注" else "未关注"
             }.clickable(enabled = !pending, role = Role.Button, onClick = onFollow)
             .heightIn(min = (26.dp * theme.uiScale).coerceAtLeast(24.dp))
-            .padding(start = 5.dp * theme.uiScale, end = 7.dp * theme.uiScale,
+            .padding(start = 4.dp * theme.uiScale, end = 5.dp * theme.uiScale,
                 top = 3.dp * theme.uiScale, bottom = 3.dp * theme.uiScale),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp * theme.uiScale),
+        horizontalArrangement = Arrangement.spacedBy(1.dp * theme.uiScale),
     ) {
         if (!following) Icon(painterResource(R.drawable.il_plus), null, tint = color,
-            modifier = Modifier.size(14.dp * theme.uiScale))
+            modifier = Modifier.size(11.dp * theme.uiScale))
         Text(if (following) "已关注" else "关注", color = color,
             fontSize = 11.sp * theme.textScale, lineHeight = 15.sp * theme.textScale,
             fontWeight = FontWeight.Medium, letterSpacing = 0.sp)

@@ -38,6 +38,9 @@ internal class ComposeFavoritesScrollingUiTest : ComposeRoundLayoutHarness() {
     @Test @Config(qualifiers = "w192dp-h192dp-mdpi")
     fun forcedRoundTabsScrollWithBothPostAndFolderLists() = verifyScrolling(forceRound = true)
 
+    @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
+    fun roundTabsStayCompactWithLargeTextAndSmallUi() = verifyScrolling(uiScale = 0.8f, textScale = 1.4f)
+
     @Test fun emptyAndErrorListsKeepTabsAndUseTheSelectedRetryCallback() {
         val services = layoutServices()
         val tab = mutableStateOf(ComposeFavoriteTab.POSTS)
@@ -63,8 +66,8 @@ internal class ComposeFavoritesScrollingUiTest : ComposeRoundLayoutHarness() {
         }
     }
 
-    private fun verifyScrolling(forceRound: Boolean = false) {
-        val services = layoutServices(forceRound)
+    private fun verifyScrolling(forceRound: Boolean = false, uiScale: Float = 1f, textScale: Float = 1f) {
+        val services = layoutServices(forceRound, uiScale, textScale)
         val posts = (1..8).map {
             FeedItem.from(JSONObject().put("linkid", "post-$it").put("title", "Post $it"))
         }
@@ -83,6 +86,17 @@ internal class ComposeFavoritesScrollingUiTest : ComposeRoundLayoutHarness() {
         val tabs = compose.onNodeWithTag("favorites-tabs")
         tabs.assertIsDisplayed()
         tab("帖子").assertIsSelected()
+        val panel = tabs.fetchSemanticsNode().boundsInRoot
+        val control = tab("帖子").fetchSemanticsNode().boundsInRoot
+        assertEquals("Only compact padding belongs inside the painted tab panel",
+            6f * uiScale, panel.height - control.height, 1.5f)
+        assertTrue("Default Material button sizing must not inflate the tabs", panel.height <= 41f)
+        listOf("帖子", "收藏夹").forEach { label ->
+            assertPaintedLabelInsideDisplay(label, compose.onNode(
+                hasText(label) and hasAnyAncestor(hasTestTag("favorites-tabs")), useUnmergedTree = true))
+        }
+        assertNoTopToolbar()
+        compose.runOnIdle { captureMembershipUi(compose.activity, "favorites-${testName.methodName}-initial") }
         list.performScrollToIndex(posts.size)
         tabs.assertIsNotDisplayed()
         touchReachable("Post 8")

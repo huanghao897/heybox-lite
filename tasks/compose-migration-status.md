@@ -237,3 +237,13 @@ ADB 核对未连接设备，未启动模拟器；仪器测试仅完成编译，�
 - `app-release.apk`、`dist/heybox-Lite-2.18.apk` 和 `dist/heybox-Lite-latest.apk` 的 SHA-256 一致，且不同于上一批安装包：`A69411728E271DA4CC6DD69E80BCA6775B4ADF130041CA124161F43C3E0F399F`。
 
 ADB 核对未连接设备，未启动模拟器；仪器测试仅完成编译，离线渲染、触摸和二维码解码不等同于真实手表显示与性能验收。本批次不部署、不上传测试管理员、不创建 Release、不关机。
+
+## 2026-10-17 收藏标签与详情关注按钮尺寸修正
+
+- 收藏标签的圆屏上弦安全留白移至背景外，局部关闭 Material3 默认最小交互尺寸，保留显式最小高度和大字体自然扩展，避免标签背景被撑成大块；标签仍是列表首项并随帖子、收藏夹滚动，不恢复二级页标题栏。
+- 详情关注按钮收紧左右内边距、加号和图文间隔，保留文字大小、点击高度、关注状态与请求中禁用行为。
+- 新增收藏首屏截图、背景与按钮高度差断言、小 UI 倍率加大字体回归及关注按钮宽度断言。逐字圆形边界检查限定到标签栏，避免与帖子中的同名文字冲突；原触摸和滚动断言继续执行。
+- `ComposeFavoritesScrollingUiTest` 6 项、`ComposeRoundLayoutPagesUiTest` 20 项、`ComposeCommentCompactUiTest` 7 项全部通过。`:app:lintDebug :app:assembleRelease` 成功，检查圆屏首屏离线截图。未重新执行完整测试套件。
+- Release 保持 `2.18 / 221`、预览包名、minSdk 21 和 targetSdk 35，v1/v2 签名校验通过，证书 SHA-256 为 `fbd5642c3c1b5882545f6f1227cf2dc38a54bcd18609203935eedbef408d1382`。三个 APK 副本 SHA-256 均为 `DC4EFEFCFABEFAFAB241C152514898C66ADC1C3E2050E3D2C848930DE207AD32`。
+
+本批次未操作模拟器或执行真机验证；ADB 仅列出已有 emulator-5554，没有连接物理设备。离线布局与触摸回归不替代真实手表显示验收。不部署、不上传测试后台、不创建 GitHub Release。
