@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import java.net.URI
 import java.net.URLDecoder
@@ -64,9 +65,8 @@ internal fun ObserveSavedRotary(listState: LazyListState, services: ComposeServi
 @Composable
 internal fun SavedPage(title: String, theme: ComposeThemeState, onBack: () -> Unit,
                        content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().background(theme.background)) {
-        ComposePageHeader(title, onBack)
-        Column(Modifier.fillMaxSize().watchHorizontalPadding().padding(vertical = watchDp(4)),
+    Column(Modifier.fillMaxSize().testTag("saved-page-content").background(theme.background)) {
+        Column(Modifier.fillMaxSize().watchHorizontalPadding().padding(bottom = watchDp(4)),
             content = content)
     }
 }

@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,10 +52,9 @@ internal fun ComposeSearchScreen(
             if (observeLoadMore) {
                 ObserveFeedLoadMore(listState, items.size, loading, noMore, onLoadMore)
             }
-            Column(modifier = Modifier.fillMaxSize()) {
-                ComposePageHeader("搜索", onBack)
+            Column(modifier = Modifier.fillMaxSize().testTag("search-page-content")) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = horizontal)) {
-                    ComposeSearchInput(query, "搜索帖子、作者或关键词", onQueryChange)
+                    ComposeLeadingSearchInput(query, "搜索帖子、作者或关键词", onQueryChange)
                 }
                 when {
                     query.isBlank() && history.isNotEmpty() -> Box(

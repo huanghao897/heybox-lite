@@ -1,6 +1,7 @@
 package com.ronan.heyboxlite
 
 import android.app.Application
+import androidx.activity.OnBackPressedCallback
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.activity.ComponentActivity
@@ -63,7 +64,7 @@ class ComposeCheckinTaskSettingsUiTest {
         text("\u5206\u4eab\u5e16\u5b50").performScrollTo().assertIsOff().performClick()
         text("\u5206\u4eab\u6e38\u620f").performScrollTo().assertIsOff().performClick()
         text("\u5206\u4eab\u8bc4\u4ef7").performScrollTo().assertIsOff().performClick()
-        description("\u8fd4\u56de").performClick()
+        pressHostBack()
         compose.runOnIdle {
             assertEquals(listOf(false), enabledChanges)
             assertEquals(listOf("share_post" to true, "share_game" to true,
@@ -274,9 +275,7 @@ class ComposeCheckinTaskSettingsUiTest {
         val track = compose.onNodeWithTag("task-switch-\u5206\u4eab\u8bc4\u4ef7", useUnmergedTree = true)
         assertInsideCircle(track.fetchSemanticsNode().boundsInRoot, corners = true)
         track.performTouchInput { click(center) }
-        val back = circleReach(description("\u8fd4\u56de"))
-        assertInsideCircle(back.fetchSemanticsNode().boundsInRoot)
-        back.performTouchInput { click(center) }
+        pressHostBack()
         compose.runOnIdle {
             assertEquals(listOf("share_review" to true), shareChanges)
             assertEquals(1, backs)
@@ -312,6 +311,9 @@ class ComposeCheckinTaskSettingsUiTest {
         // No coordinator, API, login, or successful check-in result is created by these fixtures.
         state = mutableStateOf(ComposeCheckinUiState(status = CheckinCenterClient.Status(
             CheckinCenterClient.Account("connected", "UI fixture", ""), task, null, null)))
+        compose.activity.onBackPressedDispatcher.addCallback(compose.activity, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() { backs++ }
+        })
         val content: @Composable () -> Unit = {
             HeyboxComposeTheme(theme) {
                 ComposeCheckinTaskSettingsContent(state.value, { backs++ },
@@ -341,6 +343,13 @@ class ComposeCheckinTaskSettingsUiTest {
 
     private fun text(value: String) = compose.onNodeWithText(value)
     private fun description(value: String) = compose.onNodeWithContentDescription(value)
+
+    private fun pressHostBack() {
+        description("\u8fd4\u56de").assertDoesNotExist()
+        compose.onNodeWithTag("watch-page-header").assertDoesNotExist()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+    }
 
     private fun circleReach(target: SemanticsNodeInteraction): SemanticsNodeInteraction {
         target.performScrollTo()

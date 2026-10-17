@@ -1,6 +1,7 @@
 package com.ronan.heyboxlite
 
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Rect
@@ -232,13 +233,17 @@ internal abstract class ComposeMembershipUiRegressionHarness {
         compose.waitForIdle()
     }
 
-    protected fun assertBackReachable() {
-        val target = description("\u8fd4\u56de")
-        val hasScrollParent = generateSequence(target.fetchSemanticsNode().parent) { it.parent }
-            .any { it.config.contains(SemanticsActions.ScrollBy) }
-        val back = if (hasScrollParent) reach(target) else target.assertIsDisplayed()
-        assertInDisplay(boundsInWindow(back.fetchSemanticsNode()), "back button", corners = false)
-        back.performTouchInput { click() }
+    // Isolated page fixtures use a host callback, matching the runtime Activity's back ownership.
+    protected fun installHostBack(onBack: () -> Unit) {
+        compose.activity.onBackPressedDispatcher.addCallback(compose.activity, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = onBack()
+        })
+    }
+
+    protected fun pressHostBack() {
+        description("\u8fd4\u56de").assertDoesNotExist()
+        tag("watch-page-header").assertDoesNotExist()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitForIdle()
     }
 

@@ -8,9 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import com.google.zxing.BinaryBitmap
@@ -41,7 +38,7 @@ internal class ComposeRoundAccountUiTest : ComposeRoundLayoutHarness() {
         val name = "\u6d4b\u8bd5\u7528\u6237"
         val id = "ID 12345678901"
         showLayout(services) {
-            WatchPage("\u6211\u7684", null) {
+            WatchPage("\u6211\u7684", null, showPrimaryHeader = true) {
                 WatchCard {
                     ComposeAccountIdentity(name, id) {
                         Box(Modifier.size(watchDp(46)).background(services.theme.muted, CircleShape))
@@ -77,12 +74,8 @@ internal class ComposeRoundAccountUiTest : ComposeRoundLayoutHarness() {
                 ComposeLoginContent(qr, "\u7b49\u5f85\u626b\u7801", {}, { guests++ }, { retries++ })
             }
             val frame = circleReach(compose.onNodeWithTag("login-qr-frame"))
-            val headerLayouts = mutableListOf<TextLayoutResult>()
-            text("\u767b\u5f55\u5c0f\u9ed1\u76d2").performSemanticsAction(SemanticsActions.GetTextLayoutResult) {
-                it(headerLayouts)
-            }
-            assertEquals("Default login title must not waste the small watch viewport", 1,
-                headerLayouts.single().lineCount)
+            assertNoTopToolbar()
+            text("\u767b\u5f55\u5c0f\u9ed1\u76d2").assertDoesNotExist()
             assertControlInsideDisplay(frame, "login QR frame")
             val image = compose.onNodeWithContentDescription("\u767b\u5f55\u4e8c\u7ef4\u7801")
             val rect = bounds(image)

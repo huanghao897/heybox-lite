@@ -242,7 +242,7 @@ internal class ComposeMembershipCheckoutUiTest : ComposeMembershipUiRegressionHa
         text("\u8ba2\u5355\u5df2\u8fc7\u671f").assertExists()
         tapReachable("\u91cd\u65b0\u751f\u6210\u8ba2\u5355")
         capture("expired-last-button")
-        assertBackReachable()
+        pressHostBack()
         compose.runOnIdle {
             assertEquals(1, finishes)
             assertEquals(1, backs)
@@ -259,11 +259,7 @@ internal class ComposeMembershipCheckoutUiTest : ComposeMembershipUiRegressionHa
         capture("rendered-qr")
         assertInDisplay(bounds, "full QR with its quiet zone", corners = true)
         assertEquals("QR must stay square", bounds.width, bounds.height, 1f)
-        val back = compose.onNodeWithContentDescription("\u8fd4\u56de", useUnmergedTree = true).fetchSemanticsNode()
-        val backBounds = Rect(back.positionInWindow.x, back.positionInWindow.y,
-            back.positionInWindow.x + back.size.width, back.positionInWindow.y + back.size.height)
-        assertFalse("The fixed return icon must not paint over the QR or its quiet zone",
-            bounds.overlaps(backBounds))
+        compose.onNodeWithContentDescription("\u8fd4\u56de", useUnmergedTree = true).assertDoesNotExist()
         val result = compose.runOnIdle {
             val view = compose.activity.window.decorView
             val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
@@ -287,6 +283,7 @@ internal class ComposeMembershipCheckoutUiTest : ComposeMembershipUiRegressionHa
         largeLight: Boolean = false,
     ) {
         state = mutableStateOf(initial)
+        installHostBack { backs++ }
         setScreen(theme(largeLight), systemFontScale = if (largeLight) 1.25f else 1f) {
             ComposeMembershipCheckoutScreen(state.value, account, { backs++ }, { finishes++ },
                 { references += it; state.value = state.value.copy(paymentReference = it) }, { claims++ })

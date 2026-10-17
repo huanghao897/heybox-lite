@@ -3,6 +3,7 @@ package com.ronan.heyboxlite
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import androidx.activity.OnBackPressedCallback
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextLayoutResult
@@ -101,12 +103,21 @@ internal abstract class ComposeRoundLayoutHarness : ComposeWatchActionButtonTest
         assertDisplayPoint(center, "$label touch center", touchRadius = 8f)
     }
 
-    protected fun assertBackAnchor() {
-        val target = circleReach(compose.onNodeWithContentDescription("\u8fd4\u56de", useUnmergedTree = true))
-        val node = target.fetchSemanticsNode()
-        val rect = screenBounds(node)
-        rectCorners(rect).forEach { assertDisplayPoint(it, "inline return icon") }
-        assertTouchable(target, "inline return icon")
+    protected fun assertNoTopToolbar() {
+        compose.onNodeWithTag("watch-page-header").assertDoesNotExist()
+        compose.onNodeWithContentDescription("\u8fd4\u56de", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    protected fun installHostBack(onBack: () -> Unit) {
+        compose.activity.onBackPressedDispatcher.addCallback(compose.activity, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = onBack()
+        })
+    }
+
+    protected fun pressHostBack() {
+        assertNoTopToolbar()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
     }
 
     protected fun assertPaintedLabelInsideDisplay(label: String) {

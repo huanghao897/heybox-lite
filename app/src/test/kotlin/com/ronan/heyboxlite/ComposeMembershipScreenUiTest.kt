@@ -229,7 +229,7 @@ internal class ComposeMembershipScreenUiTest : ComposeMembershipUiRegressionHarn
         tapReachable("\u5151\u6362\u4f1a\u5458")
         tapReachable("\u8d2d\u4e70\u8bb0\u5f55")
         capture("last-menu")
-        assertBackReachable()
+        pressHostBack()
         compose.runOnIdle {
             assertEquals(1, checkouts)
             assertEquals(1, redeems)
@@ -245,6 +245,7 @@ internal class ComposeMembershipScreenUiTest : ComposeMembershipUiRegressionHarn
         largeLight: Boolean = false,
     ) {
         state = mutableStateOf(initial)
+        installHostBack { backs++ }
         setScreen(theme(largeLight), systemFontScale = if (largeLight) 1.25f else 1f) {
             ComposeMembershipScreen(state.value, { backs++ }, { selections += it }, { checkouts++ },
                 { redeems++ }, { purchases++ }, { retries++ },

@@ -31,7 +31,7 @@ internal fun ComposeProfileScreen(
     LaunchedEffect(services.cache) {
         recentCount = withContext(Dispatchers.IO) { services.cache.recentItems().size }
     }
-    WatchPage("我的", null, withBottomNavigation = true) {
+    WatchPage("我的", null, withBottomNavigation = true, showPrimaryHeader = true) {
         val accountRoute = if (loggedIn) {
             "user_space?user=${android.net.Uri.encode(userId)}" +
                 "&name=${android.net.Uri.encode(displayName)}" +

@@ -45,7 +45,7 @@ internal class ComposeCheckinHistoryUiTest : ComposeMembershipUiRegressionHarnes
             assertEquals(listOf(4002L), opened.map { it.id })
             assertSame(requireNotNull(state.value.history).entries.last(), opened.single())
         }
-        text("\u7b7e\u5230\u8be6\u60c5").assertExists()
+        text("\u7b7e\u5230\u8be6\u60c5").assertDoesNotExist()
         text("\u7b7e\u5230\u5931\u8d25").assertExists()
         text("Archived failure; no rewards supplied").assertExists()
         text("\u76d2\u5e01 +17 \u00b7 \u7ecf\u9a8c +93").assertDoesNotExist()
@@ -112,8 +112,8 @@ internal class ComposeCheckinHistoryUiTest : ComposeMembershipUiRegressionHarnes
         compose.onAllNodesWithText("\u672a\u63d0\u4f9b\u7ed3\u679c", useUnmergedTree = true).assertCountEquals(1)
         text("\u5206\u4eab\u5e16\u5b50 \u00b7 \u5df2\u5b8c\u6210").assertDoesNotExist()
         text("\u5206\u4eab\u6e38\u620f\u8be6\u60c5 \u00b7 \u5931\u8d25").assertDoesNotExist()
-        assertBackReachable()
-        text("\u7b7e\u5230\u8bb0\u5f55").assertExists()
+        pressHostBack()
+        text("\u7b7e\u5230\u8bb0\u5f55").assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(1, detailBacks)
             assertTrue(opened.isEmpty())
@@ -133,11 +133,12 @@ internal class ComposeCheckinHistoryUiTest : ComposeMembershipUiRegressionHarnes
     }
 
     @Test fun missingDetailHasAReachableBackAndNoInventedTasks() {
+        installHostBack { backs++ }
         setScreen { ComposeCheckinHistoryDetailScreen(null) { backs++ } }
         text("\u8bb0\u5f55\u6682\u4e0d\u53ef\u7528").assertExists()
         text("\u57fa\u7840\u7b7e\u5230").assertDoesNotExist()
         text("\u7b7e\u5230\u6210\u529f").assertDoesNotExist()
-        assertBackReachable()
+        pressHostBack()
         compose.runOnIdle { assertEquals(1, backs) }
     }
 
@@ -167,9 +168,9 @@ internal class ComposeCheckinHistoryUiTest : ComposeMembershipUiRegressionHarnes
         capture("detail-task-results")
         assertLabelFits("Server detail \u00b7 Archived failure field")
         capture("detail-last-field")
-        assertBackReachable()
-        text("\u7b7e\u5230\u8bb0\u5f55").assertExists()
-        assertBackReachable()
+        pressHostBack()
+        text("\u7b7e\u5230\u8bb0\u5f55").assertDoesNotExist()
+        pressHostBack()
         compose.runOnIdle {
             assertEquals(listOf(4002L), opened.map { it.id })
             assertEquals(1, detailBacks)
@@ -185,6 +186,12 @@ internal class ComposeCheckinHistoryUiTest : ComposeMembershipUiRegressionHarnes
         largeLight: Boolean = false,
     ) {
         state = mutableStateOf(initial)
+        installHostBack {
+            if (state.value.selectedHistoryEntry == null) backs++ else {
+                detailBacks++
+                state.value = state.value.copy(selectedHistoryEntry = null)
+            }
+        }
         setScreen(theme(largeLight), systemFontScale = if (largeLight) 1.25f else 1f) {
             val entry = state.value.selectedHistoryEntry
             if (entry == null) {

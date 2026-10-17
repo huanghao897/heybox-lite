@@ -40,7 +40,7 @@ internal class ComposeRoundLayoutFormsUiTest : ComposeRoundLayoutHarness() {
         )
         var backs = 0
         showLayout(services) { ComposeCheckinPairingScreen(state, owner) { backs++ } }
-        assertBackAnchor()
+        assertNoTopToolbar()
         listOf("\u7b7e\u5230\u670d\u52a1\u8d26\u53f7", "\u6ce8\u518c\u90ae\u7bb1",
             state.serviceEmailButton, "\u6ce8\u518c\u5e76\u8fde\u63a5").forEach { label ->
             val target = circleReach(label)
@@ -70,7 +70,7 @@ internal class ComposeRoundLayoutFormsUiTest : ComposeRoundLayoutHarness() {
         )
         var backs = 0
         showLayout(services) { ComposeCheckinMobileLoginScreen(state, owner) { backs++ } }
-        assertBackAnchor()
+        assertNoTopToolbar()
         val labels = if (password) listOf("+86 \u624b\u673a\u53f7", "\u5c0f\u9ed1\u76d2\u767b\u5f55\u5bc6\u7801")
             else listOf("+86 \u624b\u673a\u53f7", state.mobileSmsButton)
         (labels + "\u767b\u5f55\u5e76\u8fde\u63a5").forEach { label ->

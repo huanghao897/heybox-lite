@@ -177,7 +177,7 @@ internal class ComposeCheckinCenterUiTest : ComposeMembershipUiRegressionHarness
         listOf("\u7acb\u5373\u7b7e\u5230", "\u7b7e\u5230\u8bbe\u7f6e", "\u4f1a\u5458\u670d\u52a1", "\u8fde\u7eed\u7b7e\u5230\u6392\u884c\u699c", "\u7b7e\u5230\u8bb0\u5f55", "\u64a4\u9500\u6b64\u8bbe\u5907")
             .forEach(::tapReachable)
         capture("last-revoke")
-        assertBackReachable()
+        pressHostBack()
         compose.runOnIdle {
             assertEquals(listOf("run", "settings", "membership", "leaderboard", "history", "revoke", "back"), actions)
             assertTrue(state.value.paired)
@@ -192,6 +192,7 @@ internal class ComposeCheckinCenterUiTest : ComposeMembershipUiRegressionHarness
         largeLight: Boolean = false,
     ) {
         state = mutableStateOf(initial)
+        installHostBack { actions += "back" }
         setScreen(theme(largeLight), systemFontScale = if (largeLight) 1.25f else 1f) {
             ComposeCheckinCenterContent(state.value, { actions += "back" }, { actions += "connect" },
                 { actions += "refresh" }, { actions += "login" }, { actions += "run" },

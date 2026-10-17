@@ -130,7 +130,7 @@ internal class ComposeMembershipRedeemUiTest : ComposeMembershipUiRegressionHarn
         tapReachable("\u786e\u8ba4\u5151\u6362")
         capture("redeem-confirmation")
         assertLabelFits("\u672a\u5f00\u901a\u4f1a\u5458")
-        assertBackReachable()
+        pressHostBack()
         compose.runOnIdle {
             assertEquals(listOf("LOCAL-CODE-123"), submits)
             assertEquals(1, backs)
@@ -145,6 +145,7 @@ internal class ComposeMembershipRedeemUiTest : ComposeMembershipUiRegressionHarn
         restoration: StateRestorationTester? = null,
     ) {
         state = mutableStateOf(initial)
+        installHostBack { backs++ }
         setScreen(theme(largeLight), systemFontScale = if (largeLight) 1.25f else 1f,
             restoration = restoration) {
             ComposeMembershipRedeemScreen(state.value, { backs++ },

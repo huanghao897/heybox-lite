@@ -2,6 +2,7 @@ package com.ronan.heyboxlite
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -29,9 +30,14 @@ internal fun ComposeMembershipRedeemScreen(
     onSubmit: () -> Unit,
 ) {
     WatchPage("\u5151\u6362\u4f1a\u5458", onBack) {
-        MembershipInput(state.redeemCode, "\u4f1a\u5458\u5151\u6362\u7801", onCode,
-            enabled = !state.requestInFlight, keyboardType = KeyboardType.Ascii,
-            placeholder = "\u5151\u6362\u7801")
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(horizontal =
+                watchLeadingHeadingHorizontal(maxWidth, LocalHeyboxTheme.current))) {
+                MembershipInput(state.redeemCode, "\u4f1a\u5458\u5151\u6362\u7801", onCode,
+                    enabled = !state.requestInFlight, keyboardType = KeyboardType.Ascii,
+                    placeholder = "\u5151\u6362\u7801")
+            }
+        }
         CheckinActionButton(if (state.requestInFlight) "\u63d0\u4ea4\u4e2d" else "\u786e\u8ba4\u5151\u6362",
             onSubmit, enabled = !state.requestInFlight && state.redeemCode.isNotBlank(),
             icon = R.drawable.il_ticket)

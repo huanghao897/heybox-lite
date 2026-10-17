@@ -6,11 +6,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -58,14 +59,20 @@ internal fun ComposeFavoritesScreen(
             contentPadding = PaddingValues(bottom = watchListEndPadding()),
             verticalArrangement = Arrangement.spacedBy(watchDp(7))) {
             item(key = "favorites-tabs", contentType = "tabs") {
-                Row(Modifier.fillMaxWidth().testTag("favorites-tabs")
-                    .clip(RoundedCornerShape(watchDp(10)))
-                    .background(theme.panel).padding(watchDp(3))) {
-                    FavoriteTab("帖子", selectedTab == ComposeFavoriteTab.POSTS, Modifier.weight(1f)) {
-                        onTabChange(ComposeFavoriteTab.POSTS)
-                    }
-                    FavoriteTab("收藏夹", selectedTab == ComposeFavoriteTab.FOLDERS, Modifier.weight(1f)) {
-                        onTabChange(ComposeFavoriteTab.FOLDERS)
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    // The first scrolling controls fit the upper arc without a fixed toolbar.
+                    val top = if (theme.roundScreen) watchHeaderTop(maxWidth / 0.84f, theme) else 0.dp
+                    Row(Modifier.fillMaxWidth().testTag("favorites-tabs")
+                        .padding(horizontal = watchLeadingHeadingHorizontal(maxWidth, theme))
+                        .clip(RoundedCornerShape(watchDp(10)))
+                        .background(theme.panel).padding(top = top)
+                        .padding(watchDp(3))) {
+                        FavoriteTab("帖子", selectedTab == ComposeFavoriteTab.POSTS, Modifier.weight(1f)) {
+                            onTabChange(ComposeFavoriteTab.POSTS)
+                        }
+                        FavoriteTab("收藏夹", selectedTab == ComposeFavoriteTab.FOLDERS, Modifier.weight(1f)) {
+                            onTabChange(ComposeFavoriteTab.FOLDERS)
+                        }
                     }
                 }
             }
@@ -129,7 +136,7 @@ private fun FavoriteTab(label: String, selected: Boolean, modifier: Modifier, on
     val fraction by animateFloatAsState(if (selected) 1f else 0f,
         tween(if (Motions.off()) 0 else 160), label = "favorite-tab")
     TextButton(onClick, modifier.semantics { this.selected = selected }
-        .height(watchDp(34)).clip(RoundedCornerShape(watchDp(8)))
+        .heightIn(min = watchDp(34)).clip(RoundedCornerShape(watchDp(8)))
         .background(androidx.compose.ui.graphics.lerp(theme.panel, theme.panelElevated, fraction)),
         contentPadding = PaddingValues(0.dp)) {
         Text(label, color = if (selected) theme.text else theme.muted,

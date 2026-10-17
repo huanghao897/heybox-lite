@@ -8,6 +8,7 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performTextReplacement
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -38,8 +39,8 @@ internal class ComposeRoundLayoutPagesUiTest : ComposeRoundLayoutHarness() {
                 {}, {}, {}, { historyClicks++ }, {},
             )
         }
-        assertBackAnchor()
-        assertPaintedLabelInsideDisplay("\u9605\u8bfb\u4e2d\u5fc3")
+        assertNoTopToolbar()
+        text("\u9605\u8bfb\u4e2d\u5fc3").assertDoesNotExist()
         touchReachable("\u5386\u53f2\u8bb0\u5f55")
         compose.runOnIdle { assertEquals(1, historyClicks) }
     }
@@ -62,8 +63,8 @@ internal class ComposeRoundLayoutPagesUiTest : ComposeRoundLayoutHarness() {
                 false, "", services, {}, {}, opened::add, { _, _ -> }, {}, {}, {}, rememberLazyListState(),
             )
         }
-        assertBackAnchor()
-        assertPaintedLabelInsideDisplay("\u6211\u7684\u6536\u85cf")
+        assertNoTopToolbar()
+        text("\u6211\u7684\u6536\u85cf").assertDoesNotExist()
         compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
             .performScrollToIndex(folders.lastIndex)
         touchReachable("Folder 8")
@@ -87,8 +88,8 @@ internal class ComposeRoundLayoutPagesUiTest : ComposeRoundLayoutHarness() {
             ComposeSearchScreen("", emptyList(), false, true, services, selected::add, {}, {}, {},
                 observeLoadMore = false, history = queries, onClearHistory = { clearClicks++ })
         }
-        assertBackAnchor()
-        assertPaintedLabelInsideDisplay("\u641c\u7d22")
+        assertNoTopToolbar()
+        text("\u641c\u7d22").assertDoesNotExist()
         val clear = circleReach(compose.onNodeWithContentDescription("\u6e05\u7a7a\u641c\u7d22\u5386\u53f2"))
         assertTouchable(clear, "clear search history")
         clear.performTouchInput { click() }
@@ -99,6 +100,33 @@ internal class ComposeRoundLayoutPagesUiTest : ComposeRoundLayoutHarness() {
             assertEquals(listOf("Last"), selected)
             assertEquals(1, clearClicks)
         }
+    }
+
+    @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
+    fun roundSearchInputRemainsReadableAndEditableWithoutAToolbar() = verifyLeadingInput()
+
+    @Test @Config(qualifiers = "w227dp-h227dp-round-mdpi")
+    fun roundHistoryInputRemainsReadableAndEditableWithoutAToolbar() = verifyLeadingInput(history = true)
+
+    @Test @Config(qualifiers = "w192dp-h192dp-mdpi")
+    fun forcedRoundSearchInputUsesTheUpperArc() = verifyLeadingInput(forceRound = true)
+
+    private fun verifyLeadingInput(history: Boolean = false, forceRound: Boolean = false) {
+        val services = layoutServices(forceRound)
+        val edits = mutableListOf<String>()
+        val label = if (history) "搜索历史" else "搜索帖子、作者或关键词"
+        showLayout(services) {
+            if (history) ComposeHistoryScreen(ComposeSavedPostsState(loaded = true), "Safe", edits::add,
+                services, {}, { _, _ -> }, {}, {}, rememberLazyListState())
+            else ComposeSearchScreen("Safe", emptyList(), false, true, services, edits::add, {}, {}, {},
+                observeLoadMore = false)
+        }
+        assertNoTopToolbar()
+        val input = compose.onNodeWithContentDescription(label)
+        assertControlInsideDisplay(input, "leading search input")
+        assertPaintedLabelInsideDisplay("Safe")
+        input.performTextReplacement("Edited")
+        compose.runOnIdle { assertEquals(listOf("Edited"), edits) }
     }
 
     @Test fun squareLeaderboardLetsTheLastNameReachTheReadableArea() = verifyLeaderboard()
@@ -116,11 +144,11 @@ internal class ComposeRoundLayoutPagesUiTest : ComposeRoundLayoutHarness() {
             ComposeCheckinLeaderboardContent(ComposeCheckinLeaderboardState(
                 data = CheckinLeaderboard.Data(entries, emptyList())), {}, {})
         }
-        assertBackAnchor()
+        assertNoTopToolbar()
         circleReach("R8")
         assertPaintedLabelInsideDisplay("R8")
         assertPaintedLabelInsideDisplay("8 d")
-        assertBackAnchor()
+        assertNoTopToolbar()
     }
 
     @Test @Config(qualifiers = "w192dp-h192dp-mdpi")
@@ -131,7 +159,7 @@ internal class ComposeRoundLayoutPagesUiTest : ComposeRoundLayoutHarness() {
             ComposeMembershipRedeemScreen(ComposeMembershipUiState(redeemCode = "FIXTURE"),
                 {}, {}, { submissions++ })
         }
-        assertBackAnchor()
+        assertNoTopToolbar()
         touchReachable("\u786e\u8ba4\u5151\u6362")
         compose.runOnIdle { assertEquals(1, submissions) }
     }

@@ -25,7 +25,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
-import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.test.core.app.ApplicationProvider
 import org.json.JSONObject
@@ -84,15 +84,9 @@ class ComposeWatchUiTest {
         val lastDy = lastCenter.y - bounds.height / 2f
         org.junit.Assert.assertTrue("Last menu item must be reachable inside the circular display",
             lastDx * lastDx + lastDy * lastDy < (radius - 8f) * (radius - 8f))
-        val back = compose.onNodeWithContentDescription("返回").performScrollTo()
-        // Bringing a node into the rectangular viewport can leave it at the circular rim.
-        compose.onRoot().performTouchInput { swipeDown(startY = height * 0.3f, endY = height * 0.8f) }
-        compose.waitForIdle()
-        val backCenter = back.fetchSemanticsNode().boundsInRoot.center
-        val dx = backCenter.x - bounds.width / 2f
-        val dy = backCenter.y - bounds.height / 2f
-        org.junit.Assert.assertTrue("Inline return icon must remain reachable inside the circular display: $backCenter",
-            dx * dx + dy * dy < (radius - 8f) * (radius - 8f))
+        compose.onNodeWithContentDescription("返回").assertDoesNotExist()
+        compose.onNodeWithTag("watch-page-header").assertDoesNotExist()
+        compose.onNodeWithText("阅读中心").assertDoesNotExist()
         val bitmap = compose.runOnIdle {
             val view = compose.activity.window.decorView
             android.graphics.Bitmap.createBitmap(view.width, view.height,

@@ -9,10 +9,13 @@ import androidx.activity.OnBackPressedCallback
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import org.json.JSONObject
 import org.junit.After
@@ -88,6 +91,63 @@ class ComposeDetailHostPagerUiTest {
         }
     }
 
+    @Test fun squareSecondaryMenusUseTheFullViewportAndKeepSystemBack() = verifySecondaryMenus()
+
+    @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
+    fun roundSecondaryMenusUseTheFullViewportAndKeepSystemBack() = verifySecondaryMenus()
+
+    @Test fun headerlessSecondaryMenuKeepsTheRealRightSwipeBack() {
+        showHost()
+        compose.runOnIdle { host.setRoute("settings_home") }
+        compose.onNodeWithTag("watch-page-header").assertDoesNotExist()
+        compose.onNodeWithContentDescription("返回").assertDoesNotExist()
+        compose.onRoot().performTouchInput { swipeRight() }
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals(listOf("profile"), backs) }
+    }
+
+    @Test fun primaryProfileRetainsItsOwnHeading() {
+        showHost()
+        compose.runOnIdle { host.setRoute("profile") }
+        compose.onNodeWithTag("watch-page-header").assertIsDisplayed()
+        compose.onNodeWithContentDescription("返回").assertDoesNotExist()
+    }
+
+    private fun verifySecondaryMenus() {
+        showHost()
+        compose.runOnUiThread {
+            compose.activity.onBackPressedDispatcher.addCallback(compose.activity, object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() { host.handleBack() }
+            })
+        }
+        val routes = listOf("settings_home", "display_settings", "display_preview", "startup_settings",
+            "app_settings", "video_settings", "splash_preview", "about", "announcement_board",
+            "reading_center", "favorites", "favorite_folder?folder=test&name=Folder", "watch_later",
+            "reading_history", "reading_stats", "leaderboard", "search", "login", "user_space",
+            "checkin_center", "checkin_page_pairing", "checkin_page_mobile_login", "checkin_page_task_settings",
+            "checkin_page_membership", "checkin_page_checkout", "checkin_page_redeem", "checkin_page_purchases",
+            "checkin_page_history", "checkin_page_history_detail")
+        routes.forEach { route ->
+            compose.runOnIdle { host.setRoute(route) }
+            compose.onNodeWithTag("watch-page-header").assertDoesNotExist()
+            compose.onNodeWithContentDescription("返回").assertDoesNotExist()
+            val viewport = compose.onAllNodes(hasTestTag("watch-page-content") or
+                hasTestTag("saved-page-content") or hasTestTag("search-page-content"))
+                .fetchSemanticsNodes().single().boundsInRoot
+            val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+            assertEquals("$route must not reserve toolbar height", root.top, viewport.top, 0.5f)
+            assertEquals("$route content must fill its viewport", root.bottom, viewport.bottom, 0.5f)
+            if (route in setOf("settings_home", "reading_center", "favorites", "search")) {
+                compose.runOnIdle { captureMembershipUi(compose.activity, "headerless-$route") }
+            }
+            compose.runOnIdle {
+                val target = host.navigation.backTarget()
+                compose.activity.onBackPressedDispatcher.onBackPressed()
+                assertEquals("$route system back", target, backs.last())
+            }
+        }
+    }
+
     private fun comments() {
         compose.onNodeWithTag("compose-detail-pager").performTouchInput { swipeLeft() }
         compose.onNodeWithTag("compose-detail-comments-list").assertIsDisplayed()
@@ -111,7 +171,7 @@ class ComposeDetailHostPagerUiTest {
             }
             host = ComposeAppHost(activity, parent, session, client, LocalCache(activity),
                 Handler(Looper.getMainLooper()), ReadingTimeTracker(activity), null,
-                ThemeTokens.of(true, 0, 0), false, 1f, 1f, callbacks, ComposeToast {})
+                ThemeTokens.of(true, 0, 0), session.usesRoundLayout(), 1f, 1f, callbacks, ComposeToast {})
             enter("parent")
             activity.setContentView(parent)
         }

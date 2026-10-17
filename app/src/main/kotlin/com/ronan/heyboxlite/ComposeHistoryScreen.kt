@@ -39,7 +39,7 @@ internal fun ComposeHistoryScreen(
     val filtered = remember(state.items, query) { filterReadingHistory(state.items, query) }
     ObserveSavedRotary(listState, services)
     SavedPage("历史记录", services.theme, onBack) {
-        ComposeSearchInput(query, "搜索历史") { value ->
+        ComposeLeadingSearchInput(query, "搜索历史") { value ->
             onQueryChange(value)
             if (filterReadingHistory(state.items, value).isNotEmpty()) {
                 scope.launch { listState.scrollToItem(0) }

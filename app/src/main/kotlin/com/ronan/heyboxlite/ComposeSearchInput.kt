@@ -3,6 +3,7 @@ package com.ronan.heyboxlite
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,10 +20,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+
+/** The functional input fits the round upper arc; no title or return row is reserved. */
+@Composable
+internal fun ComposeLeadingSearchInput(query: String, placeholder: String, onQueryChange: (String) -> Unit) {
+    val theme = LocalHeyboxTheme.current
+    val width = LocalConfiguration.current.screenWidthDp.dp
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val horizontal = if (theme.roundScreen) {
+            ((maxWidth - width + watchHeaderHorizontal(width, theme) * 2) / 2).coerceAtLeast(0.dp)
+        } else 0.dp
+        val top = if (theme.roundScreen) watchHeaderTop(width, theme) else 0.dp
+        Box(Modifier.fillMaxWidth().padding(horizontal = horizontal).padding(top = top)) {
+            ComposeSearchInput(query, placeholder, onQueryChange)
+        }
+    }
+}
 
 @Composable
 internal fun ComposeSearchInput(query: String, placeholder: String, onQueryChange: (String) -> Unit) {

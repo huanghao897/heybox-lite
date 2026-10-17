@@ -126,7 +126,7 @@ internal class ComposeMembershipPurchasesUiTest : ComposeMembershipUiRegressionH
         capture("last-archived-purchase")
         tapReachable("\u91cd\u8bd5")
         capture("last-retry")
-        assertBackReachable()
+        pressHostBack()
         compose.runOnIdle {
             assertEquals(1, retries)
             assertEquals(1, backs)
@@ -140,6 +140,7 @@ internal class ComposeMembershipPurchasesUiTest : ComposeMembershipUiRegressionH
         largeLight: Boolean = false,
     ) {
         state = mutableStateOf(initial)
+        installHostBack { backs++ }
         setScreen(theme(largeLight), systemFontScale = if (largeLight) 1.25f else 1f) {
             ComposeMembershipPurchasesScreen(state.value, { backs++ }, { retries++ })
         }

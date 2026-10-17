@@ -36,7 +36,7 @@ internal class ComposeRoundLayoutServiceUiTest : ComposeRoundLayoutHarness() {
         showLayout(services) {
             ComposeCheckinCenterContent(state, {}, {}, {}, {}, {}, {}, {}, {}, { revoked++ }, { history++ })
         }
-        assertBackAnchor()
+        assertNoTopToolbar()
         touchReachable("\u7b7e\u5230\u8bb0\u5f55")
         touchReachable("\u64a4\u9500\u6b64\u8bbe\u5907")
         compose.runOnIdle {
@@ -64,7 +64,7 @@ internal class ComposeRoundLayoutServiceUiTest : ComposeRoundLayoutHarness() {
                 ComposeMembershipCheckoutScreen(state.value, MembershipUiFixtures.account(), {},
                     { finishes++ }, {}, {})
             }
-            assertBackAnchor()
+            assertNoTopToolbar()
             val qr = circleReach(compose.onNodeWithTag("membership-qr"))
             assertControlInsideDisplay(qr, "complete offline payment QR")
             val waiting = circleReach("\u7b49\u5f85\u786e\u8ba4").assertIsNotEnabled()
@@ -98,6 +98,7 @@ internal class ComposeRoundLayoutServiceUiTest : ComposeRoundLayoutHarness() {
         val selected = mutableStateOf<CheckinHistory.Entry?>(null)
         val opened = mutableListOf<Long>()
         var backs = 0
+        installHostBack { backs++; selected.value = null }
         showLayout(services) {
             val detail = selected.value
             if (detail == null) {
@@ -110,17 +111,16 @@ internal class ComposeRoundLayoutServiceUiTest : ComposeRoundLayoutHarness() {
                 selected.value = null
             }
         }
-        assertBackAnchor()
+        assertNoTopToolbar()
         touchReachable(history.entries.last().displayTime())
         compose.runOnIdle { assertEquals(listOf(history.entries.last().id), opened) }
-        assertBackAnchor()
+        assertNoTopToolbar()
         val lastField = "Server detail \u00b7 Archived failure field"
         circleReach(lastField)
         assertPaintedLabelInsideDisplay(lastField)
-        val back = circleReach(compose.onNodeWithContentDescription("\u8fd4\u56de", useUnmergedTree = true))
-        back.performTouchInput { click() }
+        pressHostBack()
         compose.runOnIdle { assertEquals(1, backs) }
-        assertBackAnchor()
+        assertNoTopToolbar()
     }
 
     @Test fun squareTaskSettingsKeepsItsLastSharingSwitchTouchable() = verifyTaskSettings()
@@ -143,7 +143,7 @@ internal class ComposeRoundLayoutServiceUiTest : ComposeRoundLayoutHarness() {
             ComposeCheckinTaskSettingsContent(MembershipUiFixtures.center(task = task), {}, {}, {},
                 { offsets += it }, { action, enabled -> shares += action to enabled })
         }
-        assertBackAnchor()
+        assertNoTopToolbar()
         val increase = circleReach(compose.onNodeWithContentDescription("\u589e\u52a0\u968f\u673a\u504f\u79fb"))
             .assertIsEnabled()
         assertTouchable(increase, "increase random offset")

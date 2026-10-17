@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.painterResource
@@ -69,6 +70,7 @@ internal fun WatchPage(
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
     withBottomNavigation: Boolean = false,
+    showPrimaryHeader: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val state = LocalHeyboxTheme.current
@@ -78,13 +80,17 @@ internal fun WatchPage(
         if (rotary != null) scrollState.scrollBy(rotary.distance.toFloat())
     }
     if (state.roundScreen) {
+        // Round safety space belongs to the scrolling content, never to a fixed toolbar.
+        val contentTop = if (showPrimaryHeader) 0.dp else
+            (LocalConfiguration.current.screenWidthDp * 0.16f).dp
         Box(modifier.fillMaxSize().background(state.background)) {
-            // The return control shares the title row and scrolls with it, without a reserved strip.
-            Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
-                ComposePageHeader(title, onBack)
+            Column(Modifier.fillMaxSize().testTag("watch-page-content").verticalScroll(scrollState)) {
+                if (showPrimaryHeader) ComposePageHeader(title, onBack)
                 Column(Modifier.fillMaxWidth().watchHorizontalPadding()
-                    .padding(bottom = watchListEndPadding(withBottomNavigation)),
-                    verticalArrangement = Arrangement.spacedBy(watchDp(9)), content = content)
+                    .padding(top = contentTop, bottom = watchListEndPadding(withBottomNavigation)),
+                    verticalArrangement = Arrangement.spacedBy(watchDp(9)),
+                    horizontalAlignment = if (showPrimaryHeader) Alignment.Start else Alignment.CenterHorizontally,
+                    content = content)
             }
         }
         return
@@ -94,10 +100,11 @@ internal fun WatchPage(
             .fillMaxSize()
             .background(state.background),
     ) {
-        ComposePageHeader(title, onBack)
+        if (showPrimaryHeader) ComposePageHeader(title, onBack)
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .testTag("watch-page-content")
                 .verticalScroll(scrollState)
                 .watchHorizontalPadding()
                 .padding(bottom = watchListEndPadding(withBottomNavigation)),
