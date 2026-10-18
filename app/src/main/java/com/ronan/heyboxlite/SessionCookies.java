@@ -36,15 +36,6 @@ final class SessionCookies {
         }
     }
 
-    private void migratePlainCookieIfNeeded() {
-        synchronized (prefs) {
-            String legacy = prefs.getString(SecureStrings.cookieKey(), "");
-            if (legacy.isEmpty()) return;
-            write(legacy, false);
-            prefs.edit().remove(SecureStrings.cookieKey()).apply();
-        }
-    }
-
     long merge(List<String> headers, long generation) {
         // Context shares this preferences object across SessionStore instances.
         synchronized (prefs) {
@@ -101,7 +92,8 @@ final class SessionCookies {
     private String read() {
         String encrypted = prefs.getString(SecureStrings.encryptedCookieKey(), "");
         if (encrypted.isEmpty()) {
-            migratePlainCookieIfNeeded();
+            String legacy = prefs.getString(SecureStrings.cookieKey(), "");
+            if (!legacy.isEmpty() && !write(legacy, false)) return null;
             encrypted = prefs.getString(SecureStrings.encryptedCookieKey(), "");
         }
         if (encrypted.isEmpty()) return "";
@@ -119,7 +111,7 @@ final class SessionCookies {
         return normalized;
     }
 
-    private void write(String value, boolean advanceGeneration) {
+    private boolean write(String value, boolean advanceGeneration) {
         try {
             String cookie = SessionCookieCodec.normalize(value == null ? "" : value);
             String encrypted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
@@ -132,9 +124,10 @@ final class SessionCookies {
             cachedEncrypted = encrypted;
             cachedCookie = cookie;
             persistUserId(cookie);
+            return true;
         } catch (Exception error) {
             Log.w("SessionStore", "Unable to encrypt session cookie", error);
-            prefs.edit().remove(SecureStrings.cookieKey()).apply();
+            return false;
         }
     }
 

@@ -84,7 +84,11 @@ final class WriteTokenProvider {
             fetching = true;
             fetchGeneration = generation;
             startTimeout();
-            startWebView();
+            try {
+                startWebView();
+            } catch (RuntimeException | LinkageError error) {
+                finishError("当前系统的 WebView 不可用，暂时无法完成此操作", generation);
+            }
         });
     }
 
@@ -322,13 +326,13 @@ final class WriteTokenProvider {
         try {
             ViewGroup parent = (ViewGroup) webView.getParent();
             if (parent != null) parent.removeView(webView);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException | LinkageError ignored) {
         }
         try {
             webView.stopLoading();
             webView.loadUrl("about:blank");
             webView.destroy();
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException | LinkageError ignored) {
         }
         webView = null;
         promptNonce = "";
