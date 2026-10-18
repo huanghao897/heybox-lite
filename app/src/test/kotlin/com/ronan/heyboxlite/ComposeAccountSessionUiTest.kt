@@ -10,6 +10,12 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.em
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -133,6 +139,35 @@ class ComposeAccountSessionUiTest {
             feedRequests.last().callback.onError("new failure")
             assertFalse(host.feed.loading.value)
         }
+    }
+
+    @Test fun changingOnlyReadingSettingsRecomposesTheMountedDetail() {
+        showHost("settings_home")
+        compose.runOnIdle {
+            val item = post("reading-settings")
+            host.showDetailLoading(item)
+            val body = JSONObject().put("result", JSONObject().put("link", JSONObject()
+                .put("linkid", item.id).put("content", "mounted-reading-body")))
+            host.showDetailDocument(ComposeDetailDocument.parse(body, item, false))
+        }
+        val before = readingStyle()
+        assertEquals(FontWeight.Medium, before.fontWeight)
+        compose.runOnIdle {
+            session.setBodyBold(false)
+            session.setBodyLetterSpacing(40)
+            host.updateTheme(ThemeTokens.of(false, Color.BLACK, Color.GRAY), false, 1f, 1f)
+        }
+        val after = readingStyle()
+        assertEquals(FontWeight.Normal, after.fontWeight)
+        assertEquals(0.2.em, after.letterSpacing)
+        assertEquals(before.fontSize, after.fontSize)
+    }
+
+    private fun readingStyle(): androidx.compose.ui.text.TextStyle {
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("mounted-reading-body", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        return layouts.single().layoutInput.style
     }
 
     private fun showHost(route: String) {

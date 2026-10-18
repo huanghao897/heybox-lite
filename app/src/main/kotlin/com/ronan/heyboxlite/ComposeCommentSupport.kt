@@ -197,8 +197,8 @@ internal fun ComposeCommentReplyText(
         }
     }
     ComposeInlineText(text, theme.dark, theme.text, theme.link,
-        modifier = modifier.fillMaxWidth(), fontSize = 12.5.sp * theme.textScale,
-        lineHeight = 18.sp * theme.textScale, fontWeight = FontWeight.Light,
+        modifier = modifier.fillMaxWidth(), fontSize = 11.5.sp * theme.textScale,
+        lineHeight = 16.sp * theme.textScale, fontWeight = FontWeight.Light,
         cy = cy, prefix = prefix, suffix = suffix)
 }
 

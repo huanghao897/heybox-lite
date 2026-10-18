@@ -119,7 +119,7 @@ class ComposeCommentLayoutUiTest {
         val root = compose.onNodeWithText("Primary body")
         val reply = compose.onNodeWithText("Bo\uff1aReply")
         assertNativeSize(root, if (round) 12.5f else 13f, textScale, systemFontScale)
-        assertNativeSize(reply, 12.5f, textScale, systemFontScale)
+        assertNativeSize(reply, 11.5f, textScale, systemFontScale)
         assertWrapping(root)
         assertWrapping(reply)
         compose.onNodeWithText("Lv.24", useUnmergedTree = true).assertExists()

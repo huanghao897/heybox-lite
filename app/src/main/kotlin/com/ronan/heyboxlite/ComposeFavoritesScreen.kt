@@ -64,7 +64,7 @@ internal fun ComposeFavoritesScreen(
             item(key = "favorites-tabs", contentType = "tabs") {
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     // The first scrolling controls fit the upper arc without a fixed toolbar.
-                    val top = if (theme.roundScreen) watchHeaderTop(maxWidth / 0.84f, theme) else 0.dp
+                    val top = if (theme.roundScreen) watchHeaderTop(maxWidth / WATCH_CONTENT_RATIO, theme) else 0.dp
                     Row(Modifier.fillMaxWidth().padding(top = top)
                         .padding(horizontal = watchLeadingHeadingHorizontal(maxWidth, theme))
                         .testTag("favorites-tabs")

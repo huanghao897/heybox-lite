@@ -2,7 +2,7 @@ package com.ronan.heyboxlite
 
 import android.app.Application
 import android.widget.FrameLayout
-import android.widget.LinearLayout
+import android.view.View
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.onNodeWithText
@@ -53,16 +53,16 @@ internal class ComposeNavigationClearanceUiTest : ComposeRoundLayoutHarness() {
                     { _, _ -> }, listState, observeLoadMore = false)
             }
         }
-        lateinit var island: LinearLayout
+        lateinit var island: View
         compose.runOnIdle {
             val parent = compose.activity.findViewById<FrameLayout>(android.R.id.content)
             val dock = BottomNavigationController(compose.activity, services.session, ThemeTokens.of(true, 0, 0),
-                services.theme.roundScreen, parent) { _, action -> action.run() }
+                services.theme.roundScreen, parent)
             dock.addItem("主页", "feed", R.drawable.ic_nav_home) {}
             dock.addItem("我的", "profile", R.drawable.ic_nav_profile) {}
             dock.select(if (profile) "profile" else "feed")
             dock.setVisible(true, false, false)
-            island = parent.getChildAt(parent.childCount - 1) as LinearLayout
+            island = parent.getChildAt(parent.childCount - 1)
         }
         compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
         val label = if (profile) "设置" else "上滑加载更多"

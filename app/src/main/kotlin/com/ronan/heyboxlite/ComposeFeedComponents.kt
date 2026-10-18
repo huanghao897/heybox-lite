@@ -440,4 +440,4 @@ internal fun ObserveFeedLoadMore(
 
 internal fun feedHorizontalPadding(maxWidth: Dp, theme: ComposeThemeState): Dp =
     if (!theme.roundScreen) (12 * theme.uiScale).dp
-    else (maxWidth.value * 0.1f).coerceIn(13f, 23f).dp
+    else watchPageHorizontal(maxWidth, theme)

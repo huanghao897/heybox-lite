@@ -33,6 +33,7 @@ internal data class ComposeThemeState(
     val roundScreen: Boolean,
     val rotaryRequest: ComposeRotaryRequest? = null,
     val motionLevel: Int = MotionLevel.REDUCED,
+    val reading: ComposeReadingSettings = ComposeReadingSettings(),
 )
 
 internal val LocalHeyboxTheme = staticCompositionLocalOf<ComposeThemeState> {

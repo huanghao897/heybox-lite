@@ -48,7 +48,9 @@ internal fun ComposePageHeader(title: String, onBack: (() -> Unit)?) {
 @Composable
 internal fun watchListEndPadding(withBottomNavigation: Boolean = false): Dp {
     val theme = LocalHeyboxTheme.current
-    val base = if (theme.roundScreen) (LocalConfiguration.current.screenHeightDp * 0.25f).dp
+    // Scrolling content stops at the lower chord; the rest is the arc and the dock.
+    val base = if (theme.roundScreen)
+        (LocalConfiguration.current.screenHeightDp * (1f - WATCH_BOTTOM_RATIO)).dp
         else watchDp(14)
     if (!withBottomNavigation) return base
     val metrics = LocalContext.current.resources.displayMetrics

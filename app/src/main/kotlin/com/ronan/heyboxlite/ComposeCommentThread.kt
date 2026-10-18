@@ -155,6 +155,7 @@ private fun ComposeDetailComment(
     val value = remember(comment) { composeCommentText(comment) }
     val images = remember(comment) { CommentData.commentImages(comment) }
     val cy = groupCy || CommentData.isCyComment(comment)
+    val typography = composePrimaryCommentTypography(roundScreen)
     val gesture = Modifier.composeCommentGestures(
         context = LocalContext.current,
         doubleTapReplyEnabled = doubleTapReplyEnabled,
@@ -186,9 +187,10 @@ private fun ComposeDetailComment(
                     linkColor = theme.link,
                     modifier = Modifier.fillMaxWidth().padding(top = 1.dp)
                         .testTag("comment-body-${CommentData.commentId(comment)}"),
-                    fontSize = (if (roundScreen) 12.5.sp else 13.sp) * theme.textScale,
-                    lineHeight = 18.sp * theme.textScale,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = typography.fontSize,
+                    lineHeight = typography.lineHeight,
+                    fontWeight = typography.fontWeight ?: FontWeight.Normal,
+                    letterSpacing = typography.letterSpacing,
                     cy = cy,
                 )
             }

@@ -82,7 +82,7 @@ internal fun WatchPage(
     if (state.roundScreen) {
         // Round safety space belongs to the scrolling content, never to a fixed toolbar.
         val contentTop = if (showPrimaryHeader) 0.dp else
-            (LocalConfiguration.current.screenWidthDp * 0.16f).dp
+            watchHeaderTop(LocalConfiguration.current.screenWidthDp.dp, state) + watchDp(8)
         Box(modifier.fillMaxSize().background(state.background)) {
             Column(Modifier.fillMaxSize().testTag("watch-page-content").verticalScroll(scrollState)) {
                 if (showPrimaryHeader) ComposePageHeader(title, onBack)

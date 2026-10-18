@@ -1,7 +1,5 @@
 package com.ronan.heyboxlite
 
-import android.graphics.Paint
-import android.graphics.Typeface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,12 +32,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.roundToInt
 
 @Composable
 internal fun ComposeDetailBlock(
@@ -61,7 +57,9 @@ internal fun ComposeDetailBlock(
             SelectionContainer(Modifier.weight(1f)) {
                 ComposeInlineText(display, theme.dark, theme.muted, theme.link,
                     Modifier.padding(start = watchDp(8)), fontSize = typography.fontSize,
-                    lineHeight = typography.lineHeight)
+                    lineHeight = typography.lineHeight,
+                    fontWeight = typography.fontWeight ?: FontWeight.Normal,
+                    letterSpacing = typography.letterSpacing)
             }
         }
         else -> {
@@ -72,50 +70,20 @@ internal fun ComposeDetailBlock(
             }
             SelectionContainer {
                 Column(verticalArrangement = Arrangement.spacedBy(
-                    ((services?.session?.bodyParagraphSpacing() ?: 9) * theme.uiScale).dp)) {
+                    (theme.reading.paragraphSpacing * theme.uiScale).dp)) {
                     paragraphs.forEach { paragraph ->
                         ComposeInlineText(paragraph, theme.dark,
                             if (block.kind == RichContent.Block.CAPTION) theme.muted else theme.text, theme.link,
                             fontSize = typography.fontSize,
                             fontWeight = typography.fontWeight ?: FontWeight.Normal,
                             lineHeight = typography.lineHeight,
+                            letterSpacing = typography.letterSpacing,
                             modifier = Modifier.fillMaxWidth())
                     }
                 }
             }
         }
     }
-}
-
-@Composable
-internal fun composeDetailBodyTypography(kind: Int, session: SessionStore?): TextStyle {
-    val theme = LocalHeyboxTheme.current
-    val size = when (kind) {
-        RichContent.Block.HEADING -> if (theme.roundScreen) 15f else 16f
-        RichContent.Block.CAPTION -> 11f
-        RichContent.Block.QUOTE -> if (theme.roundScreen) 12.5f else 13.5f
-        else -> if (theme.roundScreen) 13f else 14.5f
-    }
-    val fontSize = (size * theme.textScale * (session?.bodyTextScale() ?: 100) / 100f).sp
-    val spacing = (session?.bodyLineSpacing() ?: 122) / 100f
-    val multiplier = when (kind) {
-        RichContent.Block.HEADING -> 1.16f
-        RichContent.Block.CAPTION -> 1.3f
-        RichContent.Block.QUOTE -> maxOf(1.14f, spacing)
-        else -> maxOf(1.18f, spacing)
-    }
-    val density = LocalDensity.current
-    val extra = with(density) { watchDp(1).roundToPx() }
-    val lineHeight = remember(fontSize, density, extra, multiplier) {
-        // TextView's old renderer applies line spacing to font metrics, not the nominal sp size.
-        val paint = Paint().apply {
-            typeface = Typeface.DEFAULT
-            textSize = with(density) { fontSize.toPx() }
-        }
-        with(density) { (paint.getFontMetricsInt(null) * multiplier + extra).roundToInt().toSp() }
-    }
-    return TextStyle(fontSize = fontSize, lineHeight = lineHeight,
-        fontWeight = if (kind == RichContent.Block.HEADING) FontWeight.Bold else FontWeight.Normal)
 }
 
 @Composable

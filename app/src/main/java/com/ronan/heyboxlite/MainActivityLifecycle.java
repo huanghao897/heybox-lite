@@ -37,11 +37,7 @@ final class MainActivityLifecycle {
                     activity::applyAccessStatus);
             return;
         }
-        if ("detail".equals(activity.screen) && activity.currentDetailBody != null
-                && activity.currentDetailItem != null && activity.readingTimeTracker != null) {
-            activity.readingTimeTracker.start(activity.currentDetailItem.article,
-                    activity.currentDetailItem.id);
-        }
+        resumeReading();
         PresenceReporter.ping(activity.session, activity.readingTimeTracker,
                 activity::applyAccessStatus);
         activity.handler.removeCallbacks(presenceTick);
@@ -59,6 +55,16 @@ final class MainActivityLifecycle {
         if (activity.readingTimeTracker != null) activity.readingTimeTracker.pause();
         activity.handler.removeCallbacks(presenceTick);
         activity.saveCurrentDetailProgress();
+    }
+
+    private void resumeReading() {
+        if (!"detail".equals(activity.screen) || activity.readingTimeTracker == null) return;
+        ComposeDetailContext detail = activity.composeDetailContext();
+        FeedItem item = detail == null ? activity.currentDetailItem : detail.getItem();
+        boolean loaded = detail == null ? activity.currentDetailBody != null : detail.getBody() != null;
+        if (item == null || !loaded) return;
+        activity.readingTimeTracker.start(item.article, item.id);
+        activity.readingTimeTracker.tagTopic(item.topicName);
     }
 
     void onTrimMemory(int level) {

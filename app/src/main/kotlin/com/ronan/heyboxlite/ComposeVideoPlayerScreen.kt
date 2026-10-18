@@ -69,7 +69,7 @@ internal fun ComposeVideoPlayerScreen(
     BoxWithConstraints(modifier.fillMaxSize().background(Color.Black).testTag("video-player")) {
         val width = maxWidth
         val height = maxHeight
-        val inset = if (theme.roundScreen) minOf(width, height) * 0.12f else watchDp(8)
+        val inset = if (theme.roundScreen) minOf(width, height) * WATCH_TOP_RATIO else watchDp(8)
         val headerHeight = maxOf(watchDp(40), with(LocalDensity.current) {
             watchSp(18f).toDp()
         } + watchDp(8))

@@ -57,6 +57,7 @@ internal fun ComposeInlineText(
     emojiCatalog: ComposeInlineTextEmojiCatalog = ExistingComposeInlineTextEmojiCatalog,
     prefix: AnnotatedString = AnnotatedString(""),
     suffix: AnnotatedString = AnnotatedString(""),
+    letterSpacing: TextUnit = 0.sp,
 ) {
     var catalogRevision by remember(source, darkMode, emojiCatalog) { mutableIntStateOf(0) }
     val model = remember(source, darkMode, linkColor, cy, emojiCatalog, catalogRevision) {
@@ -133,7 +134,7 @@ internal fun ComposeInlineText(
         text = displayText,
         modifier = modifier,
         style = TextStyle(color = textColor, fontSize = fontSize, lineHeight = lineHeight,
-            fontWeight = fontWeight, fontFamily = FontFamily.SansSerif,
+            fontWeight = fontWeight, fontFamily = FontFamily.SansSerif, letterSpacing = letterSpacing,
             platformStyle = PlatformTextStyle(includeFontPadding = false)),
         maxLines = maxLines,
         overflow = if (ellipsize == null) TextOverflow.Clip else TextOverflow.Ellipsis,

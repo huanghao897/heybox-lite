@@ -7,19 +7,31 @@ final class ComposeCommentRequests {
     ComposeCommentRequests(MainActivity activity) { this.activity = activity; }
 
     void like(String id, boolean liked, ApiClient.Callback callback) {
+        ComposeDetailContext detail = current(callback);
+        if (detail == null) return;
         if (!allow("评论点赞", callback)) return;
-        activity.writeActions.commentLike(id, activity.currentLinkHsrc, liked, callback);
+        activity.writeActions.commentLike(id, detail.getHsrc(), liked, callback);
     }
 
     void replies(String id, String cursor, ApiClient.Callback callback) {
+        ComposeDetailContext detail = current(callback);
+        if (detail == null) return;
         activity.api.get(EndpointProvider.subComments(),
-                OfficialRequestParams.subComments(id, cursor, activity.currentLinkHsrc), callback);
+                OfficialRequestParams.subComments(id, cursor, detail.getHsrc()), callback);
     }
 
     void send(String text, String rootId, String replyId, ApiClient.Callback callback) {
+        ComposeDetailContext detail = current(callback);
+        if (detail == null) return;
         if (!allow("评论", callback)) return;
-        activity.writeActions.createComment(activity.currentLinkId, activity.currentLinkHsrc,
-                activity.currentAuthCode, text, rootId, replyId, callback);
+        activity.writeActions.createComment(detail.getItem().id, detail.getHsrc(),
+                detail.getAuthCode(), text, rootId, replyId, callback);
+    }
+
+    private ComposeDetailContext current(ApiClient.Callback callback) {
+        ComposeDetailContext detail = activity.composeDetailContext();
+        if (detail == null) callback.onError("当前帖子已关闭，请重新打开");
+        return detail;
     }
 
     private boolean allow(String action, ApiClient.Callback callback) {

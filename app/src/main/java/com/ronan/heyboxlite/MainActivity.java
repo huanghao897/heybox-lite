@@ -353,15 +353,16 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                     this.localCache, this.liteDialogs, new DiagnosticsController.Host() {
                         @Override
                         public DiagnosticsController.RuntimeState runtimeState() {
+                            ComposeDetailContext detail = composeDetailContext();
                             return new DiagnosticsController.RuntimeState(
-                                    MainActivity.this.currentLinkId,
-                                    MainActivity.this.currentLinkHsrc,
+                                    detail == null ? currentLinkId : detail.getItem().id,
+                                    detail == null ? currentLinkHsrc : detail.getHsrc(),
                                     MainActivity.this.screen,
                                     MainActivity.this.feedPage.itemCount(),
                                     !MainActivity.this.feedPage.paging().lastval().isEmpty(),
                                     MainActivity.this.feedPage.paging().lastPull(),
                                     MainActivity.this.feedPage.paging().noMore(),
-                                    MainActivity.this.lastDetailDiagnostics);
+                                    detail == null ? lastDetailDiagnostics : detail.getDiagnostics());
                         }
 
                         @Override
@@ -513,7 +514,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         MainContentFeatures features = new MainContentFeatures(this, this.session, this.api,
                 this.writeActions, this.localCache, this.themeTokens, this.searchBars,
                 this.settingsUi, this.checkinCenterCoordinator, this.handler,
-                contentFeatureHost());
+                new MainContentHost(this));
         this.detailContentRenderer = features.detailContentRenderer;
         this.userSpacePage = features.userSpacePage;
         this.savedContentController = features.savedContentController;
@@ -521,132 +522,6 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.qrLoginPage = features.qrLoginPage;
         this.postActions = features.postActions;
         this.feedPage = features.feedPage;
-    }
-
-    private MainContentFeatures.Host contentFeatureHost() {
-        return new MainContentFeatures.Host() {
-            @Override public String screen() { return MainActivity.this.screen; }
-            @Override public String currentLinkId() { return MainActivity.this.currentLinkId; }
-            @Override public String currentLinkHsrc() { return currentLinkHsrc; }
-            @Override public FeedItem currentDetailItem() { return currentDetailItem; }
-            @Override public List<FeedItem> searchItems() { return searchPage.items(); }
-            @Override public void prepareReadingCenter() { prepareReadingCenterChrome(); }
-            @Override public void prepareSavedPage(String value) {
-                prepareSavedPageChrome(value);
-            }
-            @Override public void prepareProfile() {
-                activate("profile");
-                title.setText(R.string.title_profile);
-                action.setVisibility(View.INVISIBLE);
-            }
-            @Override public void prepareLogin() {
-                screen = "login";
-                shellBar.setVisibility(View.GONE);
-                setBottomNavVisible(false);
-                leading.setVisibility(View.INVISIBLE);
-                action.setVisibility(View.INVISIBLE);
-                title.setText(R.string.title_qr_login);
-            }
-            @Override public void prepareFeed() {
-                activate("feed");
-                title.setText(R.string.title_feed);
-                action.setText("");
-                setIcon(action, R.drawable.ic_refresh, TEXT, 19);
-                action.setVisibility(View.INVISIBLE);
-                action.setOnClickListener(view -> feedPage.load(true));
-            }
-            @Override public void showContent(View view) {
-                content.removeAllViews();
-                content.addView(view, match());
-            }
-            @Override public void showPage(View view) { transitionTo(view); }
-            @Override public void retainPage(String key, View view) {
-                retainedPages.put(key, view);
-            }
-            @Override public void showLoading() { MainActivity.this.showLoading(); }
-            @Override public void hideLoading() { MainActivity.this.hideLoading(); }
-            @Override public void showMessage(String message) {
-                MainActivity.this.showMessage(message);
-            }
-            @Override public void showToast(String message) { toast(message); }
-            @Override public void showProfile() { MainActivity.this.showProfile(); }
-            @Override public void showLogin() { MainActivity.this.showLogin(); }
-            @Override public void showFeed() { MainActivity.this.showFeed(); }
-            @Override public void showSearch() { MainActivity.this.showSearch(); }
-            @Override public void showReadingCenter() {
-                MainActivity.this.showReadingCenter();
-            }
-            @Override public void showReadingStats() {
-                MainActivity.this.showReadingStats();
-            }
-            @Override public void showFavorites() { MainActivity.this.showFavorites(); }
-            @Override public void showCheckinCenter() {
-                MainActivity.this.showCheckinCenter();
-            }
-            @Override public void showLeaderboard() {
-                MainActivity.this.showLeaderboard();
-            }
-            @Override public void showSettings() { showSettingsHome(); }
-            @Override public void showDetail(FeedItem item) {
-                MainActivity.this.showDetail(item);
-            }
-            @Override public void showUserSpace(String id, String name, String avatar) {
-                MainActivity.this.showUserSpace(id, name, avatar);
-            }
-            @Override public void openImages(ImageView source, String[] urls, int index) {
-                MainActivity.this.openImage(source, urls, index);
-            }
-            @Override public void addBottomSpace(LinearLayout page) {
-                addBottomNavSafeSpace(page);
-            }
-            @Override public void loginCompleted() {
-                invalidateNativeSessionContent();
-                if (composeAppHost != null) composeAppHost.invalidateProfile();
-                toast("登录成功");
-                EmojiStore.load(api, () -> { });
-                showFeed();
-                PresenceReporter.pingNow(session, readingTimeTracker,
-                        MainActivity.this::applyAccessStatus);
-                RemoteConfig.load(session, () ->
-                        applyAccessStatus(RemoteConfig.accessStatus()));
-            }
-            @Override public void feedChanged() { feedPage.notifyItemsChanged(); if (composeAppHost != null) composeAppHost.invalidateFeed(); }
-            @Override public void setFeedRefreshBusy(boolean busy) {
-                action.setEnabled(!busy);
-                action.setAlpha(busy ? 0.45f : 1f);
-            }
-            @Override public void markFeedLateralTransition() {
-                if ("profile".equals(screen)) {
-                    pendingBackTransition = true;
-                    pendingLateralPush = true;
-                }
-            }
-            @Override public FeedAdapter createFeedAdapter(List<FeedItem> items) {
-                return MainActivity.this.createFeedAdapter(items);
-            }
-            @Override public String readingSummary() { return readingEntrySummary(); }
-            @Override public boolean savedScreenActive() {
-                return "saved".equals(screen);
-            }
-            @Override public int pageHorizontalPadding() {
-                return MainActivity.this.pageHorizontalPadding();
-            }
-            @Override public int pageTopPadding() {
-                return MainActivity.this.pageTopPadding();
-            }
-            @Override public int subpageTopPadding() {
-                return MainActivity.this.subpageTopPadding();
-            }
-            @Override public int roundHeaderInset() {
-                return roundHorizontalInset(RoundLayoutMetrics.HEADER_HORIZONTAL_RATIO, 10);
-            }
-            @Override public int roundHeaderTopPadding() {
-                return MainActivity.this.layout.roundHeaderTopPadding();
-            }
-            @Override public int roundSearchInset() {
-                return roundHorizontalInset(RoundLayoutMetrics.SEARCH_HORIZONTAL_RATIO, 6);
-            }
-        };
     }
 
     void invalidateNativeSessionContent() {
@@ -752,6 +627,14 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         return this.layout != null && this.layout.usesRoundLayout();
     }
 
+    ComposeDetailContext composeDetailContext() {
+        if (this.composeAppHost == null || !this.composeAppHost.isMounted()
+                || this.composeLayer == null || this.composeLayer.getVisibility() != View.VISIBLE) return null;
+        return this.composeAppHost.currentDetailContext();
+    }
+
+    int roundHeaderTopPadding() { return this.layout.roundHeaderTopPadding(); }
+
     boolean usesWatchLayout() {
         return this.layout != null && this.layout.usesWatchLayout();
     }
@@ -761,7 +644,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         return this.layout.pageHorizontalPadding();
     }
 
-    private int pageTopPadding() {
+    int pageTopPadding() {
         return this.layout.pageTopPadding();
     }
 
@@ -770,7 +653,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         return this.layout.subpageTopPadding();
     }
 
-    private int roundHorizontalInset(float targetRatio, int minimumDp) {
+    int roundHorizontalInset(float targetRatio, int minimumDp) {
         return this.layout.horizontalInset(targetRatio, minimumDp);
     }
 
@@ -816,7 +699,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         }
     }
 
-    private void addBottomNavSafeSpace(LinearLayout page) {
+    void addBottomNavSafeSpace(LinearLayout page) {
         if (page == null) {
             return;
         }
@@ -1031,7 +914,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         return roundHeaderInnerInset();
     }
 
-    private void activate(String key) {
+    void activate(String key) {
         stopQrPolling();
         this.screen = key;
         if (this.shellBar != null) {
@@ -1151,7 +1034,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         if (this.qrLoginPage != null) this.qrLoginPage.stop();
     }
 
-    private void showFeed() {
+    void showFeed() {
         if (this.composeBridge != null && this.composeBridge.showRouteIfMounted("feed")) return;
         if ("profile".equals(this.screen)) this.pendingLateralPush = true;
         this.feedPage.show();
@@ -1160,7 +1043,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         if (this.profilePage != null) this.profilePage.updateReadingSummary();
     }
 
-    private String readingEntrySummary() {
+    String readingEntrySummary() {
         ReadingTimeTracker.Stats stats = this.readingTimeTracker.stats();
         return "今天 " + Format.readingDuration(stats.todayMs()) + " · " + stats.todayCount + " 篇";
     }
@@ -1170,7 +1053,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.composeBridge.showReadingStats();
     }
 
-    private void showSearch() {
+    void showSearch() {
         showSearch(false);
     }
 
@@ -1377,7 +1260,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         return this.composeBridge != null && this.composeBridge.showRouteIfMounted(route);
     }
 
-    private void showUserSpace(String userId, String fallbackName, String fallbackAvatar) {
+    void showUserSpace(String userId, String fallbackName, String fallbackAvatar) {
         if (TextUtils.isEmpty(userId)) {
             toast(getString(R.string.message_missing_user_id));
             return;
@@ -1405,7 +1288,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.content.addView(page, match());
     }
 
-    private void showProfile() {
+    void showProfile() {
         if (showComposeRoute("profile")) return;
         if ("checkin_center".equals(this.screen) && this.checkinCenterPage != null) {
             this.checkinCenterPage.onPause();
@@ -1419,7 +1302,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.profilePage.show();
     }
 
-    private void showSettingsHome() {
+    void showSettingsHome() {
         if (showComposeRoute("settings_home")) return;
         stopQrPolling();
         this.screen = "settings_home";
@@ -1526,12 +1409,12 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         }
     }
 
-    private void showReadingCenter() {
+    void showReadingCenter() {
         if (this.composeBridge != null && this.composeBridge.showRouteIfMounted("reading_center")) return;
         this.savedContentController.showReadingCenter();
     }
 
-    private void prepareReadingCenterChrome() {
+    void prepareReadingCenterChrome() {
         stopQrPolling();
         ensureEmojiCatalog(() -> {
         });
@@ -1547,12 +1430,12 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.pendingBackTransition = false;
     }
 
-    private void showFavorites() {
+    void showFavorites() {
         if (showComposeRoute("favorites")) return;
         this.savedContentController.showFavorites();
     }
 
-    private void prepareSavedPageChrome(String pageTitle) {
+    void prepareSavedPageChrome(String pageTitle) {
         stopQrPolling();
         this.screen = "saved";
         setBottomNavVisible(false);
@@ -1563,7 +1446,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         this.content.removeAllViews();
     }
 
-    private FeedAdapter createFeedAdapter(List<FeedItem> items) {
+    FeedAdapter createFeedAdapter(List<FeedItem> items) {
         return this.feedPage.createAdapter(items);
     }
 
@@ -2011,10 +1894,10 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     /** Compatibility wrappers for the native fallback shell. */
     void transitionTo(View next) { this.legacyUi.transitionTo(next); }
     private void cancelAllMotion() { this.legacyUi.cancelAllMotion(); }
-    private void showLoading() { this.legacyUi.showLoading(); }
-    private void hideLoading() { this.legacyUi.hideLoading(); }
+    void showLoading() { this.legacyUi.showLoading(); }
+    void hideLoading() { this.legacyUi.hideLoading(); }
     private void showDetailLoadingOverlay() { this.legacyUi.showDetailLoadingOverlay(); }
-    private void showMessage(String message) { this.legacyUi.showMessage(message); }
+    void showMessage(String message) { this.legacyUi.showMessage(message); }
     private void ensurePageBackdrop(View view) { this.legacyUi.ensurePageBackdrop(view); }
     private void removeViewWithTag(String tag) { this.legacyUi.removeViewWithTag(tag); }
     private Typeface appRegularTypeface() { return Typeface.DEFAULT; }
@@ -2025,7 +1908,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     private GradientDrawable round(int color, int radius) {
         return this.legacyUi.round(color, radius);
     }
-    private void setIcon(TextView view, int resource, int color, int size) {
+    void setIcon(TextView view, int resource, int color, int size) {
         this.legacyUi.setIcon(view, resource, color, size);
     }
     void runWithPressFeedback(View view, Runnable action) {
@@ -2035,7 +1918,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     private void addTop(LinearLayout parent, View view, int margin) {
         this.legacyUi.addTop(parent, view, margin);
     }
-    private FrameLayout.LayoutParams match() { return this.legacyUi.match(); }
+    FrameLayout.LayoutParams match() { return this.legacyUi.match(); }
     private int dp(int value) { return this.legacyUi.dp(value); }
     private float sp(float value) { return this.legacyUi.sp(value); }
     void toast(String message) { this.legacyUi.toast(message); }

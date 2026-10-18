@@ -236,8 +236,6 @@ internal fun ComposeDisplaySettingsScreen(
 internal fun ComposeDisplayPreviewRoute(services: ComposeServices, onBack: () -> Unit) {
     val session = services.session
     val state = LocalHeyboxTheme.current
-    val bodyScale = session.bodyTextScale() / 100f
-    val lineScale = session.bodyLineSpacing() / 100f
     WatchPage("界面预览", onBack) {
         Text(
             text = "预览使用当前已保存的显示参数",
@@ -286,9 +284,7 @@ internal fun ComposeDisplayPreviewRoute(services: ComposeServices, onBack: () ->
             Text(
                 text = "这是正文第一段，用于预览文字大小、字间距与行距。\n\n这是正文第二段。调整设置后保存，再回到这里就能查看最终效果",
                 color = state.text,
-                fontSize = watchSp(14f * bodyScale),
-                lineHeight = watchSp(14f * bodyScale * lineScale),
-                fontWeight = if (session.bodyBold()) FontWeight.Medium else FontWeight.Normal,
+                style = composeDetailBodyTypography(RichContent.Block.TEXT, session),
                 modifier = Modifier.padding(top = watchDp(session.bodyParagraphSpacing())),
             )
         }
@@ -302,8 +298,7 @@ internal fun ComposeDisplayPreviewRoute(services: ComposeServices, onBack: () ->
             Text(
                 text = "一级评论会稍微加粗，方便快速浏览主要观点",
                 color = state.text,
-                fontSize = watchSp(13f),
-                fontWeight = FontWeight.Bold,
+                style = composePrimaryCommentTypography(state.roundScreen),
                 modifier = Modifier.padding(top = watchDp(7)),
             )
             Row(modifier = Modifier.padding(top = watchDp(7))) {

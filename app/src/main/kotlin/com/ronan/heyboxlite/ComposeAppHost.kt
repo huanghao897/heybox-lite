@@ -40,7 +40,8 @@ internal class ComposeAppHost(
     private val servicesState = mutableStateOf(
         ComposeServices(
             activity, session, api, GameDetailClient(api), cache, handler, reading, checkin,
-            composeThemeState(tokens, uiScale, textScale, roundScreen), toast,
+            composeThemeState(tokens, uiScale, textScale, roundScreen)
+                .copy(reading = ComposeReadingSettings.from(session)), toast,
         ),
     )
     internal val feed = ComposeFeedController(session, api, cache, toast::show)
@@ -203,7 +204,8 @@ internal class ComposeAppHost(
         view.setBackgroundColor(tokens.background)
         val current = servicesState.value
         servicesState.value = current.copy(
-            theme = composeThemeState(tokens, uiScale, textScale, roundScreen),
+            theme = composeThemeState(tokens, uiScale, textScale, roundScreen)
+                .copy(reading = ComposeReadingSettings.from(current.session)),
         )
     }
 
@@ -319,6 +321,8 @@ internal class ComposeAppHost(
 
     fun currentDetailItem(): FeedItem? = navigation.detail.value?.item
     fun currentDetailBody(): org.json.JSONObject? = navigation.detail.value?.body
+    fun currentDetailContext(): ComposeDetailContext? =
+        if (isRoute("detail")) navigation.detail.value?.actionContext() else null
     fun currentDetailEntryKey(): Long = navigation.detail.value?.entryKey ?: -1
     fun detailNeedsLoad(): Boolean = navigation.detail.value?.let { it.loading || it.refreshPending } == true
 

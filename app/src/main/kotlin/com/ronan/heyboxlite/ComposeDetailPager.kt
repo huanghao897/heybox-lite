@@ -69,7 +69,7 @@ internal fun ComposeDetailPager(
     BoxWithConstraints(Modifier.fillMaxSize().background(theme.background)
         .graphicsLayer { alpha = if (visible) 1f else 0f }) {
         val headerTop = watchHeaderTop(maxWidth, theme)
-        val inset = watchPageHorizontal(maxWidth, theme)
+        val inset = watchReadingHorizontal(maxWidth, theme)
         val padding = PaddingValues(start = inset, end = inset,
             top = headerTop + watchDp(8), bottom = watchListEndPadding())
         HorizontalPager(

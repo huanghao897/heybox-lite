@@ -32,8 +32,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
                 this,
                 message -> activity.toast(message));
         activity.bottomNavigation = new BottomNavigationController(activity, activity.session,
-                activity.themeTokens, activity.usesRoundLayout(), body,
-                activity::runWithPressFeedback);
+                activity.themeTokens, activity.usesRoundLayout(), body);
         activity.bottomNavigation.addItem(activity.getString(R.string.title_feed), "feed",
                 R.drawable.ic_nav_home, activity::onFeedNavClick);
         activity.bottomNavigation.addItem(activity.getString(R.string.title_profile), "profile",
@@ -148,7 +147,6 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
             activity.detailPager = null;
             activity.detailScroll = null;
             activity.detailCommentScroll = null;
-            activity.currentDetailBody = null;
         }
         showRoute(route);
         if (composeDetail != null) composeDetail.routeChanged();
@@ -194,9 +192,10 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
             activity.postActions.toggleFeedFavorite(item);
         } else if (action == ComposeAppCallbacks.ACTION_CACHE) {
             activity.postActions.toggleFeedCache(item);
-            if (activity.localCache.isWatchLater(item.id) && activity.currentDetailBody != null
-                    && item.id.equals(activity.currentLinkId)) {
-                activity.detailActionBar.refreshOffline(item, activity.currentDetailBody);
+            ComposeDetailContext detail = activity.composeDetailContext();
+            if (activity.localCache.isWatchLater(item.id) && detail != null && detail.getBody() != null
+                    && item.id.equals(detail.getItem().id)) {
+                activity.detailActionBar.refreshOffline(item, detail.getBody());
             }
         } else if (action == ComposeAppCallbacks.ACTION_COMMENT) {
             openDetail(item);
@@ -252,6 +251,10 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
             activity.composeAppHost.updateTheme(activity.themeTokens,
                     activity.usesRoundLayout(), activity.session.uiScale() / 100.0f,
                     activity.session.textScale() / 100.0f);
+        }
+        if (activity.bottomNavigation != null) {
+            activity.bottomNavigation.applyTheme(activity.themeTokens,
+                    activity.usesRoundLayout());
         }
         syncChrome(null);
     }

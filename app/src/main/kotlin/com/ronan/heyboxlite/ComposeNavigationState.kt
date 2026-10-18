@@ -22,6 +22,9 @@ internal data class ComposeDetailState(
     val useImagePager: Boolean = false,
     val likeOverrides: Map<String, ComposeCommentLikeState> = emptyMap(),
     val refreshPending: Boolean = true,
+    val hsrc: String = "",
+    val authCode: String = "",
+    val diagnostics: String = "",
 )
 
 internal class ComposeNavigationState {
@@ -119,7 +122,8 @@ internal class ComposeNavigationState {
         detail.value = previous.copy(item = document.item, content = document.content,
             videos = document.videos, comments = composeMergeDetailComments(document.comments, previous, preview),
             loading = preview,
-            link = document.link, body = document.body, error = "", useImagePager = document.useImagePager)
+            link = document.link, body = document.body, error = "", useImagePager = document.useImagePager,
+            hsrc = document.hsrc, authCode = document.authCode, diagnostics = document.diagnostics)
     }
 
     fun showDetailResult(
@@ -139,6 +143,8 @@ internal class ComposeNavigationState {
             comments,
             false,
             result.body?.optJSONObject("result")?.optJSONObject("link"),
+            body = result.body, hsrc = result.hsrc, authCode = result.authCode,
+            diagnostics = result.diagnostics,
         )
     }
 

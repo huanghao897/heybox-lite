@@ -21,6 +21,31 @@ import org.robolectric.annotation.LooperMode
 @Config(sdk = [28], application = Application::class, shadows = [DetailLoadCompletionApiShadow::class])
 @LooperMode(LooperMode.Mode.PAUSED)
 class ComposeDetailParentRefreshTest {
+    @Test fun actionContextFollowsTheRouteEntryInsteadOfTheLastOpenedPost() {
+        Fixture().use { f ->
+            val navigation = f.host.navigation
+            navigation.showDetailLoading(post("parent"))
+            f.host.showDetailDocument(document("parent").copy(hsrc = "parent-source", authCode = "parent-auth"))
+            val parent = f.host.currentDetailContext()!!
+            assertEquals("parent", parent.item.id)
+            assertEquals("parent-source", parent.hsrc)
+
+            navigation.navigate("user_space?user=author")
+            assertNull("A user page must not expose its saved parent's write context", f.host.currentDetailContext())
+            navigation.showDetailLoading(post("child"))
+            f.host.showDetailDocument(document("child").copy(hsrc = "child-source", authCode = "child-auth"))
+            val child = f.host.currentDetailContext()!!
+            assertNotEquals(parent.entryKey, child.entryKey)
+            assertEquals("child-source", child.hsrc)
+            assertEquals("child-auth", child.authCode)
+
+            back(navigation, "user_space?user=author")
+            assertNull(f.host.currentDetailContext())
+            back(navigation, "detail")
+            assertEquals(parent, f.host.currentDetailContext())
+        }
+    }
+
     @Test fun cachedParentStillNeedsLoadAfterNestedChildRequestFinishesAndReturns() {
         Fixture().use { f ->
             val navigation = f.host.navigation

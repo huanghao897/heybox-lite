@@ -26,7 +26,9 @@ final class ComposeDetailRuntime implements AutoCloseable {
         loader = new DetailLoadCoordinator(activity, activity.api, activity.localCache,
                 activity.handler, new DetailLoadCoordinator.Host() {
             @Override public boolean active(FeedItem item) {
-                return current() && item.id.equals(activity.currentLinkId);
+                if (!current()) return false;
+                FeedItem active = activity.composeAppHost.currentDetailItem();
+                return active != null && item.id.equals(active.id);
             }
             @Override public void hideLoading() { }
             @Override public void requestFinished() {
@@ -83,20 +85,6 @@ final class ComposeDetailRuntime implements AutoCloseable {
         FeedItem item = activity.composeAppHost.currentDetailItem();
         if (item == null) return;
         activity.screen = "detail";
-        activity.currentDetailItem = item;
-        activity.currentLinkId = item.id;
-        activity.currentLinkHsrc = item.hsrc;
-        activity.currentDetailBody = activity.composeAppHost.currentDetailBody();
-        activity.currentAuthCode = "";
-        JSONObject result = activity.currentDetailBody == null ? null
-                : activity.currentDetailBody.optJSONObject("result");
-        JSONObject link = result == null ? null : result.optJSONObject("link");
-        if (link != null) {
-            activity.currentLinkHsrc = Json.first(activity.postActions.hsrc(link), item.hsrc);
-        }
-        activity.currentAuthCode = Json.first(link == null ? "" : link.optString("auth_code"),
-                result == null ? "" : result.optString("auth_code"),
-                activity.currentDetailBody == null ? "" : activity.currentDetailBody.optString("auth_code"));
         activity.detailPager = null;
         activity.detailScroll = null;
         activity.detailCommentScroll = null;
@@ -118,14 +106,9 @@ final class ComposeDetailRuntime implements AutoCloseable {
                 ComposeDetailDocument value = ComposeDetailDocument.parse(new JSONObject(snapshot), fallback, playGif);
                 activity.handler.post(() -> {
                     if (!current() || generation != request) return;
-                    activity.currentDetailBody = value.getBody();
                     PostActionController.LikeState likes = activity.postActions.linkLikeState(value.getLink(), fallback);
                     value.getItem().liked = likes.liked;
                     value.getItem().likes = likes.likes;
-                    activity.currentDetailItem = value.getItem();
-                    activity.currentLinkHsrc = value.getHsrc();
-                    activity.currentAuthCode = value.getAuthCode();
-                    activity.lastDetailDiagnostics = value.getDiagnostics();
                     activity.composeAppHost.showDetailDocument(value);
                     loader.markRendered();
                     parseInFlight = false;
