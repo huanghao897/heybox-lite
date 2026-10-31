@@ -72,6 +72,10 @@ final class NoticeCenter {
                 this.session.testReleaseId(), new UpdateChecker.Callback() {
                     @Override
                     public void onResult(UpdateChecker.Result result) {
+                        if (!result.authorizationWarning.isEmpty()) {
+                            localCache.log("update device authorization: "
+                                    + result.authorizationWarning);
+                        }
                         if (!result.updateAvailable || activityUnavailable()) return;
                         if (result.title != null || result.notes != null) {
                             showUpdate(result);
@@ -222,7 +226,8 @@ final class NoticeCenter {
                             checking[0] = false;
                             if (activityUnavailable()) return;
                             if (result.updateAvailable) showUpdate(result);
-                            else host.showToast("当前已是最新版");
+                            String message = result.checkMessage();
+                            if (!message.isEmpty()) host.showToast(message);
                         }
 
                         @Override

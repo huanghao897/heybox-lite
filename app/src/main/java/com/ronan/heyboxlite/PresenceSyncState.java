@@ -8,6 +8,7 @@ final class PresenceSyncState {
     private long lastAttemptAt = -1L;
     private String lastIdentity = "";
     private boolean succeeded;
+    private String lastError = "";
 
     boolean shouldSend(long now, String identity, boolean hasToken, boolean force) {
         if (force || lastAttemptAt < 0L || !lastIdentity.equals(identity)) return true;
@@ -16,13 +17,20 @@ final class PresenceSyncState {
         return !hasToken || elapsed >= INTERVAL_MS;
     }
 
-    void record(long now, String identity, boolean success) {
+    void record(long now, String identity, boolean success, String error) {
         lastAttemptAt = now;
         lastIdentity = identity;
         succeeded = success;
+        lastError = success ? "" : error;
     }
 
     boolean ready(String identity, boolean hasToken) {
         return succeeded && hasToken && lastIdentity.equals(identity);
+    }
+
+    String updateWarning(String identity, boolean hasToken) {
+        if (ready(identity, hasToken)) return "";
+        if (lastIdentity.equals(identity) && !lastError.isEmpty()) return lastError;
+        return "设备认证暂不可用";
     }
 }

@@ -100,7 +100,8 @@ internal fun ComposeAboutScreen(
                                     if (!live || services.activity.isFinishing) return
                                     checking = false
                                     if (result.updateAvailable) update = result
-                                    else services.toast.show("当前已是最新版")
+                                    val message = result.checkMessage()
+                                    if (message.isNotEmpty()) services.toast.show(message)
                                 }
 
                                 override fun onError(message: String) {

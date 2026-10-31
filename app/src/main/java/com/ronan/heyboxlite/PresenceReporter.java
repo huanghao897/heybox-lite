@@ -7,13 +7,7 @@ import android.os.SystemClock;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URL;
+import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -23,7 +17,7 @@ final class PresenceReporter {
     }
 
     interface Completion {
-        void onComplete(boolean success);
+        void onComplete(boolean success, String warning);
     }
 
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
@@ -61,8 +55,16 @@ final class PresenceReporter {
                     session.appContext());
             if (SYNC.shouldSend(SystemClock.elapsedRealtime(), identity,
                     !authorization.token().isEmpty(), force)) {
-                AccessStatus status = request(session, payload, true);
-                SYNC.record(SystemClock.elapsedRealtime(), identity, status != null);
+                PresenceTransport.Result response = new PresenceTransport(session, authorization)
+                        .send(payload);
+                AccessStatus status = response.access;
+                SYNC.record(SystemClock.elapsedRealtime(), identity, status != null,
+                        response.errorMessage);
+                if (status == null) {
+                    new LocalDiagnosticsLog(session.appContext(),
+                            new File(session.appContext().getFilesDir(), "offline-cache"))
+                            .log("presence failed: " + response.diagnosticCode);
+                }
                 if (status != null && includeIdentity && identity.equals(session.userId())) {
                     session.markPresenceIdentityUploaded();
                 }
@@ -71,8 +73,10 @@ final class PresenceReporter {
                 }
             }
             if (completion != null) {
-                boolean ready = SYNC.ready(identity, !authorization.token().isEmpty());
-                MAIN.post(() -> completion.onComplete(ready));
+                boolean hasToken = !authorization.token().isEmpty();
+                boolean ready = SYNC.ready(identity, hasToken);
+                String warning = SYNC.updateWarning(identity, hasToken);
+                MAIN.post(() -> completion.onComplete(ready, warning));
             }
         });
     }
@@ -104,73 +108,5 @@ final class PresenceReporter {
         } catch (Exception ignored) {
             return "";
         }
-    }
-
-    private static AccessStatus request(SessionStore session, String payload,
-                                        boolean retryWithoutToken) {
-        HttpURLConnection connection = null;
-        try {
-            DeviceAuthorizationStore authorization = new DeviceAuthorizationStore(
-                    session.appContext());
-            URL url = new URL(presenceUrl());
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setConnectTimeout(3000);
-            connection.setReadTimeout(3000);
-            connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("User-Agent",
-                    "heybox-Lite/" + BuildConfig.VERSION_NAME);
-            authorization.apply(connection, session);
-            if (payload == null || payload.isEmpty()) {
-                connection.setDoOutput(false);
-            } else {
-                byte[] bytes = payload.getBytes("UTF-8");
-                connection.setDoOutput(true);
-                connection.setRequestProperty("Content-Type",
-                        "application/json; charset=utf-8");
-                connection.setFixedLengthStreamingMode(bytes.length);
-                OutputStream output = connection.getOutputStream();
-                output.write(bytes);
-                output.close();
-            }
-            int status = connection.getResponseCode();
-            InputStream stream = status >= 200 && status < 300
-                    ? connection.getInputStream() : connection.getErrorStream();
-            String response = read(stream);
-            if (status == HttpURLConnection.HTTP_UNAUTHORIZED && retryWithoutToken
-                    && !authorization.token().isEmpty()) {
-                authorization.clear();
-                return request(session, payload, false);
-            }
-            if (status < 200 || status >= 300) return null;
-            JSONObject body = response.isEmpty() ? new JSONObject() : new JSONObject(response);
-            String deviceToken = body.optString("deviceToken", "");
-            if (!deviceToken.isEmpty()) authorization.save(deviceToken);
-            return AccessStatus.from(body);
-        } catch (Exception ignored) {
-            return null;
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
-    }
-
-    private static String read(InputStream stream) throws Exception {
-        if (stream == null) return "";
-        StringBuilder value = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"))) {
-            char[] buffer = new char[1024];
-            int count;
-            while ((count = reader.read(buffer)) >= 0) value.append(buffer, 0, count);
-        }
-        return value.toString();
-    }
-
-    private static String presenceUrl() throws Exception {
-        URI source = new URI(UpdateChecker.requireTrustedUrl(BuildConfig.UPDATE_API_URL));
-        String authority = source.getRawAuthority();
-        if (authority == null || authority.isEmpty()) {
-            throw new IllegalArgumentException("missing update host");
-        }
-        return source.getScheme() + "://" + authority + "/api/presence";
     }
 }

@@ -19,6 +19,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class UpdateChecker {
+    interface Connections {
+        HttpURLConnection open(URL url) throws Exception;
+    }
+
     interface Callback {
         void onResult(Result result);
         void onError(String message);
@@ -33,9 +37,17 @@ final class UpdateChecker {
         final String downloadUrl;
         final int releaseId;
         final String channel;
+        final String authorizationWarning;
 
         Result(boolean updateAvailable, String version, String title, String notes,
                 String releaseUrl, String downloadUrl, int releaseId, String channel) {
+            this(updateAvailable, version, title, notes, releaseUrl, downloadUrl,
+                    releaseId, channel, "");
+        }
+
+        Result(boolean updateAvailable, String version, String title, String notes,
+                String releaseUrl, String downloadUrl, int releaseId, String channel,
+                String authorizationWarning) {
             this.updateAvailable = updateAvailable;
             this.version = version;
             this.title = title;
@@ -44,6 +56,14 @@ final class UpdateChecker {
             this.downloadUrl = downloadUrl;
             this.releaseId = releaseId;
             this.channel = channel;
+            this.authorizationWarning = "test".equalsIgnoreCase(channel) ? "" : authorizationWarning;
+        }
+
+        String checkMessage() {
+            if (!authorizationWarning.isEmpty()) {
+                return "已检查正式版更新；" + authorizationWarning;
+            }
+            return updateAvailable ? "" : "当前已是最新版";
         }
     }
 
@@ -54,17 +74,21 @@ final class UpdateChecker {
 
     static void check(String currentVersion, SessionStore session,
                       int testReleaseId, Callback callback) {
-        PresenceReporter.prepareUpdate(session, ready -> {
-            if (!ready) {
-                callback.onError("设备认证暂未完成，请稍后重试");
-                return;
-            }
-            EXECUTOR.execute(() -> request(currentVersion, session, testReleaseId, callback));
-        });
+        check(currentVersion, session, testReleaseId, callback,
+                url -> (HttpURLConnection) url.openConnection());
+    }
+
+    static void check(String currentVersion, SessionStore session, int testReleaseId,
+                      Callback callback, Connections connections) {
+        // Registration selects the private test channel; it must not gate public releases.
+        PresenceReporter.prepareUpdate(session, (ready, warning) ->
+                EXECUTOR.execute(() -> request(currentVersion, session, testReleaseId,
+                        ready ? "" : warning, callback, connections)));
     }
 
     private static void request(String currentVersion, SessionStore session, int testReleaseId,
-                                Callback callback) {
+                                String authorizationWarning, Callback callback,
+                                Connections connections) {
         HttpURLConnection connection = null;
         try {
             String fingerprint = InstalledApkFingerprint.read(new File(
@@ -72,7 +96,8 @@ final class UpdateChecker {
             String endpoint = buildEndpoint(requireTrustedUrl(BuildConfig.UPDATE_API_URL),
                     testReleaseId, fingerprint);
             URL url = new URL(endpoint);
-            connection = (HttpURLConnection) url.openConnection();
+            connection = connections.open(url);
+            connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(4000);
             connection.setReadTimeout(5000);
             connection.setRequestProperty("Accept", "application/json");
@@ -107,7 +132,8 @@ final class UpdateChecker {
                             "id", "releaseId", "release_id"),
                     firstNonEmpty(payload.optString("channel"),
                             payload.optString("releaseChannel"),
-                            payload.optString("release_channel"), "stable"));
+                            payload.optString("release_channel"), "stable"),
+                    authorizationWarning);
             if (result.updateAvailable && downloadUrl.isEmpty()) {
                 throw new IllegalStateException("未找到匹配的 APK 资源，可打开备用地址手动下载。");
             }
