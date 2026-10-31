@@ -26,6 +26,37 @@ import org.robolectric.shadows.ShadowNetworkInfo
 @Config(sdk = [28], application = Application::class, shadows = [DetailLoadCompletionApiShadow::class])
 @LooperMode(LooperMode.Mode.PAUSED)
 class ComposeDetailLoadCompletionTest {
+    @Test fun delayedResponseRenderDoesNotRepublishAnEntryPreviewWhileParsingIsPending() {
+        Fixture().use { f ->
+            f.host.onRender = { }
+            f.loader.load(f.item)
+            f.requests.single().callback.onSuccess(body("fresh"))
+
+            f.advance()
+
+            assertFalse("The asynchronous host has not acknowledged parsing yet", f.loader.rendered())
+            assertEquals("Only the completed response should be published", 1, f.host.documents.size)
+            assertEquals("fresh", f.host.documents.single().getJSONObject("result")
+                .getJSONObject("link").getString("text"))
+        }
+    }
+
+    @Test fun aPublishedEntryPreviewDoesNotPreventTheCompletedResponseFromReplacingIt() {
+        Fixture().use { f ->
+            f.host.onRender = { }
+            f.loader.load(f.item)
+            f.advance()
+            assertTrue(f.host.documents.single().optBoolean("_progressive_preview"))
+
+            f.requests.single().callback.onSuccess(body("fresh"))
+            f.advance()
+
+            assertEquals(2, f.host.documents.size)
+            assertEquals("fresh", f.host.documents.last().getJSONObject("result")
+                .getJSONObject("link").getString("text"))
+        }
+    }
+
     @Test fun plainDetailReportsCompletionOnceWithoutWaitingForTheDelayedRender() {
         Fixture().use { f ->
             f.loader.load(f.item)

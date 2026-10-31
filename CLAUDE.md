@@ -27,7 +27,8 @@ Compose 页面位于 `app/src/main/kotlin/com/ronan/heyboxlite/`，控制器负�
 
 | 类 | 职责 |
 |----|------|
-| `MainActivity` | 页面组织、列表、详情、评论、设置 |
+| `MainActivity` | 生命周期、顶层装配及剩余原生回退页面接线 |
+| `NativeDetailNavigator` / `NativeDetailPage` | 原生详情返回栈及活动文档/视图；与 Compose 路由状态隔离 |
 | `ApiClient` | 小黑盒接口请求 |
 | `SessionStore` | 本地登录态与开关 |
 | `ImageLoader` | 图片缓存、缩略图、查看器 |

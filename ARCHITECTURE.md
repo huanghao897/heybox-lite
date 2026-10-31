@@ -4,7 +4,9 @@
 
 ## 当前边界
 
-- `MainActivity`：Activity 生命周期和顶层组件装配，仍保留待拆分的原生回退布局与导航；原生内容回调接线由 `MainContentHost` 承担。原生回退详情请求由 `DetailLoadCoordinator` 管理，Compose 详情由路由状态拥有数据，`ComposeDetailRuntime` 只加载和发布文档，不再向 Activity 镜像一份详情元数据。
+- `MainActivity`：Activity 生命周期和顶层组件装配，仍保留待拆分的原生设置与其他回退页面装配；原生内容回调接线由 `MainContentHost` 承担。Compose 详情由路由状态拥有数据，`ComposeDetailRuntime` 只加载和发布文档，不向 Activity 镜像详情元数据。
+- `NativeDetailNavigator`：原生详情的返回目标、返回视图、作者页来源与父详情历史栈；统一系统返回与手势完成后的返回，不接管 Compose 导航。挂起父详情时转移完整文档/视图状态，恢复时复用原分页器和两页滚动位置；退出会话或销毁宿主时释放历史和返回目标。
+- `NativeDetailPage`：原生详情的唯一活动文档与视图所有者，负责装配、渐进替换、阅读位置和正文/评论分页，使用 `MainDetailFeatures` 和 `DetailLoadCoordinator`。离开或重载时清除旧凭据上下文和滚动控件引用，不在 Activity 保留镜像；网络/评论请求继续由已有组件负责。
 - `BottomNavigationController`：底部导航的挂载、尺寸更新和显隐；`ComposeBottomNavigation` 只绘制胶囊与处理点击。主题、圆屏模式或界面缩放变化时，宿主尺寸、图标尺寸和底部避让必须同步更新。
 - `CheckinCenterPage`：签到子页面切换、生命周期和业务回调接线。配对轮询、服务账号、手机号登录、任务设置分别由对应的 `Checkin*Flow` 管理，输入视图由 `CheckinAccountForms` 管理，稳定内容状态由 `CheckinCenterPageRenderer` 创建，结果文案由 `CheckinResultText` 统一生成。
 - `CheckinCenterClient` / `CheckinCenterTransport`：前者负责签到业务入口、异步回调和协议模型，后者负责固定 HTTPS 地址、响应大小、重定向和网络错误边界。
@@ -31,3 +33,5 @@
 `verifyJavaClassSize` / `verifyKotlinSourceSize` 会在编译前检查这些限制。需要修改大文件时，应先抽取职责并同步降低其上限。文字编码检查覆盖 Java、Kotlin 和资源。
 
 验证分为纯逻辑、Robolectric Compose 行为与真实 View 渲染、真机三层。前两层通过不能替代手表上的 GPU、表冠、媒体解码或系统返回验收；迁移未完成项持续记录在 `tasks/compose-migration-status.md`。
+
+核心行为、圆/方屏实机操作和各层证据标准见 `docs/watch-core-path-acceptance.md`。每批修改以一个完整行为为验收单位，同时核对状态、调用方、生命周期和相关回归；没有实机证据的项目不得记作整体验收完成。

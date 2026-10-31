@@ -27,7 +27,7 @@ public class DetailScrollPositionWiringTest {
     }
 
     private static String read() throws Exception {
-        return read("MainActivity.java");
+        return read("NativeDetailPage.java");
     }
 
     private static String read(String name) throws Exception {

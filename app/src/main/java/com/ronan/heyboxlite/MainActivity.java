@@ -10,14 +10,11 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
@@ -38,7 +35,6 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.json.JSONObject;
 
 @SuppressLint("WrongConstant")
 public final class MainActivity extends ComponentActivity implements BackSwipeFrameLayout.Host,
@@ -60,11 +56,9 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     private UpdateInstaller updateInstaller;
     DiagnosticsController diagnosticsController;
     private DetailContentRenderer detailContentRenderer;
-    private DetailHeaderRenderer detailHeaderRenderer;
     DetailActionBar detailActionBar;
-    DetailLoadCoordinator detailLoader;
-    private DetailPageAssembler detailPageAssembler;
-    private DetailCommentsSection detailCommentsSection;
+    final NativeDetailPage nativeDetail = new NativeDetailPage(this);
+    final NativeDetailNavigator detailNavigation = new NativeDetailNavigator(this);
     private UserSpacePage userSpacePage;
     SavedContentController savedContentController;
     private ProfilePage profilePage;
@@ -91,16 +85,9 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     TextView leading;
     TextView action;
     FeedPage feedPage;
-    ScrollView detailScroll;
-    ScrollView detailCommentScroll;
-    DetailPager detailPager;
     boolean shellAnimating;
     LocalCache localCache;
     CacheMaintenance cacheMaintenance;
-    FeedItem currentDetailItem;
-    private String userSpaceReturnScreen = "feed";
-    private final ContentNavigationHistory<DetailNavigationState> detailHistory =
-            new ContentNavigationHistory<>();
     private long lastExitBackAt;
     final Handler handler = new Handler(Looper.getMainLooper());
     private final MainActivityLifecycle lifecycle = new MainActivityLifecycle(this);
@@ -118,14 +105,6 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     final TransitionSnapshotStore fullScreenSnapshots = new TransitionSnapshotStore();
     final Map<String, View> retainedPages = new HashMap<>();
     String screen = "feed";
-    String detailReturn = "feed";
-    private View detailReturnView;
-    String detailReturnTitle = "";
-    String currentLinkId = "";
-    String currentLinkHsrc = "";
-    String currentAuthCode = "";
-    String lastDetailDiagnostics = "";
-    JSONObject currentDetailBody;
     boolean activityResumed;
     boolean accountBlockedScreen;
     private TextView accountBlockedMessage;
@@ -160,10 +139,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                         return MainActivity.this.screen;
                     }
                     @Override public View detailScrollTarget() {
-                        return MainActivity.this.detailPager != null
-                                && MainActivity.this.detailPager.showingComments()
-                                ? MainActivity.this.detailCommentScroll
-                                : MainActivity.this.detailScroll;
+                        return nativeDetail.scrollTarget();
                     }
                     @Override public View feedScrollTarget() {
                         return MainActivity.this.feedPage == null
@@ -355,14 +331,14 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                         public DiagnosticsController.RuntimeState runtimeState() {
                             ComposeDetailContext detail = composeDetailContext();
                             return new DiagnosticsController.RuntimeState(
-                                    detail == null ? currentLinkId : detail.getItem().id,
-                                    detail == null ? currentLinkHsrc : detail.getHsrc(),
+                                    detail == null ? nativeDetail.linkId : detail.getItem().id,
+                                    detail == null ? nativeDetail.hsrc : detail.getHsrc(),
                                     MainActivity.this.screen,
                                     MainActivity.this.feedPage.itemCount(),
                                     !MainActivity.this.feedPage.paging().lastval().isEmpty(),
                                     MainActivity.this.feedPage.paging().lastPull(),
                                     MainActivity.this.feedPage.paging().noMore(),
-                                    detail == null ? lastDetailDiagnostics : detail.getDiagnostics());
+                                    detail == null ? nativeDetail.diagnostics : detail.getDiagnostics());
                         }
 
                         @Override
@@ -527,66 +503,13 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     void invalidateNativeSessionContent() {
         NativeSessionContentReset.clear(this);
         if (this.profilePage != null) this.profilePage.invalidate();
-        this.detailReturnView = null;
     }
 
     private void initializeDetailFeatures() {
-        MainDetailFeatures detail = new MainDetailFeatures(this, this.session, this.api,
-                this.writeActions, this.localCache, this.themeTokens, this.postActions,
-                this.detailContentRenderer, this.readingTimeTracker, this.handler,
-                new MainDetailFeatures.Host() {
-                    @Override public FeedItem currentItem() { return currentDetailItem; }
-                    @Override public JSONObject currentBody() { return currentDetailBody; }
-                    @Override public String currentLinkId() { return currentLinkId; }
-                    @Override public String currentAuthCode() { return currentAuthCode; }
-                    @Override public DetailPager currentPager() { return detailPager; }
-                    @Override public boolean detailActive(FeedItem item) {
-                        return "detail".equals(screen) && item != null
-                                && item.id.equals(currentLinkId);
-                    }
-                    @Override public int dp(int value) { return MainActivity.this.dp(value); }
-                    @Override public int pageHorizontalPadding() {
-                        return MainActivity.this.pageHorizontalPadding();
-                    }
-                    @Override public int subpageTopPadding() {
-                        return MainActivity.this.subpageTopPadding();
-                    }
-                    @Override public int roundHeaderInnerInset() {
-                        return MainActivity.this.roundHeaderInnerInset();
-                    }
-                    @Override public boolean watchLayout() { return usesWatchLayout(); }
-                    @Override public boolean roundLayout() { return usesRoundLayout(); }
-                    @Override public void reloadDetail() {
-                        if (currentDetailItem != null) showDetail(currentDetailItem);
-                    }
-                    @Override public void showUserSpace(String id, String name, String avatar) {
-                        MainActivity.this.showUserSpace(id, name, avatar);
-                    }
-                    @Override public void hideLoading() { MainActivity.this.hideLoading(); }
-                    @Override public void renderDetail(JSONObject body, FeedItem fallback) {
-                        MainActivity.this.renderDetail(body, fallback);
-                    }
-                    @Override public void showMessage(String message) {
-                        MainActivity.this.showMessage(message);
-                    }
-                    @Override public void showToast(String message) { toast(message); }
-                    @Override public LinearLayout articleSurface() {
-                        return detailArticleSurface();
-                    }
-                    @Override public View detailReturnPreview() {
-                        return MainActivity.this.detailReturnPreview();
-                    }
-                    @Override public View detailBackButton() {
-                        return MainActivity.this.detailBackButton();
-                    }
-                });
-        this.detailHeaderRenderer = detail.headerRenderer;
+        MainDetailFeatures detail = this.nativeDetail.initialize(this.detailContentRenderer);
         this.commentController = detail.commentController;
         this.commentRenderer = detail.commentRenderer;
-        this.detailCommentsSection = detail.commentsSection;
         this.detailActionBar = detail.actionBar;
-        this.detailLoader = detail.loader;
-        this.detailPageAssembler = detail.pageAssembler;
     }
 
     private void buildShellView() {
@@ -657,7 +580,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         return this.layout.horizontalInset(targetRatio, minimumDp);
     }
 
-    private int roundHeaderInnerInset() {
+    int roundHeaderInnerInset() {
         return this.layout.headerInnerInset();
     }
 
@@ -721,7 +644,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     }
 
     void showTopLevel(int index) {
-        if ("user_space".equals(this.screen) && !this.detailHistory.isEmpty()) {
+        if ("user_space".equals(this.screen) && this.detailNavigation.hasHistory()) {
             discardDetailHistory();
         }
         if ("feed".equals(this.screen) && index != 0) {
@@ -750,23 +673,14 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     }
 
     private String backTargetScreenKey() {
-        if ("detail".equals(this.screen)) return this.detailReturn;
-        if ("user_space".equals(this.screen)) {
-            return this.detailHistory.isEmpty() ? this.userSpaceReturnScreen : "detail";
-        }
-        if ("saved".equals(this.screen)) return this.savedContentController.returnScreen();
-        return ScreenRoutes.staticParentOrDefault(this.screen, "feed");
+        return this.detailNavigation.backTarget();
     }
 
-    private boolean canDetailSwipeBack() {
-        return "detail".equals(this.screen);
-    }
-
-    private void captureShellSnapshot(String key, View view) {
+    void captureShellSnapshot(String key, View view) {
         this.screenSnapshots.capture(key, 8, view, this.BG, this.localCache);
     }
 
-    private void captureFullScreenSnapshot(String key) {
+    void captureFullScreenSnapshot(String key) {
         this.fullScreenSnapshots.capture(key, 4, this.shellRoot, this.BG, this.localCache);
     }
     void captureComposeReturnSnapshot() { captureFullScreenSnapshot(this.screen); }
@@ -813,9 +727,8 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     }
 
     private View realShellPreview(String key) {
-        DetailNavigationState previousDetail = "detail".equals(key)
-                ? this.detailHistory.peek() : null;
-        View target = previousDetail != null ? previousDetail.root
+        View previousDetail = "detail".equals(key) ? this.detailNavigation.previousRoot() : null;
+        View target = previousDetail != null ? previousDetail
                 : "feed".equals(key) ? this.feedPage.cachedView()
                 : "profile".equals(key) && this.profilePage != null
                         ? this.profilePage.cachedPage()
@@ -836,7 +749,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         }
     }
     @Override public void activateTopLevel(String key) {
-        if ("profile".equals(key)) this.userSpaceReturnScreen = "feed";
+        this.detailNavigation.topLevelActivated(key);
         activate(key);
     }
     @Override public void restoreFeedScroll() { this.feedPage.restoreScroll(); }
@@ -1022,7 +935,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
 
     @Override
     public void adoptShellPreview(String targetKey) {
-        if ("detail".equals(targetKey) && restorePreviousDetail(true)) return;
+        if ("detail".equals(targetKey) && this.detailNavigation.restorePrevious(true)) return;
         configureAdoptedShellScreen(targetKey);
     }
 
@@ -1057,7 +970,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         showSearch(false);
     }
 
-    private void showSearch(boolean restoreResults) {
+    void showSearch(boolean restoreResults) {
         if (this.composeBridge != null && this.composeBridge.showRouteIfMounted("search")) return;
         ensureEmojiCatalog(() -> {
         });
@@ -1083,177 +996,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
 
     void showDetail(final FeedItem item) {
         if (this.composeBridge != null && this.composeBridge.openComposeDetail(item)) return;
-        this.pendingBackTransition = false;
-        this.pageTransitions.finishNow();
-        saveCurrentDetailProgress();
-        stopQrPolling();
-        ensureEmojiCatalog(() -> {
-        });
-        if ("feed".equals(this.screen)) {
-            this.feedPage.saveScroll();
-        }
-        if ("search".equals(this.screen)) this.searchPage.saveListPosition();
-        View sourceChild = (this.content == null || this.content.getChildCount() == 0) ? null : this.content.getChildAt(0);
-        captureShellSnapshot(this.screen, sourceChild);
-        captureFullScreenSnapshot(this.screen);
-        if (!"detail".equals(this.screen)) {
-            this.detailReturn = this.screen;
-            this.detailReturnTitle = this.title == null ? "" : this.title.getText().toString();
-            this.detailReturnView = shouldKeepDetailReturnView(this.screen) && sourceChild != null
-                    ? sourceChild : null;
-        }
-        this.screen = "detail";
-        this.currentLinkId = item.id;
-        this.currentLinkHsrc = item.hsrc;
-        this.currentAuthCode = "";
-        this.currentDetailItem = item;
-        this.currentDetailBody = null;
-        this.commentController.reset();
-        this.localCache.rememberRecent(item);
-        if (this.shellBar != null) {
-            this.shellBar.setVisibility(8);
-        }
-        setBottomNavVisible(false);
-        this.leading.setVisibility(0);
-        this.leading.setOnClickListener(view -> {
-            returnFromDetailSmooth();
-        });
-        this.title.setText(R.string.title_post_body);
-        this.action.setVisibility(4);
-        showDetailLoadingOverlay();
-        this.detailLoader.load(item);
-    }
-
-    private void renderDetail(JSONObject body, FeedItem fallback) {
-        boolean replacing = this.detailLoader.rendered();
-        boolean previousComments = replacing && this.detailPager != null
-                && this.detailPager.showingComments();
-        int previousArticleScroll = replacing && this.detailScroll != null
-                ? this.detailScroll.getScrollY() : 0;
-        int previousCommentScroll = replacing && this.detailCommentScroll != null
-                ? this.detailCommentScroll.getScrollY() : 0;
-        DetailPageAssembler.Result detail = this.detailPageAssembler.assemble(
-                body, fallback, this.currentLinkHsrc, this.screen, this.currentLinkId,
-                new DetailPager.Listener() {
-            @Override
-            public boolean canSwipeBack() {
-                return MainActivity.this.canDetailSwipeBack();
-            }
-
-            @Override
-            public void onPageChanged() {
-                MainActivity.this.updateDetailPagerTitle();
-            }
-
-            @Override
-            public void onReturn() {
-                MainActivity.this.returnFromDetailGesture();
-            }
-                });
-        this.currentDetailBody = detail.body;
-        this.currentLinkHsrc = detail.hsrc;
-        if (!detail.authCode.isEmpty()) this.currentAuthCode = detail.authCode;
-        this.lastDetailDiagnostics = detail.diagnostics;
-        this.detailPager = detail.pager;
-        if (this.composeBridge != null && this.composeBridge.showComposeDetailResult(detail, fallback)) return;
-        int savedScroll = this.session.rememberDetailScroll()
-                ? this.localCache.scroll(this.currentLinkId) : 0;
-        installDetailRoot(detail.root, detail.pager, replacing, previousArticleScroll,
-                previousCommentScroll, previousComments,
-                detail.articleScroll, detail.commentScroll);
-        this.detailCommentsSection.populate(detail.articleCommentHost, detail.comments,
-                detail.pager, 72L, detail.articleScroll, previousArticleScroll);
-        this.detailCommentsSection.populate(detail.commentPageHost, detail.comments,
-                detail.pager, 140L, detail.commentScroll, previousCommentScroll);
-        if (!replacing && savedScroll > 0) {
-            DetailScrollRestorer.beforeFirstDraw(detail.articleScroll, savedScroll);
-        }
-        this.detailLoader.markRendered();
-        if (this.activityResumed && this.readingTimeTracker != null) {
-            this.readingTimeTracker.start(fallback.article, fallback.id);
-        }
-        this.detailScroll = detail.articleScroll;
-        this.detailCommentScroll = detail.commentScroll;
-    }
-
-    private void installDetailRoot(FrameLayout root, DetailPager pager,
-                                   boolean replacing, int previousArticleScroll,
-                                   int previousCommentScroll, boolean previousComments,
-                                   ScrollView articleScroll, ScrollView commentScroll) {
-        if (!replacing) {
-            this.pageTransitions.finishNow();
-            if (this.detailReturnView != null) {
-                pager.setReturnView(this.detailReturnView);
-            }
-            removeViewWithTag("detail_loading");
-            transitionTo(root);
-        } else {
-            this.pageTransitions.finishNow();
-            View previous = this.content.getChildCount() == 0 ? null
-                    : this.content.getChildAt(this.content.getChildCount() - 1);
-            if (this.detailReturnView != null) {
-                pager.setReturnView(this.detailReturnView);
-            }
-            root.setVisibility(View.INVISIBLE);
-            this.content.addView(root, match());
-            root.post(() -> {
-                if (this.detailPager != pager || isFinishing()) return;
-                if (previousArticleScroll > 0) {
-                    articleScroll.scrollTo(0, previousArticleScroll);
-                }
-                if (previousComments) pager.showComments(false);
-                if (previousCommentScroll > 0) {
-                    commentScroll.scrollTo(0, previousCommentScroll);
-                }
-                root.setVisibility(View.VISIBLE);
-                if (previous != null && previous.getParent() == this.content) {
-                    this.content.removeView(previous);
-                }
-            });
-        }
-        root.post(() -> {
-            if (this.detailPager == pager && !isFinishing()) {
-                this.localCache.log("perf app stage=detail-first-frame totalMs="
-                        + Math.max(0L, SystemClock.elapsedRealtime()
-                        - this.detailLoader.loadStartedAt())
-                        + " progressiveUpdate=" + replacing);
-            }
-        });
-    }
-
-    private ImageView detailBackButton() {
-        ImageView back = new ImageView(this);
-        back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        back.setPadding(dp(9), dp(9), dp(9), dp(9));
-        Drawable icon = Compat.tintedDrawable(this, R.drawable.ic_arrow_back, this.TEXT);
-        if (icon != null) back.setImageDrawable(icon);
-        Compat.setBackground(back, UiComponents.round(this, this.themeTokens.dockSurface(),
-                18, this.session.uiScale() / 100.0f));
-        if (Build.VERSION.SDK_INT >= 21) back.setElevation(dp(6));
-        back.setContentDescription(getString(R.string.action_back));
-        back.setOnClickListener(view -> runWithPressFeedback(back, this::returnFromDetailSmooth));
-        return back;
-    }
-
-    private View detailReturnPreview() {
-        String targetKey = backTargetScreenKey();
-        return DetailReturnPreviewFactory.create(this, this.themeTokens, targetKey,
-                this.screenSnapshots, this.fullScreenSnapshots);
-    }
-
-    private void updateDetailPagerTitle() {
-        if (!"detail".equals(this.screen) || this.title == null || this.detailPager == null) {
-            return;
-        }
-        this.title.setText(this.detailPager.showingComments()
-                ? R.string.title_comments : R.string.title_post_body);
-    }
-
-    private LinearLayout detailArticleSurface() {
-        LinearLayout article = vertical(this.BG);
-        int horizontal = dp(usesRoundLayout() ? 8 : 4);
-        article.setPadding(horizontal, dp(8), horizontal, dp(12));
-        return article;
+        this.detailNavigation.open(item);
     }
 
     private boolean showComposeRoute(String route) {
@@ -1269,18 +1012,12 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                 userId, fallbackName, fallbackAvatar)) {
             return;
         }
-        if ("detail".equals(this.screen)) {
-            DetailNavigationState state = suspendCurrentDetail();
-            if (state == null) return;
-            this.detailHistory.push(state);
-        } else {
-            this.userSpaceReturnScreen = this.screen;
-        }
+        if (!this.detailNavigation.prepareUserSpace()) return;
         activate("user_space");
         this.title.setText(R.string.title_user_space);
         this.action.setVisibility(4);
         this.leading.setOnClickListener(view -> {
-            returnFromUserSpace();
+            this.detailNavigation.returnFromUserSpace();
         });
         View page = this.userSpacePage.create(userId, fallbackName,
                 fallbackAvatar, pageHorizontalPadding(), subpageTopPadding());
@@ -1564,17 +1301,11 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         if (this.composeBridge != null && this.composeBridge.handleBack()) return;
         this.pendingBackTransition = true;
         if ("detail".equals(this.screen)) {
-            if (this.detailPager != null && this.detailPager.showingComments()) {
-                this.pendingBackTransition = false;
-                this.detailPager.showArticle(true);
-                return;
-            } else {
-                returnFromDetailSmooth();
-                return;
-            }
+            if (!this.nativeDetail.backToArticle()) returnFromDetail();
+            return;
         }
         if ("user_space".equals(this.screen)) {
-            returnFromUserSpace();
+            this.detailNavigation.returnFromUserSpace();
             return;
         }
         if ("reading_center".equals(this.screen)) {
@@ -1620,135 +1351,9 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         super.onBackPressed();
     }
 
-    void returnFromDetail() { returnFromDetail(false); }
+    void returnFromDetail() { this.detailNavigation.returnFromDetail(false); }
 
-    private void returnFromDetailGesture() { returnFromDetail(true); }
-
-    private void returnFromDetail(boolean gestureOwned) {
-        if (this.readingTimeTracker != null) {
-            this.readingTimeTracker.pause();
-            updateReadingTimeEntry();
-        }
-        saveCurrentDetailProgress();
-        this.detailLoader.cancel();
-        View returnView = this.detailPager == null ? this.detailReturnView
-                : this.detailPager.takeReturnView();
-        this.detailPager = null;
-        this.detailScroll = null;
-        this.detailReturnView = returnView;
-        if (restoreDetailReturnView(!gestureOwned)) {
-            return;
-        }
-        this.pendingBackTransition = !gestureOwned;
-        if (gestureOwned) {
-            this.pageTransitions.finishNow();
-            this.content.removeAllViews();
-        }
-        if ("saved".equals(this.detailReturn)) {
-            String savedReturn = this.savedContentController.returnScreen();
-            if ("reading_center".equals(savedReturn)) showReadingCenter();
-            else if ("favorites".equals(savedReturn)) showFavorites();
-            else showProfile();
-            return;
-        }
-        if ("reading_center".equals(this.detailReturn)) {
-            showReadingCenter();
-            return;
-        }
-        if ("search".equals(this.detailReturn)) {
-            showSearch(true);
-            return;
-        }
-        showFeed();
-    }
-
-    private void returnFromDetailSmooth() {
-        returnFromDetail();
-    }
-
-    private void returnFromUserSpace() {
-        if (restorePreviousDetail(false)) return;
-        String returnScreen = this.userSpaceReturnScreen;
-        this.userSpaceReturnScreen = "feed";
-        if ("profile".equals(returnScreen)) {
-            showProfile();
-        } else if ("reading_center".equals(returnScreen)) {
-            showReadingCenter();
-        } else {
-            showFeed();
-        }
-    }
-
-    private DetailNavigationState suspendCurrentDetail() {
-        this.pageTransitions.finishNow();
-        saveCurrentDetailProgress();
-        View root = this.content == null || this.content.getChildCount() == 0
-                ? null : this.content.getChildAt(this.content.getChildCount() - 1);
-        if (root == null || this.detailPager == null || this.currentDetailItem == null) {
-            return null;
-        }
-        this.detailPager.cancelMotion();
-        DetailLoadCoordinator.State loadState = this.detailLoader.suspend();
-        DetailNavigationState state = new DetailNavigationState(
-                root, this.detailPager, this.detailScroll, this.detailCommentScroll,
-                this.currentDetailItem, this.detailReturn, this.detailReturnView,
-                this.detailReturnTitle, this.currentLinkId, this.currentLinkHsrc,
-                this.currentAuthCode, this.lastDetailDiagnostics,
-                this.currentDetailBody, loadState);
-        this.detailPager = null;
-        this.detailScroll = null;
-        this.detailCommentScroll = null;
-        this.detailReturnView = null;
-        this.currentDetailBody = null;
-        if (this.readingTimeTracker != null) {
-            this.readingTimeTracker.pause();
-            updateReadingTimeEntry();
-        }
-        return state;
-    }
-
-    private boolean restorePreviousDetail(boolean alreadyAttached) {
-        DetailNavigationState state = this.detailHistory.pop();
-        if (state == null) return false;
-        this.detailLoader.restore(state.loadState);
-        this.currentDetailItem = state.item;
-        this.detailReturn = state.returnScreen;
-        this.detailReturnView = state.returnView;
-        this.detailReturnTitle = state.returnTitle;
-        this.currentLinkId = state.linkId;
-        this.currentLinkHsrc = state.linkHsrc;
-        this.currentAuthCode = state.authCode;
-        this.lastDetailDiagnostics = state.diagnostics;
-        this.currentDetailBody = state.body;
-        this.detailPager = state.pager;
-        this.detailScroll = state.articleScroll;
-        this.detailCommentScroll = state.commentScroll;
-        this.screen = "detail";
-        if (this.shellBar != null) this.shellBar.setVisibility(View.GONE);
-        setBottomNavVisible(false, false);
-        this.leading.setVisibility(View.VISIBLE);
-        this.leading.setOnClickListener(view -> returnFromDetailSmooth()); this.action.setVisibility(View.INVISIBLE);
-        updateDetailPagerTitle();
-        Motions.resetTree(state.root);
-        if (!alreadyAttached) {
-            if (state.root.getParent() instanceof ViewGroup) {
-                ((ViewGroup) state.root.getParent()).removeView(state.root);
-            }
-            this.pendingBackTransition = true;
-            transitionTo(state.root);
-        }
-        if (this.activityResumed && this.readingTimeTracker != null) {
-            this.readingTimeTracker.start(state.item.article, state.item.id);
-        }
-        return true;
-    }
-
-    void discardDetailHistory() {
-        for (DetailNavigationState state : this.detailHistory.drain()) {
-            state.pager.cancelMotion();
-            state.pager.takeReturnView();
-        }
-    }
+    void discardDetailHistory() { this.detailNavigation.discardHistory(); }
 
     private void returnFromSavedPage() {
         this.pendingBackTransition = true;
@@ -1763,61 +1368,9 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
         }
     }
 
-    private boolean shouldKeepDetailReturnView(String screenKey) {
-        return "feed".equals(screenKey) || "search".equals(screenKey)
-                || "saved".equals(screenKey) || "reading_center".equals(screenKey)
-                || "user_space".equals(screenKey);
-    }
-
-    private boolean restoreDetailReturnView(boolean animate) {
-        this.pendingBackTransition = false;
-        this.pageTransitions.finishNow();
-        if (this.detailReturnView == null || !shouldKeepDetailReturnView(this.detailReturn)) {
-            this.detailReturnView = null;
-            return false;
-        }
-        View view = this.detailReturnView;
-        this.detailReturnView = null;
-        if (view.getParent() instanceof ViewGroup) {
-            ((ViewGroup) view.getParent()).removeView(view);
-        }
-        this.screen = this.detailReturn;
-        configureDetailReturnChrome();
-        ensurePageBackdrop(view);
-        if (animate) this.pageTransitions.run(this.content, view, false);
-        else {
-            this.content.removeAllViews();
-            this.content.addView(view, match());
-        }
-        // 离屏期间列表若收到过 notifyDataSetChanged（如加载更多回包），重挂载会丢滚动位置，这里强制回到进详情前的位置
-        if ("search".equals(this.screen)) this.searchPage.restoreListPosition();
-        if ("feed".equals(this.screen)) this.feedPage.restoreScroll();
-        return true;
-    }
-
-    private void configureDetailReturnChrome() {
-        if ("feed".equals(this.screen)) {
-            activate("feed");
-            this.title.setText(R.string.title_feed);
-            this.action.setVisibility(4);
-            return;
-        }
-        setBottomNavVisible(false);
-        this.title.setText(this.detailReturnTitle == null ? "" : this.detailReturnTitle);
-        this.leading.setVisibility(0);
-        this.leading.setOnClickListener(v -> onBackPressed());
-        this.action.setVisibility(4);
-        if ("user_space".equals(this.screen)) {
-            this.title.setText(R.string.title_user_space);
-        }
-    }
-
     void saveCurrentDetailProgress() {
         if (this.composeBridge != null) this.composeBridge.saveDetailProgress();
-        if (!"detail".equals(this.screen) || this.detailScroll == null || this.currentLinkId.isEmpty() || this.localCache == null || !this.session.rememberDetailScroll()) {
-            return;
-        }
-        this.localCache.saveScroll(this.currentLinkId, this.detailScroll.getScrollY());
+        this.nativeDetail.saveProgress();
     }
 
     @Override
@@ -1896,10 +1449,10 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     private void cancelAllMotion() { this.legacyUi.cancelAllMotion(); }
     void showLoading() { this.legacyUi.showLoading(); }
     void hideLoading() { this.legacyUi.hideLoading(); }
-    private void showDetailLoadingOverlay() { this.legacyUi.showDetailLoadingOverlay(); }
+    void showDetailLoadingOverlay() { this.legacyUi.showDetailLoadingOverlay(); }
     void showMessage(String message) { this.legacyUi.showMessage(message); }
-    private void ensurePageBackdrop(View view) { this.legacyUi.ensurePageBackdrop(view); }
-    private void removeViewWithTag(String tag) { this.legacyUi.removeViewWithTag(tag); }
+    void ensurePageBackdrop(View view) { this.legacyUi.ensurePageBackdrop(view); }
+    void removeViewWithTag(String tag) { this.legacyUi.removeViewWithTag(tag); }
     private Typeface appRegularTypeface() { return Typeface.DEFAULT; }
     private TextView icon(String value) { return this.legacyUi.icon(value); }
     private TextView text(String value, float size, int color) {

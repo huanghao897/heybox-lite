@@ -11,17 +11,18 @@ import org.junit.Test;
 
 public class MainActivityWiringTest {
     @Test
-    public void detailBackButtonDelegatesToOuterActivity() throws Exception {
+    public void nativeDetailPageImplementsItsOwnFeatureCallbacks() throws Exception {
         String source = new String(Files.readAllBytes(sourceFile().toPath()),
                 StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("return MainActivity.this.detailBackButton();"));
+        assertTrue(source.contains("implements MainDetailFeatures.Host"));
+        assertTrue(source.contains("activity.runWithPressFeedback(back, activity::returnFromDetail)"));
         assertFalse(source.contains("return detailBackButton();"));
     }
 
     private static File sourceFile() {
-        File direct = new File("src/main/java/com/ronan/heyboxlite/MainActivity.java");
+        File direct = new File("src/main/java/com/ronan/heyboxlite/NativeDetailPage.java");
         if (direct.isFile()) return direct;
-        return new File("app/src/main/java/com/ronan/heyboxlite/MainActivity.java");
+        return new File("app/src/main/java/com/ronan/heyboxlite/NativeDetailPage.java");
     }
 }

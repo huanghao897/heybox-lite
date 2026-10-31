@@ -102,18 +102,6 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         return true;
     }
 
-    boolean showComposeDetailResult(DetailPageAssembler.Result detail, FeedItem fallback) {
-        if (!isComposeSurfaceVisible()) return false;
-        if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()
-                || !"detail".equals(activity.screen)) return false;
-        activity.composeAppHost.showDetailResult(detail, fallback);
-        activity.detailLoader.markRendered();
-        if (activity.activityResumed && activity.readingTimeTracker != null) {
-            activity.readingTimeTracker.start(fallback.article, fallback.id);
-        }
-        return true;
-    }
-
     void showRoute(String route) {
         if (activity.composeAppHost == null || !activity.composeAppHost.isMounted()) return;
         String routeSpec = route == null ? "feed" : route;
@@ -143,10 +131,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
                 activity.readingTimeTracker.pause();
                 activity.updateReadingTimeEntry();
             }
-            if (activity.detailLoader != null) activity.detailLoader.cancel();
-            activity.detailPager = null;
-            activity.detailScroll = null;
-            activity.detailCommentScroll = null;
+            activity.nativeDetail.reset();
         }
         showRoute(route);
         if (composeDetail != null) composeDetail.routeChanged();

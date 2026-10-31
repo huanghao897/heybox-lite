@@ -21,11 +21,11 @@ public class GestureOwnershipWiringTest {
 
     @Test
     public void restoredNativeDetailsKeepTheirOriginalPagerAndScrollPosition() throws Exception {
-        String activity = source("java/com/ronan/heyboxlite/MainActivity.java");
-        assertTrue(activity.contains("this.detailPager = state.pager;"));
-        assertTrue(activity.contains("this.detailScroll = state.articleScroll;"));
-        assertTrue(activity.contains("this.detailCommentScroll = state.commentScroll;"));
-        assertFalse(activity.contains("clearLegacyDetailOwnership"));
+        String page = source("java/com/ronan/heyboxlite/NativeDetailPage.java");
+        assertTrue(page.contains("pager = state.pager;"));
+        assertTrue(page.contains("articleScroll = state.articleScroll;"));
+        assertTrue(page.contains("commentScroll = state.commentScroll;"));
+        assertFalse(page.contains("clearLegacyDetailOwnership"));
     }
 
     @Test
@@ -61,7 +61,7 @@ public class GestureOwnershipWiringTest {
         String bridge = source("java/com/ronan/heyboxlite/ComposeActivityBridge.java");
         String runtime = source("java/com/ronan/heyboxlite/ComposeDetailRuntime.java");
         int start = bridge.indexOf("boolean openComposeDetail(FeedItem item)");
-        int end = bridge.indexOf("boolean showComposeDetailResult", start);
+        int end = bridge.indexOf("void showRoute(String route)", start);
         assertTrue(start >= 0 && end > start);
         String entry = bridge.substring(start, end);
         assertTrue(entry.contains("composeDetail.open(item)"));
@@ -70,6 +70,9 @@ public class GestureOwnershipWiringTest {
         assertFalse(runtime.contains("createLikeControl"));
         assertTrue(runtime.contains("ComposeDetailDocument.parse"));
         assertTrue(runtime.contains("parser.shutdownNow()"));
+        assertFalse(bridge.contains("showComposeDetailResult"));
+        assertFalse(source("java/com/ronan/heyboxlite/NativeDetailPage.java")
+                .contains("composeAppHost"));
     }
 
     @Test

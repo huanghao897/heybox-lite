@@ -46,7 +46,7 @@ final class MainActivityLegacyUi {
 
     void cancelAllMotion() {
         activity.pageTransitions.finishNow();
-        if (activity.detailPager != null) activity.detailPager.cancelMotion();
+        activity.nativeDetail.cancelMotion();
         if (activity.content instanceof BackSwipeFrameLayout) {
             ((BackSwipeFrameLayout) activity.content).cancelMotion();
         }

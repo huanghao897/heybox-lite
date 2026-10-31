@@ -29,11 +29,11 @@ public class NativeSessionContentResetTest {
         activity.searchPage.items().add(oldPost);
         activity.feedPage.paging().recordResponseCursor(0, "old-cursor");
         int oldRefresh = activity.feedPage.paging().begin(true);
-        activity.currentDetailItem = oldPost;
-        activity.currentDetailBody = new JSONObject();
-        activity.currentLinkId = oldPost.id;
-        activity.currentLinkHsrc = "old-hsrc";
-        activity.currentAuthCode = "old-auth-code";
+        activity.nativeDetail.item = oldPost;
+        activity.nativeDetail.body = new JSONObject();
+        activity.nativeDetail.linkId = oldPost.id;
+        activity.nativeDetail.hsrc = "old-hsrc";
+        activity.nativeDetail.authCode = "old-auth-code";
         activity.retainedPages.put("saved", new View(activity));
 
         activity.invalidateNativeSessionContent();
@@ -50,11 +50,11 @@ public class NativeSessionContentResetTest {
         assertTrue(activity.feedPage.paging().refreshing());
         assertTrue(activity.searchPage.items().isEmpty());
         assertNull(activity.searchPage.listView());
-        assertNull(activity.currentDetailItem);
-        assertNull(activity.currentDetailBody);
-        assertEquals("", activity.currentLinkId);
-        assertEquals("", activity.currentLinkHsrc);
-        assertEquals("", activity.currentAuthCode);
+        assertNull(activity.nativeDetail.item);
+        assertNull(activity.nativeDetail.body);
+        assertEquals("", activity.nativeDetail.linkId);
+        assertEquals("", activity.nativeDetail.hsrc);
+        assertEquals("", activity.nativeDetail.authCode);
         assertTrue(activity.retainedPages.isEmpty());
     }
 

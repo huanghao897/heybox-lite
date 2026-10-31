@@ -60,8 +60,8 @@ final class MainActivityLifecycle {
     private void resumeReading() {
         if (!"detail".equals(activity.screen) || activity.readingTimeTracker == null) return;
         ComposeDetailContext detail = activity.composeDetailContext();
-        FeedItem item = detail == null ? activity.currentDetailItem : detail.getItem();
-        boolean loaded = detail == null ? activity.currentDetailBody != null : detail.getBody() != null;
+        FeedItem item = detail == null ? activity.nativeDetail.item : detail.getItem();
+        boolean loaded = detail == null ? activity.nativeDetail.body != null : detail.getBody() != null;
         if (item == null || !loaded) return;
         activity.readingTimeTracker.start(item.article, item.id);
         activity.readingTimeTracker.tagTopic(item.topicName);
@@ -101,10 +101,10 @@ final class MainActivityLifecycle {
             activity.qrLoginPage = null;
         }
         activity.pageTransitions.cancelNow();
-        activity.discardDetailHistory();
+        activity.detailNavigation.reset();
         if (activity.feedPage != null) activity.feedPage.close();
         if (activity.savedContentController != null) activity.savedContentController.close();
-        if (activity.detailPager != null) activity.detailPager.cancelMotion();
+        activity.nativeDetail.close();
         if (activity.content instanceof BackSwipeFrameLayout) {
             ((BackSwipeFrameLayout) activity.content).cancelMotion();
         }
@@ -115,7 +115,6 @@ final class MainActivityLifecycle {
         if (activity.searchPage != null) activity.searchPage.close();
         if (activity.searchBars != null) activity.searchBars.clear();
         if (activity.writeActions != null) activity.writeActions.close();
-        if (activity.detailLoader != null) activity.detailLoader.close();
         activity.handler.removeCallbacksAndMessages(null);
         if (activity.writeTokenProvider != null) activity.writeTokenProvider.close();
         if (activity.api != null) activity.api.close();

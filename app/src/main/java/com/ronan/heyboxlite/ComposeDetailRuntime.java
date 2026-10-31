@@ -58,7 +58,6 @@ final class ComposeDetailRuntime implements AutoCloseable {
         if (closed || item == null || activity.composeAppHost == null) return;
         activity.saveCurrentDetailProgress();
         if (activity.readingTimeTracker != null) activity.readingTimeTracker.pause();
-        if (activity.detailLoader != null) activity.detailLoader.cancel();
         activity.composeAppHost.showDetailLoading(item);
         activate();
     }
@@ -85,9 +84,7 @@ final class ComposeDetailRuntime implements AutoCloseable {
         FeedItem item = activity.composeAppHost.currentDetailItem();
         if (item == null) return;
         activity.screen = "detail";
-        activity.detailPager = null;
-        activity.detailScroll = null;
-        activity.detailCommentScroll = null;
+        activity.nativeDetail.reset();
         activity.localCache.rememberRecent(item);
         if (activity.composeAppHost.detailNeedsLoad()) loader.load(item);
         else resumeReading(item);

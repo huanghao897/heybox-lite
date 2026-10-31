@@ -62,7 +62,7 @@ final class DetailLoadCoordinator {
         rendered = false;
         loadStartedAt = SystemClock.elapsedRealtime();
         int token = ++requestToken;
-        renderAfterEntry(item, token);
+        renderAfterEntry(item, token, true);
         if (!networkConnected()) {
             afterEntry(() -> {
                 if (current(item, token)) {
@@ -153,7 +153,7 @@ final class DetailLoadCoordinator {
                 host.refreshOffline(item, normalized);
             }
             pendingBody = normalized;
-            renderAfterEntry(item, token);
+            renderAfterEntry(item, token, false);
             if (ArticleGameCards.shouldLoadWeb(normalized, item)) {
                 api.get(EndpointProvider.linkWebView(),
                         OfficialRequestParams.articleWebView(item.id, item.hsrc),
@@ -177,7 +177,7 @@ final class DetailLoadCoordinator {
                                         + " " + ArticleGameCards.fieldSummary(link));
                                 if (afterCards > beforeCards) {
                                     pendingBody = normalized;
-                                    renderAfterEntry(item, token);
+                                    renderAfterEntry(item, token, false);
                                 } else {
                                     cache.log("article web content unchanged link=" + item.id
                                             + " reason=no_new_game_cards");
@@ -210,12 +210,13 @@ final class DetailLoadCoordinator {
         }
     }
 
-    private void renderAfterEntry(FeedItem item, int token) {
+    private void renderAfterEntry(FeedItem item, int token, boolean initialEntry) {
         afterEntry(() -> {
             if (!current(item, token)) return;
             JSONObject body = pendingBody;
             pendingBody = null;
-            if (body == null && !rendered) body = initialBody(item);
+            // A response must not recreate a preview while its first publication is parsing.
+            if (body == null && initialEntry && !rendered) body = initialBody(item);
             if (body != null) renderSafely(body, item);
         });
     }

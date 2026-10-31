@@ -30,6 +30,11 @@ final class CrownScrollController {
         float boundedAxis = Math.max(-MAX_AXIS_VALUE, Math.min(MAX_AXIS_VALUE, scaledAxis));
         float scaled = remainder - boundedAxis * baseStepPixels
                 * responseFactor(speedPercent);
+        // Saturate the pixel delta, not the setting, and discard unrepresentable carry.
+        if (scaled >= Integer.MAX_VALUE || scaled <= -Integer.MAX_VALUE) {
+            remainder = 0.0f;
+            return scaled > 0.0f ? Integer.MAX_VALUE : -Integer.MAX_VALUE;
+        }
         int pixels = Math.round(scaled);
         remainder = scaled - pixels;
         return pixels;

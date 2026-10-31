@@ -28,14 +28,14 @@ public class ComposeActivityBridgeNativeOwnershipTest {
                     @Override public void onReturn() { }
                 });
         pager.setPages(new View(activity), new View(activity), new View(activity));
-        activity.detailPager = pager;
+        activity.nativeDetail.pager = pager;
         pager.showComments(false);
         assertTrue(pager.showingComments());
 
         activity.onBackPressed();
 
         assertFalse(pager.showingComments());
-        assertSame(pager, activity.detailPager);
+        assertSame(pager, activity.nativeDetail.pager);
         assertEquals("detail", activity.screen);
         assertEquals(View.INVISIBLE, activity.composeLayer.getVisibility());
     }

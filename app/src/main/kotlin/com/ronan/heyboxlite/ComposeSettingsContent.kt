@@ -95,6 +95,7 @@ internal fun ComposeContentCacheScreen(
                 step = 5,
                 unit = "%",
                 icon = R.drawable.il_scroll,
+                allowAboveSliderMaximum = true,
             ) { value ->
                 session.setCrownScrollSpeed(value)
                 changed()

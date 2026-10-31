@@ -15,15 +15,15 @@ final class MainContentHost implements MainContentFeatures.Host {
     @Override public String screen() { return activity.screen; }
     @Override public String currentLinkId() {
         ComposeDetailContext detail = activity.composeDetailContext();
-        return detail == null ? activity.currentLinkId : detail.getItem().id;
+        return detail == null ? activity.nativeDetail.linkId : detail.getItem().id;
     }
     @Override public String currentLinkHsrc() {
         ComposeDetailContext detail = activity.composeDetailContext();
-        return detail == null ? activity.currentLinkHsrc : detail.getHsrc();
+        return detail == null ? activity.nativeDetail.hsrc : detail.getHsrc();
     }
     @Override public FeedItem currentDetailItem() {
         ComposeDetailContext detail = activity.composeDetailContext();
-        return detail == null ? activity.currentDetailItem : detail.getItem();
+        return detail == null ? activity.nativeDetail.item : detail.getItem();
     }
     @Override public List<FeedItem> searchItems() { return activity.searchPage.items(); }
     @Override public void prepareReadingCenter() { activity.prepareReadingCenterChrome(); }

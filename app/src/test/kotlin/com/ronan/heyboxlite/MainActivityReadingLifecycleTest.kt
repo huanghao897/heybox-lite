@@ -29,8 +29,8 @@ class MainActivityReadingLifecycleTest {
     @Test fun composeReadingResumesAfterBackgroundWithoutActivityMetadataMirrors() {
         Fixture().use { f ->
             f.openCompose(loaded = true)
-            assertNull(f.activity.currentDetailItem)
-            assertNull(f.activity.currentDetailBody)
+            assertNull(f.activity.nativeDetail.item)
+            assertNull(f.activity.nativeDetail.body)
 
             f.lifecycle.onResume()
             advance(1)
@@ -134,9 +134,9 @@ class MainActivityReadingLifecycleTest {
         }
 
         fun setNativePost() {
-            activity.currentDetailItem = FeedItem.from(JSONObject().put("linkid", "native-post"))
-            activity.currentDetailItem.topicName = "native-topic"
-            activity.currentDetailBody = JSONObject()
+            activity.nativeDetail.item = FeedItem.from(JSONObject().put("linkid", "native-post"))
+            activity.nativeDetail.item.topicName = "native-topic"
+            activity.nativeDetail.body = JSONObject()
         }
 
         override fun close() {

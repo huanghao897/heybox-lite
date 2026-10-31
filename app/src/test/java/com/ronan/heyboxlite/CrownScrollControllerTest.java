@@ -25,6 +25,47 @@ public class CrownScrollControllerTest {
     }
 
     @Test
+    public void appliesSpeedAboveSliderRangeToDistanceAndFrameLimit() {
+        CrownScrollController controller = new CrownScrollController();
+
+        assertEquals(-165, controller.distance(1.0f, 100,
+                CrownScrollController.SLIDER_MAX_SPEED_PERCENT));
+        controller.reset();
+        assertEquals(-360, controller.distance(1.0f, 100, 500));
+        assertEquals(450, controller.frameLimit(100, 500));
+        assertTrue(controller.frameLimit(100, 500) > controller.frameLimit(100,
+                CrownScrollController.SLIDER_MAX_SPEED_PERCENT));
+    }
+
+    @Test
+    public void saturatedDistancesDoNotLeaveOverflowInTheRemainder() {
+        for (int direction : new int[]{-1, 1}) {
+            CrownScrollController controller = new CrownScrollController();
+            int saturated = -direction * Integer.MAX_VALUE;
+
+            assertEquals(saturated, controller.distance(direction, Integer.MAX_VALUE,
+                    Integer.MAX_VALUE));
+            assertEquals(saturated, controller.distance(direction, Integer.MAX_VALUE,
+                    Integer.MAX_VALUE));
+            assertEquals(-direction * 11, controller.distance(direction * 0.25f, 44, 100));
+            assertEquals(Integer.MAX_VALUE,
+                    controller.frameLimit(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        }
+    }
+
+    @Test
+    public void rejectsNonFiniteRotaryInputWithoutPoisoningLaterTicks() {
+        CrownScrollController controller = new CrownScrollController();
+
+        for (float invalid : new float[]{Float.NaN, Float.POSITIVE_INFINITY,
+                Float.NEGATIVE_INFINITY}) {
+            assertEquals(0, controller.distance(invalid, 44, Integer.MAX_VALUE));
+            assertEquals(0, controller.distance(1.0f, 44, Integer.MAX_VALUE, invalid));
+        }
+        assertEquals(-44, controller.distance(1.0f, 44, 100));
+    }
+
+    @Test
     public void accumulatesSmallRotarySteps() {
         CrownScrollController controller = new CrownScrollController();
         int total = 0;
@@ -85,5 +126,9 @@ public class CrownScrollControllerTest {
         assertEquals(30, CrownScrollController.coalesceBounded(25, 20, 30));
         assertEquals(-30, CrownScrollController.coalesceBounded(-25, -20, 30));
         assertEquals(5, CrownScrollController.coalesceBounded(-5, 10, 30));
+        assertEquals(Integer.MAX_VALUE, CrownScrollController.coalesceBounded(
+                Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE));
+        assertEquals(-Integer.MAX_VALUE, CrownScrollController.coalesceBounded(
+                -Integer.MAX_VALUE, -Integer.MAX_VALUE, Integer.MAX_VALUE));
     }
 }
