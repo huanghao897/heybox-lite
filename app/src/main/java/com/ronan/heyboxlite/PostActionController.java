@@ -4,18 +4,15 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.view.Gravity;
 import android.widget.ImageView;
 import android.widget.TextView;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 final class PostActionController {
     interface Host {
@@ -51,7 +48,7 @@ final class PostActionController {
     private final ThemeTokens tokens;
     private final boolean roundLayout;
     private final Host host;
-    private final Map<String, LikeState> likeOverrides = new HashMap<>();
+    private final PostInteractionState interactions;
 
     PostActionController(Activity activity, SessionStore session,
                          WriteActionClient writeActions, LocalCache localCache,
@@ -63,10 +60,13 @@ final class PostActionController {
         this.tokens = tokens;
         this.roundLayout = roundLayout;
         this.host = host;
+        this.interactions = new PostInteractionState(session);
     }
 
+    PostInteractionState interactions() { return interactions; }
+
     void invalidateSession() {
-        this.likeOverrides.clear();
+        interactions.invalidateSession();
     }
 
     LikeState linkLikeState(JSONObject link, FeedItem fallback) {
@@ -76,7 +76,8 @@ final class PostActionController {
     }
 
     boolean linkFavored(JSONObject link) {
-        return link != null && Json.truthy(link, "is_favour", "is_favor", "is_fav",
+        Boolean override = interactions.favorite(linkId(link, this.host.currentDetailItem()));
+        return override != null ? override : Json.truthy(link, "is_favour", "is_favor", "is_fav",
                 "favored", "has_favour", "has_favor");
     }
 
@@ -117,51 +118,40 @@ final class PostActionController {
     }
 
     void toggleLinkLike(FeedItem item, CommentRenderer.LikeControl view) {
-        if (!canWrite("点赞", item)) return;
-        boolean beforeLiked = item.liked;
-        int beforeLikes = Math.max(0, item.likes);
-        boolean nextLiked = !beforeLiked;
-        int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
-        setLike(item, nextLiked, nextLikes);
-        updateLinkLikeView(view, nextLiked, nextLikes);
-        updateFeedLike(item.id, nextLiked, nextLikes);
-        this.writeActions.like(item.id, hsrcFor(item), nextLiked, new ApiClient.Callback() {
-            @Override
-            public void onSuccess(JSONObject body) {
-                rememberLinkLike(item.id, nextLiked, nextLikes);
-                updateFeedLike(item.id, nextLiked, nextLikes);
-                localCache.log("link like ok " + item.id + ": "
-                        + beforeLikes + " -> " + nextLikes);
-            }
-
-            @Override
-            public void onError(String message) {
-                setLike(item, beforeLiked, beforeLikes);
-                updateLinkLikeView(view, beforeLiked, beforeLikes);
-                updateFeedLike(item.id, beforeLiked, beforeLikes);
-                host.showToast("点赞失败" + writeErrorMessage("点赞", message));
-            }
-        });
+        toggleLike(item, view);
     }
 
     void toggleFeedFavorite(FeedItem item) {
-        if (!canWrite("收藏", item)) return;
-        boolean before = item.favorited;
-        boolean next = !before;
-        item.favorited = next;
-        this.host.feedChanged();
-        this.writeActions.favorite(item.id, hsrcFor(item), next, new ApiClient.Callback() {
-            @Override
-            public void onSuccess(JSONObject body) {
-                host.feedChanged();
-                host.showToast(next ? "已收藏" : "已取消收藏");
-            }
+        toggleFavorite(item, null);
+    }
 
-            @Override
-            public void onError(String message) {
-                item.favorited = before;
-                host.feedChanged();
-                host.showToast("收藏操作失败" + writeErrorMessage("收藏", message));
+    void toggleFavorite(FeedItem item, ImageView view) {
+        if (!canWrite("收藏", item)) return;
+        if (view != null && interactions.favorite(item.id) == null) {
+            item.favorited = Boolean.TRUE.equals(view.getTag());
+        }
+        interactions.apply(item);
+        boolean next = !item.favorited;
+        PostInteractionState.Operation<Boolean> operation = interactions.beginFavorite(item, next);
+        syncInteractions(item);
+        if (view != null) {
+            updateFavoriteView(view, item.favorited);
+            view.setEnabled(false);
+        }
+        this.writeActions.favorite(item.id, hsrcFor(item), next, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) { finish(true, ""); }
+            @Override public void onError(String message) { finish(false, message); }
+            private void finish(boolean success, String message) {
+                boolean latest = interactions.isLatest(operation);
+                if (!interactions.complete(operation, success)) return;
+                syncInteractions(item);
+                if (!latest) return;
+                if (view != null) {
+                    view.setEnabled(true);
+                    updateFavoriteView(view, item.favorited);
+                }
+                host.showToast(success ? (next ? "已收藏" : "已取消收藏")
+                        : "收藏操作失败" + writeErrorMessage("收藏", message));
             }
         });
     }
@@ -183,27 +173,27 @@ final class PostActionController {
     }
 
     void toggleFeedLike(FeedItem item) {
-        if (!canWrite("点赞", item)) return;
-        boolean beforeLiked = item.liked;
-        int beforeLikes = Math.max(0, item.likes);
-        boolean nextLiked = !beforeLiked;
-        int nextLikes = Math.max(0, beforeLikes + (nextLiked ? 1 : -1));
-        setLike(item, nextLiked, nextLikes);
-        updateFeedLike(item.id, nextLiked, nextLikes);
-        this.writeActions.like(item.id, hsrcFor(item), nextLiked, new ApiClient.Callback() {
-            @Override
-            public void onSuccess(JSONObject body) {
-                rememberLinkLike(item.id, nextLiked, nextLikes);
-                updateFeedLike(item.id, nextLiked, nextLikes);
-                localCache.log("feed like ok " + item.id + ": "
-                        + beforeLikes + " -> " + nextLikes);
-            }
+        toggleLike(item, null);
+    }
 
-            @Override
-            public void onError(String message) {
-                setLike(item, beforeLiked, beforeLikes);
-                updateFeedLike(item.id, beforeLiked, beforeLikes);
-                host.showToast("点赞失败" + writeErrorMessage("点赞", message));
+    private void toggleLike(FeedItem item, CommentRenderer.LikeControl view) {
+        if (!canWrite("点赞", item)) return;
+        interactions.apply(item);
+        boolean nextLiked = !item.liked;
+        PostInteractionState.Operation<PostInteractionState.Like> operation =
+                interactions.beginLike(item, nextLiked);
+        syncInteractions(item);
+        if (view != null) updateLinkLikeView(view, item.liked, item.likes);
+        this.writeActions.like(item.id, hsrcFor(item), nextLiked, new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) { finish(true, ""); }
+            @Override public void onError(String message) { finish(false, message); }
+            private void finish(boolean success, String message) {
+                boolean latest = interactions.isLatest(operation);
+                if (!interactions.complete(operation, success)) return;
+                syncInteractions(item);
+                if (view != null && latest) updateLinkLikeView(view, item.liked, item.likes);
+                if (success) localCache.log("link like ok " + item.id);
+                else if (latest) host.showToast("点赞失败" + writeErrorMessage("点赞", message));
             }
         });
     }
@@ -224,44 +214,28 @@ final class PostActionController {
             callback.onComplete(false);
             return;
         }
-        this.writeActions.follow(item.authorId, hsrcFor(item), following,
-                new ApiClient.Callback() {
-                    @Override
-                    public void onSuccess(JSONObject body) {
-                        updateAuthorFollowing(item.authorId, following);
-                        host.showToast(following ? "已关注" : "已取消关注");
-                        callback.onComplete(true);
-                    }
-
-                    @Override
-                    public void onError(String message) {
-                        host.showToast("关注操作失败"
-                                + writeErrorMessage("关注", message));
-                        callback.onComplete(false);
-                    }
-                });
+        // Native adapters may already have painted their optimistic state.
+        boolean before = item.followPending ? !following : item.following;
+        follow(item, item.authorId, before, following, callback);
     }
 
-    void toggleFavorite(FeedItem item, ImageView view) {
-        if (!canWrite("收藏", item)) return;
-        boolean favored = Boolean.TRUE.equals(view.getTag());
-        boolean nextFavored = !favored;
-        updateFavoriteView(view, nextFavored);
-        view.setEnabled(false);
-        this.writeActions.favorite(item.id, hsrcFor(item), nextFavored,
+    private void follow(FeedItem item, String authorId, boolean before, boolean following,
+                        FeedAdapter.FollowCallback callback) {
+        PostInteractionState.Operation<Boolean> operation = interactions.beginFollow(authorId, before, following);
+        syncInteractions(item);
+        this.writeActions.follow(authorId, hsrcFor(item), following,
                 new ApiClient.Callback() {
-                    @Override
-                    public void onSuccess(JSONObject body) {
-                        view.setEnabled(true);
-                        host.showToast(nextFavored ? "已收藏" : "已取消收藏");
-                    }
-
-                    @Override
-                    public void onError(String message) {
-                        view.setEnabled(true);
-                        updateFavoriteView(view, favored);
-                        host.showToast("收藏操作失败"
-                                + writeErrorMessage("收藏", message));
+                    @Override public void onSuccess(JSONObject body) { finish(true, ""); }
+                    @Override public void onError(String message) { finish(false, message); }
+                    private void finish(boolean success, String message) {
+                        boolean latest = interactions.isLatest(operation);
+                        if (!interactions.complete(operation, success)) return;
+                        if (latest) {
+                            callback.onComplete(success);
+                            host.showToast(success ? (following ? "已关注" : "已取消关注")
+                                    : "关注操作失败" + writeErrorMessage("关注", message));
+                        }
+                        syncInteractions(item);
                     }
                 });
     }
@@ -277,28 +251,17 @@ final class PostActionController {
             this.host.showToast("不能关注自己");
             return;
         }
-        boolean before = Boolean.TRUE.equals(view.getTag());
+        Boolean override = interactions.following(targetUserId);
+        boolean before = override != null ? override : Boolean.TRUE.equals(view.getTag());
         int beforeStatus = followStatus(link, user);
         boolean next = !before;
         updateFollowView(view, next);
         view.setClickable(false);
         view.setAlpha(0.92f);
-        this.writeActions.follow(targetUserId, hsrcFor(this.host.currentDetailItem()), next,
-                new ApiClient.Callback() {
-                    @Override
-                    public void onSuccess(JSONObject body) {
-                        applyFollowState(link, user, nextFollowStatus(beforeStatus, next));
-                        finishFollow(view, next);
-                        host.showToast(next ? "已关注" : "已取消关注");
-                    }
-
-                    @Override
-                    public void onError(String message) {
-                        finishFollow(view, before);
-                        host.showToast("关注操作失败"
-                                + writeErrorMessage("关注", message));
-                    }
-                });
+        follow(this.host.currentDetailItem(), targetUserId, before, next, success -> {
+            if (success) applyFollowState(link, user, nextFollowStatus(beforeStatus, next));
+            finishFollow(view, Boolean.TRUE.equals(interactions.following(targetUserId)));
+        });
     }
 
     void updateLinkLikeView(CommentRenderer.LikeControl view,
@@ -328,7 +291,13 @@ final class PostActionController {
         if (item == null) return;
         item.liked = liked;
         item.likes = Math.max(0, likes);
-        updateFeedLike(item.id, item.liked, item.likes);
+        interactions.apply(item);
+        for (FeedItem target : this.host.feedItems()) {
+            if (!item.id.equals(target.id)) continue;
+            target.liked = item.liked;
+            target.likes = item.likes;
+        }
+        syncInteractions(item);
     }
 
     void updateFollowView(TextView view, boolean following) {
@@ -344,6 +313,8 @@ final class PostActionController {
     }
 
     boolean isFollowing(JSONObject link, JSONObject user) {
+        Boolean override = interactions.following(AuthorIdentity.authorId(link, user));
+        if (override != null) return override;
         int status = followStatus(link, user);
         return status >= 0 ? status == 1 || status == 3
                 : Json.truthy(link, "is_follow", "is_following", "followed")
@@ -351,15 +322,7 @@ final class PostActionController {
     }
 
     String authorUserId(JSONObject link, JSONObject user) {
-        return Json.first(
-                link == null ? "" : link.optString(SecureStrings.userid()),
-                link == null ? "" : link.optString(SecureStrings.userId()),
-                link == null ? "" : link.optString(SecureStrings.heyboxId()),
-                link == null ? "" : link.optString("heyboxid"),
-                link == null ? "" : link.optString("uid"),
-                link == null ? "" : link.optString("account_id"),
-                link == null ? "" : link.optString("id"),
-                userId(user));
+        return AuthorIdentity.authorId(link, user);
     }
 
     String hsrcFor(FeedItem item) {
@@ -395,49 +358,24 @@ final class PostActionController {
     }
 
     private LikeState linkLikeOverride(JSONObject link, FeedItem fallback) {
-        String id = Json.first(
+        PostInteractionState.Like value = interactions.like(linkId(link, fallback));
+        return value == null ? null : new LikeState(value.liked, value.likes);
+    }
+
+    private String linkId(JSONObject link, FeedItem fallback) {
+        return Json.first(
                 fallback == null ? "" : fallback.id,
                 link == null ? "" : link.optString("linkid"),
                 link == null ? "" : link.optString("link_id"),
                 this.host.currentLinkId());
-        return id.isEmpty() ? null : this.likeOverrides.get(id);
     }
 
-    private void setLike(FeedItem item, boolean liked, int likes) {
-        item.liked = liked;
-        item.likes = likes;
-        rememberLinkLike(item.id, liked, likes);
-    }
-
-    private void rememberLinkLike(String linkId, boolean liked, int likes) {
-        if (linkId != null && !linkId.isEmpty()) {
-            this.likeOverrides.put(linkId, new LikeState(liked, likes));
-        }
-    }
-
-    private void updateFeedLike(String linkId, boolean liked, int likes) {
-        if (linkId == null || linkId.isEmpty()) return;
-        for (FeedItem item : this.host.feedItems()) {
-            if (!linkId.equals(item.id)) continue;
-            item.liked = liked;
-            item.likes = likes;
-            break;
-        }
+    private void syncInteractions(FeedItem source) {
+        interactions.apply(source);
+        interactions.apply(this.host.currentDetailItem());
+        interactions.applyAll(this.host.feedItems());
+        interactions.applyAll(this.host.searchItems());
         this.host.feedChanged();
-    }
-
-    private void updateAuthorFollowing(String authorId, boolean following) {
-        updateAuthorFollowing(this.host.feedItems(), authorId, following);
-        updateAuthorFollowing(this.host.searchItems(), authorId, following);
-        this.host.feedChanged();
-    }
-
-    private void updateAuthorFollowing(List<FeedItem> items, String authorId,
-                                       boolean following) {
-        if (items == null || authorId == null || authorId.isEmpty()) return;
-        for (FeedItem item : items) {
-            if (authorId.equals(item.authorId)) item.following = following;
-        }
     }
 
     private void finishFollow(TextView view, boolean following) {
@@ -471,15 +409,6 @@ final class PostActionController {
             target.put("followed", following);
         } catch (JSONException ignored) {
         }
-    }
-
-    private String userId(JSONObject user) {
-        return user == null ? "" : Json.first(
-                user.optString(SecureStrings.userid()),
-                user.optString(SecureStrings.userId()),
-                user.optString(SecureStrings.heyboxId()),
-                user.optString("heyboxid"), user.optString("uid"),
-                user.optString("account_id"), user.optString("id"));
     }
 
     private GradientDrawable outlinedAction(int fill, int radius) {

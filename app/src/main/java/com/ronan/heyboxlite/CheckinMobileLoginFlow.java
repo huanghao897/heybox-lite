@@ -21,7 +21,7 @@ final class CheckinMobileLoginFlow {
         void clearCode();
         void clearPassword();
         void focusCode();
-        void openCaptcha(String uri);
+        void openCaptcha(String uri, int attempt);
         void showMessage(String message);
         void connected();
     }
@@ -41,6 +41,12 @@ final class CheckinMobileLoginFlow {
     private long expiresAtElapsed;
     private boolean requestInFlight;
     private boolean resumed;
+    private boolean closed;
+    private int generation;
+    private int captchaGeneration;
+    private String sessionPhone = "";
+    private String captchaSessionId = "";
+    private String pendingCaptchaUri = "";
     private CaptchaAction captchaAction = CaptchaAction.NONE;
     private String captchaPhone = "";
     private String captchaCode = "";
@@ -52,13 +58,16 @@ final class CheckinMobileLoginFlow {
     }
 
     void start() {
+        if (closed) return;
         reset();
     }
 
     void resume() {
+        if (closed) return;
         resumed = true;
         refreshControls();
         updateCountdown();
+        launchPendingCaptcha();
     }
 
     void bindView() {
@@ -72,6 +81,7 @@ final class CheckinMobileLoginFlow {
     }
 
     void close() {
+        closed = true;
         resumed = false;
         handler.removeCallbacksAndMessages(null);
         reset();
@@ -90,7 +100,8 @@ final class CheckinMobileLoginFlow {
     }
 
     void switchMode(Mode value) {
-        if (requestInFlight || value == mode) return;
+        if (closed || requestInFlight || value == mode) return;
+        generation++;
         rememberedPhone = clean(host.phone());
         host.clearPassword();
         mode = value;
@@ -99,14 +110,19 @@ final class CheckinMobileLoginFlow {
     }
 
     void sendSmsCode() {
-        if (requestInFlight) return;
+        if (closed || requestInFlight || !host.active()) return;
         String phone = clean(host.phone());
+        if (!phone.equals(sessionPhone)) reset();
         rememberedPhone = phone;
         requestSmsCode(phone, "", "", false);
     }
 
     void submitSmsCode() {
-        if (requestInFlight || smsSessionId.isEmpty()) return;
+        if (closed || requestInFlight || smsSessionId.isEmpty() || !host.active()) return;
+        if (!sessionPhone.equals(clean(host.phone()))) {
+            resetSmsSession("手机号已更改，请重新发送验证码");
+            return;
+        }
         if (SystemClock.elapsedRealtime() >= expiresAtElapsed) {
             resetSmsSession("验证码已过期，请重新发送");
             return;
@@ -115,30 +131,34 @@ final class CheckinMobileLoginFlow {
     }
 
     void loginWithPassword() {
-        if (requestInFlight) return;
+        if (closed || requestInFlight || !host.active()) return;
         String phone = clean(host.phone());
         rememberedPhone = phone;
         requestPasswordLogin(phone, host.password(), "", "", false);
     }
 
-    void onCaptchaResult(String ticket, String randstr) {
-        if (!host.active() || captchaAction == CaptchaAction.NONE) return;
+    void onCaptchaResult(int attempt, String ticket, String randstr) {
+        if (attempt != captchaGeneration || !accept(attempt, captchaPhone)
+                || captchaAction == CaptchaAction.NONE) return;
         CaptchaAction action = captchaAction;
         String phone = captchaPhone;
         String code = captchaCode;
         String password = captchaPassword;
+        String session = captchaSessionId;
         clearCaptcha();
         if (action == CaptchaAction.SEND_SMS) {
             requestSmsCode(phone, ticket, randstr, true);
         } else if (action == CaptchaAction.SUBMIT_SMS) {
+            if (!session.equals(smsSessionId) || !phone.equals(sessionPhone)) return;
             requestSubmitSmsCode(code, ticket, randstr, true);
         } else {
             requestPasswordLogin(phone, password, ticket, randstr, true);
         }
     }
 
-    void onCaptchaCancelled(String message) {
-        if (!host.active() || captchaAction == CaptchaAction.NONE) return;
+    void onCaptchaCancelled(int attempt, String message) {
+        if (attempt != captchaGeneration || !accept(attempt, captchaPhone)
+                || captchaAction == CaptchaAction.NONE) return;
         clearCaptcha();
         requestInFlight = false;
         refreshControls();
@@ -149,6 +169,7 @@ final class CheckinMobileLoginFlow {
 
     private void requestSmsCode(String phone, String ticket, String randstr,
                                 boolean captchaRetry) {
+        final int attempt = ++generation;
         requestInFlight = true;
         refreshControls();
         host.setStatus(captchaRetry ? "安全验证通过，正在发送验证码" : "正在发送验证码",
@@ -157,10 +178,11 @@ final class CheckinMobileLoginFlow {
                 new CheckinCenterClient.Callback<CheckinCenterClient.SmsSession>() {
                     @Override
                     public void onSuccess(CheckinCenterClient.SmsSession value) {
-                        if (!host.active()) return;
+                        if (!accept(attempt, phone)) return;
                         clearCaptcha();
                         requestInFlight = false;
                         smsSessionId = value.sessionId;
+                        sessionPhone = phone;
                         long now = SystemClock.elapsedRealtime();
                         retryAtElapsed = now + value.retryAfterSeconds * SECOND_MS;
                         expiresAtElapsed = now + value.expiresInSeconds * SECOND_MS;
@@ -172,7 +194,7 @@ final class CheckinMobileLoginFlow {
 
                     @Override
                     public void onError(CheckinCenterClient.ApiError error) {
-                        if (!host.active()) return;
+                        if (!accept(attempt, phone)) return;
                         if (!captchaRetry && beginCaptcha(
                                 CaptchaAction.SEND_SMS, phone, "", "", error)) return;
                         clearCaptcha();
@@ -187,15 +209,18 @@ final class CheckinMobileLoginFlow {
 
     private void requestSubmitSmsCode(String code, String ticket, String randstr,
                                       boolean captchaRetry) {
+        final int attempt = ++generation;
+        final String phone = sessionPhone;
+        final String session = smsSessionId;
         requestInFlight = true;
         refreshControls();
         host.setStatus(captchaRetry ? "安全验证通过，正在继续登录" : "正在验证并连接账号",
                 Status.NORMAL);
-        coordinator.submitSmsCode(smsSessionId, code, ticket, randstr,
+        coordinator.submitSmsCode(session, code, ticket, randstr,
                 new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
                     @Override
                     public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
-                        if (!host.active()) return;
+                        if (!accept(attempt, phone) || !session.equals(smsSessionId)) return;
                         reset();
                         host.showMessage("手机号登录成功");
                         host.connected();
@@ -203,9 +228,9 @@ final class CheckinMobileLoginFlow {
 
                     @Override
                     public void onError(CheckinCenterClient.ApiError error) {
-                        if (!host.active()) return;
+                        if (!accept(attempt, phone) || !session.equals(smsSessionId)) return;
                         if (!captchaRetry && beginCaptcha(
-                                CaptchaAction.SUBMIT_SMS, "", code, "", error)) return;
+                                CaptchaAction.SUBMIT_SMS, phone, code, "", error)) return;
                         clearCaptcha();
                         requestInFlight = false;
                         refreshControls();
@@ -219,6 +244,7 @@ final class CheckinMobileLoginFlow {
 
     private void requestPasswordLogin(String phone, String password, String ticket,
                                       String randstr, boolean captchaRetry) {
+        final int attempt = ++generation;
         requestInFlight = true;
         refreshControls();
         host.setStatus(captchaRetry ? "安全验证通过，正在继续登录" : "正在登录小黑盒",
@@ -227,7 +253,7 @@ final class CheckinMobileLoginFlow {
                 new CheckinCenterClient.Callback<CheckinCenterClient.ConnectedAccount>() {
                     @Override
                     public void onSuccess(CheckinCenterClient.ConnectedAccount value) {
-                        if (!host.active()) return;
+                        if (!accept(attempt, phone)) return;
                         host.clearPassword();
                         reset();
                         host.showMessage("手机号密码登录成功");
@@ -236,7 +262,7 @@ final class CheckinMobileLoginFlow {
 
                     @Override
                     public void onError(CheckinCenterClient.ApiError error) {
-                        if (!host.active()) return;
+                        if (!accept(attempt, phone)) return;
                         if (!captchaRetry && beginCaptcha(
                                 CaptchaAction.PASSWORD_LOGIN, phone, "", password, error)) {
                             return;
@@ -256,12 +282,29 @@ final class CheckinMobileLoginFlow {
                                  String password, CheckinCenterClient.ApiError error) {
         if (!error.captchaRequired()) return false;
         captchaAction = action;
+        captchaGeneration = generation;
         captchaPhone = clean(phone);
         captchaCode = clean(code);
         captchaPassword = password == null ? "" : password;
+        captchaSessionId = smsSessionId;
+        pendingCaptchaUri = error.captchaUri;
         host.setStatus("请完成小黑盒安全验证", Status.ACCENT);
-        host.openCaptcha(error.captchaUri);
+        launchPendingCaptcha();
         return true;
+    }
+
+    private void launchPendingCaptcha() {
+        if (!resumed || closed || !host.active() || pendingCaptchaUri.isEmpty()) return;
+        String uri = pendingCaptchaUri;
+        pendingCaptchaUri = "";
+        host.openCaptcha(uri, captchaGeneration);
+    }
+
+    private boolean accept(int attempt, String phone) {
+        if (closed || generation != attempt || !host.active()) return false;
+        if (phone.equals(clean(host.phone()))) return true;
+        resetSmsSession("手机号已更改，请重新登录");
+        return false;
     }
 
     private void updateCountdown() {
@@ -275,6 +318,10 @@ final class CheckinMobileLoginFlow {
         if (smsSessionId.isEmpty()) return false;
         long now = SystemClock.elapsedRealtime();
         if (now >= expiresAtElapsed) {
+            if (requestInFlight) {
+                host.updateSmsButton("验证码已过期", false);
+                return false;
+            }
             resetSmsSession("验证码已过期，请重新发送");
             return false;
         }
@@ -285,8 +332,10 @@ final class CheckinMobileLoginFlow {
     }
 
     private void resetSmsSession(String message) {
+        generation++;
         handler.removeCallbacks(countdownTask);
         smsSessionId = "";
+        sessionPhone = "";
         retryAtElapsed = 0L;
         expiresAtElapsed = 0L;
         requestInFlight = false;
@@ -302,11 +351,13 @@ final class CheckinMobileLoginFlow {
     }
 
     private void reset() {
+        generation++;
         handler.removeCallbacks(countdownTask);
         requestInFlight = false;
         mode = Mode.SMS;
         rememberedPhone = "";
         smsSessionId = "";
+        sessionPhone = "";
         retryAtElapsed = 0L;
         expiresAtElapsed = 0L;
         clearCaptcha();
@@ -317,6 +368,8 @@ final class CheckinMobileLoginFlow {
         captchaPhone = "";
         captchaCode = "";
         captchaPassword = "";
+        captchaSessionId = "";
+        pendingCaptchaUri = "";
     }
 
     private static String clean(String value) {

@@ -17,9 +17,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 final class DetailContentRenderer {
     interface ImageOpener {
@@ -34,11 +32,9 @@ final class DetailContentRenderer {
     private final float textScale;
     private final ImageOpener imageOpener;
     private final DetailContentParser parser = new DetailContentParser();
-    private final GameDetailClient gameDetailClient;
-    private long gameCardRenderGeneration;
 
     DetailContentRenderer(Activity activity, SessionStore session,
-                          ThemeTokens tokens, boolean roundLayout, ApiClient api,
+                          ThemeTokens tokens, boolean roundLayout,
                           ImageOpener imageOpener) {
         this.activity = activity;
         this.session = session;
@@ -47,7 +43,6 @@ final class DetailContentRenderer {
         this.uiScale = session.uiScale() / 100.0f;
         this.textScale = session.textScale() / 100.0f;
         this.imageOpener = imageOpener;
-        this.gameDetailClient = new GameDetailClient(api);
     }
 
     DetailContentParser.Result resolve(JSONObject link, String fallback,
@@ -61,9 +56,8 @@ final class DetailContentRenderer {
     }
 
     void add(LinearLayout parent, DetailContentParser.Result content) {
-        long generation = ++this.gameCardRenderGeneration;
         addVideos(parent, content.videos);
-        addBlocks(parent, content.blocks, content.useImagePager, generation);
+        addBlocks(parent, content.blocks, content.useImagePager);
     }
 
     private void addVideos(LinearLayout parent, List<VideoData> videos) {
@@ -128,7 +122,7 @@ final class DetailContentRenderer {
     }
 
     private void addBlocks(LinearLayout parent, List<RichContent.Block> blocks,
-                           boolean usePager, long generation) {
+                           boolean usePager) {
         if (blocks.isEmpty()) {
             addTop(parent, text("正文为空", 13.0f, this.tokens.muted), 9);
             return;
@@ -136,8 +130,6 @@ final class DetailContentRenderer {
         int imageCount = 0;
         boolean bodyStarted = false;
         boolean lastWasImage = false;
-        List<PendingGameCard> pendingGames = new ArrayList<>();
-        Set<String> seenGameIds = new HashSet<>();
         int index = 0;
         while (index < blocks.size()) {
             RichContent.Block block = blocks.get(index);
@@ -167,7 +159,7 @@ final class DetailContentRenderer {
             }
             index++;
             if (RichGameCardParser.isCard(block)) {
-                addGameCard(parent, block, pendingGames, seenGameIds, bodyStarted);
+                addGameCard(parent, block, bodyStarted);
                 bodyStarted = true;
                 lastWasImage = false;
             } else if (block.kind == RichContent.Block.HEADING) {
@@ -186,7 +178,6 @@ final class DetailContentRenderer {
                 lastWasImage = false;
             }
         }
-        loadPendingGameCards(pendingGames, generation);
     }
 
     private void addHeading(LinearLayout parent, String source,
@@ -277,7 +268,6 @@ final class DetailContentRenderer {
     }
 
     private void addGameCard(LinearLayout parent, RichContent.Block block,
-                             List<PendingGameCard> pending, Set<String> seenGameIds,
                              boolean bodyStarted) {
         GameCardData embedded = GameCardData.fromEmbedded(block.gameObject, block.value);
         String title = embedded == null ? "游戏" : embedded.name;
@@ -294,67 +284,36 @@ final class DetailContentRenderer {
         if (appId.isEmpty()) {
             card.showUnavailable("");
         } else {
-            pending.add(new PendingGameCard(appId, card));
+            card.setTag(new GameBinding(appId));
         }
     }
 
-    private void loadPendingGameCards(List<PendingGameCard> pending, long generation) {
-        if (pending.isEmpty()) return;
-        List<RichLinkClassifier.GameLinkInfo> references = new ArrayList<>();
-        java.util.HashSet<String> seen = new java.util.HashSet<>();
-        for (PendingGameCard item : pending) {
-            if (seen.add(item.appId)) {
-                references.add(new RichLinkClassifier.GameLinkInfo(
-                        item.appId, "pc", "", ""));
+    void bindGames(View root, NativeDetailGamesController.Snapshot snapshot) {
+        Object tag = root.getTag();
+        if (root instanceof GameCardView && tag instanceof GameBinding) {
+            GameBinding binding = (GameBinding) tag;
+            GameCardData data = snapshot.data.get(binding.appId);
+            if (data != null && binding.bound != data) {
+                ((GameCardView) root).bind(data);
+                binding.bound = data;
+            } else if (data == null && snapshot.finished.contains(binding.appId) && !binding.unavailable) {
+                ((GameCardView) root).showUnavailable(binding.appId);
+                binding.unavailable = true;
             }
         }
-        this.gameDetailClient.loadBatch(references, new GameDetailClient.BatchCallback() {
-            @Override
-            public void onBatch(java.util.Map<String, GameCardData> data) {
-                bindPendingGameCards(pending, data, false, generation);
-            }
-
-            @Override
-            public void onComplete(java.util.Map<String, GameCardData> data) {
-                bindPendingGameCards(pending, data, true, generation);
-            }
-        });
-    }
-
-    private void bindPendingGameCards(List<PendingGameCard> pending,
-                                      java.util.Map<String, GameCardData> data,
-                                      boolean finalBatch, long generation) {
-        if (generation != this.gameCardRenderGeneration) return;
-        for (PendingGameCard item : pending) {
-            item.view.post(() -> {
-                // A cached game-info hit can call back while the detail tree is
-                // still being assembled. Posting to the card lets Android run
-                // the binding after the new root is attached, while the
-                // generation and window checks discard stale detail trees.
-                if (generation != this.gameCardRenderGeneration
-                        || item.resolved || item.view.getWindowToken() == null) {
-                    return;
-                }
-                GameCardData cardData = data.get(item.appId);
-                if (cardData != null) {
-                    item.view.bind(cardData);
-                    item.resolved = true;
-                } else if (finalBatch) {
-                    item.view.showUnavailable(item.appId);
-                    item.resolved = true;
-                }
-            });
+        if (root instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); i++) bindGames(group.getChildAt(i), snapshot);
         }
     }
 
-    private static final class PendingGameCard {
+    private static final class GameBinding {
         final String appId;
-        final GameCardView view;
-        boolean resolved;
+        GameCardData bound;
+        boolean unavailable;
 
-        PendingGameCard(String appId, GameCardView view) {
+        GameBinding(String appId) {
             this.appId = appId;
-            this.view = view;
         }
     }
 

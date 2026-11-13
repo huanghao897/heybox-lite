@@ -54,7 +54,7 @@ class ComposeSearchControllerTest {
         f.finish("new-result")
         assertEquals(listOf("new-result"), f.ids())
         f.controller.loadMore()
-        assertEquals(OfficialRequestParams.search("new", 20, 20), f.requests.last().params)
+        assertEquals(OfficialRequestParams.search("new", 1, 20), f.requests.last().params)
     }
 
     @Test fun returningToThePreviousKeywordStillWaitsForItsOwnDebounce() {
@@ -108,7 +108,7 @@ class ComposeSearchControllerTest {
         f.advance(420)
         f.finish("next-result")
         f.controller.loadMore()
-        assertEquals(OfficialRequestParams.search("next", 20, 20), f.requests.last().params)
+        assertEquals(OfficialRequestParams.search("next", 1, 20), f.requests.last().params)
     }
 
     @Test fun closeCancelsPendingDebounceAndRejectsInFlightCallbacks() {
@@ -149,7 +149,7 @@ class ComposeSearchControllerTest {
         f.finish("new-account")
         assertEquals(listOf("new-account"), f.ids())
         f.controller.loadMore()
-        assertEquals(OfficialRequestParams.search("watch", 20, 20), f.requests.last().params)
+        assertEquals(OfficialRequestParams.search("watch", 1, 20), f.requests.last().params)
     }
 
     @Test fun sessionChangeReplacesPendingDebounceAndBlankQueryRemainsIdle() {
@@ -169,11 +169,85 @@ class ComposeSearchControllerTest {
         assertFalse(f.controller.loading.value)
     }
 
+    @Test fun filteredFirstPageAdvancesRawOffsetBeforeLoadingVisibleResults() {
+        val f = fixture()
+        f.session.setBlockKeywords("blocked")
+        f.search("watch", "blocked-a", "blocked-b")
+        f.advance(0)
+        assertEquals(OfficialRequestParams.search("watch", 2, 20), f.requests.last().params)
+        assertTrue(f.controller.loading.value)
+        repeat(3) { f.controller.loadMore() }
+        assertEquals(2, f.requests.size)
+        f.finish("visible")
+        assertEquals(listOf("visible"), f.ids())
+        assertFalse(f.controller.noMore.value)
+    }
+
+    @Test fun rawDuplicateRowsStillAdvanceOffsetAndRepeatedPagesStop() {
+        val f = fixture()
+        f.search("watch", "one", "one", "two")
+        assertEquals(listOf("one", "two"), f.ids())
+        f.controller.loadMore()
+        assertEquals(OfficialRequestParams.search("watch", 3, 20), f.requests.last().params)
+        f.finish("one", "one", "two")
+        assertTrue(f.controller.noMore.value)
+        f.controller.loadMore()
+        f.advance(0)
+        assertEquals(2, f.requests.size)
+    }
+
+    @Test fun emptyPageContinuationHasABudgetButManualLoadCanContinue() {
+        val f = fixture()
+        f.session.setBlockKeywords("blocked")
+        f.search("watch", "blocked-0")
+        f.advance(0)
+        f.finish("blocked-1")
+        f.advance(0)
+        f.finish("blocked-2")
+        f.advance(0)
+        assertEquals(3, f.requests.size)
+        assertFalse(f.controller.noMore.value)
+        assertFalse(f.controller.loading.value)
+        f.controller.loadMore()
+        assertEquals(OfficialRequestParams.search("watch", 3, 20), f.requests.last().params)
+        f.finish("visible")
+        assertEquals(listOf("visible"), f.ids())
+    }
+
+    @Test fun closeOrNewQueryCancelsQueuedEmptyPageContinuation() {
+        val f = fixture()
+        f.session.setBlockKeywords("blocked")
+        f.search("watch", "blocked-0")
+        f.controller.close()
+        f.advance(100)
+        assertEquals(1, f.requests.size)
+        val other = fixture()
+        other.session.setBlockKeywords("blocked")
+        other.search("watch", "blocked-0")
+        other.controller.setQuery("new")
+        other.advance(420)
+        assertEquals(OfficialRequestParams.search("new", 0, 20), other.requests.last().params)
+        assertEquals(2, other.requests.size)
+    }
+
+    @Test fun serverEndFlagPreventsAutomaticEmptyPageRequests() {
+        val f = fixture()
+        f.session.setBlockKeywords("blocked")
+        f.controller.setQuery("watch")
+        f.advance(420)
+        val body = body("blocked-0")
+        body.getJSONObject("result").put("has_more", 0)
+        f.requests.last().callback.onSuccess(body)
+        f.advance(0)
+        assertTrue(f.controller.noMore.value)
+        assertEquals(1, f.requests.size)
+    }
+
     private fun fixture() = Fixture().also(fixtures::add)
 
     private class Fixture {
         private val context = RuntimeEnvironment.getApplication()
-        private val session = SessionStore(context).apply { clearSearchHistory() }
+        val session = SessionStore(context).apply { clearSearchHistory(); setBlockKeywords("") }
         val api = ApiClient(session)
         val requests = mutableListOf<Request>()
         val controller = ComposeSearchController(session, api, LocalCache(context),

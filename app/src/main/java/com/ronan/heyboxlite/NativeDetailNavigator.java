@@ -127,12 +127,14 @@ final class NativeDetailNavigator {
             activity.pendingBackTransition = true;
             activity.transitionTo(previous.root);
         }
+        activity.nativeDetail.resumePending(previous);
         activity.nativeDetail.resumeReading();
         return true;
     }
 
     void discardHistory() {
         for (DetailNavigationState previous : history.drain()) {
+            activity.nativeDetail.discard(previous);
             previous.pager.cancelMotion();
             previous.pager.takeReturnView();
         }

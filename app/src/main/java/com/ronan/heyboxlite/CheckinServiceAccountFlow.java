@@ -45,6 +45,7 @@ final class CheckinServiceAccountFlow {
     private boolean emailInFlight;
     private boolean resumed;
     private boolean closed;
+    private int generation;
 
     CheckinServiceAccountFlow(CheckinCenterCoordinator coordinator,
                               CheckinPairingFlow pairing, Host host) {
@@ -70,7 +71,8 @@ final class CheckinServiceAccountFlow {
     }
 
     void switchMode(Mode value) {
-        if (busy() || value == mode) return;
+        if (closed || busy() || value == mode) return;
+        generation++;
         rememberInputs();
         mode = value;
         clearEmailChallenge();
@@ -85,25 +87,27 @@ final class CheckinServiceAccountFlow {
 
     void sendRegistrationEmail() {
         CheckinCenterClient.PairingStart start = activeStart();
-        if (emailInFlight || start == null) return;
+        if (busy() || start == null) return;
         long now = SystemClock.elapsedRealtime();
         if (now < emailRetryAtElapsed) return;
         rememberedEmail = clean(host.email());
+        final String email = rememberedEmail;
         if (!CheckinCenterClient.validRegistrationEmail(rememberedEmail)) {
             host.setStatus("请输入正确的邮箱地址", Status.ERROR);
             return;
         }
         emailInFlight = true;
+        final int attempt = ++generation;
         host.setControlsEnabled(false, emailRetryAtElapsed);
         host.setStatus("正在发送邮箱验证码", Status.NORMAL);
         coordinator.sendRegistrationEmail(start.userCode, rememberedEmail,
                 new CheckinCenterClient.Callback<CheckinCenterClient.RegistrationEmailSession>() {
                     @Override
                     public void onSuccess(CheckinCenterClient.RegistrationEmailSession value) {
-                        if (!callbackActive(start)) return;
+                        if (!callbackActive(start, attempt)) return;
                         emailInFlight = false;
                         emailChallengeId = value.challengeId;
-                        emailChallengeAddress = rememberedEmail;
+                        emailChallengeAddress = email;
                         long receivedAt = SystemClock.elapsedRealtime();
                         emailRetryAtElapsed = receivedAt
                                 + value.retryAfterSeconds * SECOND_MS;
@@ -118,7 +122,7 @@ final class CheckinServiceAccountFlow {
 
                     @Override
                     public void onError(CheckinCenterClient.ApiError error) {
-                        if (!callbackActive(start)) return;
+                        if (!callbackActive(start, attempt)) return;
                         emailInFlight = false;
                         if (error.retryAfterSeconds > 0) {
                             emailRetryAtElapsed = SystemClock.elapsedRealtime()
@@ -132,7 +136,9 @@ final class CheckinServiceAccountFlow {
     }
 
     void resume() {
+        if (closed) return;
         resumed = true;
+        host.setControlsEnabled(!busy(), emailRetryAtElapsed);
         updateEmailCountdown();
     }
 
@@ -142,10 +148,12 @@ final class CheckinServiceAccountFlow {
     }
 
     void bindView() {
-        updateEmailButton(resumed);
+        handler.removeCallbacks(emailCountdownTask);
+        updateEmailButton(resumed && !closed && host.pairingVisible());
     }
 
     void reset() {
+        generation++;
         handler.removeCallbacks(emailCountdownTask);
         mode = Mode.LOGIN;
         rememberedUsername = "";
@@ -164,7 +172,8 @@ final class CheckinServiceAccountFlow {
 
     private void approve() {
         CheckinCenterClient.PairingStart start = activeStart();
-        if (approvalInFlight || start == null) return;
+        if (busy() || start == null) return;
+        final int attempt = ++generation;
         approvalInFlight = true;
         host.setControlsEnabled(false, emailRetryAtElapsed);
         host.setStatus("正在验证签到服务账号", Status.NORMAL);
@@ -172,7 +181,7 @@ final class CheckinServiceAccountFlow {
                 new CheckinCenterClient.Callback<Boolean>() {
                     @Override
                     public void onSuccess(Boolean value) {
-                        if (!callbackActive(start)) return;
+                        if (!callbackActive(start, attempt)) return;
                         approvalInFlight = false;
                         host.clearPasswords();
                         host.setStatus("验证成功，正在完成设备连接", Status.ACCENT);
@@ -181,7 +190,7 @@ final class CheckinServiceAccountFlow {
 
                     @Override
                     public void onError(CheckinCenterClient.ApiError error) {
-                        if (!callbackActive(start)) return;
+                        if (!callbackActive(start, attempt)) return;
                         approvalInFlight = false;
                         host.clearPasswords();
                         host.setControlsEnabled(true, emailRetryAtElapsed);
@@ -193,7 +202,7 @@ final class CheckinServiceAccountFlow {
 
     private void register() {
         CheckinCenterClient.PairingStart start = activeStart();
-        if (approvalInFlight || start == null) return;
+        if (busy() || start == null) return;
         String username = clean(host.username());
         String password = host.password();
         if (!password.equals(host.passwordConfirmation())) {
@@ -207,6 +216,7 @@ final class CheckinServiceAccountFlow {
         rememberedUsername = username;
         rememberedEmail = email;
         approvalInFlight = true;
+        final int attempt = ++generation;
         host.setControlsEnabled(false, emailRetryAtElapsed);
         host.setStatus("正在创建签到服务账号", Status.NORMAL);
         coordinator.registerPairing(start.userCode, username, password, email,
@@ -214,7 +224,7 @@ final class CheckinServiceAccountFlow {
                 new CheckinCenterClient.Callback<Boolean>() {
                     @Override
                     public void onSuccess(Boolean value) {
-                        if (!callbackActive(start)) return;
+                        if (!callbackActive(start, attempt)) return;
                         approvalInFlight = false;
                         host.clearPasswords();
                         host.setStatus("注册成功，正在完成设备连接", Status.ACCENT);
@@ -223,7 +233,7 @@ final class CheckinServiceAccountFlow {
 
                     @Override
                     public void onError(CheckinCenterClient.ApiError error) {
-                        if (!callbackActive(start)) return;
+                        if (!callbackActive(start, attempt)) return;
                         approvalInFlight = false;
                         host.clearPasswords();
                         host.setControlsEnabled(true, emailRetryAtElapsed);
@@ -259,7 +269,7 @@ final class CheckinServiceAccountFlow {
 
     private CheckinCenterClient.PairingStart activeStart() {
         CheckinCenterClient.PairingStart start = pairing.startValue();
-        if (start == null || !host.pairingVisible()) return null;
+        if (closed || start == null || !host.pairingVisible()) return null;
         if (pairing.expired()) {
             host.showError("配对已过期，请重新连接");
             return null;
@@ -267,8 +277,9 @@ final class CheckinServiceAccountFlow {
         return start;
     }
 
-    private boolean callbackActive(CheckinCenterClient.PairingStart start) {
-        return !closed && host.pairingVisible() && pairing.startValue() == start;
+    private boolean callbackActive(CheckinCenterClient.PairingStart start, int attempt) {
+        return !closed && generation == attempt && host.pairingVisible()
+                && pairing.startValue() == start;
     }
 
     private void rememberInputs() {

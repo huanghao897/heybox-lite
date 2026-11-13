@@ -28,6 +28,7 @@ internal data class ComposeDetailState(
 )
 
 internal class ComposeNavigationState {
+    private var interactions: PostInteractionState? = null
     val route: MutableState<String> = mutableStateOf("feed")
     private val currentRouteSpecState: MutableState<String> = mutableStateOf("feed")
     val userSpaceRoute: MutableState<String> = mutableStateOf("")
@@ -40,6 +41,18 @@ internal class ComposeNavigationState {
                              val detailParent: String, val userParent: String)
     private val contentHistory = mutableStateListOf<Frame>()
     private var nextEntryKey = 0L
+
+    fun bindInteractions(owner: PostInteractionState) {
+        interactions = owner
+        mergeInteractions()
+    }
+
+    fun mergeInteractions() {
+        val owner = interactions ?: return
+        detail.value?.item?.let(owner::apply)
+        savedDetailForUserSpace.value?.item?.let(owner::apply)
+        contentHistory.forEach { it.detail?.item?.let(owner::apply) }
+    }
 
     fun presentationRoute(): String = presentation(currentRouteSpec(), detail.value)
 
@@ -102,6 +115,7 @@ internal class ComposeNavigationState {
     }
 
     fun showDetailLoading(item: FeedItem) {
+        interactions?.apply(item)
         val reload = route.value == "detail" && detail.value?.item?.id == item.id
         if (!reload) {
             pushContentParent()
@@ -118,6 +132,7 @@ internal class ComposeNavigationState {
     fun showDetailDocument(document: ComposeDetailDocument) {
         val previous = detail.value ?: return
         if (previous.item.id != document.item.id) return
+        interactions?.apply(document.item)
         val preview = document.body.optBoolean("_progressive_preview")
         detail.value = previous.copy(item = document.item, content = document.content,
             videos = document.videos, comments = composeMergeDetailComments(document.comments, previous, preview),
@@ -130,6 +145,7 @@ internal class ComposeNavigationState {
         result: DetailPageAssembler.Result,
         fallback: FeedItem,
     ) {
+        interactions?.apply(fallback)
         val comments = ArrayList<JSONObject>()
         result.comments?.let { source ->
             for (index in 0 until source.length()) {
@@ -202,6 +218,7 @@ internal class ComposeNavigationState {
             detailReturnRoute.value = parent.detailParent
             userSpaceReturnRoute.value = parent.userParent
             setRoute(parent.route)
+            mergeInteractions()
             return true
         }
         if (route.value != "user_space" || target.substringBefore('?') != "detail") {
@@ -211,6 +228,7 @@ internal class ComposeNavigationState {
         detailReturnRoute.value = savedDetailParentRoute
         savedDetailForUserSpace.value = null
         currentRouteSpecState.value = "detail"
+        mergeInteractions()
         return true
     }
 

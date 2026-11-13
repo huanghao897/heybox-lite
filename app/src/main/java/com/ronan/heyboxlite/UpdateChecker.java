@@ -2,14 +2,12 @@ package com.ronan.heyboxlite;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -90,6 +88,7 @@ final class UpdateChecker {
                                 String authorizationWarning, Callback callback,
                                 Connections connections) {
         HttpURLConnection connection = null;
+        long startedAt = SystemClock.elapsedRealtime();
         try {
             String fingerprint = InstalledApkFingerprint.read(new File(
                     session.appContext().getApplicationInfo().sourceDir));
@@ -104,9 +103,7 @@ final class UpdateChecker {
             connection.setRequestProperty("User-Agent", "heybox-Lite/" + currentVersion);
             new DeviceAuthorizationStore(session.appContext()).apply(connection, session);
             int status = connection.getResponseCode();
-            InputStream stream = status >= 200 && status < 300
-                    ? connection.getInputStream() : connection.getErrorStream();
-            String text = read(stream);
+            String text = MetadataResponse.read(connection, status, startedAt);
             if (status < 200 || status >= 300) {
                 throw new IllegalStateException("Update server HTTP " + status);
             }
@@ -170,18 +167,6 @@ final class UpdateChecker {
     static boolean isUpdateAvailable(JSONObject payload, String latest, String currentVersion) {
         return UpdateVersionPolicy.isUpdateAvailable(
                 payload, latest, currentVersion, BuildConfig.VERSION_CODE);
-    }
-
-    private static String read(InputStream stream) throws Exception {
-        if (stream == null) return "";
-        StringBuilder result = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(stream, "UTF-8"))) {
-            char[] buffer = new char[4096];
-            int count;
-            while ((count = reader.read(buffer)) >= 0) result.append(buffer, 0, count);
-        }
-        return result.toString();
     }
 
     static String latestVersion(JSONObject payload) {

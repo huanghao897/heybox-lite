@@ -800,29 +800,19 @@ final class SessionStore {
 
     void saveLogin(JSONObject result) {
         synchronized (prefs) {
-            saveLoginDetails(result);
+            SessionLoginDetails.save(prefs, result, getCookie(), sessionGeneration());
         }
     }
 
-    private void saveLoginDetails(JSONObject result) {
-        String id = result.optString("heyboxid",
-                result.optString(SecureStrings.userid(), result.optString(SecureStrings.heyboxId())));
-        JSONObject account = result.optJSONObject("account_detail");
-        String name = result.optString("nickname", result.optString("username"));
-        String avatar = result.optString("avatar");
-        if (account != null) {
-            if (id.isEmpty()) id = account.optString(
-                    SecureStrings.userid(), account.optString("heyboxid"));
-            if (name.isEmpty()) name = account.optString("username", account.optString("nickname"));
-            if (avatar.isEmpty()) avatar = account.optString("avatar");
+    boolean completeLogin(JSONObject result) {
+        synchronized (prefs) {
+            String cookie = getCookie();
+            if (cookie.isEmpty() || SessionCookieCodec.value(cookie, SecureStrings.userPkey()).isEmpty()) {
+                return false;
+            }
+            SessionLoginDetails.save(prefs, result, cookie, sessionGeneration());
+            return isLoggedIn();
         }
-        if (id.isEmpty()) id = SessionCookieCodec.userId(getCookie());
-        SharedPreferences.Editor editor = prefs.edit()
-                .putLong(SessionCookies.GENERATION_KEY, sessionGeneration() + 1L);
-        if (!id.isEmpty()) editor.putString(SecureStrings.userId(), id);
-        if (!name.isEmpty()) editor.putString(USER_NAME, name);
-        if (!avatar.isEmpty()) editor.putString(AVATAR, avatar);
-        editor.apply();
     }
 
     long mergeCookies(List<String> headers, long generation) {

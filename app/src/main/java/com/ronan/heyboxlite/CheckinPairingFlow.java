@@ -33,6 +33,7 @@ final class CheckinPairingFlow {
     }
 
     void start() {
+        if (closed) return;
         if (!coordinator.supported()) {
             host.showError("小黑盒自动签到需要 Android 7.0 或更高版本");
             return;
@@ -61,9 +62,10 @@ final class CheckinPairingFlow {
     }
 
     void resume() {
+        if (closed || resumed) return;
         resumed = true;
         if (session == null || !host.pairingVisible()) return;
-        schedulePoll(0L);
+        schedulePoll(Math.max(0L, session.nextPollAt - SystemClock.elapsedRealtime()));
         scheduleCountdown(0L);
     }
 
@@ -105,17 +107,19 @@ final class CheckinPairingFlow {
 
     private void poll() {
         Session current = session;
-        if (!canRun(current)) return;
+        if (!canRun(current) || current.pollInFlight) return;
         if (current.expired()) {
             cancel();
             host.showError("配对已过期，请重新连接");
             return;
         }
+        current.pollInFlight = true;
         coordinator.pollPairing(current.start.deviceCode,
                 new CheckinCenterClient.Callback<CheckinCenterClient.PairingPoll>() {
                     @Override
                     public void onSuccess(CheckinCenterClient.PairingPoll value) {
                         if (closed || session != current) return;
+                        current.pollInFlight = false;
                         current.retries = 0;
                         if (!value.authorized()) {
                             schedulePoll(current.start.intervalSeconds * SECOND_MS);
@@ -134,6 +138,7 @@ final class CheckinPairingFlow {
                     @Override
                     public void onError(CheckinCenterClient.ApiError error) {
                         if (closed || session != current) return;
+                        current.pollInFlight = false;
                         if (CheckinRetryPolicy.shouldRetry(error, current.retries)
                                 && !current.expired()) {
                             long delay = CheckinRetryPolicy.delayMillis(error,
@@ -154,7 +159,8 @@ final class CheckinPairingFlow {
 
     private void schedulePoll(long delayMillis) {
         handler.removeCallbacks(pollTask);
-        if (canRun(session)) {
+        if (session != null) session.nextPollAt = SystemClock.elapsedRealtime() + delayMillis;
+        if (canRun(session) && !session.pollInFlight) {
             handler.postDelayed(pollTask, Math.max(0L, delayMillis));
         }
     }
@@ -185,6 +191,8 @@ final class CheckinPairingFlow {
         final CheckinCenterClient.PairingStart start;
         final long expiresAtElapsed;
         int retries;
+        boolean pollInFlight;
+        long nextPollAt;
 
         Session(CheckinCenterClient.PairingStart start, long expiresAtElapsed) {
             this.start = start;

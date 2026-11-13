@@ -79,6 +79,8 @@ internal class ComposeAppHost(
     private var checkinPageOwner: ComposeCheckinController? = null
     private val surfaceActive = mutableStateOf(true)
     private val savedStateRegistry = activity.savedStateRegistry
+    private var interactions: PostInteractionState? = null
+    private var interactionBinding: ComposePostInteractionBinding? = null
 
     init {
         val restored = savedStateRegistry.consumeRestoredStateForKey("heybox.compose.saved-query")
@@ -194,7 +196,7 @@ internal class ComposeAppHost(
         routeResources.listState(route, navigation, saved.selectedFolder.value?.id.orEmpty())
 
     internal fun userSpaceController(route: ComposeUserSpaceRoute): ComposeUserSpaceController =
-        routeResources.userSpace(route)
+        routeResources.userSpace(route).also { interactionBinding?.watchUserSpace(route.userId, it) }
 
     internal fun setDetailPage(entryKey: Long, page: ComposeDetailPagerNavigation?) =
         routeResources.setDetailPage(entryKey, page)
@@ -226,11 +228,16 @@ internal class ComposeAppHost(
         )
     }
 
+    fun bindInteractions(owner: PostInteractionState) {
+        if (interactions === owner) return
+        interactionBinding?.close()
+        interactions = owner
+        interactionBinding = ComposePostInteractionBinding(owner, navigation, feed, search, saved,
+            readingCenter, servicesState.value.handler) { feedRevision.value++ }
+    }
+
     fun invalidateFeed() {
-        if (isRoute("detail")) currentDetailItem()?.let { item ->
-            composeSyncPostActions(item, feed.items.value)
-            composeSyncPostActions(item, search.items.value)
-        }
+        interactionBinding?.mergeAll()
         feedRevision.value++
     }
 
@@ -239,6 +246,8 @@ internal class ComposeAppHost(
         val currentAccount = session.userId()
         val currentGeneration = session.sessionGeneration()
         if (currentAccount != accountId || currentGeneration != sessionGeneration) {
+            interactions?.invalidateSession()
+            interactionBinding?.retainUserSpaces(emptySet())
             detailComments.dismiss()
             navigation.clearSavedState()
             navigation.clearDetail()
@@ -285,6 +294,8 @@ internal class ComposeAppHost(
     fun close() {
         if (!mounted) return
         mounted = false
+        interactionBinding?.close()
+        interactionBinding = null
         feedRotaryInput.clear()
         detailRotaryInput.clear()
         savedStateRegistry.unregisterSavedStateProvider("heybox.compose.saved-query")
@@ -434,6 +445,9 @@ internal class ComposeAppHost(
             ?.let(ComposeCheckinNavigation::key) ?: route else host.navigation.presentationRoute()
         val screenStates = rememberSaveableStateHolder()
         RetainComposeRouteResources(swipeRoute, host.navigation, host.routeResources, screenStates)
+        LaunchedEffect(swipeRoute) {
+            host.interactionBinding?.retainUserSpaces(host.navigation.retainedContentRoutes())
+        }
         LaunchedEffect(route) {
             if (route == "checkin_center") host.checkinPageController()?.start() else {
                 host.checkinPageOwner?.close()

@@ -18,6 +18,7 @@ import java.util.Collections;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 28, application = Application.class, instrumentedPackages = "com.ronan.heyboxlite",
@@ -54,7 +55,12 @@ public class SessionCookieMigrationTest {
         Crypto.failEncrypt = true;
         long generation = session.sessionGeneration();
 
-        assertEquals(generation, session.mergeCookies(Collections.singletonList("extra=new"), generation));
+        try {
+            session.mergeCookies(Collections.singletonList("extra=new"), generation);
+            fail("A response must not claim that unavailable credentials were stored");
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("安全读取"));
+        }
         assertEquals(cookie, prefs.getString(SecureStrings.cookieKey(), ""));
         assertFalse(prefs.contains(SecureStrings.encryptedCookieKey()));
 
@@ -74,6 +80,48 @@ public class SessionCookieMigrationTest {
         assertEquals(original, session.getCookie());
     }
 
+    @Test public void permanentlyDamagedCookieCanBeReplacedByFreshLogin() throws Exception {
+        prefs.edit().remove(SecureStrings.cookieKey())
+                .putString(SecureStrings.encryptedCookieKey(), "damaged-tag").commit();
+        long generation = session.sessionGeneration();
+
+        long current = session.mergeCookies(java.util.Arrays.asList(
+                SecureStrings.userHeyboxId() + "=84",
+                SecureStrings.userPkey() + "=new-fixture"), generation);
+
+        assertTrue(current > generation);
+        assertTrue(session.completeLogin(new org.json.JSONObject().put("heyboxid", "84")));
+        assertEquals("84", session.userId());
+        assertTrue(session.getCookie().contains("new-fixture"));
+        assertFalse(prefs.getString(SecureStrings.encryptedCookieKey(), "").equals("damaged-tag"));
+        assertTrue(new SessionStore(RuntimeEnvironment.getApplication()).isLoggedIn());
+    }
+
+    @Test public void temporaryFailureRetainsCiphertextAndDoesNotCompleteLogin() throws Exception {
+        prefs.edit().remove(SecureStrings.cookieKey())
+                .putString(SecureStrings.encryptedCookieKey(), "unavailable-key").commit();
+        long generation = session.sessionGeneration();
+        assertFalse(session.completeLogin(new org.json.JSONObject().put("heyboxid", "84")));
+        assertEquals(generation, session.sessionGeneration());
+        assertEquals("unavailable-key", prefs.getString(SecureStrings.encryptedCookieKey(), ""));
+        assertEquals("", prefs.getString(SecureStrings.userId(), ""));
+    }
+
+    @Test public void newLoginEncryptionFailureIsReportedWithoutCompletingLogin() throws Exception {
+        prefs.edit().clear().commit();
+        Crypto.failEncrypt = true;
+        long generation = session.sessionGeneration();
+        try {
+            session.mergeCookies(java.util.Arrays.asList(SecureStrings.userHeyboxId() + "=84",
+                    SecureStrings.userPkey() + "=new-fixture"), generation);
+            fail("Encryption failure must reach the request error boundary");
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("安全保存"));
+        }
+        assertFalse(session.completeLogin(new org.json.JSONObject().put("heyboxid", "84")));
+        assertEquals(generation, session.sessionGeneration());
+    }
+
     @Implements(value = ModernCookieCrypto.class, isInAndroidSdk = false)
     public static final class Crypto {
         static boolean failEncrypt;
@@ -83,7 +131,11 @@ public class SessionCookieMigrationTest {
             return "fixture:" + value;
         }
 
-        @Implementation protected static String decrypt(String value) {
+        @Implementation protected static String decrypt(String value) throws Exception {
+            if ("damaged-tag".equals(value)) throw new javax.crypto.AEADBadTagException("fixture");
+            if ("unavailable-key".equals(value)) {
+                throw new ModernCookieCrypto.KeyUnavailableException("fixture");
+            }
             return value.substring("fixture:".length());
         }
     }

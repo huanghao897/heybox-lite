@@ -32,6 +32,22 @@ public class FeedCollectionTest {
         assertTrue(FeedCollection.loadMoreExhausted(10, 0));
     }
 
+    @Test public void filteredAndDuplicatePagesFollowAdvancingServerCursor() {
+        assertFalse(FeedCollection.loadMoreExhausted(10, 0, "first", "next"));
+        assertTrue(FeedCollection.loadMoreExhausted(10, 2, "same", "same"));
+        assertTrue(FeedCollection.loadMoreExhausted(0, 0, "first", "next"));
+        assertFalse(FeedCollection.loadMoreExhausted(10, 2, "", ""));
+        assertTrue(FeedCollection.loadMoreExhausted(10, 0, "", ""));
+    }
+
+    @Test public void rawCountIsIndependentOfUniqueDisplayItems() throws Exception {
+        org.json.JSONArray rows = new org.json.JSONArray().put(item("one").toJson())
+                .put(item("one").toJson()).put(item("two").toJson());
+        JSONObject body = new JSONObject().put("result", new JSONObject().put("links", rows));
+        assertEquals(3, FeedCollection.returnedCount(body));
+        assertEquals(2, FeedCollection.parse(body).size());
+    }
+
     private static FeedItem item(String id) throws Exception {
         JSONObject value = new JSONObject();
         value.put("linkid", id);

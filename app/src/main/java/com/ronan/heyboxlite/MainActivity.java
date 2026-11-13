@@ -39,7 +39,6 @@ import java.util.Map;
 @SuppressLint("WrongConstant")
 public final class MainActivity extends ComponentActivity implements BackSwipeFrameLayout.Host,
         ShellScreenNavigator.Host, CheckinLeaderboardController.Host {
-    private static final int REQUEST_CHECKIN_CAPTCHA = 9134;
     int BG;
     int PANEL;
     int TEXT;
@@ -1103,22 +1102,6 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
                         }
 
                         @Override
-                        public void openCaptcha(String verificationUri) {
-                            try {
-                                MainActivity.this.startActivityForResult(
-                                        CheckinCaptchaActivity.intent(
-                                                MainActivity.this, verificationUri,
-                                                MainActivity.this.usesRoundLayout()),
-                                        REQUEST_CHECKIN_CAPTCHA);
-                            } catch (RuntimeException error) {
-                                if (MainActivity.this.checkinCenterPage != null) {
-                                    MainActivity.this.checkinCenterPage.onCaptchaCancelled(
-                                            "当前系统无法打开安全验证");
-                                }
-                            }
-                        }
-
-                        @Override
                         public void confirmRevoke(Runnable confirmed) {
                             MainActivity.this.showLiteDialog("撤销此设备",
                                     "撤销后，这台设备需要重新连接才能查看或执行小黑盒签到。服务器中的定时任务不会自动删除。",
@@ -1376,33 +1359,7 @@ public final class MainActivity extends ComponentActivity implements BackSwipeFr
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (ComposeCheckinCaptchaController.handleActivityResult(requestCode, resultCode, data)) {
-            return;
-        }
-        if (requestCode != REQUEST_CHECKIN_CAPTCHA || this.checkinCenterPage == null) return;
-        if (resultCode == RESULT_OK && data != null) {
-            String ticket = data.getStringExtra(CheckinCaptchaActivity.EXTRA_TICKET);
-            String randstr = data.getStringExtra(CheckinCaptchaActivity.EXTRA_RANDSTR);
-            if (CheckinCenterClient.captchaProofValid(ticket, randstr)
-                    && ticket != null && !ticket.trim().isEmpty()) {
-                if (this.localCache != null) {
-                    this.localCache.log("captcha result=success");
-                }
-                this.checkinCenterPage.onCaptchaResult(ticket, randstr);
-                return;
-            }
-        }
-        String message = data == null ? "安全验证已取消"
-                : data.getStringExtra(CheckinCaptchaActivity.EXTRA_ERROR);
-        String diagnosticCode = data == null ? "no_result"
-                : data.getStringExtra(CheckinCaptchaActivity.EXTRA_DIAGNOSTIC);
-        if (diagnosticCode == null || !diagnosticCode.matches("[a-z0-9_]{1,48}")) {
-            diagnosticCode = "unknown";
-        }
-        if (this.localCache != null) {
-            this.localCache.log("captcha result=cancelled reason=" + diagnosticCode);
-        }
-        this.checkinCenterPage.onCaptchaCancelled(message);
+        ComposeCheckinCaptchaController.handleActivityResult(requestCode, resultCode, data);
     }
 
     @Override

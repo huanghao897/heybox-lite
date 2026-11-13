@@ -100,7 +100,7 @@ final class DetailHeaderRenderer {
         follow.setPadding(dp(8), dp(6), dp(8), dp(6));
         follow.setMinWidth(dp(this.roundLayout ? 56 : 62));
         follow.setMinHeight(dp(32));
-        String targetUserId = this.postActions.authorUserId(link, user);
+        String targetUserId = AuthorIdentity.authorId(link, user);
         View.OnClickListener openUser = view ->
                 this.host.openUser(targetUserId, nameValue, avatarUrl);
         avatar.setOnClickListener(openUser);

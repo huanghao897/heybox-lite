@@ -50,6 +50,17 @@ final class FeedCollection {
         return returned <= 0 || added <= 0;
     }
 
+    static boolean loadMoreExhausted(int returned, int added, String requestedCursor,
+                                     String nextCursor) {
+        if (returned <= 0) return true;
+        if (!nextCursor.isEmpty()) return nextCursor.equals(requestedCursor);
+        return added <= 0;
+    }
+
+    static int returnedCount(Object node) {
+        return count(node, 0);
+    }
+
     static boolean isBlocked(FeedItem item, List<String> keywords) {
         if (item == null || keywords == null || keywords.isEmpty()) return false;
         String haystack = (item.title + "\n" + item.description + "\n" + item.author)
@@ -79,5 +90,24 @@ final class FeedCollection {
         }
         Iterator<String> keys = object.keys();
         while (keys.hasNext()) collect(object.opt(keys.next()), output, ids, depth + 1);
+    }
+
+    private static int count(Object node, int depth) {
+        if (node == null || depth > MAX_JSON_DEPTH) return 0;
+        if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            int count = 0;
+            for (int i = 0; i < array.length(); i++) count += count(array.opt(i), depth + 1);
+            return count;
+        }
+        if (!(node instanceof JSONObject)) return 0;
+        JSONObject object = (JSONObject) node;
+        String id = object.optString("linkid", object.optString("link_id"));
+        if (!id.isEmpty() && (!object.optString("title").isEmpty() || object.has("text")
+                || object.has("description") || object.has("content"))) return 1;
+        int count = 0;
+        Iterator<String> keys = object.keys();
+        while (keys.hasNext()) count += count(object.opt(keys.next()), depth + 1);
+        return count;
     }
 }

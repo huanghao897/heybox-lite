@@ -144,6 +144,18 @@ public class UpdateAuthorizationTest {
         assertEquals(1, requestedUrls.size());
     }
 
+    @Test public void oversizedUpdateResponseReportsAnErrorInsteadOfPublishingMetadata() throws Exception {
+        DeviceAuthorizationTestFixtures.Response response =
+                new DeviceAuthorizationTestFixtures.Response(200,
+                        new String(new char[MetadataResponse.MAX_BYTES + 1]).replace('\0', 'x'));
+        check(response);
+        await(response);
+        assertTrue(results.isEmpty());
+        assertEquals(1, errors.size());
+        assertTrue(errors.get(0).contains("大小限制"));
+        assertTrue(response.disconnected);
+    }
+
     private void check(DeviceAuthorizationTestFixtures.Response response) {
         UpdateChecker.check(BuildConfig.VERSION_NAME, session, 0, new UpdateChecker.Callback() {
             @Override public void onResult(UpdateChecker.Result result) { results.add(result); }

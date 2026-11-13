@@ -2,13 +2,11 @@ package com.ronan.heyboxlite;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
@@ -54,20 +52,24 @@ final class AnnouncementChecker {
     }
 
     private static void request(Callback callback) {
+        request(callback, url -> (HttpURLConnection) url.openConnection());
+    }
+
+    static void request(Callback callback, ApiClient.ConnectionFactory connections) {
         HttpURLConnection connection = null;
+        long startedAt = SystemClock.elapsedRealtime();
         try {
             String endpoint = UpdateChecker.requireTrustedUrl(BuildConfig.ANNOUNCEMENT_API_URL);
             String separator = endpoint.contains("?") ? "&" : "?";
             URL url = new URL(endpoint + separator + "versionCode=" + BuildConfig.VERSION_CODE);
-            connection = (HttpURLConnection) url.openConnection();
+            connection = connections.open(url);
+            connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(4000);
             connection.setReadTimeout(5000);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("User-Agent", "heybox-Lite/" + BuildConfig.VERSION_NAME);
             int status = connection.getResponseCode();
-            InputStream stream = status >= 200 && status < 300
-                    ? connection.getInputStream() : connection.getErrorStream();
-            String text = read(stream);
+            String text = MetadataResponse.read(connection, status, startedAt);
             if (status < 200 || status >= 300) {
                 throw new IllegalStateException("Announcement server HTTP " + status);
             }
@@ -121,18 +123,6 @@ final class AnnouncementChecker {
                 System.currentTimeMillis());
         boolean onceOnly = object.optBoolean("onceOnly", true);
         return new Item(id, title, content, level, updatedAt, enabled, onceOnly);
-    }
-
-    private static String read(InputStream stream) throws Exception {
-        if (stream == null) return "";
-        StringBuilder result = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(stream, "UTF-8"))) {
-            char[] buffer = new char[4096];
-            int count;
-            while ((count = reader.read(buffer)) >= 0) result.append(buffer, 0, count);
-        }
-        return result.toString();
     }
 
     private static String firstNonEmpty(String... values) {

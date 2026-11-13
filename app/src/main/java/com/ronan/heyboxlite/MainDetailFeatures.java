@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import androidx.lifecycle.LifecycleOwner;
 
 import org.json.JSONObject;
 
@@ -40,6 +41,7 @@ final class MainDetailFeatures {
     final DetailActionBar actionBar;
     final DetailLoadCoordinator loader;
     final DetailPageAssembler pageAssembler;
+    final NativeDetailGamesController games;
 
     MainDetailFeatures(Activity activity, SessionStore session, ApiClient api,
                        WriteActionClient writeActions, LocalCache cache,
@@ -60,6 +62,7 @@ final class MainDetailFeatures {
                     @Override public String currentAuthCode() {
                         return host.currentAuthCode();
                     }
+                    @Override public Object currentEntry() { return host.currentPager(); }
                     @Override public boolean requireLogin(String actionName) {
                         return postActions.requireLogin(actionName);
                     }
@@ -107,6 +110,20 @@ final class MainDetailFeatures {
                         host.showMessage(message);
                     }
                     @Override public void toast(String message) { host.showToast(message); }
+                });
+        games = new NativeDetailGamesController(new GameDetailClient(api),
+                activity instanceof LifecycleOwner ? ((LifecycleOwner) activity).getLifecycle() : null,
+                new NativeDetailGamesController.Host() {
+                    @Override public boolean active(Object entry) {
+                        return entry == host.currentPager() && host.detailActive(host.currentItem())
+                                && !activity.isFinishing() && !activity.isDestroyed();
+                    }
+                    @Override public void changed(NativeDetailGamesController.Snapshot snapshot) {
+                        DetailPager pager = host.currentPager();
+                        if (contentRenderer != null && pager != null && pager.getChildCount() > 1) {
+                            contentRenderer.bindGames(pager.getChildAt(1), snapshot);
+                        }
+                    }
                 });
         pageAssembler = new DetailPageAssembler(activity, session, tokens, cache,
                 postActions, headerRenderer, contentRenderer, actionBar, commentsSection,

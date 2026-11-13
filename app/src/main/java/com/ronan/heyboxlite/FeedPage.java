@@ -1,15 +1,11 @@
 package com.ronan.heyboxlite;
 
 import android.app.Activity;
-import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.os.SystemClock;
-import android.view.Gravity;
 import android.view.View;
 import android.widget.AbsListView;
-import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.TextView;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -296,7 +292,8 @@ final class FeedPage {
                 this.session.textScale() / 100.0f,
                 bannerTopMargin, () -> load(false));
         this.adapter = createAdapter(this.items);
-        list.setContentAdapter(this.adapter, topBar(), this.paginationView.footerView());
+        list.setContentAdapter(this.adapter, new NativeFeedHeader(
+                activity, session, tokens, roundLayout, host).create(), this.paginationView.footerView());
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(AbsListView view, int state) {
@@ -318,44 +315,6 @@ final class FeedPage {
         });
         updatePagination();
         this.cachedContainer = this.paginationView;
-    }
-
-    private View topBar() {
-        LinearLayout container = vertical(this.tokens.background);
-        int outerHorizontal = this.roundLayout ? 0 : dp(10);
-        int topPadding = this.roundLayout ? this.host.roundHeaderTopPadding() : dp(6);
-        container.setPadding(outerHorizontal, topPadding, outerHorizontal, dp(4));
-
-        LinearLayout heading = new LinearLayout(this.activity);
-        heading.setGravity(Gravity.CENTER_VERTICAL);
-        int headingHorizontal = this.roundLayout ? this.host.roundHeaderInset() : dp(2);
-        heading.setPadding(headingHorizontal, 0, headingHorizontal, 0);
-        TextView title = text("社区", this.roundLayout ? 21.0f : 23.0f, this.tokens.text);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        heading.addView(title, new LinearLayout.LayoutParams(
-                -1, dp(this.roundLayout ? 34 : 38)));
-        container.addView(heading);
-
-        LinearLayout searchRow = new LinearLayout(this.activity);
-        searchRow.setGravity(Gravity.CENTER_VERTICAL);
-        searchRow.setPadding(dp(11), 0, dp(8), 0);
-        Compat.setBackground(searchRow, UiComponents.round(this.activity,
-                this.tokens.panel, 12, this.session.uiScale() / 100.0f));
-        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(
-                -1, dp(this.roundLayout ? 35 : 40));
-        if (this.roundLayout) {
-            int inset = this.host.roundSearchInset();
-            searchParams.leftMargin = inset;
-            searchParams.rightMargin = inset;
-        }
-        container.addView(searchRow, searchParams);
-        TextView search = text("搜索帖子、作者或关键词", 12.5f, this.tokens.muted);
-        search.setGravity(Gravity.CENTER_VERTICAL);
-        search.setSingleLine(true);
-        setLeftIcon(search, R.drawable.il_search, this.tokens.muted, 16);
-        search.setOnClickListener(view -> this.host.showSearch());
-        searchRow.addView(search, new LinearLayout.LayoutParams(0, -1, 1.0f));
-        return container;
     }
 
     private void applyResponse(JSONObject body, boolean reset, int pull,
@@ -384,10 +343,12 @@ final class FeedPage {
         if (!reset && returned > 0 && fresh.isEmpty()) {
             this.host.showToast("本页内容已被关键词过滤");
         }
-        this.paging.recordResponseCursor(pull, responseLastval);
         if (!reset) {
-            this.paging.setNoMore(FeedCollection.loadMoreExhausted(returned, added));
+            this.paging.setNoMore(FeedCollection.loadMoreExhausted(
+                    returned, added, this.paging.lastval(), responseLastval)
+                    || (result != null && result.has("has_more") && !Json.truthy(result, "has_more")));
         }
+        this.paging.recordResponseCursor(pull, responseLastval);
         this.localCache.log("feed " + (reset ? "refresh" : "load more")
                 + ": returned=" + returned + ", added=" + added
                 + ", cursor=" + !responseLastval.isEmpty()
@@ -476,29 +437,6 @@ final class FeedPage {
         if (this.paginationView == null) return;
         this.paginationView.close();
         this.paginationView = null;
-    }
-
-    private LinearLayout vertical(int color) {
-        LinearLayout layout = new LinearLayout(this.activity);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setBackgroundColor(color);
-        return layout;
-    }
-
-    private TextView text(String value, float size, int color) {
-        TextView view = UiComponents.label(
-                this.activity, value, size, color, this.session.textScale() / 100.0f);
-        view.setTypeface(Typeface.DEFAULT);
-        return view;
-    }
-
-    private void setLeftIcon(TextView view, int resource, int color, int size) {
-        android.graphics.drawable.Drawable icon = Compat.tintedDrawable(
-                this.activity, resource, color);
-        if (icon == null) return;
-        icon.setBounds(0, 0, dp(size), dp(size));
-        view.setCompoundDrawables(icon, null, null, null);
-        view.setCompoundDrawablePadding(dp(7));
     }
 
     private int dp(int value) {

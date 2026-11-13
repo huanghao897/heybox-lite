@@ -52,21 +52,23 @@ internal fun ComposeLoginScreen(
     }
     var bitmap by remember(controller) { mutableStateOf<Bitmap?>(null) }
     var status by remember(controller) { mutableStateOf("正在获取二维码") }
-    var generation by remember(controller) { mutableStateOf(0) }
+    val generation = remember(controller) { intArrayOf(0) }
+    val disposed = remember(controller) { booleanArrayOf(false) }
     var retry by remember(controller) { mutableStateOf(0) }
     val latestOnLoggedIn by rememberUpdatedState(onLoggedIn)
     val latestBitmap by rememberUpdatedState(bitmap)
     val listener = remember(controller) {
         object : QrLoginController.Listener {
             override fun onQrReady(url: String) {
-                val current = ++generation
+                val current = ++generation[0]
                 status = "等待扫码"
                 executor.execute {
                     val generated = runCatching {
                         QrCode.create(url, 620)
                     }.getOrNull()
                     services.handler.post {
-                        if (current == generation) {
+                        if (!disposed[0] && current == generation[0]) {
+                            bitmap?.let { if (!it.isRecycled) it.recycle() }
                             bitmap = generated
                             if (generated == null) status = "二维码生成失败"
                         } else if (generated != null && !generated.isRecycled) {
@@ -81,8 +83,11 @@ internal fun ComposeLoginScreen(
             }
 
             override fun onLogin(result: org.json.JSONObject) {
-                services.session.saveLogin(result)
-                latestOnLoggedIn()
+                generation[0]++
+                bitmap?.let { if (!it.isRecycled) it.recycle() }
+                bitmap = null
+                if (services.session.completeLogin(result)) latestOnLoggedIn()
+                else status = "无法安全保存登录凭据，请重新获取二维码"
             }
 
             override fun onError(message: String) {
@@ -90,18 +95,29 @@ internal fun ComposeLoginScreen(
             }
         }
     }
+    val lifecycle = remember(controller, services.activity) {
+        ComposeCheckinActivityLifecycle(services.activity, controller::resume, controller::pause,
+            { controller.stop() })
+    }
     DisposableEffect(controller) {
+        lifecycle.start()
         onDispose {
+            disposed[0] = true
+            generation[0]++
+            lifecycle.close()
             controller.stop()
             executor.shutdownNow()
             latestBitmap?.let { if (!it.isRecycled) it.recycle() }
         }
     }
     LaunchedEffect(controller, retry) {
+        bitmap?.let { if (!it.isRecycled) it.recycle() }
         bitmap = null
-        generation++
+        generation[0]++
         status = "正在获取二维码"
-        controller.start(listener)
+        val foreground = (services.activity as androidx.lifecycle.LifecycleOwner)
+            .lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        controller.start(listener, foreground)
     }
 
     ComposeLoginContent(bitmap, status, onBack, onGuest) { retry++ }

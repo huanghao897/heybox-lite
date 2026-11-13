@@ -12,7 +12,6 @@ import android.widget.TextView;
 final class CheckinCenterPage {
     interface Host {
         void closePage();
-        void openCaptcha(String verificationUri);
         void confirmRevoke(Runnable confirmed);
         void showMessage(String message);
     }
@@ -36,8 +35,10 @@ final class CheckinCenterPage {
     private final Host host;
     private final CheckinCenterUi ui;
     private final CheckinMobileLoginFlow mobileLogin;
+    private final NativeCheckinCaptcha captcha;
     private final CheckinPairingFlow pairingFlow;
     private final CheckinServiceAccountFlow serviceAccountFlow;
+    private final CheckinFlowLifecycle flowLifecycle;
     private final CheckinTaskSettingsFlow taskSettingsFlow;
     private final CheckinTaskSettingsView taskSettingsView;
     private final CheckinAccountForms accountForms;
@@ -56,7 +57,6 @@ final class CheckinCenterPage {
     private String errorMessage = "";
     private CheckinPaymentPage paymentPage;
     private boolean closed;
-    private boolean resumed;
     private boolean contentPresented;
 
     CheckinCenterPage(Activity activity, SessionStore session,
@@ -99,14 +99,14 @@ final class CheckinCenterPage {
                                                       CheckinMobileLoginFlow.Mode mode,
                                                       boolean hasSession,
                                                       long retryAtElapsed) {
-                        setMobileLoginControls(enabled, mode, hasSession, retryAtElapsed);
+                        accountForms.setMobileControls(enabled, mode, hasSession, retryAtElapsed);
                     }
                     @Override public void setStatus(String message,
                                                     CheckinMobileLoginFlow.Status status) {
                         int color = status == CheckinMobileLoginFlow.Status.ACCENT
                                 ? tokens.accent : status == CheckinMobileLoginFlow.Status.NORMAL
                                 ? tokens.muted : tokens.text;
-                        setMobileLoginStatus(message, color);
+                        accountForms.setMobileStatus(message, color);
                     }
                     @Override public void updateSmsButton(String label, boolean enabled) {
                         accountForms.updateSmsButton(label, enabled);
@@ -120,8 +120,8 @@ final class CheckinCenterPage {
                     @Override public void focusCode() {
                         accountForms.focusMobileCode();
                     }
-                    @Override public void openCaptcha(String uri) {
-                        host.openCaptcha(uri);
+                    @Override public void openCaptcha(String uri, int attempt) {
+                        captcha.open(uri, attempt);
                     }
                     @Override public void showMessage(String message) {
                         host.showMessage(message);
@@ -130,6 +130,7 @@ final class CheckinCenterPage {
                         finishMobileLogin();
                     }
                 });
+        this.captcha = new NativeCheckinCaptcha(activity, mobileLogin, roundLayout);
         this.pairingFlow = new CheckinPairingFlow(coordinator,
                 new CheckinPairingFlow.Host() {
                     @Override public boolean pairingVisible() {
@@ -188,20 +189,20 @@ final class CheckinCenterPage {
                     }
                     @Override public void setControlsEnabled(boolean enabled,
                                                              long emailRetryAtElapsed) {
-                        setPairingControlsEnabled(enabled, emailRetryAtElapsed);
+                        accountForms.setPairingControls(enabled, emailRetryAtElapsed);
                     }
                     @Override public void setStatus(String message,
                                                     CheckinServiceAccountFlow.Status status) {
                         int color = status == CheckinServiceAccountFlow.Status.ACCENT
                                 ? tokens.accent : status == CheckinServiceAccountFlow.Status.NORMAL
                                 ? tokens.muted : tokens.text;
-                        setPairingStatus(message, color);
+                        accountForms.setPairingStatus(message, color);
                     }
                     @Override public void updateEmailButton(String label, boolean enabled) {
                         accountForms.updateEmailButton(label, enabled);
                     }
                     @Override public void clearPasswords() {
-                        clearServicePasswords();
+                        accountForms.clearServicePasswords();
                     }
                     @Override public void clearEmailCode() {
                         accountForms.clearEmailCode();
@@ -219,6 +220,8 @@ final class CheckinCenterPage {
                         pairingFlow.pollNow();
                     }
                 });
+        this.flowLifecycle = new CheckinFlowLifecycle(pairingFlow, mobileLogin, serviceAccountFlow,
+                () -> state == State.PAIRING, () -> state == State.MOBILE_LOGIN);
         this.taskSettingsFlow = new CheckinTaskSettingsFlow(coordinator,
                 new CheckinTaskSettingsFlow.Host() {
                     @Override public boolean active() {
@@ -337,19 +340,13 @@ final class CheckinCenterPage {
     }
 
     void onResume() {
-        resumed = true;
         if (paymentPage != null && state == State.BILLING) paymentPage.onResume();
-        pairingFlow.resume();
-        if (state == State.MOBILE_LOGIN) mobileLogin.resume();
-        serviceAccountFlow.resume();
+        flowLifecycle.resume();
     }
 
     void onPause() {
-        resumed = false;
         if (paymentPage != null) paymentPage.onPause();
-        pairingFlow.pause();
-        mobileLogin.pause();
-        serviceAccountFlow.pause();
+        flowLifecycle.pause();
     }
 
     private void beginPairing() {
@@ -366,7 +363,7 @@ final class CheckinCenterPage {
             render();
             return;
         }
-        coordinator.getStatus(new CheckinCenterClient.Callback<CheckinCenterClient.Status>() {
+        coordinator.getStatus(flowLifecycle.requests, new CheckinCenterClient.Callback<CheckinCenterClient.Status>() {
             @Override
             public void onSuccess(CheckinCenterClient.Status value) {
                 status = value;
@@ -431,7 +428,7 @@ final class CheckinCenterPage {
         state = State.RUNNING;
         errorMessage = "";
         render();
-        coordinator.runNow(new CheckinCenterClient.Callback<CheckinCenterClient.RunResult>() {
+        coordinator.runNow(flowLifecycle.requests, new CheckinCenterClient.Callback<CheckinCenterClient.RunResult>() {
             @Override
             public void onSuccess(CheckinCenterClient.RunResult value) {
                 host.showMessage(CheckinResultText.runMessage(value));
@@ -449,7 +446,7 @@ final class CheckinCenterPage {
         host.confirmRevoke(() -> {
             state = State.SYNCING;
             render();
-            coordinator.revokeDevice(new CheckinCenterClient.Callback<Boolean>() {
+            coordinator.revokeDevice(flowLifecycle.requests, new CheckinCenterClient.Callback<Boolean>() {
                 @Override
                 public void onSuccess(Boolean value) {
                     status = null;
@@ -480,7 +477,6 @@ final class CheckinCenterPage {
         errorMessage = "";
         state = State.MOBILE_LOGIN;
         render();
-        if (resumed) mobileLogin.resume();
     }
 
     private void sendSmsCode() {
@@ -497,14 +493,6 @@ final class CheckinCenterPage {
 
     private void loginWithPassword() {
         mobileLogin.loginWithPassword();
-    }
-
-    void onCaptchaResult(String ticket, String randstr) {
-        mobileLogin.onCaptchaResult(ticket, randstr);
-    }
-
-    void onCaptchaCancelled(String message) {
-        mobileLogin.onCaptchaCancelled(message);
     }
 
     private void finishMobileLogin() {
@@ -529,6 +517,7 @@ final class CheckinCenterPage {
 
     private void render(boolean animate) {
         if (closed) return;
+        flowLifecycle.routeChanged();
         Motions.resetTree(root);
         root.removeAllViews();
         if (state == State.PAIRING && pairingFlow.startValue() != null) {
@@ -638,14 +627,6 @@ final class CheckinCenterPage {
         render();
     }
 
-    private void setPairingControlsEnabled(boolean enabled, long emailRetryAtElapsed) {
-        accountForms.setPairingControls(enabled, emailRetryAtElapsed);
-    }
-
-    private void setPairingStatus(String message, int color) {
-        accountForms.setPairingStatus(message, color);
-    }
-
     private void clearPairingViews() {
         accountForms.clearPairing();
     }
@@ -658,19 +639,6 @@ final class CheckinCenterPage {
 
     private void resetServiceAccountFlow() {
         serviceAccountFlow.reset();
-    }
-
-    private void clearServicePasswords() {
-        accountForms.clearServicePasswords();
-    }
-
-    private void setMobileLoginControls(boolean enabled, CheckinMobileLoginFlow.Mode mode,
-                                        boolean hasSession, long retryAtElapsed) {
-        accountForms.setMobileControls(enabled, mode, hasSession, retryAtElapsed);
-    }
-
-    private void setMobileLoginStatus(String message, int color) {
-        accountForms.setMobileStatus(message, color);
     }
 
     private void clearSmsViews() {
@@ -705,14 +673,12 @@ final class CheckinCenterPage {
 
     public void close() {
         closed = true;
-        resumed = false;
         if (paymentPage != null) {
             paymentPage.close();
             paymentPage = null;
         }
-        mobileLogin.close();
-        pairingFlow.close();
-        serviceAccountFlow.close();
+        flowLifecycle.close();
+        captcha.close();
         taskSettingsFlow.close();
         handler.removeCallbacksAndMessages(null);
         clearPairingViews();

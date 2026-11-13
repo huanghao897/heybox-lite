@@ -28,6 +28,7 @@ internal class ComposeCheckinPairingHost(
             pairingRemainingSeconds = 0L,
             errorMessage = "",
         )
+        owner.flowLifecycle.routeChanged()
     }
 
     override fun pairingConnected() {
@@ -130,8 +131,8 @@ internal class ComposeCheckinMobileLoginHost(
         owner.uiState = owner.uiState.copy(focusTarget = "mobile_code")
     }
 
-    override fun openCaptcha(uri: String) {
-        owner.openCaptcha(uri)
+    override fun openCaptcha(uri: String, attempt: Int) {
+        owner.openCaptcha(uri, attempt)
     }
 
     override fun showMessage(message: String) {
@@ -241,7 +242,7 @@ internal class ComposeCheckinTaskSettingsHost(
     override fun status(): CheckinCenterClient.Status? = owner.uiState.status
 
     override fun setControlsEnabled(enabled: Boolean) {
-        owner.uiState = owner.uiState.copy(taskSaving = !enabled)
+        owner.uiState = owner.uiState.copy(taskSaving = owner.taskSettings.requestInFlight())
     }
 
     override fun taskUpdated(task: CheckinCenterClient.Task, renderPage: Boolean) {
@@ -257,7 +258,6 @@ internal class ComposeCheckinTaskSettingsHost(
                 current.lastRun,
                 current.membership,
             ),
-            taskSaving = false,
             errorMessage = "",
         )
     }
@@ -275,8 +275,6 @@ internal class ComposeCheckinTaskSettingsHost(
     }
 
     override fun render() {
-        owner.uiState = owner.uiState.copy(
-            taskSaving = owner.taskSettings.requestInFlight(),
-        )
+        setControlsEnabled(!owner.taskSettings.requestInFlight())
     }
 }

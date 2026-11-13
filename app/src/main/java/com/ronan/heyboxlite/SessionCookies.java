@@ -8,6 +8,8 @@ import android.util.Log;
 import java.util.List;
 import java.util.Map;
 
+import javax.crypto.AEADBadTagException;
+
 /** Encrypted cookie persistence and ownership of asynchronous session responses. */
 final class SessionCookies {
     static final String GENERATION_KEY = "session_generation";
@@ -42,7 +44,9 @@ final class SessionCookies {
             if (!isCurrent(generation)) return -1L;
             if (headers == null || headers.isEmpty()) return generation;
             String previous = read();
-            if (previous == null) return generation;
+            if (previous == null) {
+                throw new IllegalStateException("登录凭据暂时无法安全读取，请稍后重试");
+            }
             Map<String, String> values = SessionCookieCodec.parse(previous);
             for (String header : headers) {
                 if (header == null) continue;
@@ -58,7 +62,9 @@ final class SessionCookies {
             String cookie = SessionCookieCodec.join(values);
             boolean accountChanged = !SessionCookieCodec.userId(previous)
                     .equals(SessionCookieCodec.userId(cookie));
-            write(cookie, accountChanged);
+            if (!write(cookie, accountChanged)) {
+                throw new IllegalStateException("登录凭据未能安全保存，请稍后重新登录");
+            }
             return generation();
         }
     }
@@ -120,13 +126,22 @@ final class SessionCookies {
                     .putString(SecureStrings.encryptedCookieKey(), encrypted)
                     .remove(SecureStrings.cookieKey());
             if (advanceGeneration) editor.putLong(GENERATION_KEY, generation() + 1L);
-            editor.apply();
+            String previousEncrypted = prefs.getString(SecureStrings.encryptedCookieKey(), "");
+            String previousLegacy = prefs.getString(SecureStrings.cookieKey(), "");
+            long previousGeneration = generation();
+            if (!editor.commit()) {
+                // commit() updates memory even when disk persistence fails. Restore the prior session.
+                prefs.edit().putString(SecureStrings.encryptedCookieKey(), previousEncrypted)
+                        .putString(SecureStrings.cookieKey(), previousLegacy)
+                        .putLong(GENERATION_KEY, previousGeneration).apply();
+                return false;
+            }
             cachedEncrypted = encrypted;
             cachedCookie = cookie;
             persistUserId(cookie);
             return true;
         } catch (Exception error) {
-            Log.w("SessionStore", "Unable to encrypt session cookie", error);
+            Log.w("SessionStore", "Unable to persist encrypted session cookie");
             return false;
         }
     }
@@ -142,19 +157,19 @@ final class SessionCookies {
             if (value.startsWith(LegacyCookieCrypto.PREFIX)) return legacyCrypto.decrypt(value);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) return ModernCookieCrypto.decrypt(value);
             return "";
-        } catch (ModernCookieCrypto.InvalidPayloadException error) {
+        } catch (ModernCookieCrypto.InvalidPayloadException | AEADBadTagException error) {
             prefs.edit().remove(SecureStrings.encryptedCookieKey()).apply();
             clearCached();
-            Log.w("SessionStore", "Discarded malformed encrypted session", error);
+            Log.w("SessionStore", "Discarded damaged encrypted session");
             return "";
         } catch (ModernCookieCrypto.KeyUnavailableException error) {
-            Log.w("SessionStore", "Cookie key is temporarily unavailable", error);
+            Log.w("SessionStore", "Cookie key is temporarily unavailable");
             return null;
         } catch (Exception error) {
             if (value.startsWith(LegacyCookieCrypto.PREFIX)) {
                 prefs.edit().remove(SecureStrings.encryptedCookieKey()).apply();
             }
-            Log.w("SessionStore", "Unable to decrypt session cookie", error);
+            Log.w("SessionStore", "Unable to decrypt session cookie");
             return value.startsWith(LegacyCookieCrypto.PREFIX) ? "" : null;
         }
     }

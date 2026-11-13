@@ -24,16 +24,27 @@ final class DetailLoadCoordinator {
     }
 
     static final class State {
+        final FeedItem item;
         final JSONObject pendingBody;
         final boolean rendered;
         final long loadStartedAt;
+        final Stage stage;
+        final JSONObject webBody;
+        final String pendingFailure;
 
-        State(JSONObject pendingBody, boolean rendered, long loadStartedAt) {
+        State(FeedItem item, JSONObject pendingBody, boolean rendered, long loadStartedAt,
+              Stage stage, JSONObject webBody, String pendingFailure) {
+            this.item = item;
             this.pendingBody = pendingBody;
             this.rendered = rendered;
             this.loadStartedAt = loadStartedAt;
+            this.stage = stage;
+            this.webBody = webBody;
+            this.pendingFailure = pendingFailure;
         }
     }
+
+    private enum Stage { DETAIL, WEB, COMPLETE }
 
     private static final String OFFLINE_CACHE_MESSAGE = "已显示离线缓存";
     private static final long ENTRY_LAYOUT_DELAY_MS = 24L;
@@ -47,6 +58,10 @@ final class DetailLoadCoordinator {
     private JSONObject pendingBody;
     private boolean rendered;
     private long loadStartedAt;
+    private FeedItem item;
+    private Stage stage = Stage.COMPLETE;
+    private JSONObject webBody;
+    private String pendingFailure;
 
     DetailLoadCoordinator(Context context, ApiClient api, LocalCache cache,
                           Handler handler, Host host) {
@@ -58,15 +73,23 @@ final class DetailLoadCoordinator {
     }
 
     void load(FeedItem item) {
+        this.item = item;
         pendingBody = null;
+        webBody = null;
+        pendingFailure = null;
         rendered = false;
+        stage = Stage.DETAIL;
         loadStartedAt = SystemClock.elapsedRealtime();
         int token = ++requestToken;
         renderAfterEntry(item, token, true);
+        requestDetail(item, token);
+    }
+
+    private void requestDetail(FeedItem item, int token) {
         if (!networkConnected()) {
             afterEntry(() -> {
                 if (current(item, token)) {
-                    host.requestFinished();
+                    finishRequest();
                     host.hideLoading();
                     handleFailure(item, "当前无网络");
                 }
@@ -78,14 +101,14 @@ final class DetailLoadCoordinator {
                 new ApiClient.Callback() {
                     @Override
                     public void onSuccess(JSONObject body) {
-                        if (!current(item, token)) return;
+                        if (!current(item, token) || stage != Stage.DETAIL) return;
                         host.hideLoading();
                         String blocked = blockedMessage(body);
                         if (!blocked.isEmpty()) {
-                            host.requestFinished();
+                            finishRequest();
                             handleFailureAfterEntry(item, token, blocked);
                         } else if (!hasLink(body)) {
-                            host.requestFinished();
+                            finishRequest();
                             handleFailureAfterEntry(item, token, "详情数据为空");
                         } else {
                             cacheAndRender(item, body, token);
@@ -94,8 +117,8 @@ final class DetailLoadCoordinator {
 
                     @Override
                     public void onError(String message) {
-                        if (!current(item, token)) return;
-                        host.requestFinished();
+                        if (!current(item, token) || stage != Stage.DETAIL) return;
+                        finishRequest();
                         host.hideLoading();
                         handleFailureAfterEntry(item, token, message);
                     }
@@ -120,23 +143,35 @@ final class DetailLoadCoordinator {
 
     void cancel() {
         requestToken++;
+        item = null;
         pendingBody = null;
+        webBody = null;
+        pendingFailure = null;
+        stage = Stage.COMPLETE;
         rendered = false;
     }
 
     State suspend() {
-        requestToken++;
-        State state = new State(pendingBody, rendered, loadStartedAt);
-        pendingBody = null;
-        rendered = false;
+        State state = new State(item, pendingBody, rendered, loadStartedAt,
+                stage, webBody, pendingFailure);
+        cancel();
         return state;
     }
 
     void restore(State state) {
-        requestToken++;
+        int token = ++requestToken;
+        item = state.item;
         pendingBody = state.pendingBody;
         rendered = state.rendered;
         loadStartedAt = state.loadStartedAt;
+        stage = state.stage;
+        webBody = state.webBody;
+        pendingFailure = state.pendingFailure;
+        if (item == null) return;
+        if (pendingBody != null || !rendered) renderAfterEntry(item, token, !rendered);
+        if (pendingFailure != null) handleFailureAfterEntry(item, token, pendingFailure);
+        if (stage == Stage.DETAIL) requestDetail(item, token);
+        else if (stage == Stage.WEB) loadWeb(item, webBody, token);
     }
 
     void close() {
@@ -155,12 +190,25 @@ final class DetailLoadCoordinator {
             pendingBody = normalized;
             renderAfterEntry(item, token, false);
             if (ArticleGameCards.shouldLoadWeb(normalized, item)) {
-                api.get(EndpointProvider.linkWebView(),
+                stage = Stage.WEB;
+                webBody = normalized;
+                loadWeb(item, normalized, token);
+            } else finishRequest();
+        } catch (RuntimeException error) {
+            finishRequest();
+            cache.log("detail response rejected link=" + item.id
+                    + " type=" + error.getClass().getSimpleName());
+            handleFailureAfterEntry(item, token, "详情内容解析失败");
+        }
+    }
+
+    private void loadWeb(FeedItem item, JSONObject normalized, int token) {
+        api.get(EndpointProvider.linkWebView(),
                         OfficialRequestParams.articleWebView(item.id, item.hsrc),
                         new ApiClient.Callback() {
                         @Override
                         public void onSuccess(JSONObject webBody) {
-                            if (!current(item, token)) return;
+                            if (!current(item, token) || stage != Stage.WEB) return;
                             try {
                                 JSONObject result = normalized.optJSONObject("result");
                                 JSONObject link = result == null ? null
@@ -189,25 +237,24 @@ final class DetailLoadCoordinator {
                                     host.toast("详情更新失败，已保留当前内容");
                                 }
                             } finally {
-                                host.requestFinished();
+                                finishRequest();
                             }
                         }
 
                         @Override
                         public void onError(String message) {
-                            if (!current(item, token)) return;
-                            host.requestFinished();
+                            if (!current(item, token) || stage != Stage.WEB) return;
+                            finishRequest();
                             cache.log("article web content unavailable link=" + item.id
                                     + " reason=" + message);
                         }
                         });
-            } else host.requestFinished();
-        } catch (RuntimeException error) {
-            host.requestFinished();
-            cache.log("detail response rejected link=" + item.id
-                    + " type=" + error.getClass().getSimpleName());
-            handleFailureAfterEntry(item, token, "详情内容解析失败");
-        }
+    }
+
+    private void finishRequest() {
+        stage = Stage.COMPLETE;
+        webBody = null;
+        host.requestFinished();
     }
 
     private void renderAfterEntry(FeedItem item, int token, boolean initialEntry) {
@@ -274,8 +321,12 @@ final class DetailLoadCoordinator {
     }
 
     private void handleFailureAfterEntry(FeedItem item, int token, String message) {
+        pendingFailure = message;
         afterEntry(() -> {
-            if (current(item, token)) handleFailure(item, message);
+            if (current(item, token)) {
+                pendingFailure = null;
+                handleFailure(item, message);
+            }
         });
     }
 

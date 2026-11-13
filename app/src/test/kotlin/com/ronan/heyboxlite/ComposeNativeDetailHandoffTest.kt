@@ -154,7 +154,7 @@ class ComposeNativeDetailHandoffTest {
                     override fun feedChanged() = Unit
                     override fun showToast(message: String) = fail(message)
                 })
-            val renderer = DetailContentRenderer(activity, session, tokens, false, api) { _, _, _ -> }
+            val renderer = DetailContentRenderer(activity, session, tokens, false) { _, _, _ -> }
             val features = activity.nativeDetail.initialize(renderer)
             activity.commentController = features.commentController
             activity.detailActionBar = features.actionBar

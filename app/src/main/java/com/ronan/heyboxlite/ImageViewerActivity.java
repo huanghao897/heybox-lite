@@ -6,7 +6,6 @@ import android.app.DownloadManager;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -20,7 +19,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -54,6 +52,7 @@ public final class ImageViewerActivity extends Activity {
     private boolean[] longLoading;
     private int[] longRequestIds;
     private DismissibleImageScrollView[] longViews;
+    private ImageViewerLongPage[] longPages;
     private long[] sizes;
     private String[] urls;
     private int current;
@@ -108,6 +107,7 @@ public final class ImageViewerActivity extends Activity {
         longLoading = new boolean[count];
         longRequestIds = new int[count];
         longViews = new DismissibleImageScrollView[count];
+        longPages = new ImageViewerLongPage[count];
         sizes = new long[count];
         for (int i = 0; i < count; i++) sizes[i] = -1L;
 
@@ -474,6 +474,7 @@ public final class ImageViewerActivity extends Activity {
         View image = activeImageView(index);
         if (dismiss) {
             closing = true;
+            freezeImageWork();
             images[index].cancelZoomAnimation();
             if (Motions.off()) {
                 finishViewer();
@@ -523,8 +524,7 @@ public final class ImageViewerActivity extends Activity {
         Motions.reset(imagePages[previous]);
         resetImageTransform(images[previous]);
         if (longViews[previous] != null) resetImageTransform(longViews[previous]);
-        if (longLoading[previous]) releaseLongPage(previous);
-        else cancelLongLoad(previous);
+        releaseLongPage(previous);
         if (preparedPreviewNeedsUpgrade) loaded[previous] = false;
         preparedPreviewNeedsUpgrade = false;
         pageEnter = PageEnter.FINISHED;
@@ -634,75 +634,30 @@ public final class ImageViewerActivity extends Activity {
         }
         longLoading[index] = true;
         int requestId = ++longRequestIds[index];
-        ImageLoader.loadLongImageTiles(urls[index], longImageTargetWidth(),
-                new ImageLoader.LongImageCallback() {
-                    @Override
-                    public boolean cancelled() {
-                        return destroyed || closing || index != current
-                                || requestId != longRequestIds[index];
+        ImageViewerLongPage page = new ImageViewerLongPage(this, roundImageInset(),
+                longImageTargetWidth(), createPullListener(index), new ImageViewerLongPage.Listener() {
+                    private boolean currentRequest() {
+                        return !destroyed && !closing && index == current
+                                && requestId == longRequestIds[index];
                     }
-
-                    @Override
-                    public void onStart(int width, int height, int tileCount) {
-                        if (cancelled()) return;
-                        DismissibleImageScrollView scroll =
-                                new DismissibleImageScrollView(ImageViewerActivity.this);
-                        scroll.setFillViewport(false);
-                        scroll.setPullListener(createPullListener(index));
-                        int inset = roundImageInset();
-                        if (inset > 0) {
-                            scroll.setPadding(inset, inset, inset, inset);
-                            scroll.setClipToPadding(false);
-                        }
-                        LinearLayout tiles = new LinearLayout(ImageViewerActivity.this);
-                        tiles.setOrientation(LinearLayout.VERTICAL);
-                        scroll.addView(tiles, new DismissibleImageScrollView.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.WRAP_CONTENT));
-                        scroll.setVisibility(View.INVISIBLE);
-                        imagePages[index].addView(scroll,
-                                new FrameLayout.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                        ViewGroup.LayoutParams.MATCH_PARENT));
+                    @Override public void opened(DismissibleImageScrollView scroll) {
+                        if (!currentRequest()) { releaseLongPage(index); return; }
                         longViews[index] = scroll;
+                        imagePages[index].addView(scroll, new FrameLayout.LayoutParams(-1, -1));
                     }
-
-                    @Override
-                    public void onTile(int tileIndex, Bitmap bitmap) {
-                        DismissibleImageScrollView scroll = longViews[index];
-                        if (cancelled() || scroll == null || bitmap == null) {
-                            recycle(bitmap);
-                            return;
-                        }
-                        View child = scroll.getChildAt(0);
-                        if (!(child instanceof LinearLayout)) {
-                            recycle(bitmap);
-                            return;
-                        }
-                        ImageView tile = new ImageView(ImageViewerActivity.this);
-                        tile.setScaleType(ImageView.ScaleType.FIT_XY);
-                        tile.setImageBitmap(bitmap);
-                        int width = longImageTargetWidth();
-                        int height = Math.max(1, Math.round(
-                                width * (bitmap.getHeight() / (float) bitmap.getWidth())));
-                        ((LinearLayout) child).addView(tile,
-                                new LinearLayout.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT, height));
-                    }
-
-                    @Override
-                    public void onComplete(boolean success) {
-                        if (requestId != longRequestIds[index]) return;
+                    @Override public void ready(DismissibleImageScrollView scroll) {
+                        if (!currentRequest()) return;
                         longLoading[index] = false;
-                        if (!success || longViews[index] == null) {
-                            releaseLongPage(index);
-                            return;
-                        }
-                        showLongPage(index, longViews[index]);
+                        showLongPage(index, scroll);
                         originalLoaded[index] = true;
-                        if (index == current) refreshOriginalLabel();
+                        refreshOriginalLabel();
+                    }
+                    @Override public void failed() {
+                        if (currentRequest()) releaseLongPage(index);
                     }
                 });
+        longPages[index] = page;
+        page.open(urls[index]);
     }
 
     private void showLongPage(int index, DismissibleImageScrollView scroll) {
@@ -730,25 +685,11 @@ public final class ImageViewerActivity extends Activity {
     private void releaseLongPage(int index) {
         if (index < 0 || index >= longViews.length) return;
         cancelLongLoad(index);
-        DismissibleImageScrollView scroll = longViews[index];
+        ImageViewerLongPage page = longPages[index];
+        longPages[index] = null;
         longViews[index] = null;
-        if (scroll != null) {
-            View child = scroll.getChildAt(0);
-            if (child instanceof ViewGroup) {
-                ViewGroup tiles = (ViewGroup) child;
-                for (int i = 0; i < tiles.getChildCount(); i++) {
-                    View tile = tiles.getChildAt(i);
-                    if (tile instanceof ImageView) {
-                        Drawable drawable = ((ImageView) tile).getDrawable();
-                        if (drawable instanceof BitmapDrawable) {
-                            recycle(((BitmapDrawable) drawable).getBitmap());
-                        }
-                        ((ImageView) tile).setImageDrawable(null);
-                    }
-                }
-            }
-            imagePages[index].removeView(scroll);
-        }
+        if (page != null) page.close();
+        Motions.reset(images[index]);
         images[index].setVisibility(View.VISIBLE);
     }
 
@@ -776,10 +717,6 @@ public final class ImageViewerActivity extends Activity {
     private void cancelLongLoad(int index) {
         longRequestIds[index]++;
         longLoading[index] = false;
-    }
-
-    private void recycle(Bitmap bitmap) {
-        if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
     }
 
     private void probeSize(int index) {
@@ -929,6 +866,7 @@ public final class ImageViewerActivity extends Activity {
     private void closeViewer() {
         if (closing) return;
         closing = true;
+        freezeImageWork();
         cancelViewerAnimations(current, false);
         hideSourcePreview();
         setChromeAlpha(0.0f);
@@ -1009,6 +947,25 @@ public final class ImageViewerActivity extends Activity {
 
     @Override public void onBackPressed() {
         handleBackRequest();
+    }
+
+    private void freezeImageWork() {
+        for (ImageViewerPageRequests requests : pageRequests) requests.cancel();
+        for (ImageViewerLongPage page : longPages) if (page != null) page.freeze();
+    }
+
+    @Override protected void onPause() {
+        if (longPages != null) {
+            for (ImageViewerLongPage page : longPages) if (page != null) page.setActive(false);
+        }
+        super.onPause();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (!closing && longPages != null && longPages[current] != null) {
+            longPages[current].setActive(true);
+        }
     }
 
     @Override protected void onDestroy() {

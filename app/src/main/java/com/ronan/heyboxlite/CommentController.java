@@ -5,14 +5,8 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
-import android.text.Editable;
-import android.text.TextWatcher;
-import android.view.Gravity;
 import android.view.View;
-import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -38,6 +32,8 @@ final class CommentController implements CommentRenderer.Host {
         String currentHsrc();
 
         String currentAuthCode();
+
+        default Object currentEntry() { return currentItem(); }
 
         boolean requireLogin(String actionName);
 
@@ -69,6 +65,8 @@ final class CommentController implements CommentRenderer.Host {
     private final PageHost pageHost;
     private final Map<String, ReplyState> replyStates = new HashMap<>();
     private final CommentRenderer renderer;
+    private final NativeCommentDrafts drafts;
+    private Object fallbackEntry = new Object();
 
     CommentController(Activity activity, SessionStore session, ApiClient api,
                       WriteActionClient writeActions, LocalCache localCache,
@@ -85,6 +83,7 @@ final class CommentController implements CommentRenderer.Host {
         this.pageHost = pageHost;
         this.renderer = new CommentRenderer(activity, session, localCache,
                 tokens, roundLayout, this);
+        this.drafts = new NativeCommentDrafts(session);
     }
 
     CommentRenderer renderer() {
@@ -93,6 +92,7 @@ final class CommentController implements CommentRenderer.Host {
 
     void reset() {
         this.replyStates.clear();
+        this.fallbackEntry = new Object();
     }
 
     void showDialog(JSONObject replyTo) {
@@ -103,107 +103,18 @@ final class CommentController implements CommentRenderer.Host {
             this.pageHost.showToast("没有打开的帖子");
             return;
         }
-        int dialogBackground = this.session.darkMode()
-                ? Color.rgb(30, 31, 33) : Color.rgb(250, 250, 251);
-        int inputBackground = this.session.darkMode()
-                ? Color.rgb(12, 13, 14) : Color.rgb(241, 242, 244);
-        int border = this.session.darkMode()
-                ? Color.rgb(66, 68, 72) : Color.rgb(218, 221, 225);
-        LinearLayout panel = new LinearLayout(this.activity);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(16), dp(14), dp(16), dp(14));
-        Compat.setBackground(panel,
-                roundStroke(dialogBackground, 16, border, 1));
-        TextView title = text(replyTo == null ? "发表评论" : "回复评论",
-                16.0f, this.tokens.text);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        panel.addView(title, new LinearLayout.LayoutParams(-1, -2));
-        TextView hint = text(replyTo == null ? "写下你的想法" : "回复这条评论",
-                11.0f, this.tokens.muted);
-        LinearLayout.LayoutParams hintParams =
-                new LinearLayout.LayoutParams(-1, -2);
-        hintParams.topMargin = dp(4);
-        panel.addView(hint, hintParams);
-
-        EditText input = new EditText(this.activity);
-        input.setTextColor(this.tokens.text);
-        input.setHintTextColor(this.tokens.muted);
-        input.setTextSize(sp(14.0f));
-        input.setMinLines(3);
-        input.setMaxLines(5);
-        input.setGravity(Gravity.TOP | Gravity.START);
-        input.setSingleLine(false);
-        input.setHint(replyTo == null ? "友好交流，理性讨论" : "输入回复内容");
-        String draftKey = draftKey(replyTo);
-        String draft = this.session.commentDraft(draftKey);
-        if (!draft.isEmpty()) {
-            input.setText(draft);
-            input.setSelection(draft.length());
-        }
-        input.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence value, int start,
-                                          int count, int after) {
-            }
-
-            @Override
-            public void onTextChanged(CharSequence value, int start,
-                                      int before, int count) {
-                session.setCommentDraft(draftKey,
-                        value == null ? "" : value.toString());
-            }
-
-            @Override
-            public void afterTextChanged(Editable value) {
-            }
-        });
-        input.setPadding(dp(12), dp(10), dp(12), dp(10));
-        Compat.setBackground(input,
-                roundStroke(inputBackground, 14, border, 1));
-        LinearLayout.LayoutParams inputParams =
-                new LinearLayout.LayoutParams(-1, dp(118));
-        inputParams.topMargin = dp(12);
-        panel.addView(input, inputParams);
-
-        AlertDialog dialog = new AlertDialog.Builder(this.activity)
-                .setView(panel).create();
-        LinearLayout actions = new LinearLayout(this.activity);
-        actions.setGravity(Gravity.CENTER);
-        actions.setPadding(0, dp(12), 0, 0);
-        TextView cancel = dialogAction("取消", false);
-        TextView send = dialogAction("发送", true);
-        LinearLayout.LayoutParams cancelParams =
-                new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        LinearLayout.LayoutParams sendParams =
-                new LinearLayout.LayoutParams(0, dp(38), 1.0f);
-        sendParams.leftMargin = dp(9);
-        actions.addView(cancel, cancelParams);
-        actions.addView(send, sendParams);
-        panel.addView(actions);
-        cancel.setOnClickListener(view -> {
-            UiComponents.press(cancel);
-            dialog.dismiss();
-        });
-        send.setOnClickListener(view -> {
-            UiComponents.press(send);
-            String value = input.getText().toString().trim();
-            if (value.isEmpty()) {
-                this.pageHost.showToast("评论不能为空");
-            } else {
-                send(value, replyTo, dialog, send);
-            }
-        });
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0));
-            dialog.getWindow().setDimAmount(
-                    this.session.darkMode() ? 0.56f : 0.36f);
-            int width = this.activity.getResources()
-                    .getDisplayMetrics().widthPixels;
-            int horizontalMargin = dp(this.roundLayout ? 24 : 14);
-            dialog.getWindow().setLayout(Math.max(1,
-                    Math.min(width - horizontalMargin * 2, dp(380))), -2);
-        }
+        String linkId = this.pageHost.currentLinkId();
+        String replyId = replyTo == null ? null : CommentData.commentId(replyTo);
+        String rootId = replyTo == null ? null : CommentData.commentRootId(replyTo);
+        NativeCommentDrafts.Editor editor = drafts.open(currentEntry(),
+                linkId + ":" + (replyTo == null ? "root" : replyId));
+        new NativeCommentEditor(activity, session, tokens).show(replyTo != null,
+                roundLayout, session.commentDraft(editor.key), new NativeCommentEditor.Events() {
+                    @Override public void changed(String value) { drafts.edit(editor, value); }
+                    @Override public void send(String value, AlertDialog dialog, View button) {
+                        CommentController.this.send(editor, linkId, value, rootId, replyId, dialog, button);
+                    }
+                });
     }
 
     @Override
@@ -319,14 +230,14 @@ final class CommentController implements CommentRenderer.Host {
 
     @Override
     public boolean isPostAuthor(JSONObject user, String author) {
-        String commentUserId = userId(user);
+        String commentUserId = AuthorIdentity.userId(user);
         FeedItem current = this.pageHost.currentItem();
         String postAuthorId = current == null ? "" : current.authorId;
         if (postAuthorId.isEmpty()) {
             JSONObject body = this.pageHost.currentBody();
             JSONObject result = body == null ? null : body.optJSONObject("result");
             JSONObject link = result == null ? null : result.optJSONObject("link");
-            postAuthorId = authorUserId(
+            postAuthorId = AuthorIdentity.authorId(
                     link, link == null ? null : link.optJSONObject("user"));
         }
         if (!commentUserId.isEmpty() && !postAuthorId.isEmpty()) {
@@ -336,30 +247,37 @@ final class CommentController implements CommentRenderer.Host {
                 && author.equals(current.author);
     }
 
-    private void send(String value, JSONObject replyTo,
-                      AlertDialog dialog, View sendButton) {
+    private void send(NativeCommentDrafts.Editor editor, String linkId, String value,
+                      String rootId, String replyId, AlertDialog dialog, View sendButton) {
+        if (!drafts.active(editor) || !current(editor.entry.get(), linkId)) return;
+        if (value.isEmpty()) {
+            this.pageHost.showToast("评论不能为空");
+            return;
+        }
         if (!this.pageHost.allowWriteAction("评论")) return;
-        String replyId = replyTo == null ? null : CommentData.commentId(replyTo);
-        String rootId = replyTo == null ? null : CommentData.commentRootId(replyTo);
+        NativeCommentDrafts.Submission sent = drafts.submit(editor);
+        long account = session.sessionGeneration();
         sendButton.setEnabled(false);
         sendButton.setAlpha(0.58f);
-        this.writeActions.createComment(this.pageHost.currentLinkId(),
+        this.writeActions.createComment(linkId,
                 this.pageHost.currentHsrc(), this.pageHost.currentAuthCode(),
                 value, rootId, replyId, new ApiClient.Callback() {
                     @Override
                     public void onSuccess(JSONObject body) {
-                        session.setCommentDraft(draftKey(replyTo), "");
-                        if (dialog.isShowing()) dialog.dismiss();
+                        if (!session.isCurrentSession(account)) return;
+                        boolean cleared = drafts.clear(sent);
+                        if (!drafts.active(editor) || !current(editor.entry.get(), linkId)) return;
+                        if (cleared && dialog.isShowing()) dialog.dismiss();
+                        if (!cleared) enableSend(sendButton);
                         pageHost.showToast("评论已发");
-                        pageHost.reloadDetail();
+                        if (cleared) pageHost.reloadDetail();
                     }
 
                     @Override
                     public void onError(String message) {
-                        if (dialog.isShowing()) {
-                            sendButton.setEnabled(true);
-                            sendButton.setAlpha(1.0f);
-                        }
+                        if (!session.isCurrentSession(account) || !drafts.active(editor)
+                                || !current(editor.entry.get(), linkId)) return;
+                        if (dialog.isShowing()) enableSend(sendButton);
                         pageHost.showToast("评论发送失败："
                                 + pageHost.writeErrorMessage("评论", message));
                     }
@@ -421,46 +339,19 @@ final class CommentController implements CommentRenderer.Host {
         }
     }
 
-    private String draftKey(JSONObject replyTo) {
-        String replyId = replyTo == null
-                ? "root" : CommentData.commentId(replyTo);
-        return this.pageHost.currentLinkId() + ":" + replyId;
+    private Object currentEntry() {
+        Object entry = pageHost.currentEntry();
+        return entry == null ? fallbackEntry : entry;
     }
 
-    private String authorUserId(JSONObject link, JSONObject user) {
-        return Json.first(
-                link == null ? "" : link.optString(SecureStrings.userid()),
-                link == null ? "" : link.optString(SecureStrings.userId()),
-                link == null ? "" : link.optString(SecureStrings.heyboxId()),
-                link == null ? "" : link.optString("heyboxid"),
-                link == null ? "" : link.optString("uid"),
-                link == null ? "" : link.optString("account_id"),
-                link == null ? "" : link.optString("id"), userId(user));
+    private boolean current(Object entry, String linkId) {
+        return !activity.isFinishing() && !activity.isDestroyed()
+                && entry != null && entry == currentEntry() && linkId.equals(pageHost.currentLinkId());
     }
 
-    private String userId(JSONObject user) {
-        return user == null ? "" : Json.first(
-                user.optString(SecureStrings.userid()),
-                user.optString(SecureStrings.userId()),
-                user.optString(SecureStrings.heyboxId()),
-                user.optString("heyboxid"), user.optString("uid"),
-                user.optString("account_id"), user.optString("id"));
-    }
-
-    private TextView dialogAction(String label, boolean primary) {
-        int fill = primary ? this.tokens.primary : ThemeTokens.blend(
-                this.tokens.panel, this.tokens.muted,
-                this.session.darkMode() ? 0.22f : 0.09f);
-        int stroke = primary ? this.tokens.primary : ThemeTokens.blend(
-                this.tokens.panel, this.tokens.muted, 0.28f);
-        int color = primary ? ThemeTokens.contrast(fill) : this.tokens.text;
-        TextView view = text(label, 13.0f, color);
-        view.setTypeface(Typeface.DEFAULT,
-                primary ? Typeface.BOLD : Typeface.NORMAL);
-        view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(10), 0, dp(10), 0);
-        Compat.setBackground(view, roundStroke(fill, 19, stroke, 1));
-        return view;
+    private void enableSend(View button) {
+        button.setEnabled(true);
+        button.setAlpha(1f);
     }
 
     private TextView text(String value, float size, int color) {
@@ -470,20 +361,9 @@ final class CommentController implements CommentRenderer.Host {
         return view;
     }
 
-    private android.graphics.drawable.GradientDrawable roundStroke(
-            int color, int radius, int strokeColor, int strokeWidth) {
-        android.graphics.drawable.GradientDrawable drawable =
-                UiComponents.round(this.activity, color, radius, this.uiScale);
-        drawable.setStroke(Math.max(1, dp(strokeWidth)), strokeColor);
-        return drawable;
-    }
-
     private int dp(int value) {
         return Math.round(value * this.activity.getResources()
                 .getDisplayMetrics().density * this.uiScale);
     }
 
-    private float sp(float value) {
-        return value * this.textScale;
-    }
 }

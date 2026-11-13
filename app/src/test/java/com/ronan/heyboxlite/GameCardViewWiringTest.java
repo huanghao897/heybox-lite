@@ -21,13 +21,13 @@ public class GameCardViewWiringTest {
     }
 
     @Test
-    public void cachedDetailsBindAfterTheNewDetailRootIsAttached() throws Exception {
+    public void rendererConsumesMetadataWithoutOwningTheNetworkClient() throws Exception {
         String source = new String(Files.readAllBytes(rendererSourceFile().toPath()),
                 StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("gameCardRenderGeneration"));
-        assertTrue(source.contains("item.view.post(() ->"));
-        assertFalse(source.contains("if (item.view.getWindowToken() == null) continue;"));
+        assertFalse(source.contains("GameDetailClient"));
+        assertFalse(source.contains("loadBatch"));
+        assertTrue(source.contains("void bindGames("));
     }
 
     private static File sourceFile() {

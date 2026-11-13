@@ -103,12 +103,12 @@ class ComposeFeedControllerTest {
         assertFalse(fixture.controller.refreshing.value)
     }
 
-    @Test fun duplicatePageStopsPrefetchButRefreshCanRestartIt() {
+    @Test fun repeatedCursorStopsPrefetchButRefreshCanRestartIt() {
         val fixture = Fixture()
         fixture.controller.loadInitial()
         fixture.finish(response("first", "1"))
         fixture.controller.loadMore()
-        fixture.finish(response("duplicate", "1"))
+        fixture.finish(response("first", "1"))
         assertTrue(fixture.controller.noMore.value)
         fixture.controller.loadMore()
         assertEquals(2, fixture.requests.size)
@@ -116,6 +116,69 @@ class ComposeFeedControllerTest {
         assertFalse(fixture.controller.noMore.value)
         fixture.finish(response("new", "2"))
         assertEquals(listOf("2"), fixture.ids())
+    }
+
+    @Test fun filteredPagesAndDuplicatesContinueOnlyWithAnAdvancingCursor() {
+        val f = Fixture()
+        f.keywords = listOf("blocked")
+        f.controller.loadInitial()
+        f.finish(response("first", "1"))
+        f.controller.loadMore()
+        f.finish(response("second", "1"))
+        assertEquals(3, f.requests.size)
+        assertEquals(OfficialRequestParams.feed(0, 0, "second", false), f.requests.last().params)
+        assertTrue(f.controller.loadingMore.value)
+        repeat(3) { f.controller.loadMore() }
+        assertEquals(3, f.requests.size)
+        val filtered = response("third", "blocked")
+        filtered.getJSONObject("result").getJSONArray("links").getJSONObject(0)
+            .put("title", "blocked title")
+        f.finish(filtered)
+        assertEquals(4, f.requests.size)
+        assertEquals(OfficialRequestParams.feed(0, 0, "third", false), f.requests.last().params)
+        f.finish(response("fourth", "visible"))
+        assertEquals(listOf("1", "visible"), f.ids())
+        assertFalse(f.controller.noMore.value)
+        assertFalse(f.controller.loading.value)
+    }
+
+    @Test fun emptyPageContinuationStopsAtItsBudgetAndCanBeResumedExplicitly() {
+        val f = Fixture()
+        f.controller.loadInitial()
+        f.finish(response("first", "1"))
+        f.controller.loadMore()
+        f.finish(response("second", "1"))
+        f.finish(response("third", "1"))
+        f.finish(response("fourth", "1"))
+        assertEquals(4, f.requests.size)
+        assertFalse(f.controller.loading.value)
+        assertFalse(f.controller.noMore.value)
+        f.controller.loadMore()
+        assertEquals(OfficialRequestParams.feed(0, 0, "fourth", false), f.requests.last().params)
+        f.finish(response("fifth", "2"))
+        assertEquals(listOf("1", "2"), f.ids())
+    }
+
+    @Test fun serverEndFlagAndClosePreventEmptyPageContinuation() {
+        val f = Fixture()
+        f.controller.loadInitial()
+        f.finish(response("first", "1"))
+        f.controller.loadMore()
+        val body = response("second", "1")
+        body.getJSONObject("result").put("has_more", 0)
+        f.finish(body)
+        assertTrue(f.controller.noMore.value)
+        assertEquals(2, f.requests.size)
+        val other = Fixture()
+        other.controller.loadInitial()
+        other.finish(response("first", "1"))
+        other.controller.loadMore()
+        other.requests.last().callback.onSuccess(response("second", "1"))
+        other.worker.runNext()
+        other.controller.close()
+        other.publishNext()
+        assertEquals(2, other.requests.size)
+        assertEquals(listOf("1"), other.ids())
     }
 
     @Test fun requestFailureReleasesRefreshAndKeepsTheCurrentFeed() {

@@ -2,12 +2,10 @@ package com.ronan.heyboxlite;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.HashMap;
@@ -43,19 +41,26 @@ final class RemoteConfig {
     }
 
     private static boolean request(SessionStore session) {
+        return request(session, url -> (HttpURLConnection) url.openConnection());
+    }
+
+    static boolean request(SessionStore session, ApiClient.ConnectionFactory connections) {
         HttpURLConnection connection = null;
+        long startedAt = SystemClock.elapsedRealtime();
         try {
             String endpoint = UpdateChecker.requireTrustedUrl(BuildConfig.CONFIG_API_URL);
             String separator = endpoint.contains("?") ? "&" : "?";
             URL url = new URL(endpoint + separator + "versionCode=" + BuildConfig.VERSION_CODE);
-            connection = (HttpURLConnection) url.openConnection();
+            connection = connections.open(url);
+            connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(3000);
             connection.setReadTimeout(4000);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("User-Agent", "heybox-Lite/" + BuildConfig.VERSION_NAME);
             new DeviceAuthorizationStore(session.appContext()).apply(connection, session);
-            if (connection.getResponseCode() / 100 != 2) return false;
-            JSONObject payload = new JSONObject(read(connection.getInputStream()));
+            int status = connection.getResponseCode();
+            if (status / 100 != 2) return false;
+            JSONObject payload = new JSONObject(MetadataResponse.read(connection, status, startedAt));
             accessStatus = AccessStatus.from(payload);
             JSONObject values = payload.optJSONObject("features");
             if (values == null) return true;
@@ -88,16 +93,6 @@ final class RemoteConfig {
         if ("评论点赞".equals(actionName)) return "comment_like";
         if ("评论".equals(actionName) || "回复评论".equals(actionName)) return "comment";
         return actionName == null ? "" : actionName;
-    }
-
-    private static String read(InputStream stream) throws Exception {
-        StringBuilder text = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"))) {
-            char[] buffer = new char[2048];
-            int count;
-            while ((count = reader.read(buffer)) >= 0) text.append(buffer, 0, count);
-        }
-        return text.toString();
     }
 
     private static final class Feature {

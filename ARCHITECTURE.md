@@ -20,6 +20,21 @@
 - `ComposeReadingSettings` / `ComposeReadingStyle`：保存参数的可观察快照及统一阅读排版。正文、一级评论和设置预览不得各自维护互相不一致的加粗、字间和行距规则。
 - `ComposeDetailContext`：从当前详情路由派生的操作快照；评论请求、诊断与前台阅读计时读取它，不从 Activity 的原生回退字段读取 Compose 数据。离开详情后不暴露上一个帖子的写入上下文。
 
+## 异步状态与资源所有权
+
+- `PostInteractionState`：同一账号和会话内点赞、收藏、关注的唯一操作状态；帖子按帖子 ID、关注按作者 ID 保存待定与确认结果。`PostActionController` 发起写入，`ComposePostInteractionBinding` 和原生调用方只投影状态；详情渐进替换与列表新数据发布都必须合并覆盖值。`AuthorIdentity` 统一作者解析，不把帖子根对象的通用 `id` 当作作者。
+- `NativeCommentDrafts`：按原始详情 entry、编辑器与编辑版本确认评论结果；旧请求不得清除新草稿或刷新另一篇帖子。`NativeCommentEditor` 只创建输入视图，不拥有发送流程。
+- `DetailLoadCoordinator`：挂起时保留详情/网页补充阶段、待渲染正文和失败结果；恢复只重启失效的未完成请求。`NativeDetailViewUpdate` 在渐进发布时复用分页器及两个滚动所有者。
+- `NativeDetailGamesController`：拥有原生详情游戏资料请求、按 entry 保留的结果和前台串行批次；`DetailContentRenderer` 只接收快照并绑定卡片，不持有 `ApiClient`。
+- `CheckinFlowLifecycle`：按当前子路由及 Activity 前台状态启动或暂停配对轮询、邮件/SMS 倒计时；暂停不等于取消登录尝试。`CheckinRequestScope` 只保存原重试策略已经批准的有限重试，不在恢复前台时重发成功的写操作。
+- `CheckinMobileLoginFlow` / `CheckinServiceAccountFlow`：每次重新开始拥有独立尝试代次，迟到结果不能覆盖新会话。`NativeCheckinCaptcha` 与 Compose 验证码桥都捕获原流程代次，并用独立 Activity requestCode 区分旧结果；任务设置忙态由 `CheckinTaskSettingsFlow` 发布，页面不可见时也必须落地完成。
+- `QrLoginController`：同一个二维码只允许一个轮询在途，保留下一次允许轮询的时间；Compose 页面绑定 Activity 暂停/恢复，并在凭据持久化确认后才报告登录成功。
+- `ImageViewBinding` / `ImageLoadRequest` / `ImageWorkToken`：视图拥有可取消请求；回收时移除排队任务、放弃迟到交付并协作中断 I/O。`ImageTaskExecutor` 使用有界、近期优先队列，溢出时完成失败回调，不能让离线任务或大小探测永久停在忙态。
+- `ImageViewerLongPage` / `LongImageTileView`：只解码视口及相邻瓦片，离屏回收；`ImageTileBudget` 的共享额度同时覆盖解码中、待交付和已显示位图。`LongImageSource` 管理区域解码器及私有临时文件，暂停释放瓦片、关闭释放源；失败保留可用预览。
+- `MetadataResponse`：更新、公告和配置统一限制实际解压后字节数与读取期限；网络客户端拒绝自动重定向，不把自定义设备认证头带到其他来源。
+
+这批修复的逐项证据及真机验收边界见 `docs/code-review-fixes-2026-11-13.md`。
+
 ## 修改规则
 
 1. 新功能不得继续堆入 `MainActivity` 或 `CheckinCenterPage`；先确定业务所有者，再新增或扩展聚焦组件。

@@ -111,39 +111,39 @@ public class ImageViewerRequestLifecycleTest {
         assertNull(views[1].getDrawable());
     }
 
-    @Test public void leavingAnUnfinishedLongImageReleasesItsPlaceholderAndAllowsRetry() {
+    @Test public void leavingAnOpeningLongImageCancelsItAndRejectsLateCompletion() {
         open(false);
         Images.previews.get(0).complete(bitmap(64, 256));
         assertEquals(1, Images.longImages.size());
-        ImageLoader.LongImageCallback old = Images.longImages.get(0);
-        old.onStart(64, 256, 2);
-        Bitmap partialTile = bitmap(64, 128);
-        old.onTile(0, partialTile);
+        LongPending old = Images.longImages.get(0);
         DismissibleImageScrollView[] scrolls = ReflectionHelpers.getField(owner.get(), "longViews");
-        FrameLayout[] pages = ReflectionHelpers.getField(owner.get(), "imagePages");
-        DismissibleImageScrollView abandoned = scrolls[0];
-        assertNotNull(abandoned);
-        assertEquals(View.INVISIBLE, abandoned.getVisibility());
         select(1);
-        assertTrue(old.cancelled());
+        assertTrue(((AtomicBoolean) ReflectionHelpers.getField(old.request, "cancelled")).get());
         assertNull(scrolls[0]);
-        assertNull(abandoned.getParent());
-        assertTrue(partialTile.isRecycled());
         select(0);
         assertEquals(2, Images.longImages.size());
-        ImageLoader.LongImageCallback retried = Images.longImages.get(1);
-        retried.onStart(64, 256, 2);
-        old.onComplete(false);
-        assertNotNull("The cancelled completion cannot remove the new long image", scrolls[0]);
-        retried.onTile(0, bitmap(64, 128));
-        retried.onTile(1, bitmap(64, 128));
-        retried.onComplete(true);
-        assertEquals(View.VISIBLE, scrolls[0].getVisibility());
-        assertSame(pages[0], scrolls[0].getParent());
-        DismissibleImageScrollView complete = scrolls[0];
-        select(1);
-        select(0);
-        assertSame("A completed neighbour remains available", complete, scrolls[0]);
+        ImageViewerLongPage[] pages = ReflectionHelpers.getField(owner.get(), "longPages");
+        ImageViewerLongPage retry = pages[0];
+        old.callback.accept(null);
+        assertSame("An old source result cannot release the new owner", retry, pages[0]);
+    }
+
+    @Test public void failedLongImageRestoresPreviewOpacityAndAllowsRetry() {
+        open(false);
+        Images.previews.get(0).complete(bitmap(64, 256));
+        ZoomImageView preview = images()[0];
+        preview.setAlpha(0.15f);
+        preview.setVisibility(View.INVISIBLE);
+        preview.animate().alpha(0.0f).setDuration(120L).start();
+        Images.longImages.get(0).callback.accept(null);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(200));
+        assertEquals(View.VISIBLE, preview.getVisibility());
+        assertEquals(1.0f, preview.getAlpha(), 0.001f);
+        assertNotNull(preview.getDrawable());
+        boolean[] loading = ReflectionHelpers.getField(owner.get(), "longLoading");
+        assertFalse(loading[0]);
+        ReflectionHelpers.callInstanceMethod(owner.get(), "maybeLoadLongPage",
+                ReflectionHelpers.ClassParameter.from(int.class, 0));
         assertEquals(2, Images.longImages.size());
     }
 
@@ -207,7 +207,7 @@ public class ImageViewerRequestLifecycleTest {
     public static class Images {
         static final List<Pending> previews = new ArrayList<>();
         static final List<Pending> originals = new ArrayList<>();
-        static final List<ImageLoader.LongImageCallback> longImages = new ArrayList<>();
+        static final List<LongPending> longImages = new ArrayList<>();
         @Implementation protected static void init(Context context) {}
         @Implementation protected static ImageLoadRequest loadCancellable(
                 String url, int target, ImageLoader.Callback callback) {
@@ -221,9 +221,18 @@ public class ImageViewerRequestLifecycleTest {
             originals.add(pending);
             return pending.request;
         }
-        @Implementation protected static void loadLongImageTiles(
-                String url, int target, ImageLoader.LongImageCallback callback) {
-            longImages.add(callback);
+        @Implementation protected static ImageLoadRequest openLongImage(
+                String url, ImageLoadRequest.Result<LongImageSource> callback) {
+            LongPending pending = new LongPending(callback);
+            longImages.add(pending);
+            return pending.request;
         }
+    }
+
+    private static final class LongPending {
+        final ImageLoadRequest.Result<LongImageSource> callback;
+        final ImageLoadRequest request = ImageLoadRequest.deliver(
+                new Handler(Looper.getMainLooper()), null, ignored -> {});
+        LongPending(ImageLoadRequest.Result<LongImageSource> callback) { this.callback = callback; }
     }
 }

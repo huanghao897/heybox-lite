@@ -2,8 +2,6 @@ package com.ronan.heyboxlite;
 
 import android.content.Context;
 import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 
 import java.util.List;
 import java.util.Locale;
@@ -15,12 +13,13 @@ final class CheckinCenterCoordinator {
 
     private final CheckinCenterStore store;
     private final CheckinCenterClient client;
-    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final CheckinRequestScope requests;
     private AuthorizationListener authorizationListener;
 
     CheckinCenterCoordinator(Context context, LocalCache diagnostics) {
         store = new CheckinCenterStore(context);
         client = new CheckinCenterClient(diagnostics::log);
+        requests = new CheckinRequestScope(context);
     }
 
     void setAuthorizationListener(AuthorizationListener listener) {
@@ -81,17 +80,23 @@ final class CheckinCenterCoordinator {
     }
 
     void getStatus(CheckinCenterClient.Callback<CheckinCenterClient.Status> callback) {
+        getStatus(requests, callback);
+    }
+
+    void getStatus(CheckinRequestScope scope,
+                   CheckinCenterClient.Callback<CheckinCenterClient.Status> callback) {
+        if (!requests.open() || !scope.open()) return;
         String token = store.deviceToken();
         if (token.isEmpty()) {
             fail(callback, CheckinCenterClient.Operation.STATUS, "尚未连接签到服务");
             return;
         }
-        statusAttempt(token, callback, 0);
+        statusAttempt(token, scoped(scope, callback), 0, scope);
     }
 
     void getLeaderboard(
             CheckinCenterClient.Callback<CheckinLeaderboard.Data> callback) {
-        leaderboardAttempt(callback, 0);
+        leaderboardAttempt(scoped(requests, callback), 0);
     }
 
     void sendSmsCode(String phone, String captchaTicket, String captchaRandstr,
@@ -160,21 +165,32 @@ final class CheckinCenterCoordinator {
     }
 
     void runNow(CheckinCenterClient.Callback<CheckinCenterClient.RunResult> callback) {
+        runNow(requests, callback);
+    }
+
+    void runNow(CheckinRequestScope scope,
+                CheckinCenterClient.Callback<CheckinCenterClient.RunResult> callback) {
+        if (!requests.open() || !scope.open()) return;
         String token = store.deviceToken();
         if (token.isEmpty()) {
             fail(callback, CheckinCenterClient.Operation.RUN_NOW, "尚未连接签到服务");
             return;
         }
-        runAttempt(token, callback, 0);
+        runAttempt(token, scoped(scope, callback), 0, scope);
     }
 
     void revokeDevice(CheckinCenterClient.Callback<Boolean> callback) {
+        revokeDevice(requests, callback);
+    }
+
+    void revokeDevice(CheckinRequestScope scope, CheckinCenterClient.Callback<Boolean> callback) {
+        if (!requests.open() || !scope.open()) return;
         String token = store.deviceToken();
         if (token.isEmpty()) {
             if (clearAuthorization(token) && callback != null) callback.onSuccess(Boolean.TRUE);
             return;
         }
-        revokeAttempt(token, callback, 0);
+        revokeAttempt(token, scoped(scope, callback), 0, scope);
     }
 
     void createBillingOrder(int amountCents,
@@ -262,8 +278,8 @@ final class CheckinCenterCoordinator {
 
     private void statusAttempt(String token,
                                CheckinCenterClient.Callback<CheckinCenterClient.Status> callback,
-                               int retries) {
-        if (!isCurrentToken(token)) return;
+                               int retries, CheckinRequestScope scope) {
+        if (!scope.open() || !isCurrentToken(token)) return;
         client.getStatus(token, authorizationAware(token, new CheckinCenterClient.Callback<>() {
             @Override
             public void onSuccess(CheckinCenterClient.Status value) {
@@ -272,12 +288,13 @@ final class CheckinCenterCoordinator {
 
             @Override
             public void onError(CheckinCenterClient.ApiError error) {
+                if (!scope.open()) return;
                 if (error.authorizationInvalid()) {
                     if (callback != null) callback.onError(error);
                     return;
                 }
                 if (CheckinRetryPolicy.shouldRetry(error, retries)) {
-                    handler.postDelayed(() -> statusAttempt(token, callback, retries + 1),
+                    scope.retry(() -> statusAttempt(token, callback, retries + 1, scope),
                             CheckinRetryPolicy.delayMillis(error, retries, 0L));
                     return;
                 }
@@ -288,8 +305,8 @@ final class CheckinCenterCoordinator {
 
     private void runAttempt(String token,
                             CheckinCenterClient.Callback<CheckinCenterClient.RunResult> callback,
-                            int retries) {
-        if (!isCurrentToken(token)) return;
+                            int retries, CheckinRequestScope scope) {
+        if (!scope.open() || !isCurrentToken(token)) return;
         client.runNow(token, authorizationAware(token, new CheckinCenterClient.Callback<>() {
             @Override
             public void onSuccess(CheckinCenterClient.RunResult value) {
@@ -298,12 +315,13 @@ final class CheckinCenterCoordinator {
 
             @Override
             public void onError(CheckinCenterClient.ApiError error) {
+                if (!scope.open()) return;
                 if (error.authorizationInvalid()) {
                     if (callback != null) callback.onError(error);
                     return;
                 }
                 if (CheckinRetryPolicy.shouldRetry(error, retries)) {
-                    handler.postDelayed(() -> runAttempt(token, callback, retries + 1),
+                    scope.retry(() -> runAttempt(token, callback, retries + 1, scope),
                             CheckinRetryPolicy.delayMillis(error, retries, 4_000L));
                     return;
                 }
@@ -315,6 +333,7 @@ final class CheckinCenterCoordinator {
     private void leaderboardAttempt(
             CheckinCenterClient.Callback<CheckinLeaderboard.Data> callback,
             int retries) {
+        if (!requests.open()) return;
         client.getLeaderboard(
                 new CheckinCenterClient.Callback<CheckinLeaderboard.Data>() {
                     @Override
@@ -325,7 +344,7 @@ final class CheckinCenterCoordinator {
                     @Override
                     public void onError(CheckinCenterClient.ApiError error) {
                         if (CheckinRetryPolicy.shouldRetry(error, retries)) {
-                            handler.postDelayed(
+                            requests.retry(
                                     () -> leaderboardAttempt(callback, retries + 1),
                                     CheckinRetryPolicy.delayMillis(error, retries, 0L));
                             return;
@@ -336,23 +355,25 @@ final class CheckinCenterCoordinator {
     }
 
     private void revokeAttempt(String token, CheckinCenterClient.Callback<Boolean> callback,
-                               int retries) {
-        if (!isCurrentToken(token)) return;
+                               int retries, CheckinRequestScope scope) {
+        if (!scope.open() || !isCurrentToken(token)) return;
         client.revokeDevice(token, authorizationAware(token, new CheckinCenterClient.Callback<>() {
             @Override
             public void onSuccess(Boolean value) {
+                if (!scope.open()) return;
                 if (!clearAuthorization(token)) return;
                 if (callback != null) callback.onSuccess(Boolean.TRUE);
             }
 
             @Override
             public void onError(CheckinCenterClient.ApiError error) {
+                if (!scope.open()) return;
                 if (error.authorizationInvalid()) {
                     if (callback != null) callback.onSuccess(Boolean.TRUE);
                     return;
                 }
                 if (CheckinRetryPolicy.shouldRetry(error, retries)) {
-                    handler.postDelayed(() -> revokeAttempt(token, callback, retries + 1),
+                    scope.retry(() -> revokeAttempt(token, callback, retries + 1, scope),
                             CheckinRetryPolicy.delayMillis(error, retries, 0L));
                     return;
                 }
@@ -362,7 +383,19 @@ final class CheckinCenterCoordinator {
     }
 
     private boolean isCurrentToken(String token) {
-        return token.equals(store.deviceToken());
+        return requests.open() && token.equals(store.deviceToken());
+    }
+
+    private <T> CheckinCenterClient.Callback<T> scoped(CheckinRequestScope scope,
+                                                      CheckinCenterClient.Callback<T> callback) {
+        return new CheckinCenterClient.Callback<T>() {
+            @Override public void onSuccess(T value) {
+                if (requests.open() && scope.open() && callback != null) callback.onSuccess(value);
+            }
+            @Override public void onError(CheckinCenterClient.ApiError error) {
+                if (requests.open() && scope.open() && callback != null) callback.onError(error);
+            }
+        };
     }
 
     private <T> CheckinCenterClient.Callback<T> authorizationAware(
@@ -411,7 +444,7 @@ final class CheckinCenterCoordinator {
     }
 
     public void close() {
-        handler.removeCallbacksAndMessages(null);
+        requests.close();
         client.close();
     }
 }

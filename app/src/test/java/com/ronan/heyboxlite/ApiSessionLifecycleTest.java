@@ -51,6 +51,7 @@ public class ApiSessionLifecycleTest {
                 .edit().clear().commit();
         Cookies.failures = 0;
         Cookies.decryptCalls = 0;
+        Cookies.failEncrypt = false;
         session = new SessionStore(context);
     }
 
@@ -76,8 +77,12 @@ public class ApiSessionLifecycleTest {
         Cookies.failures = 1;
         long generation = reader.sessionGeneration();
 
-        assertEquals(generation, reader.mergeCookies(
-                Collections.singletonList("extra=new"), generation));
+        try {
+            reader.mergeCookies(Collections.singletonList("extra=new"), generation);
+            fail("An unavailable cookie must reach the request error callback");
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("安全读取"));
+        }
 
         assertTrue(reader.getCookie().contains("fixture-key"));
         assertFalse(reader.getCookie().contains("extra=new"));
@@ -195,6 +200,28 @@ public class ApiSessionLifecycleTest {
         assertEquals(1, callbacks.get());
         assertEquals("84", session.userId());
         assertEquals("84", SessionCookieCodec.userId(session.getCookie()));
+    }
+
+    @Test public void failedCookieEncryptionReachesErrorWithoutAFalseLoginSuccess() throws Exception {
+        Response response = new Response(headers("84"), true);
+        Cookies.failEncrypt = true;
+        ApiClient client = new ApiClient(session, null, url -> response);
+        clients.add(client);
+        AtomicInteger successes = new AtomicInteger();
+        AtomicInteger errors = new AtomicInteger();
+        client.get("/fixture/login/", Collections.emptyMap(), new ApiClient.Callback() {
+            @Override public void onSuccess(JSONObject body) { successes.incrementAndGet(); }
+            @Override public void onError(String message) {
+                assertTrue(message.contains("安全保存"));
+                errors.incrementAndGet();
+            }
+        });
+        await(response.finished);
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals(0, successes.get());
+        assertEquals(1, errors.get());
+        assertFalse(session.completeLogin(new JSONObject().put("heyboxid", "84")));
+        assertFalse(session.isLoggedIn());
     }
 
     @Test public void sameAccountTokenRotationPreservesOtherPendingRequests() throws Exception {
@@ -384,8 +411,10 @@ public class ApiSessionLifecycleTest {
     public static final class Cookies {
         static int failures;
         static int decryptCalls;
+        static boolean failEncrypt;
 
-        @Implementation protected static String encrypt(String value) {
+        @Implementation protected static String encrypt(String value) throws Exception {
+            if (failEncrypt) throw new ModernCookieCrypto.KeyUnavailableException("fixture unavailable");
             return "fixture:" + value;
         }
 

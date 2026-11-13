@@ -72,6 +72,9 @@ final class NativeDetailPage implements MainDetailFeatures.Host {
                         activity.detailNavigation.returnFromDetail(true);
                     }
                 });
+        if (replacing && pager != null && articleScroll != null && commentScroll != null) {
+            detail = NativeDetailViewUpdate.reuse(detail, pager, articleScroll, commentScroll);
+        }
         body = detail.body;
         hsrc = detail.hsrc;
         if (!detail.authCode.isEmpty()) authCode = detail.authCode;
@@ -90,6 +93,7 @@ final class NativeDetailPage implements MainDetailFeatures.Host {
         loader.markRendered();
         articleScroll = detail.articleScroll;
         commentScroll = detail.commentScroll;
+        features.games.show(pager, detail.contentBlocks);
         resumeReading();
     }
 
@@ -103,6 +107,11 @@ final class NativeDetailPage implements MainDetailFeatures.Host {
             activity.removeViewWithTag("detail_loading");
             activity.transitionTo(root);
         } else {
+            if (root.getParent() == activity.content) {
+                DetailScrollRestorer.beforeFirstDraw(detail.articleScroll, articleY);
+                DetailScrollRestorer.beforeFirstDraw(detail.commentScroll, commentY);
+                return;
+            }
             View previous = activity.content.getChildCount() == 0 ? null
                     : activity.content.getChildAt(activity.content.getChildCount() - 1);
             root.setVisibility(View.INVISIBLE);
@@ -145,12 +154,12 @@ final class NativeDetailPage implements MainDetailFeatures.Host {
         DetailNavigationState state = new DetailNavigationState(root, pager,
                 articleScroll, commentScroll, item, returnScreen, returnView, returnTitle,
                 linkId, hsrc, authCode, diagnostics, body, loader.suspend());
+        features.games.suspend();
         clearDocument();
         return state;
     }
 
     void restore(DetailNavigationState state) {
-        loader.restore(state.loadState);
         item = state.item;
         body = state.body;
         linkId = state.linkId;
@@ -162,8 +171,14 @@ final class NativeDetailPage implements MainDetailFeatures.Host {
         commentScroll = state.commentScroll;
     }
 
+    void resumePending(DetailNavigationState state) {
+        loader.restore(state.loadState);
+        features.games.restore(pager);
+    }
+
     View releaseForReturn(View fallback) {
         loader.cancel();
+        features.games.discard(pager);
         View target = pager == null ? fallback : pager.takeReturnView();
         clearDocument();
         return target;
@@ -185,6 +200,7 @@ final class NativeDetailPage implements MainDetailFeatures.Host {
 
     void reset() {
         if (loader != null) loader.cancel();
+        if (features != null) features.games.discard(pager);
         if (pager != null) {
             pager.cancelMotion();
             pager.takeReturnView();
@@ -195,6 +211,11 @@ final class NativeDetailPage implements MainDetailFeatures.Host {
     void close() {
         reset();
         if (loader != null) loader.close();
+        if (features != null) features.games.close();
+    }
+
+    void discard(DetailNavigationState state) {
+        if (features != null) features.games.discard(state.pager);
     }
 
     void cancelMotion() {

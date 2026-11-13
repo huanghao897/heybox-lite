@@ -98,7 +98,7 @@ final class FeedItem {
             author = first(json.optString("author_name"), json.optString("username"),
                     json.optString("nickname"), json.optString("author"));
         }
-        String authorId = first(userId(user), userId(json));
+        String authorId = AuthorIdentity.authorId(json, user);
         String authorAvatar = user == null ? "" : user.optString("avatar", user.optString("avartar"));
         FeedItem item = new FeedItem(
                 json.optString("linkid", json.optString("link_id")),
@@ -262,13 +262,6 @@ final class FeedItem {
                 json.optBoolean("is_sticky", json.optInt("sticky") == 1)))
                 || json.optInt("is_top", 0) == 1
                 || json.optInt("is_sticky", 0) == 1;
-    }
-
-    private static String userId(JSONObject json) {
-        if (json == null) return "";
-        return first(json.optString("userid"), json.optString("user_id"),
-                json.optString("heybox_id"), json.optString("heyboxid"),
-                json.optString("uid"), json.optString("account_id"), json.optString("id"));
     }
 
     static String topicName(JSONObject json) {

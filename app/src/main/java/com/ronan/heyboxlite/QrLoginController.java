@@ -31,6 +31,8 @@ final class QrLoginController {
     private boolean active;
     private boolean foreground;
     private long expiresAt;
+    private long nextPollAt;
+    private boolean pollInFlight;
 
     QrLoginController(ApiClient api, Handler handler) {
         this.api = api;
@@ -38,10 +40,14 @@ final class QrLoginController {
     }
 
     void start(Listener listener) {
+        start(listener, true);
+    }
+
+    void start(Listener listener, boolean foreground) {
         stop();
         this.listener = listener;
         this.active = true;
-        this.foreground = true;
+        this.foreground = foreground;
         this.expiresAt = System.currentTimeMillis() + QR_LIFETIME_MS;
         int currentRequest = this.requestId;
         Map<String, String> params = new LinkedHashMap<>();
@@ -80,6 +86,8 @@ final class QrLoginController {
         this.requestId++;
         this.qrKey = "";
         this.expiresAt = 0L;
+        this.nextPollAt = 0L;
+        this.pollInFlight = false;
         this.listener = null;
         this.handler.removeCallbacks(this.pollTask);
     }
@@ -90,18 +98,19 @@ final class QrLoginController {
     }
 
     void resume() {
-        if (!this.active || this.qrKey.isEmpty()) return;
+        if (!this.active) return;
         this.foreground = true;
-        schedule(0L);
+        if (!this.qrKey.isEmpty()) schedule(Math.max(0L, nextPollAt - System.currentTimeMillis()));
     }
 
     private void poll() {
-        if (!this.active || !this.foreground || this.qrKey.isEmpty()) return;
+        if (!this.active || !this.foreground || this.qrKey.isEmpty() || pollInFlight) return;
         if (isExpired()) {
             expire();
             return;
         }
         int currentRequest = this.requestId;
+        pollInFlight = true;
         Map<String, String> params = new HashMap<>();
         params.put("qr", this.qrKey);
         params.put("app", "web");
@@ -109,6 +118,7 @@ final class QrLoginController {
             @Override
             public void onSuccess(JSONObject body) {
                 if (!isCurrent(currentRequest)) return;
+                pollInFlight = false;
                 JSONObject result = body.optJSONObject("result");
                 String state = result == null ? "" : result.optString("error");
                 if ("ok".equals(state)) {
@@ -130,6 +140,7 @@ final class QrLoginController {
             @Override
             public void onError(String message) {
                 if (!isCurrent(currentRequest)) return;
+                pollInFlight = false;
                 listener.onStatus("网络波动，正在重试");
                 schedule(ERROR_INTERVAL_MS);
             }
@@ -142,7 +153,8 @@ final class QrLoginController {
 
     private void schedule(long delayMs) {
         this.handler.removeCallbacks(this.pollTask);
-        if (!this.active || !this.foreground) return;
+        this.nextPollAt = System.currentTimeMillis() + delayMs;
+        if (!this.active || !this.foreground || pollInFlight) return;
         long remaining = this.expiresAt - System.currentTimeMillis();
         if (remaining <= 0L) {
             expire();

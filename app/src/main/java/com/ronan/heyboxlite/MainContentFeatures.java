@@ -70,7 +70,7 @@ final class MainContentFeatures {
                         Handler handler, Host host) {
         boolean roundLayout = session.usesRoundLayout();
         detailContentRenderer = new DetailContentRenderer(activity, session, tokens,
-                roundLayout, api, host::openImages);
+                roundLayout, host::openImages);
         userSpacePage = new UserSpacePage(activity, session, api, cache, tokens,
                 new UserSpacePage.Host() {
                     @Override public boolean isActive() {

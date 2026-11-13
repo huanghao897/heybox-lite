@@ -148,8 +148,8 @@ final class QrLoginPage {
 
             @Override
             public void onLogin(JSONObject result) {
-                session.saveLogin(result);
-                host.onLoginComplete();
+                if (session.completeLogin(result)) host.onLoginComplete();
+                else setStatus("登录凭据未能安全保存，请重新获取二维码", tokens.primary);
             }
 
             @Override

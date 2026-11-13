@@ -41,6 +41,7 @@ public class NativeDetailNavigatorTest {
         // Attach a context without starting MainActivity's live account/startup services.
         activity = Robolectric.buildActivity(MainActivity.class).get();
         activity.session = new SessionStore(activity);
+        activity.api = new ApiClient(activity.session);
         activity.localCache = new LocalCache(activity);
         activity.themeTokens = ThemeTokens.of(false, 0xff111111, 0xff555555);
         activity.content = new FrameLayout(activity);
@@ -70,6 +71,7 @@ public class NativeDetailNavigatorTest {
         activity.handler.removeCallbacksAndMessages(null);
         navigation.reset();
         page.close();
+        activity.api.close();
         activity.screenSnapshots.releaseAll();
         activity.fullScreenSnapshots.releaseAll();
         Motions.setLevel(MotionLevel.REDUCED);

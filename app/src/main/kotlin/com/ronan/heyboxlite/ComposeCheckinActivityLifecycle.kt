@@ -1,51 +1,51 @@
 package com.ronan.heyboxlite
 
 import android.app.Activity
-import android.app.Application
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 
-/** Observes the plain Activity used by the app without requiring a lifecycle bridge. */
+/** Scheduling follows RESUMED, not the lifetime of the composition. */
 internal class ComposeCheckinActivityLifecycle(
-    private val activity: Activity,
+    activity: Activity,
     private val onResume: () -> Unit,
     private val onPause: () -> Unit,
-) {
+    private val onDestroy: () -> Unit = {},
+) : DefaultLifecycleObserver {
+    private val lifecycle = (activity as LifecycleOwner).lifecycle
     private var registered = false
-    private val callbacks = object : Application.ActivityLifecycleCallbacks {
-        override fun onActivityCreated(activity: Activity, state: android.os.Bundle?) = Unit
+    private var resumed = false
 
-        override fun onActivityStarted(activity: Activity) = Unit
+    override fun onResume(owner: LifecycleOwner) {
+        if (!registered || resumed) return
+        resumed = true
+        onResume()
+    }
 
-        override fun onActivityResumed(activity: Activity) {
-            if (activity === this@ComposeCheckinActivityLifecycle.activity) onResume()
-        }
+    override fun onPause(owner: LifecycleOwner) = pause()
 
-        override fun onActivityPaused(activity: Activity) {
-            if (activity === this@ComposeCheckinActivityLifecycle.activity) onPause()
-        }
+    override fun onStop(owner: LifecycleOwner) = pause()
 
-        override fun onActivityStopped(activity: Activity) = Unit
-
-        override fun onActivitySaveInstanceState(
-            activity: Activity,
-            state: android.os.Bundle,
-        ) = Unit
-
-        override fun onActivityDestroyed(activity: Activity) {
-            if (activity === this@ComposeCheckinActivityLifecycle.activity) onPause()
-        }
+    override fun onDestroy(owner: LifecycleOwner) {
+        close()
+        onDestroy()
     }
 
     fun start() {
         if (registered) return
         registered = true
-        activity.application.registerActivityLifecycleCallbacks(callbacks)
-        onResume()
+        lifecycle.addObserver(this)
+    }
+
+    private fun pause() {
+        if (!resumed) return
+        resumed = false
+        onPause()
     }
 
     fun close() {
         if (!registered) return
         registered = false
-        activity.application.unregisterActivityLifecycleCallbacks(callbacks)
-        onPause()
+        lifecycle.removeObserver(this)
+        pause()
     }
 }

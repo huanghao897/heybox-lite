@@ -31,6 +31,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
                 activity.session.textScale() / 100.0f,
                 this,
                 message -> activity.toast(message));
+        activity.composeAppHost.bindInteractions(activity.postActions.interactions());
         activity.bottomNavigation = new BottomNavigationController(activity, activity.session,
                 activity.themeTokens, activity.usesRoundLayout(), body);
         activity.bottomNavigation.addItem(activity.getString(R.string.title_feed), "feed",
@@ -165,14 +166,15 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
 
     @Override public void feedAction(FeedItem item, int action) {
         if (item == null || activity.postActions == null) return;
+        if (activity.composeAppHost != null) {
+            activity.composeAppHost.bindInteractions(activity.postActions.interactions());
+        }
+        activity.postActions.interactions().apply(item);
         if (action == ComposeAppCallbacks.ACTION_LIKE) {
             activity.postActions.toggleFeedLike(item);
         } else if (action == ComposeAppCallbacks.ACTION_FOLLOW) {
             boolean following = !item.following;
-            activity.postActions.toggleFeedFollow(item, following, success -> {
-                if (success) item.following = following;
-                if (activity.composeAppHost != null) activity.composeAppHost.invalidateFeed();
-            });
+            activity.postActions.toggleFeedFollow(item, following, success -> { });
         } else if (action == ComposeAppCallbacks.ACTION_FAVORITE) {
             activity.postActions.toggleFeedFavorite(item);
         } else if (action == ComposeAppCallbacks.ACTION_CACHE) {

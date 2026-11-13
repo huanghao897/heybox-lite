@@ -30,17 +30,7 @@ internal class ComposeCheckinController(
     )
         internal set
 
-    private val captchaCallbacks = object : ComposeCheckinCaptchaCallbacks {
-        override fun onCaptchaResult(ticket: String, randstr: String) {
-            if (closed) return
-            mobileLogin.onCaptchaResult(ticket, randstr)
-        }
-
-        override fun onCaptchaCancelled(message: String) {
-            if (closed) return
-            mobileLogin.onCaptchaCancelled(message)
-        }
-    }
+    private var captchaCallbacks: ComposeCheckinCaptchaCallbacks? = null
 
     internal val pairingHost = ComposeCheckinPairingHost(this)
     internal val mobileLoginHost = ComposeCheckinMobileLoginHost(this)
@@ -54,6 +44,11 @@ internal class ComposeCheckinController(
         serviceAccountHost,
     )
     internal val taskSettings = CheckinTaskSettingsFlow(coordinator, taskSettingsHost)
+    internal val flowLifecycle = CheckinFlowLifecycle(pairingFlow, mobileLogin, serviceAccount,
+        { uiState.route == ComposeCheckinRoute.PAIRING },
+        { uiState.route == ComposeCheckinRoute.MOBILE_LOGIN })
+    private val lifecycle = ComposeCheckinActivityLifecycle(services.activity,
+        flowLifecycle::resume, flowLifecycle::pause, ::close)
     internal val membership = ComposeCheckinMembershipController(
         requests = ComposeMembershipRequests(coordinator), state = { uiState.membership },
         update = { uiState = uiState.copy(membership = it) }, route = { uiState.route },
@@ -73,19 +68,18 @@ internal class ComposeCheckinController(
         if (closed || started) return
         started = true
         membership.start(services.activity)
-        pairingFlow.resume()
+        lifecycle.start()
         if (coordinator.paired()) refreshStatus()
     }
 
     fun close() {
         if (closed) return
         closed = true
+        lifecycle.close()
+        flowLifecycle.close()
         membership.close()
         historyController.close()
-        ComposeCheckinCaptchaController.clear(captchaCallbacks)
-        mobileLogin.close()
-        serviceAccount.close()
-        pairingFlow.close()
+        captchaCallbacks?.let(ComposeCheckinCaptchaController::clear)
         taskSettings.close()
     }
 
@@ -120,7 +114,7 @@ internal class ComposeCheckinController(
             paired = true,
             errorMessage = "",
         )
-        coordinator.getStatus(object : CheckinCenterClient.Callback<CheckinCenterClient.Status> {
+        coordinator.getStatus(flowLifecycle.requests, object : CheckinCenterClient.Callback<CheckinCenterClient.Status> {
             override fun onSuccess(value: CheckinCenterClient.Status) {
                 if (!isActive() || generation != statusGeneration) return
                 val connected = value.account.state.equals("connected", ignoreCase = true)
@@ -161,7 +155,7 @@ internal class ComposeCheckinController(
         }
         resetServiceForm()
         pairingFlow.start()
-        serviceAccount.resume()
+        flowLifecycle.routeChanged()
     }
 
     fun cancelPairing() {
@@ -196,7 +190,7 @@ internal class ComposeCheckinController(
             mobileSmsButton = "发送验证码",
             mobileSmsButtonEnabled = true,
         )
-        mobileLogin.resume()
+        flowLifecycle.routeChanged()
     }
 
     fun openTaskSettings() {
@@ -209,7 +203,7 @@ internal class ComposeCheckinController(
         val current = uiState.status ?: return
         if (uiState.stage == ComposeCheckinStage.RUNNING || !current.task.active()) return
         uiState = uiState.copy(stage = ComposeCheckinStage.RUNNING, errorMessage = "")
-        coordinator.runNow(object : CheckinCenterClient.Callback<CheckinCenterClient.RunResult> {
+        coordinator.runNow(flowLifecycle.requests, object : CheckinCenterClient.Callback<CheckinCenterClient.RunResult> {
             override fun onSuccess(value: CheckinCenterClient.RunResult) {
                 if (!isActive()) return
                 services.toast.show(checkinRunMessage(value))
@@ -239,7 +233,7 @@ internal class ComposeCheckinController(
             stage = ComposeCheckinStage.SYNCING,
             errorMessage = "",
         )
-        coordinator.revokeDevice(object : CheckinCenterClient.Callback<Boolean> {
+        coordinator.revokeDevice(flowLifecycle.requests, object : CheckinCenterClient.Callback<Boolean> {
             override fun onSuccess(value: Boolean) {
                 if (!isActive()) return
                 pairingFlow.cancel()
@@ -364,6 +358,7 @@ internal class ComposeCheckinController(
             pairing = null,
             showRevokeConfirm = false,
         )
+        flowLifecycle.routeChanged()
         if (paired && uiState.status == null && started) refreshStatus()
     }
 
@@ -441,12 +436,21 @@ internal class ComposeCheckinController(
     private fun errorMessage(error: CheckinCenterClient.ApiError?): String =
         error?.message?.takeIf { it.isNotEmpty() } ?: "签到服务请求失败"
 
-    internal fun openCaptcha(uri: String) {
+    internal fun openCaptcha(uri: String, attempt: Int) {
+        val callbacks = object : ComposeCheckinCaptchaCallbacks {
+            override fun onCaptchaResult(ticket: String, randstr: String) {
+                mobileLogin.onCaptchaResult(attempt, ticket, randstr)
+            }
+            override fun onCaptchaCancelled(message: String) {
+                mobileLogin.onCaptchaCancelled(attempt, message)
+            }
+        }
+        captchaCallbacks = callbacks
         ComposeCheckinCaptchaController.launch(
             services.activity,
             uri,
             services.theme.roundScreen,
-            captchaCallbacks,
+            callbacks,
         )
     }
 

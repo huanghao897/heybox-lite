@@ -46,8 +46,11 @@ internal class ComposeMediaImageBinding(
         requests.load(view, next.url, next.targetPx) { success, bitmap ->
             if (serial != generation || next != current) return@load
             if (success && bitmap != null) imageSize(bitmap.width, bitmap.height)
+            if (serial != generation || next != current) return@load
             complete(success)
-            if (success && next.animatedUrl.isNotBlank()) requests.animate(view, next.animatedUrl)
+            if (serial == generation && next == current && success && next.animatedUrl.isNotBlank()) {
+                requests.animate(view, next.animatedUrl)
+            }
         }
     }
 

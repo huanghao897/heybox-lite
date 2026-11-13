@@ -23,11 +23,21 @@ internal class ComposeSearchController(
     private var requestSerial = 0
     private var delayed: Runnable? = null
     private var lastKeyword = ""
+    private var previousPageIds: List<String> = emptyList()
+    private var continuation: Runnable? = null
+    private var mergeInteractions: (Iterable<FeedItem>) -> Unit = {}
+
+    fun setInteractionMerger(merger: (Iterable<FeedItem>) -> Unit) {
+        mergeInteractions = merger
+        merger(items.value)
+    }
 
     fun setQuery(value: String) {
         query.value = value
         delayed?.let(handler::removeCallbacks)
         delayed = null
+        continuation?.let(handler::removeCallbacks)
+        continuation = null
         val keyword = value.trim()
         requestSerial++
         loading.value = false
@@ -48,7 +58,7 @@ internal class ComposeSearchController(
     }
 
     fun loadMore() {
-        if (delayed != null || loading.value || noMore.value || lastKeyword.isEmpty()) return
+        if (delayed != null || continuation != null || loading.value || noMore.value || lastKeyword.isEmpty()) return
         search(lastKeyword, true)
     }
 
@@ -69,18 +79,21 @@ internal class ComposeSearchController(
     fun close() {
         delayed?.let(handler::removeCallbacks)
         delayed = null
+        continuation?.let(handler::removeCallbacks)
+        continuation = null
         requestSerial++
         loading.value = false
         noMore.value = false
     }
 
-    private fun search(keyword: String, append: Boolean = false) {
+    private fun search(keyword: String, append: Boolean = false, emptyPagesRemaining: Int = 2) {
         if (loading.value) return
         loading.value = true
         if (!append) {
             offset = 0
             lastKeyword = keyword
             noMore.value = false
+            previousPageIds = emptyList()
             session.addSearchHistory(keyword)
             history.value = session.searchHistory()
         }
@@ -90,18 +103,32 @@ internal class ComposeSearchController(
             object : ApiClient.Callback {
                 override fun onSuccess(body: JSONObject) {
                     if (serial != requestSerial) return
-                    val parsed = FeedCollection.filter(
-                        FeedCollection.parse(body), session.blockKeywordList(),
-                    )
+                    val raw = FeedCollection.parse(body)
+                    val returned = FeedCollection.returnedCount(body)
+                    val parsed = FeedCollection.filter(raw, session.blockKeywordList())
+                    mergeInteractions(parsed)
                     var added = parsed.size
                     items.value = if (append) {
                         val merged = ArrayList(items.value)
                         added = FeedCollection.appendUnique(merged, parsed)
                         merged
                     } else parsed
-                    if (parsed.isNotEmpty()) offset += 20
-                    if (append && (parsed.isEmpty() || added == 0)) noMore.value = true
+                    val pageIds = raw.map { it.id }
+                    val result = body.optJSONObject("result") ?: body
+                    val ended = result.has("has_more") && !Json.truthy(result, "has_more")
+                    noMore.value = ended || returned == 0 ||
+                        (append && pageIds.isNotEmpty() && pageIds == previousPageIds)
+                    previousPageIds = pageIds
+                    offset += returned
                     loading.value = false
+                    if (added == 0 && !noMore.value && emptyPagesRemaining > 0) {
+                        val next = Runnable {
+                            continuation = null
+                            if (serial == requestSerial) search(keyword, true, emptyPagesRemaining - 1)
+                        }
+                        continuation = next
+                        handler.post(next)
+                    }
                 }
 
                 override fun onError(message: String) {

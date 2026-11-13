@@ -138,7 +138,8 @@ internal fun ComposeFeedScreen(
                         }
                     } else if (items.isEmpty()) {
                         item(key = "feed-empty") {
-                            FeedEmpty("暂无内容", "刷新", theme, onRefresh)
+                            FeedEmpty("暂无内容", if (noMore) "刷新" else "继续加载",
+                                theme, if (noMore) onRefresh else onLoadMore)
                         }
                     } else {
                         itemsIndexed(

@@ -51,6 +51,12 @@ internal class ComposeFeedController(
     @Volatile private var requestSerial = 0
     @Volatile private var restoreSerial = 0
     @Volatile private var closed = false
+    private var mergeInteractions: (Iterable<FeedItem>) -> Unit = {}
+
+    fun setInteractionMerger(merger: (Iterable<FeedItem>) -> Unit) {
+        mergeInteractions = merger
+        merger(items.value)
+    }
 
     fun restoreCache() {
         if (closed || !restoreCacheEnabled || items.value.isNotEmpty()) return
@@ -117,7 +123,7 @@ internal class ComposeFeedController(
         io.shutdownNow()
     }
 
-    private fun load(reset: Boolean, showRefreshFeedback: Boolean = true) {
+    private fun load(reset: Boolean, showRefreshFeedback: Boolean = true, emptyPagesRemaining: Int = 2) {
         if (closed || loading.value || loadingMore.value) return
         if (reset) {
             refreshing.value = showRefreshFeedback
@@ -130,6 +136,7 @@ internal class ComposeFeedController(
         val serial = ++requestSerial
         val previous = items.value
         val previousPresentations = presentations.value
+        val requestedCursor = if (reset) "" else cursor
         val params = OfficialRequestParams.feed(
             if (reset) 1 else 0,
             if (reset) null else lastPull,
@@ -159,14 +166,19 @@ internal class ComposeFeedController(
                             } else {
                                 publishItems(next, prepared)
                             }
+                            val ended = result != null && result.has("has_more") &&
+                                !Json.truthy(result, "has_more")
+                            noMore.value = ended || FeedCollection.loadMoreExhausted(
+                                parsed.size, added, requestedCursor, nextCursor,
+                            )
                             cursor = nextCursor
                             lastPull = if (reset) 1 else 0
                             firstRequest = false
-                            if (!reset && FeedCollection.loadMoreExhausted(parsed.size, added)) {
-                                noMore.value = true
-                            }
                             complete(reset)
                             writeCache(items.value)
+                            if (added == 0 && !noMore.value && emptyPagesRemaining > 0) {
+                                load(reset = false, emptyPagesRemaining = emptyPagesRemaining - 1)
+                            }
                         }
                     } catch (_: RuntimeException) {
                         publish { fail(serial, reset, "内容解析失败，请重试") }
@@ -183,6 +195,7 @@ internal class ComposeFeedController(
     private fun accept(serial: Int): Boolean = !closed && serial == requestSerial
 
     private fun publishItems(next: List<FeedItem>, prepared: Map<FeedItem, ComposeFeedPresentation>) {
+        mergeInteractions(next)
         Snapshot.withMutableSnapshot {
             items.value = next
             presentations.value = prepared

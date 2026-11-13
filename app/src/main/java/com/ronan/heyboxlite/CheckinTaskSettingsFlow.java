@@ -51,6 +51,7 @@ final class CheckinTaskSettingsFlow {
                     public void onSuccess(CheckinCenterClient.Task value) {
                         if (closed) return;
                         requestInFlight = false;
+                        host.setControlsEnabled(true);
                         if (!host.paired() || host.status() == null) {
                             if (host.active()) host.reloadStatus();
                             return;
@@ -62,11 +63,12 @@ final class CheckinTaskSettingsFlow {
                     public void onError(CheckinCenterClient.ApiError error) {
                         if (closed) return;
                         requestInFlight = false;
-                        if (!host.active()) return;
+                        host.setControlsEnabled(true);
                         if (error.authorizationInvalid()) {
                             host.authorizationFailed(error.getMessage());
                             return;
                         }
+                        if (!host.active()) return;
                         host.showMessage(error.getMessage());
                         host.render();
                     }
@@ -75,5 +77,6 @@ final class CheckinTaskSettingsFlow {
 
     void close() {
         closed = true;
+        requestInFlight = false;
     }
 }

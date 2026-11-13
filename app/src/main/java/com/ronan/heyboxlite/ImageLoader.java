@@ -5,9 +5,7 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.BitmapRegionDecoder;
-import android.graphics.Rect;
-import android.os.Build;
+import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -16,10 +14,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
@@ -27,7 +22,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 final class ImageLoader {
@@ -51,16 +45,9 @@ final class ImageLoader {
         void onComplete(long bytes);
     }
 
-    interface LongImageCallback {
-        boolean cancelled();
-        void onStart(int width, int height, int tileCount);
-        void onTile(int index, Bitmap bitmap);
-        void onComplete(boolean success);
-    }
-
     private static final long MAX_HEAP_BYTES = Runtime.getRuntime().maxMemory();
     private static final int CACHE_KB = ImageMemoryBudget.memoryCacheKb(MAX_HEAP_BYTES);
-    private static final int MAX_DECODE_BYTES = 10 * 1024 * 1024;
+    static final int MAX_DECODE_BYTES = 10 * 1024 * 1024;
     private static final int MAX_BITMAP_PIXELS = ImageMemoryBudget.decodePixels(MAX_HEAP_BYTES);
     private static final int MAX_BITMAP_SIDE = 2400;
     private static final Object SMALL_DECODE_LOCK = new Object();
@@ -79,9 +66,9 @@ final class ImageLoader {
                     return Math.max(1, value.length / 1024);
                 }
             };
-    private static final ExecutorService SMALL_EXECUTOR = Executors.newFixedThreadPool(
-            ImageMemoryBudget.decodeThreadCount(MAX_HEAP_BYTES));
-    private static final ExecutorService LARGE_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final ExecutorService SMALL_EXECUTOR = new ImageTaskExecutor(
+            ImageMemoryBudget.decodeThreadCount(MAX_HEAP_BYTES), 32);
+    private static final ExecutorService LARGE_EXECUTOR = new ImageTaskExecutor(1, 12);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final AtomicInteger PERFORMANCE_SAMPLES = new AtomicInteger();
     private static volatile Logger performanceLogger;
@@ -159,14 +146,15 @@ final class ImageLoader {
     private static void loadInto(ImageView view, String cacheKey, String url, String fallbackUrl,
                                  int targetPx, boolean clearBefore, boolean animate,
                                  IntoBitmapCallback callback) {
-        init(view == null ? null : view.getContext());
-        Object current = view.getTag();
-        if (url.equals(current) && view.getDrawable() != null) {
+        if (view == null) return;
+        init(view.getContext());
+        ImageViewBinding current = ImageViewBinding.current(view);
+        if (current != null && url.equals(current.key) && view.getDrawable() != null) {
             Bitmap cached = CACHE.get(url);
             if (callback != null) callback.onComplete(true, cached);
             return;
         }
-        view.setTag(url);
+        ImageViewBinding binding = ImageViewBinding.create(view, url, animate);
         if (url.isEmpty()) {
             if (callback != null) callback.onComplete(false, null);
             return;
@@ -184,31 +172,19 @@ final class ImageLoader {
             return;
         }
         if (clearBefore) view.setImageDrawable(null);
-        SMALL_EXECUTOR.execute(() -> {
+        binding.startBitmap(url, fallbackUrl, safeTarget(targetPx), callback);
+    }
+
+    static ImageLoadRequest requestInto(String url, String fallbackUrl, int targetPx, Callback callback) {
+        return ImageLoadRequest.submit(SMALL_EXECUTOR, MAIN, () -> {
             Bitmap downloaded = download(url, safeTarget(targetPx));
-            if (downloaded == null && fallbackUrl != null && !fallbackUrl.isEmpty()
+            if (!ImageWorkToken.stopped() && downloaded == null
+                    && fallbackUrl != null && !fallbackUrl.isEmpty()
                     && !fallbackUrl.equals(url)) {
                 downloaded = download(fallbackUrl, safeTarget(targetPx));
             }
-            final Bitmap bitmap = downloaded;
-            MAIN.post(() -> {
-                if (url.equals(view.getTag())) {
-                    if (bitmap != null) {
-                        if (!cacheKey.isEmpty()) CACHE.put(cacheKey, bitmap);
-                        if (animate) ImageRevealAnimation.show(view, bitmap);
-                        else {
-                            view.animate().cancel();
-                            ImageRevealAnimation.clear(view);
-                            view.setAlpha(1f);
-                            view.setScaleX(1f);
-                            view.setScaleY(1f);
-                            view.setImageBitmap(bitmap);
-                        }
-                    }
-                    if (callback != null) callback.onComplete(bitmap != null, bitmap);
-                }
-            });
-        });
+            return downloaded;
+        }, callback);
     }
 
     static void load(String sourceUrl, int targetPx, Callback callback) {
@@ -234,18 +210,19 @@ final class ImageLoader {
                                 PrefetchCallback callback) {
         init(context);
         List<String> urls = uniqueUrls(sourceUrls);
-        LARGE_EXECUTOR.execute(() -> {
+        ImageLoadRequest.work(LARGE_EXECUTOR, MAIN, () -> {
             long bytes = 0L;
             for (String source : urls) {
+                if (ImageWorkToken.stopped()) break;
                 String url = thumbnailUrl(source, targetPx);
                 if (url.isEmpty()) continue;
                 download(url, safeTarget(targetPx));
                 File file = ImageDiskCache.exactFile(url);
                 if (file != null && file.isFile()) bytes += file.length();
             }
-            long result = bytes;
-            if (callback != null) MAIN.post(() -> callback.onComplete(result));
-        });
+            return bytes;
+        }, bytes -> { if (callback != null) callback.onComplete(bytes == null ? 0L : bytes); },
+                ignored -> {});
     }
 
     static long offlineBytes(List<String> sourceUrls) {
@@ -289,84 +266,13 @@ final class ImageLoader {
         return download(url, targetPx, exactOriginalCacheKey(url), false);
     }
 
-    static void loadLongImageTiles(String sourceUrl, int targetWidthPx,
-                                   LongImageCallback callback) {
+    static ImageLoadRequest openLongImage(String sourceUrl,
+                                           ImageLoadRequest.Result<LongImageSource> callback) {
         String url = originalUrl(sourceUrl);
-        if (url.isEmpty() || callback == null) {
-            if (callback != null) MAIN.post(() -> callback.onComplete(false));
-            return;
-        }
-        LARGE_EXECUTOR.execute(() -> {
-            long startedAt = SystemClock.elapsedRealtime();
-            byte[] bytes = ImageDiskCache.read(
-                    ImageDiskCache.exactFile(url), MAX_DECODE_BYTES);
-            if (bytes == null && isNetworkConnected()) {
-                bytes = downloadBytes(url, MAX_DECODE_BYTES);
-                if (bytes != null) ImageDiskCache.write(url, bytes);
-            }
-            if (bytes == null || callback.cancelled()) {
-                MAIN.post(() -> callback.onComplete(false));
-                return;
-            }
-            BitmapRegionDecoder decoder = null;
-            boolean success = false;
-            int decodedTiles = 0;
-            try {
-                decoder = BitmapRegionDecoder.newInstance(bytes, 0, bytes.length, false);
-                int width = decoder.getWidth();
-                int height = decoder.getHeight();
-                if (width <= 0 || height <= width * 3) {
-                    return;
-                }
-                int target = Math.max(240,
-                        ImageMemoryBudget.decodeTargetPx(MAX_HEAP_BYTES, targetWidthPx));
-                int sample = 1;
-                while (width / sample > Math.round(target * 1.25f)) sample *= 2;
-                int sourceTileHeight = Math.max(sample,
-                        target * 2 * sample);
-                int tileCount = Math.max(1,
-                        (height + sourceTileHeight - 1) / sourceTileHeight);
-                final int startWidth = width;
-                final int startHeight = height;
-                final int startTileCount = tileCount;
-                MAIN.post(() -> callback.onStart(
-                        startWidth, startHeight, startTileCount));
-                BitmapFactory.Options options = new BitmapFactory.Options();
-                options.inPreferredConfig = Bitmap.Config.RGB_565;
-                options.inSampleSize = sample;
-                for (int index = 0; index < tileCount; index++) {
-                    if (callback.cancelled()) break;
-                    int top = index * sourceTileHeight;
-                    int bottom = Math.min(height, top + sourceTileHeight);
-                    Bitmap tile = decoder.decodeRegion(
-                            new Rect(0, top, width, bottom), options);
-                    if (tile == null) break;
-                    int tileIndex = index;
-                    MAIN.post(() -> {
-                        if (callback.cancelled()) {
-                            tile.recycle();
-                        } else {
-                            callback.onTile(tileIndex, tile);
-                        }
-                    });
-                    decodedTiles++;
-                }
-                success = decodedTiles == tileCount && !callback.cancelled();
-            } catch (OutOfMemoryError error) {
-                CACHE.evictAll();
-            } catch (Exception error) {
-                logFailure("long-decode", url, 0, error);
-            } finally {
-                if (decoder != null) decoder.recycle();
-                boolean completed = success;
-                int tiles = decodedTiles;
-                logPerformance("perf image stage=long-tiles tiles=" + tiles
-                        + " totalMs=" + Math.max(0L,
-                        SystemClock.elapsedRealtime() - startedAt)
-                        + " success=" + completed);
-                MAIN.post(() -> callback.onComplete(completed));
-            }
-        });
+        File directory = appContext == null ? null : appContext.getCacheDir();
+        return ImageLoadRequest.work(LARGE_EXECUTOR, MAIN,
+                () -> url.isEmpty() ? null : LongImageSource.open(url, directory),
+                callback, source -> { if (source != null) source.close(); });
     }
 
     /** 详情页动图：拉原始 GIF 字节，后台解码，成功后替换已显示的静态缩略图。 */
@@ -380,30 +286,26 @@ final class ImageLoader {
             if (callback != null) MAIN.post(() -> callback.onComplete(false));
             return;
         }
-        final String tag = "gif:" + url;
-        view.setTag(tag);
-        LARGE_EXECUTOR.execute(() -> {
+        ImageViewBinding binding = ImageViewBinding.create(view, "gif:" + url, false);
+        binding.startGif(url, callback);
+    }
+
+    static ImageLoadRequest requestGif(String url, ImageLoadRequest.Result<Drawable> callback) {
+        return ImageLoadRequest.work(LARGE_EXECUTOR, MAIN, () -> {
+            if (ImageWorkToken.stopped()) return null;
             byte[] bytes = GIF_BYTES.get(url);
-            if (bytes == null) {
-                bytes = ImageDiskCache.read(
-                        ImageDiskCache.exactFile(url), GifSupport.MAX_GIF_BYTES);
+            if (bytes == null && !ImageWorkToken.stopped()) {
+                bytes = ImageDiskCache.read(ImageDiskCache.exactFile(url), GifSupport.MAX_GIF_BYTES);
             }
-            if (bytes == null && isNetworkConnected()) {
-                bytes = downloadBytes(url, GifSupport.MAX_GIF_BYTES);
-                if (bytes != null) ImageDiskCache.write(url, bytes);
+            if (bytes == null && !ImageWorkToken.stopped() && isNetworkConnected()) {
+                bytes = ImageSourceIO.download(url, GifSupport.MAX_GIF_BYTES);
+                if (bytes != null && !ImageWorkToken.stopped()) ImageDiskCache.write(url, bytes);
             }
+            if (ImageWorkToken.stopped()) return null;
             if (bytes != null) GIF_BYTES.put(url, bytes);
-            android.graphics.drawable.Drawable drawable = GifSupport.decode(bytes);
-            if (drawable == null) {
-                if (callback != null) MAIN.post(() -> callback.onComplete(false));
-                return;
-            }
-            MAIN.post(() -> {
-                if (tag.equals(view.getTag())) {
-                    GifSupport.apply(view, drawable);
-                    if (callback != null) callback.onComplete(true);
-                }
-            });
+            return GifSupport.decode(bytes);
+        }, callback, drawable -> {
+            if (drawable != null) GifSupport.setRunning(drawable, false);
         });
     }
 
@@ -418,17 +320,19 @@ final class ImageLoader {
             MAIN.post(() -> callback.onSize(-1L));
             return;
         }
-        LARGE_EXECUTOR.execute(() -> {
-            long size = headContentLength(url);
-            MAIN.post(() -> callback.onSize(size));
-        });
+        ImageLoadRequest.work(LARGE_EXECUTOR, MAIN, () -> headContentLength(url),
+                bytes -> callback.onSize(bytes == null ? -1L : bytes), ignored -> {});
     }
 
     private static long headContentLength(String url) {
+        if (ImageWorkToken.stopped()) return -1L;
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(url).openConnection();
+            ImageWorkToken.abortWith(connection::disconnect);
+            if (ImageWorkToken.stopped()) return -1L;
             connection.setRequestMethod("HEAD");
+            connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(8000);
             connection.setReadTimeout(8000);
             connection.setUseCaches(true);
@@ -445,52 +349,15 @@ final class ImageLoader {
             logFailure("head", url, 0, error);
             return -1L;
         } finally {
+            ImageWorkToken.abortWith(null);
             if (connection != null) connection.disconnect();
         }
     }
 
-    private static byte[] downloadBytes(String url, int maxBytes) {
-        HttpURLConnection connection = null;
-        try {
-            long networkStartedAt = SystemClock.elapsedRealtime();
-            connection = (HttpURLConnection) new URL(url).openConnection();
-            connection.setConnectTimeout(8000);
-            connection.setReadTimeout(15000);
-            connection.setUseCaches(true);
-            HeaderProvider.applyPublic(connection);
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) {
-                logFailure("raw-download", url, status, null);
-                return null;
-            }
-            try (InputStream input = new BufferedInputStream(connection.getInputStream());
-                 ByteArrayOutputStream output = new ByteArrayOutputStream(64 * 1024)) {
-                byte[] buffer = new byte[8192];
-                int count;
-                while ((count = input.read(buffer)) >= 0) {
-                    if (output.size() + count > maxBytes) return null;
-                    output.write(buffer, 0, count);
-                }
-                byte[] bytes = output.toByteArray();
-                logPerformance("perf image stage=raw-download bytes=" + bytes.length
-                        + " networkMs=" + Math.max(0L,
-                        SystemClock.elapsedRealtime() - networkStartedAt));
-                return bytes;
-            }
-        } catch (OutOfMemoryError error) {
-            CACHE.evictAll();
-            logFailure("raw-download", url, 0, error);
-            return null;
-        } catch (Exception error) {
-            logFailure("raw-download", url, 0, error);
-            return null;
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
-    }
 
     static void cancel(ImageView view) {
         if (view != null) {
+            ImageViewBinding.cancel(view);
             ImageRevealAnimation.clear(view);
             GifSupport.setRunning(view.getDrawable(), false);
             view.setTag(null);
@@ -522,72 +389,38 @@ final class ImageLoader {
 
     private static Bitmap download(String url, int targetPx, String cacheKey,
                                    boolean allowVariantFallback) {
+        if (ImageWorkToken.stopped()) return null;
         Bitmap cached = CACHE.get(cacheKey);
         if (cached != null) return cached;
         byte[] exact = ImageDiskCache.read(
                 ImageDiskCache.exactFile(url), MAX_DECODE_BYTES);
+        if (ImageWorkToken.stopped()) return null;
         Bitmap stored = decode(exact, targetPx);
         if (stored != null) {
             CACHE.put(cacheKey, stored);
             return stored;
         }
         if (!isNetworkConnected()) return offlineFallback(url, targetPx, cacheKey, allowVariantFallback);
-        HttpURLConnection connection = null;
-        try {
-            long networkStartedAt = SystemClock.elapsedRealtime();
-            connection = (HttpURLConnection) new URL(url).openConnection();
-            connection.setConnectTimeout(8000);
-            connection.setReadTimeout(12000);
-            connection.setUseCaches(true);
-            HeaderProvider.applyPublic(connection);
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) {
-                logFailure("download", url, status, null);
-                return offlineFallback(url, targetPx, cacheKey, allowVariantFallback);
-            }
-            byte[] bytes;
-            try (InputStream input = new BufferedInputStream(connection.getInputStream());
-                 ByteArrayOutputStream output = new ByteArrayOutputStream(48 * 1024)) {
-                byte[] buffer = new byte[8192];
-                int count;
-                while ((count = input.read(buffer)) >= 0) {
-                    if (output.size() + count > MAX_DECODE_BYTES) {
-                        return offlineFallback(url, targetPx, cacheKey, allowVariantFallback);
-                    }
-                    output.write(buffer, 0, count);
-                }
-                bytes = output.toByteArray();
-            }
-            logPerformance("perf image stage=download bytes=" + bytes.length
-                    + " networkMs="
-                    + Math.max(0L, SystemClock.elapsedRealtime() - networkStartedAt));
-
-            ImageDiskCache.write(url, bytes);
-            Bitmap bitmap = decode(bytes, targetPx);
-            if (bitmap != null) CACHE.put(cacheKey, bitmap);
-            return bitmap;
-        } catch (OutOfMemoryError error) {
-            CACHE.evictAll();
-            logFailure("download", url, 0, error);
-            return null;
-        } catch (Exception error) {
-            logFailure("download", url, 0, error);
-            return offlineFallback(url, targetPx, cacheKey, allowVariantFallback);
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
+        byte[] bytes = ImageSourceIO.download(url, MAX_DECODE_BYTES);
+        if (ImageWorkToken.stopped()) return null;
+        if (bytes == null) return offlineFallback(url, targetPx, cacheKey, allowVariantFallback);
+        ImageDiskCache.write(url, bytes);
+        if (ImageWorkToken.stopped()) return null;
+        Bitmap bitmap = decode(bytes, targetPx);
+        if (bitmap != null) CACHE.put(cacheKey, bitmap);
+        return bitmap;
     }
 
     private static Bitmap offlineFallback(String url, int targetPx, String cacheKey,
                                           boolean allowVariantFallback) {
-        if (!allowVariantFallback) return null;
+        if (!allowVariantFallback || ImageWorkToken.stopped()) return null;
         Bitmap fallback = decode(ImageDiskCache.read(
                 ImageDiskCache.fallbackFile(url), MAX_DECODE_BYTES), targetPx);
         if (fallback != null) CACHE.put(cacheKey, fallback);
         return fallback;
     }
 
-    private static boolean isNetworkConnected() {
+    static boolean isNetworkConnected() {
         Context context = appContext;
         if (context == null) return true;
         try {
@@ -601,14 +434,16 @@ final class ImageLoader {
     }
 
     private static Bitmap decode(byte[] bytes, int targetPx) {
-        if (bytes == null || bytes.length == 0) return null;
+        if (ImageWorkToken.stopped() || bytes == null || bytes.length == 0) return null;
         long startedAt = SystemClock.elapsedRealtime();
         synchronized (decodeLock(bytes, targetPx)) {
+            if (ImageWorkToken.stopped()) return null;
             try {
                 BitmapFactory.Options bounds = new BitmapFactory.Options();
                 bounds.inJustDecodeBounds = true;
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
                 BitmapFactory.Options options = decodeOptions(bounds, targetPx);
+                if (ImageWorkToken.stopped()) return null;
                 try {
                     Bitmap bitmap = BitmapFactory.decodeByteArray(
                             bytes, 0, bytes.length, options);
@@ -616,6 +451,7 @@ final class ImageLoader {
                     return bitmap;
                 } catch (OutOfMemoryError firstFailure) {
                     CACHE.evictAll();
+                    if (ImageWorkToken.stopped()) return null;
                     options.inSampleSize = Math.min(128,
                             Math.max(2, options.inSampleSize * 2));
                     try {

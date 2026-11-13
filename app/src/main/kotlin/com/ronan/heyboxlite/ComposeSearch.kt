@@ -63,6 +63,9 @@ internal fun ComposeSearchScreen(
                         ComposeSearchHistory(history, onQueryChange, onClearHistory, listState)
                     }
                     loading && items.isEmpty() -> FeedLoading(services.theme)
+                    items.isEmpty() && query.isNotBlank() && !noMore -> FeedEmpty(
+                        "本页没有可显示的帖子", "继续加载", services.theme, onLoadMore,
+                    )
                     items.isEmpty() -> SearchEmpty(
                         message = if (query.isBlank()) "输入关键词开始搜索" else "没有找到相关帖子",
                         theme = services.theme,

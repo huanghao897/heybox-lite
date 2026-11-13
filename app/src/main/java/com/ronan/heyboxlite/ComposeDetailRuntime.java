@@ -103,9 +103,7 @@ final class ComposeDetailRuntime implements AutoCloseable {
                 ComposeDetailDocument value = ComposeDetailDocument.parse(new JSONObject(snapshot), fallback, playGif);
                 activity.handler.post(() -> {
                     if (!current() || generation != request) return;
-                    PostActionController.LikeState likes = activity.postActions.linkLikeState(value.getLink(), fallback);
-                    value.getItem().liked = likes.liked;
-                    value.getItem().likes = likes.likes;
+                    activity.postActions.interactions().apply(value.getItem());
                     activity.composeAppHost.showDetailDocument(value);
                     loader.markRendered();
                     parseInFlight = false;
