@@ -68,6 +68,7 @@ internal fun ComposeFeedCard(
     precomputedPresentation: ComposeFeedPresentation? = null,
     imageLoader: ComposeImageLoader = ExistingComposeImageLoader,
     actionRevision: Int = 0,
+    dataSaver: Boolean = LocalComposeDataSaver.current,
 ) {
     val scale = theme.uiScale
     val shape = RoundedCornerShape((if (theme.roundScreen) 13 else 14).dp)
@@ -174,10 +175,12 @@ internal fun ComposeFeedCard(
                         (if (theme.roundScreen) 52 else 60).dp * scale,
                     ),
                     loader = imageLoader,
+                    dataSaver = dataSaver,
+                    onClick = { onOpen(item) },
                 )
             }
         }
-        ComposeGameCard(content.game, theme, noImage || gameCardNoImage, imageLoader)
+        ComposeGameCard(content.game, theme, noImage || gameCardNoImage, imageLoader, dataSaver) { onOpen(item) }
         if (showActions) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = (5 * scale).dp),
@@ -228,14 +231,18 @@ internal fun ComposeRemoteImage(
     // for thumbnails or full-width media with an explicit modifier.
     modifier: Modifier = Modifier.size(targetDp),
     loader: ComposeImageLoader = ExistingComposeImageLoader,
+    dataSaver: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
     val targetPx = with(LocalDensity.current) { targetDp.toPx().toInt().coerceAtLeast(1) }
-    val bitmap = remember(url, targetPx, noImage, loader) {
-        mutableStateOf(if (!noImage && url.isNotBlank()) loader.cached(url, targetPx) else null)
+    val gate = rememberComposeContentImageGate(url, !noImage, dataSaver)
+    val canLoad = gate.canLoad
+    val bitmap = remember(url, targetPx, canLoad, loader) {
+        mutableStateOf(if (canLoad) loader.cached(url, targetPx) else null)
     }
-    DisposableEffect(url, targetPx, noImage, loader) {
+    DisposableEffect(url, targetPx, canLoad, loader) {
         var active = true
-        val cancel = if (!noImage && url.isNotBlank() && bitmap.value == null) {
+        val cancel = if (canLoad && bitmap.value == null) {
             loader.loadCancellable(url, targetPx) { if (active) bitmap.value = it }
         } else null
         onDispose {
@@ -244,12 +251,18 @@ internal fun ComposeRemoteImage(
         }
     }
     val image = remember(bitmap.value) { bitmap.value?.asImageBitmap() }
+    val clickModifier = if (gate.waiting || onClick != null) {
+        Modifier.clickable { gate.tap(onClick) }
+    } else Modifier
     Box(
         modifier = modifier.clip(shape)
-            .background(if (theme.dark) Color(0xFF2A2B2D) else Color(0xFFE8EAEC)),
+            .background(if (theme.dark) Color(0xFF2A2B2D) else Color(0xFFE8EAEC))
+            .then(clickModifier),
         contentAlignment = Alignment.Center,
     ) {
-        if (image != null) {
+        if (gate.waiting) {
+            ComposeContentImageLoadIcon(theme)
+        } else if (image != null) {
             Image(image, contentDescription, Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop)
         }
@@ -269,7 +282,8 @@ internal fun ComposePill(text: String, theme: ComposeThemeState, accent: Boolean
 
 @Composable
 private fun ComposeGameCard(content: ComposeGameCardPresentation?, theme: ComposeThemeState,
-                            noImage: Boolean, imageLoader: ComposeImageLoader) {
+                            noImage: Boolean, imageLoader: ComposeImageLoader, dataSaver: Boolean,
+                            onOpen: () -> Unit) {
     if (content == null) return
     Row(
         modifier = Modifier.fillMaxWidth()
@@ -282,7 +296,8 @@ private fun ComposeGameCard(content: ComposeGameCardPresentation?, theme: Compos
         if (content.coverUrl.isNotEmpty()) {
             ComposeRemoteImage(content.coverUrl, theme, noImage, (42 * theme.uiScale).dp,
                 RoundedCornerShape((6 * theme.uiScale).dp), "游戏封面",
-                Modifier.size((42 * theme.uiScale).dp), loader = imageLoader)
+                Modifier.size((42 * theme.uiScale).dp), loader = imageLoader,
+                dataSaver = dataSaver, onClick = onOpen)
             Spacer(modifier = Modifier.width((8 * theme.uiScale).dp))
         }
         Column(modifier = Modifier.weight(1f)) {

@@ -125,6 +125,38 @@ public class LongImageViewportTest {
         assertEquals(0, view.residentCount());
     }
 
+    @Test public void composeTileReplacementReleasesPixelsWithoutClosingPageSource() throws Exception {
+        ImageTileBudget budget = new ImageTileBudget(256 * 1024);
+        LongImageTileView view = view(budget, new AtomicInteger());
+        LongImageSource source = (LongImageSource) field(LongImageTileView.class, "source").get(view);
+        view.viewport(0, 320);
+        settle(view);
+        view.release();
+        assertEquals(0, budget.used());
+        Bitmap region = source.decode(new android.graphics.Rect(0, 0, 640, 320), 2);
+        assertNotNull(region);
+        region.recycle();
+        source.close();
+        assertNull(source.decode(new android.graphics.Rect(0, 0, 640, 320), 2));
+    }
+
+    @Test public void viewportReceivedBeforeLayoutIsAppliedAfterSizeArrives() throws Exception {
+        LongImageSource source = LongImageSource.open(URL, files.getRoot());
+        assertNotNull(source);
+        AtomicInteger ready = new AtomicInteger();
+        LongImageTileView view = new LongImageTileView(ApplicationProvider.getApplicationContext(),
+                source, 240, ready::incrementAndGet, () -> fail("Valid fixture must decode"));
+        views.add(view);
+        view.viewport(0, 320);
+        assertFalse(view.pendingTile());
+        view.measure(View.MeasureSpec.makeMeasureSpec(240, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        view.layout(0, 0, view.getMeasuredWidth(), view.getMeasuredHeight());
+        settle(view);
+        assertEquals(1, ready.get());
+        assertTrue(view.residentCount() > 0);
+    }
+
     @Test public void repeatedDecodeFailureNotifiesViewerAndReleasesItsHiddenLongPage() throws Exception {
         ImageTileBudget budget = new ImageTileBudget(64 * 1024);
         AtomicInteger failed = new AtomicInteger();

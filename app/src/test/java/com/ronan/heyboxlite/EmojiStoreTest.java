@@ -29,4 +29,29 @@ public class EmojiStoreTest {
         EmojiStore.register("cube_哇", "https://remote/wow.png", "");
         assertEquals("https://remote/wow.png", EmojiStore.url("cube_哇", false));
     }
+
+    @Test
+    public void unchangedRegistrationKeepsRevisionWhileLightAndDarkUpdatesInvalidate() {
+        String code = "cube_revision_stable_976";
+        int before = EmojiStore.revision();
+        EmojiStore.register(code, "http://fixtures.invalid/revision-light.png",
+                "//fixtures.invalid/revision-dark.png");
+        int registered = EmojiStore.revision();
+        assertEquals(before + 1, registered);
+        EmojiStore.register("[" + code + "]", " https://fixtures.invalid/revision-light.png ",
+                "https://fixtures.invalid/revision-dark.png");
+        EmojiStore.register(code, "", "");
+        assertEquals(registered, EmojiStore.revision());
+        assertEquals("https://fixtures.invalid/revision-light.png", EmojiStore.url(code, false));
+        assertEquals("https://fixtures.invalid/revision-dark.png", EmojiStore.url(code, true));
+        EmojiStore.register(code, "https://fixtures.invalid/revision-light-v2.png", "");
+        assertEquals(registered + 1, EmojiStore.revision());
+        assertEquals("https://fixtures.invalid/revision-dark.png", EmojiStore.url(code, true));
+        EmojiStore.register(code, "", "https://fixtures.invalid/revision-dark-v2.png");
+        assertEquals(registered + 2, EmojiStore.revision());
+        assertEquals("https://fixtures.invalid/revision-dark-v2.png", EmojiStore.url(code, true));
+        EmojiStore.register(code, "https://fixtures.invalid/revision-light-v2.png",
+                "https://fixtures.invalid/revision-dark-v2.png");
+        assertEquals(registered + 2, EmojiStore.revision());
+    }
 }

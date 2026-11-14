@@ -20,4 +20,5 @@ internal data class ComposeServices(
     val checkin: CheckinCenterCoordinator?,
     val theme: ComposeThemeState,
     val toast: ComposeToast,
+    val maintenance: CacheMaintenance? = null,
 )

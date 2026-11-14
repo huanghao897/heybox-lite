@@ -2,6 +2,7 @@ package com.ronan.heyboxlite
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Resources
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.text.Spannable
@@ -80,7 +81,7 @@ internal data class ComposeRichTextBinding(
 // Keep platform TextView metrics and span behavior aligned with the native rich/emoji renderer.
 @SuppressLint("AppCompatCustomView")
 internal class ComposeRichTextView(context: Context) : TextView(context) {
-    // EmojiRenderer owns the default View tag to reject stale asynchronous callbacks.
+    // EmojiRenderer owns a binding identity in addition to the diagnostic source tag.
     private var binding: ComposeRichTextBinding? = null
 
     init {
@@ -91,8 +92,7 @@ internal class ComposeRichTextView(context: Context) : TextView(context) {
 
     fun reset() {
         // Remove decorators as well as spans before this View enters the lazy reuse pool.
-        EmojiRenderer.set(this, "", false, null)
-        tag = null
+        EmojiRenderer.reset(this)
         binding = null
     }
 
@@ -111,8 +111,9 @@ internal class ComposeRichTextView(context: Context) : TextView(context) {
                 Typeface.NORMAL)
         }
         if (next.needsRender(previous)) {
+            val badgeResources = resources
             val decorator = if (next.cy) {
-                EmojiRenderer.Decorator { span -> applyCyBadge(this, span) }
+                EmojiRenderer.Decorator { span -> applyCyBadge(badgeResources, span) }
             } else null
             RichInlineRenderer.set(this, if (next.cy) "Cy ${next.source}" else next.source,
                 next.darkMode, next.linkColor, decorator)
@@ -121,10 +122,10 @@ internal class ComposeRichTextView(context: Context) : TextView(context) {
     }
 }
 
-private fun applyCyBadge(view: TextView, span: Spannable) {
+private fun applyCyBadge(resources: Resources, span: Spannable) {
     if (span.length < 2) return
-    val drawable: Drawable = view.context.getDrawable(R.drawable.official_cy_badge)?.mutate() ?: return
-    val height = (15f * view.resources.displayMetrics.density).roundToInt().coerceAtLeast(1)
+    val drawable: Drawable = resources.getDrawable(R.drawable.official_cy_badge, null)?.mutate() ?: return
+    val height = (15f * resources.displayMetrics.density).roundToInt().coerceAtLeast(1)
     val width = if (drawable.intrinsicHeight > 0) {
         (height * drawable.intrinsicWidth.toFloat() / drawable.intrinsicHeight).roundToInt().coerceAtLeast(1)
     } else height

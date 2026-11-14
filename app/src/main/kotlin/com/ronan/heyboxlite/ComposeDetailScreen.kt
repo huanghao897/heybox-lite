@@ -84,6 +84,7 @@ internal fun ComposeDetailScreen(
             playGif = services.session.playGif(),
             imageTargetPx = if (theme.roundScreen) 720 else 900,
             gameCardNoImage = services.session.gameCardNoImage(),
+            dataSaver = LocalComposeDataSaver.current,
         )
         if (active && rotaryInput != null && !pagerState.isScrollInProgress) key(pagerState.settledPage) {
             ObserveFeedRotaryInput(rotaryInput, if (pagerState.settledPage == 0) listState else commentsListState)

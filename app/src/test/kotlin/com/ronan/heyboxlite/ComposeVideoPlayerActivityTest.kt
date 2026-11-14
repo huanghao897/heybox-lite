@@ -68,7 +68,9 @@ class ComposeVideoPlayerActivityTest {
             val field = EmojiRenderer::class.java.getDeclaredField("BITMAPS").apply { isAccessible = true }
             @Suppress("UNCHECKED_CAST")
             val cache = field.get(null) as LruCache<String, Bitmap>
-            cache.put("d:[cube_\u6765\u8d22]", Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+            val emojiUrl = EmojiStore.url("[cube_\u6765\u8d22]", true)
+            assertTrue(emojiUrl.isNotEmpty())
+            cache.put(emojiUrl, Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
                 .apply { eraseColor(Color.WHITE) })
             ShadowMediaPlayer.setMediaInfoProvider { ShadowMediaPlayer.MediaInfo(90_000, 0) }
             ShadowMediaPlayer.setCreateListener { player, _ -> players += player }

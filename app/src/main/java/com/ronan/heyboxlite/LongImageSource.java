@@ -14,13 +14,15 @@ final class LongImageSource {
     final int height;
     private final BitmapRegionDecoder decoder;
     private final File temporary;
+    private final StorageFileLeases.Lease lease;
     private final ReentrantLock lock = new ReentrantLock();
     private volatile boolean closed;
     private boolean disposed;
 
-    private LongImageSource(BitmapRegionDecoder decoder, File temporary) {
+    private LongImageSource(BitmapRegionDecoder decoder, File temporary, StorageFileLeases.Lease lease) {
         this.decoder = decoder;
         this.temporary = temporary;
+        this.lease = lease;
         width = decoder.getWidth();
         height = decoder.getHeight();
     }
@@ -36,19 +38,23 @@ final class LongImageSource {
             file = temporary;
         }
         BitmapRegionDecoder decoder = null;
+        StorageFileLeases.Lease lease = null;
         try {
             if (file == null || ImageWorkToken.stopped()) return null;
+            lease = StorageFileLeases.acquire(file);
             decoder = BitmapRegionDecoder.newInstance(file.getAbsolutePath(), false);
             if (decoder == null || ImageWorkToken.stopped() || decoder.getWidth() <= 0
                     || decoder.getHeight() <= decoder.getWidth() * 3L) return null;
-            LongImageSource source = new LongImageSource(decoder, temporary);
+            LongImageSource source = new LongImageSource(decoder, temporary, lease);
             decoder = null;
             temporary = null;
+            lease = null;
             return source;
         } catch (Exception | OutOfMemoryError error) {
             return null;
         } finally {
             if (decoder != null) decoder.recycle();
+            if (lease != null) lease.close();
             if (temporary != null) temporary.delete();
         }
     }
@@ -62,8 +68,9 @@ final class LongImageSource {
             options.inPreferredConfig = Bitmap.Config.ARGB_8888;
             return decoder.decodeRegion(rect, options);
         } finally {
-            if (closed) dispose();
             lock.unlock();
+            // close() may lose tryLock immediately before unlock; finish that handoff here.
+            if (closed) close();
         }
     }
 
@@ -79,6 +86,7 @@ final class LongImageSource {
             disposed = true;
             decoder.recycle();
             if (temporary != null) temporary.delete();
+            lease.close();
         }
     }
 }

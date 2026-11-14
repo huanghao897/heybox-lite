@@ -50,6 +50,7 @@ internal fun ComposeProfileScreen(
                     androidx.compose.foundation.shape.CircleShape,
                     placeholderLabel = profileState.name.ifBlank { "我" }.take(1),
                     ensureTouchTarget = false,
+                    automatic = true,
                 )
             }
             if (loggedIn && profileState.hasProfile) {

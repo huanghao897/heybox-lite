@@ -18,6 +18,7 @@ internal fun ComposeUserAvatar(
     media: ComposeMediaSettings,
     size: Dp,
     onOpenUser: (() -> Unit)?,
+    requests: ComposeMediaImageRequests = ExistingComposeMediaImageRequests,
 ) {
     val description = "${name}的头像"
     ComposeMediaImage(
@@ -34,5 +35,7 @@ internal fun ComposeUserAvatar(
         contentDescription = description,
         placeholderLabel = name.take(1),
         ensureTouchTarget = false,
+        automatic = true,
+        requests = requests,
     )
 }

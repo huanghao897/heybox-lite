@@ -79,7 +79,8 @@ internal fun ComposeDetailImagePager(
         val height = if (theme.roundScreen) minOf(watchDp(150), maxWidth * 0.58f)
             else minOf(watchDp(270), maxWidth * 0.85f)
         Box(Modifier.fillMaxWidth().height(height)) {
-            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1,
+                key = { page -> "${urls[page]}:$page" }) { page ->
                 ComposeMediaImage(urls[page], media, Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit, contentDescription = "打开正文图片",
                     animated = page == pager.settledPage && GifSupport.isGifUrl(urls[page]),

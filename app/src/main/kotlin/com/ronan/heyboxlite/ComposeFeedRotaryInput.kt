@@ -11,27 +11,31 @@ import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import java.util.ArrayDeque
 
 /** UI-thread input queue: a burst accumulates distance without invalidating the page theme. */
 @Stable
 internal class ComposeFeedRotaryInput {
     internal val signal = mutableIntStateOf(0)
-    private var pendingDistance = 0L
+    private val pendingDistances = ArrayDeque<Long>()
 
     fun offer(distance: Int) {
         if (distance == 0) return
-        pendingDistance += distance.toLong()
+        val last = pendingDistances.peekLast()
+        // Preserve reversals: an edge may consume none of the preceding direction.
+        if (last != null && (last > 0L) == (distance > 0)) {
+            pendingDistances.removeLast()
+            pendingDistances.addLast(last + distance.toLong())
+        } else {
+            pendingDistances.addLast(distance.toLong())
+        }
         signal.intValue++
     }
 
-    internal fun takeDistance(): Float {
-        val distance = pendingDistance
-        pendingDistance = 0L
-        return distance.toFloat()
-    }
+    internal fun takeDistance(): Float = pendingDistances.pollFirst()?.toFloat() ?: 0f
 
     fun clear() {
-        pendingDistance = 0L
+        pendingDistances.clear()
     }
 }
 
@@ -42,8 +46,9 @@ internal fun ObserveFeedRotaryInput(input: ComposeFeedRotaryInput, listState: La
     }
     LaunchedEffect(input, listState) {
         snapshotFlow { input.signal.intValue }.collect {
-            val distance = input.takeDistance()
-            if (distance != 0f) {
+            while (true) {
+                val distance = input.takeDistance()
+                if (distance == 0f) break
                 try {
                     listState.scrollBy(distance)
                 } catch (_: CancellationException) {

@@ -1,221 +1,157 @@
 package cc.star0.wear.lib.cnwearoverlay.runtime;
 
+import android.view.InputDevice;
+import android.view.MotionEvent;
 import android.view.View;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 
 /**
- * cnwearoverlay 运行时辅助类。Lite 以独立 Android runtime 模块引用它，
- * 不启用上游 Gradle 插件或 Xposed 模块。
- *
- * 职责（与 libref 逆向报告中的链路一一对应）：
- *   - 设备识别：探测 boot classpath 中的小米 framework / SDK 类或 OPPO 线性马达类；存在真实的
- *       com.google.wear.input.WearHapticFeedbackConstants（真 Wear OS）时一律不介入。
- * 
- *   - 层 1 {@link #forceWearSdk()} 与
- *       {@link com.google.wear.input.WearHapticFeedbackConstants} 桩类取值
- *       （{@link #getScrollItemFocus()} 等）。
- * 
- *   - 层 2 {@link #rotaryConstants(Class)}：小米 (19,18,20)=SCROLL_ITEM_FOCUS/SCROLL_TICK/
- *       SCROLL_LIMIT（小米注入将 18/20 映射为 210 表冠旋转、19 映射为 211 键盘反馈）；
- *       OPPO (12,12,12)=GESTURE_START（WearPhoneWindowManager 将 12 映射为波形 302 滚动触觉，
- *       且是唯一绕过睡眠/勿扰白名单的 ID）。
- 
- *   - 层 3 {@link #performHapticFeedback(View, int)} /
- *       {@link #performHapticFeedback(View, int, int)}：小米上把
- *       CLOCK_TICK(4)/SEGMENT_FREQUENT_TICK(27) 重映射为 SEGMENT_TICK(26)
- *       （修复小米部分常量的震感异常：系统把 4/27 映射到 TEXTURE_TICK(21)；
- *       26 走 EFFECT_TICK(2) -> 210 表冠旋转）；其余设备与常量原样透传。
+ * Gradle 插桩、Google Wear 桩类和 Xposed 共用的稳定入口。
+ * 基础行为由 BaseOverlay 提供，平台差异分别由小米、OPPO 现代与传统组件处理。
  */
 public final class CnWearOverlay {
-
     private static final String GOOGLE_WEAR_CONSTANTS_CLASS =
             "com.google.wear.input.WearHapticFeedbackConstants";
-    private static final String XIAOMI_WEAR_CONSTANTS_CLASS =
-            "com.xiaomi.miwear.input.WearHapticFeedbackConstants";
-    // framework.jar 中的类；wear-sdk.jar 不一定对应用的 boot classloader 可见。
-    private static final String XIAOMI_FRAMEWORK_CLASS = "miwear.os.VibrationEffectId";
-    // OPPO framework.jar 中的震动服务客户端，WearPhoneWindowManager 通过它播放波形 302。
-    private static final String OPPO_VIBRATOR_CLASS =
-            "android.os.linearmotorvibrator.LinearmotorVibrator";
 
-    // android.view.HapticFeedbackConstants（AOSP 公开 SDK 与小米/OPPO 设备端编号一致，已实证）
-    private static final int CLOCK_TICK = 4;
-    private static final int SEGMENT_FREQUENT_TICK = 27;
-    private static final int SEGMENT_TICK = 26;
-
-    // 小米映射：SCROLL_ITEM_FOCUS / SCROLL_TICK / SCROLL_LIMIT
-    private static final int XIAOMI_SCROLL_ITEM_FOCUS = 19;
-    private static final int XIAOMI_SCROLL_TICK = 18;
-    private static final int XIAOMI_SCROLL_LIMIT = 20;
-
-    // OPPO 映射：GESTURE_START（tick/limit/官方 snap 反馈同用 12）
-    private static final int OPPO_SCROLL_ITEM_FOCUS = 12;
-    private static final int OPPO_SCROLL_TICK = 12;
-    private static final int OPPO_SCROLL_LIMIT = 12;
-
-    private static final int STATE_UNKNOWN = 0;
-    private static final int STATE_INACTIVE = 1;
-    private static final int STATE_XIAOMI = 2;
-    private static final int STATE_OPPO = 3;
-
-    private static volatile int activeState = STATE_UNKNOWN;
+    private static volatile BaseOverlay activeComponent;
 
     private CnWearOverlay() {}
 
-    // ------------------------------------------------------------------
-    // 设备识别
-    // ------------------------------------------------------------------
-
     public static boolean isXiaomi() {
-        return resolveState() == STATE_XIAOMI;
+        return component() instanceof XiaomiHaptics;
     }
 
     public static boolean isOppo() {
-        return resolveState() == STATE_OPPO;
+        return component().isOppo();
+    }
+
+    public static boolean isOppoModern() {
+        return component() instanceof OppoModernHaptics;
+    }
+
+    public static boolean isOppoLegacy() {
+        return component() instanceof OppoLegacyHaptics;
     }
 
     public static boolean isActive() {
-        int s = resolveState();
-        return s == STATE_XIAOMI || s == STATE_OPPO;
+        return component().isActive();
     }
 
-    private static int resolveState() {
-        int s = activeState;
-        if (s != STATE_UNKNOWN) {
-            return s;
+    private static BaseOverlay component() {
+        BaseOverlay component = activeComponent;
+        if (component != null) {
+            return component;
         }
         synchronized (CnWearOverlay.class) {
-            if (activeState == STATE_UNKNOWN) {
-                activeState = computeState();
+            if (activeComponent == null) {
+                activeComponent = detectComponent();
             }
-            return activeState;
+            return activeComponent;
         }
     }
 
-    private static int computeState() {
-        boolean google = hasSystemClass(GOOGLE_WEAR_CONSTANTS_CLASS);
-        boolean xiaomiFramework = hasSystemClass(XIAOMI_FRAMEWORK_CLASS);
-        boolean xiaomiSdk = hasSystemClass(XIAOMI_WEAR_CONSTANTS_CLASS);
-        boolean oppo = hasSystemClass(OPPO_VIBRATOR_CLASS);
-        // 真 Wear OS：boot classloader 里存在 Google 常量类，桩类永远不会被加载，
-        // 这里直接退出，保持原生行为（含三星 Galaxy 等）。
-        if (google) {
-            return STATE_INACTIVE;
+    private static BaseOverlay detectComponent() {
+        // 系统 Google Wear SDK 优先；应用中注入的桩类不会命中 boot classpath 探测。
+        if (BaseOverlay.hasSystemClass(GOOGLE_WEAR_CONSTANTS_CLASS)) {
+            OverlayLog.debug("platform=GOOGLE_WEAR active=false");
+            return new BaseOverlay();
         }
-        if (xiaomiFramework || xiaomiSdk) {
-            return STATE_XIAOMI;
+        if (XiaomiHaptics.isAvailable()) {
+            OverlayLog.debug("platform=XIAOMI active=true");
+            return new XiaomiHaptics();
         }
-        if (oppo) {
-            return STATE_OPPO;
+        if (OppoModernHaptics.isAvailable()) {
+            OverlayLog.debug("platform=OPPO_MODERN active=true");
+            return new OppoModernHaptics();
         }
-        return STATE_INACTIVE;
+        if (OppoLegacyHaptics.isAvailable()) {
+            OverlayLog.debug("platform=OPPO_LEGACY active=true");
+            return new OppoLegacyHaptics();
+        }
+        OverlayLog.debug("platform=UNKNOWN active=false");
+        return new BaseOverlay();
     }
-
-    /** 只探测系统类且不初始化，避免命中 app 内的 Google 桩类或厂商 SDK。 */
-    private static boolean hasSystemClass(String name) {
-        try {
-            ClassLoader boot = CnWearOverlay.class.getClassLoader();
-            while (boot != null && boot.getParent() != null) {
-                boot = boot.getParent();
-            }
-            Class.forName(name, false, boot);
-            return true;
-        } catch (ClassNotFoundException | LinkageError | SecurityException ignored) {
-            return false;
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // 层 1：HapticsKt.hasWearSDK 包装 与 桩类取值
-    // ------------------------------------------------------------------
 
     /** 目标设备上强制走 WearSDK 常量路径（配合注入的桩类）。 */
     public static boolean forceWearSdk() {
-        return isActive();
+        boolean force = isActive();
+        if (OverlayLog.enabled()) {
+            OverlayLog.debug("forceWearSdk=" + force);
+        }
+        return force;
     }
 
-    /** 桩类 getScrollItemFocus()：OPPO 用 12，其余默认 19（真 Wear OS 上桩类不会生效）。 */
     public static int getScrollItemFocus() {
-        return isOppo() ? OPPO_SCROLL_ITEM_FOCUS : XIAOMI_SCROLL_ITEM_FOCUS;
+        return component().scrollItemFocus;
     }
 
     public static int getScrollTick() {
-        return isOppo() ? OPPO_SCROLL_TICK : XIAOMI_SCROLL_TICK;
+        return component().scrollTick;
     }
 
     public static int getScrollLimit() {
-        return isOppo() ? OPPO_SCROLL_LIMIT : XIAOMI_SCROLL_LIMIT;
+        return component().scrollLimit;
     }
-
-    // ------------------------------------------------------------------
-    // 层 2：HapticsKt.getCustomRotaryConstants 包装
-    // ------------------------------------------------------------------
 
     /**
-     * @param hapticConstantsClass androidx...HapticConstants 类（由补丁代码以 LDC 传入，R8 混淆下依旧有效）
-     * @return 目标平台的常量实例；非目标设备返回 null（回落原始逻辑）
+     * @param hapticConstantsClass 由插桩代码传入的 Compose HapticConstants 类，兼容 R8 改名
+     * @return 独立的平台常量实例；非目标设备返回 null，回落原逻辑
      */
     public static Object rotaryConstants(Class<?> hapticConstantsClass) {
-        try {
-            if (isXiaomi()) {
-                return hapticConstants(hapticConstantsClass,
-                        XIAOMI_SCROLL_ITEM_FOCUS, XIAOMI_SCROLL_TICK, XIAOMI_SCROLL_LIMIT);
-            }
-            if (isOppo()) {
-                return hapticConstants(hapticConstantsClass,
-                        OPPO_SCROLL_ITEM_FOCUS, OPPO_SCROLL_TICK, OPPO_SCROLL_LIMIT);
-            }
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            // Reflection multi-catch resolves to an API 19-only superclass.
-            throw new IllegalStateException("Unsupported wear-compose HapticConstants structure", e);
-        }
-        return null;
+        return component().rotaryConstants(hapticConstantsClass);
     }
-
-    private static Object hapticConstants(Class<?> cls, int focus, int tick, int limit)
-            throws ClassNotFoundException, NoSuchMethodException, InstantiationException,
-                   IllegalAccessException, InvocationTargetException, NoSuchFieldException {
-        // 1.6.2 的基类是 abstract；创建具体子类的新实例，不修改 Kotlin 全局单例。
-        Class<?> concrete = Class.forName(
-                cls.getName() + "$Wear4RotaryHapticConstants", true, cls.getClassLoader());
-        Constructor<?> constructor = concrete.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        Object constants = constructor.newInstance();
-        setConstant(cls, constants, "scrollFocus", focus);
-        setConstant(cls, constants, "scrollTick", tick);
-        setConstant(cls, constants, "scrollLimit", limit);
-        return constants;
-    }
-
-    private static void setConstant(Class<?> cls, Object instance, String name, int value)
-            throws NoSuchFieldException, IllegalAccessException {
-        Field field = cls.getDeclaredField(name);
-        field.setAccessible(true);
-        field.set(instance, value);
-    }
-
-    // ------------------------------------------------------------------
-    // 层 3：performHapticFeedback 调用点代理
-    // ------------------------------------------------------------------
 
     public static boolean performHapticFeedback(View view, int feedbackConstant) {
-        return view.performHapticFeedback(remap(feedbackConstant));
+        return component().performHapticFeedback(view, feedbackConstant);
     }
 
     public static boolean performHapticFeedback(View view, int feedbackConstant, int flags) {
-        return view.performHapticFeedback(remap(feedbackConstant), flags);
+        return component().performHapticFeedback(view, feedbackConstant, flags);
     }
 
-    private static int remap(int feedbackConstant) {
-        if (feedbackConstant == CLOCK_TICK || feedbackConstant == SEGMENT_FREQUENT_TICK) {
-            if (isXiaomi()) {
-                return SEGMENT_TICK;
-            }
+    /** 只适配旧 OPPO，供关闭小米重映射时的 Compose 调用点使用。 */
+    public static boolean performRotaryHapticFeedback(View view, int feedbackConstant) {
+        return component().performRotaryHapticFeedback(view, feedbackConstant);
+    }
+
+    public static boolean performRotaryHapticFeedback(View view, int feedbackConstant, int flags) {
+        return component().performRotaryHapticFeedback(view, feedbackConstant, flags);
+    }
+
+    /** 供已确认 OPPO_LEGACY 且常量为 12 的 Xposed Hook 调用，不重入 View。 */
+    public static boolean performOppoLegacyScrollFeedback(View view, int flags) {
+        return OppoLegacyHaptics.perform(view, flags);
+    }
+
+    /** 调用方负责回收 OPPO 表冠转换产生的事件副本。 */
+    public static MotionEvent rotaryEvent(MotionEvent event) {
+        MotionEvent mapped = component().rotaryEvent(event);
+        if (event.getActionMasked() == MotionEvent.ACTION_SCROLL && OverlayLog.enabled()) {
+            InputDevice device = event.getDevice();
+            OverlayLog.debug("input device=" + (device == null ? "null" : device.getName())
+                    + " id=" + event.getDeviceId() + " time=" + event.getEventTime()
+                    + " source=0x" + Integer.toHexString(event.getSource())
+                    + " pointers=" + event.getPointerCount()
+                    + " vscroll=" + event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                    + " scroll=" + event.getAxisValue(26)
+                    + " converted=" + (mapped != event)
+                    + " mappedSource=0x" + Integer.toHexString(mapped.getSource())
+                    + " mappedScroll=" + mapped.getAxisValue(26));
         }
-        return feedbackConstant;
+        return mapped;
+    }
+
+    /** Gradle 输入包装在首次分发后记录结果；不改变消费、回退或回收行为。 */
+    public static void logRotaryDispatch(MotionEvent original, MotionEvent mapped, boolean consumed) {
+        if (original != mapped && OverlayLog.enabled()) {
+            OverlayLog.debug("dispatch time=" + original.getEventTime()
+                    + " converted=true consumed=" + consumed + " fallback=" + !consumed);
+        }
+    }
+
+    /** 分发完成（包括异常）后仅回收自己创建的副本。 */
+    public static void recycleRotaryEvent(MotionEvent original, MotionEvent mapped) {
+        if (mapped != original) {
+            mapped.recycle();
+        }
     }
 }

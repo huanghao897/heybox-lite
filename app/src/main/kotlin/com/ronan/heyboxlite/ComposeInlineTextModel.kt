@@ -13,6 +13,7 @@ internal interface ComposeInlineTextEmojiCatalog {
     fun url(code: String, darkMode: Boolean): String
     fun isLoaded(): Boolean
     fun whenReady(ready: Runnable)
+    fun cancelWhenReady(ready: Runnable) {}
 }
 
 internal object ExistingComposeInlineTextEmojiCatalog : ComposeInlineTextEmojiCatalog {
@@ -22,9 +23,10 @@ internal object ExistingComposeInlineTextEmojiCatalog : ComposeInlineTextEmojiCa
     override fun url(code: String, darkMode: Boolean): String = EmojiStore.url(code, darkMode)
     override fun isLoaded(): Boolean = EmojiStore.isLoaded()
     override fun whenReady(ready: Runnable) = EmojiStore.whenReady(ready)
+    override fun cancelWhenReady(ready: Runnable) = EmojiStore.cancelWhenReady(ready)
 }
 
-internal enum class ComposeInlineTextKind { EMOJI, GAME, CY }
+internal enum class ComposeInlineTextKind { EMOJI, GAME, LINK, CY }
 
 internal data class ComposeInlineTextAttachment(
     val id: String,
@@ -38,7 +40,10 @@ internal data class ComposeInlineTextModel(
     val text: AnnotatedString,
     val attachments: List<ComposeInlineTextAttachment>,
     val hasEmojiTokens: Boolean,
+    val links: List<ComposeInlineTextLink>,
 )
+
+internal data class ComposeInlineTextLink(val start: Int, val end: Int, val url: String)
 
 // Match the native token boundaries, including bare official codes followed by ordinary text.
 private val composeInlineTextToken = Pattern.compile(
@@ -60,7 +65,8 @@ internal fun buildComposeInlineTextModel(
     for (link in parsed.links) {
         val start = prefix.length + link.start
         attachments += ComposeInlineTextAttachment("game:$start", start, start + 1,
-            ComposeInlineTextKind.GAME)
+            if (link.textLink) ComposeInlineTextKind.LINK else ComposeInlineTextKind.GAME,
+            if (link.textLink) link.iconUrl(darkMode) else "")
     }
 
     val matcher = composeInlineTextToken.matcher(parsed.text)
@@ -91,10 +97,15 @@ internal fun buildComposeInlineTextModel(
                 prefix.length + link.end)
         }
     }
-    return ComposeInlineTextModel(text, ordered, hasEmojiTokens)
+    val links = parsed.links.mapNotNull { link ->
+        composeInlineLinkTarget(link.href).takeIf { it.isNotEmpty() }?.let {
+            ComposeInlineTextLink(prefix.length + link.start, prefix.length + link.end, it)
+        }
+    }
+    return ComposeInlineTextModel(text, ordered, hasEmojiTokens, links)
 }
 
-/** EmojiStore cannot unsubscribe; release the composition captured by a queued callback instead. */
+/** One catalog completion belongs to one active composition binding. */
 internal class ComposeInlineTextReadyCallback(onReady: () -> Unit) : Runnable {
     private val callback = AtomicReference<(() -> Unit)?>(onReady)
 

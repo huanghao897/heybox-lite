@@ -72,17 +72,19 @@ class ComposeFeedRotaryUiTest {
         }
     }
 
-    @Test fun pendingDistanceAccumulatesSignedTicksAndCanBeClearedBeforeLeavingTheFeed() {
+    @Test fun pendingDistanceCoalescesSameDirectionTicksAndKeepsReversalsInOrder() {
         val input = ComposeFeedRotaryInput()
         input.offer(15)
         input.offer(20)
         input.offer(-5)
-        assertEquals(30f, input.takeDistance(), 0f)
+        assertEquals(35f, input.takeDistance(), 0f)
+        assertEquals(-5f, input.takeDistance(), 0f)
         assertEquals(0f, input.takeDistance(), 0f)
         input.offer(Int.MAX_VALUE)
         input.offer(Int.MAX_VALUE)
         assertEquals(Int.MAX_VALUE.toLong().times(2).toFloat(), input.takeDistance(), 0f)
         input.offer(100)
+        input.offer(-50)
         input.clear()
         assertEquals(0f, input.takeDistance(), 0f)
     }
@@ -118,5 +120,51 @@ class ComposeFeedRotaryUiTest {
         }
         compose.runOnIdle { input.offer(20) }
         compose.runOnIdle { assertEquals(20, state.firstVisibleItemScrollOffset) }
+    }
+
+    @Test fun reversingABurstAtTheTopDoesNotCancelTheUsableTicks() {
+        val input = ComposeFeedRotaryInput()
+        val state = LazyListState()
+        compose.setContent {
+            ObserveFeedRotaryInput(input, state)
+            LazyColumn(state = state, modifier = Modifier.size(240.dp, 320.dp)) {
+                items(10) { Text("Item $it", Modifier.height(100.dp)) }
+            }
+        }
+        compose.runOnIdle {
+            // The first part hits the top. It must not erase the following reversal.
+            repeat(3) { input.offer(-10) }
+            repeat(3) { input.offer(10) }
+        }
+        compose.runOnIdle {
+            assertEquals(0, state.firstVisibleItemIndex)
+            assertEquals(30, state.firstVisibleItemScrollOffset)
+        }
+    }
+
+    @Test fun reversingABurstAtTheBottomDoesNotCancelTheUsableTicks() {
+        val input = ComposeFeedRotaryInput()
+        val state = LazyListState()
+        lateinit var scope: CoroutineScope
+        compose.setContent {
+            scope = rememberCoroutineScope()
+            ObserveFeedRotaryInput(input, state)
+            LazyColumn(state = state, modifier = Modifier.size(240.dp, 320.dp)) {
+                items(10) { Text("Item $it", Modifier.height(100.dp)) }
+            }
+        }
+        compose.runOnIdle { scope.launch { state.scrollToItem(9) } }
+        val bottom = compose.runOnIdle {
+            assertFalse(state.canScrollForward)
+            state.firstVisibleItemIndex * 100 + state.firstVisibleItemScrollOffset
+        }
+        compose.runOnIdle {
+            repeat(3) { input.offer(10) }
+            repeat(3) { input.offer(-10) }
+        }
+        compose.runOnIdle {
+            assertEquals(bottom - 30,
+                state.firstVisibleItemIndex * 100 + state.firstVisibleItemScrollOffset)
+        }
     }
 }

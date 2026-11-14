@@ -45,6 +45,11 @@ internal class ComposeAppHost(
         ),
     )
     internal val feed = ComposeFeedController(session, api, cache, toast::show)
+
+    fun bindCacheMaintenance(maintenance: CacheMaintenance) {
+        servicesState.value = servicesState.value.copy(maintenance = maintenance)
+    }
+
     internal val profile = ComposeProfileController(servicesState.value)
     internal val search = ComposeSearchController(session, api, cache, handler)
     internal val saved = ComposeSavedController(servicesState.value)
@@ -463,7 +468,9 @@ internal class ComposeAppHost(
                     theme = services.theme.copy(rotaryRequest = null),
                 )
                 screenStates.SaveableStateProvider(page) {
-                    ComposeRouteScreen(host, page, pageServices, pageActive)
+                    ProvideComposeDataSaver(pageServices.session) {
+                        ComposeRouteScreen(host, page, pageServices, pageActive)
+                    }
                 }
             }
         }

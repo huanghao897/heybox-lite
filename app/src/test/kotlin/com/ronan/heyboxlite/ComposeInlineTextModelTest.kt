@@ -110,4 +110,20 @@ class ComposeInlineTextModelTest {
         cancelled.run()
         assertEquals(1, calls)
     }
+
+    @Test fun nonGameOfficialLinksKeepTheirOwnIconWithoutChangingGameAttachmentsOrBlueRanges() {
+        val source = RichGameLinkMarkup.normalizeAnchors(
+            "<a data-link-type='text' href='https://example.invalid/lottery' " +
+                "icon-url='ticket-light' icon-dark-url='ticket-dark'>Lottery</a> " +
+                "<a data-link-type='game' data-game-id='42'>Game</a>")
+        val model = buildComposeInlineTextModel(source, true, Color.Blue, false,
+            ComposeInlineTextTestCatalog())
+        assertEquals("Lottery Game", RichGameLinkMarkup.plainText(source))
+        assertEquals(listOf(ComposeInlineTextKind.LINK, ComposeInlineTextKind.GAME),
+            model.attachments.map { it.kind })
+        assertEquals(listOf("ticket-dark", ""), model.attachments.map { it.url })
+        assertEquals(listOf("Lottery", "Game"),
+            model.text.spanStyles.map { model.text.text.substring(it.start + 1, it.end) })
+        assertTrue(model.text.spanStyles.all { it.item.color == Color.Blue })
+    }
 }

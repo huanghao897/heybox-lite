@@ -12,11 +12,10 @@ import org.junit.Test;
 public class ImageViewerTransitionWiringTest {
     @Test
     public void viewerWaitsForTheFirstBitmapBeforePaintingTheBackdrop() throws Exception {
-        String source = read("ImageViewerActivity.java");
-
-        assertTrue(source.contains("backdrop.setAlpha(0.0f)"));
-        assertTrue(source.contains("backdrop.animate().alpha(1.0f)"));
-        assertFalse(source.contains("backdrop.setAlpha(sharedPreviewReady ? 0.0f : 1.0f)"));
+        String source = readCompose("ComposeImageViewer.kt");
+        assertTrue(source.contains("if (ready)"));
+        assertTrue(source.contains("enter.animateTo(1f"));
+        assertTrue(source.contains("alpha = enter.value * exit.value"));
     }
 
     @Test
@@ -29,23 +28,18 @@ public class ImageViewerTransitionWiringTest {
 
     @Test
     public void automaticCommentOriginalLoadingDoesNotFlashTheSpinner() throws Exception {
-        String source = read("ImageViewerActivity.java");
-
-        assertTrue(source.contains("private void completePageEnter(int index)"));
-        assertTrue(source.contains("pageEnter != PageEnter.FINISHED"));
-        assertFalse(source.contains("private void schedulePreviewUpgrade"));
-        assertTrue(source.contains("spinner.setVisibility(View.GONE)"));
-        assertTrue(source.contains("if (!automatic) spinner.setVisibility(View.GONE)"));
-        assertTrue(source.contains("if (!automatic) {\n            spinner.setAlpha(1f)"));
+        String source = readCompose("ComposeImageViewer.kt");
+        assertTrue(source.contains("if (bitmap == null && state.loading)"));
+        assertTrue(source.contains("enter.value == 1f"));
+        assertTrue(source.contains("state.enterCompleted(immediateOriginal, playGif)"));
     }
 
     @Test
     public void originalBitmapReplacementFitsBeforeTheNextFrame() throws Exception {
-        String source = read("ImageViewerActivity.java");
-
-        assertTrue(source.contains("private void applyLoadedBitmap(ZoomImageView view, Bitmap bitmap)"));
-        assertTrue(source.contains("view.replaceBitmap(bitmap)"));
-        assertFalse(source.contains("view.animate().cancel();\n            view.setImageBitmap(bitmap)"));
+        String source = readCompose("ComposeViewerTransform.kt");
+        assertTrue(source.contains("fitted = Size"));
+        assertTrue(source.contains("pan = bounded(pan)"));
+        assertFalse(readCompose("ComposeImageViewer.kt").contains("ZoomImageView"));
     }
 
     @Test
@@ -63,6 +57,13 @@ public class ImageViewerTransitionWiringTest {
         File direct = new File("src/main/java/com/ronan/heyboxlite/" + name);
         File file = direct.isFile() ? direct
                 : new File("app/src/main/java/com/ronan/heyboxlite/" + name);
+        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+    }
+
+    private static String readCompose(String name) throws Exception {
+        File direct = new File("src/main/kotlin/com/ronan/heyboxlite/" + name);
+        File file = direct.isFile() ? direct
+                : new File("app/src/main/kotlin/com/ronan/heyboxlite/" + name);
         return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
     }
 

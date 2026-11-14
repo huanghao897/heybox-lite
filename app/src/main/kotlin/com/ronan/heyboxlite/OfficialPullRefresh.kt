@@ -59,7 +59,7 @@ internal fun OfficialPullRefreshBox(
     val theme = LocalHeyboxTheme.current
     val state = remember { OfficialPullRefreshState() }
     var requestPending by remember { mutableStateOf(false) }
-    var gestureCancelled by remember { mutableStateOf(false) }
+    var releaseConfirmed by remember { mutableStateOf(false) }
     val showingRefresh = refreshing || requestPending
     state.animateTransitions = theme.motionLevel != MotionLevel.OFF
     LaunchedEffect(requestPending) {
@@ -77,15 +77,17 @@ internal fun OfficialPullRefreshBox(
         val headerHeight = minOf(watchDp(70), maxHeight * 0.28f)
         val headerPx = with(LocalDensity.current) { headerHeight.toPx() }
         Box(Modifier.fillMaxSize().pointerInput(Unit) {
-            // Compose translates ACTION_CANCEL into consumed up changes. Observe
-            // the initial pass without consuming or calculating any drag offsets.
+            // Normal up travels parent-first, but cancellation reaches children first.
+            // Keep refresh blocked until this observer confirms an unconsumed up;
+            // a child's cancel-triggered release can run before our synthetic up.
             awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                gestureCancelled = false
+                releaseConfirmed = false
                 do {
                     val event = awaitPointerEvent(PointerEventPass.Initial)
                     if (event.changes.none { it.pressed }) {
-                        gestureCancelled = event.changes.any { it.previousPressed && it.isConsumed }
+                        releaseConfirmed = event.changes.any { it.previousPressed } &&
+                            event.changes.none { it.isConsumed }
                     }
                 } while (event.changes.any { it.pressed })
             }
@@ -96,7 +98,7 @@ internal fun OfficialPullRefreshBox(
             threshold = headerHeight,
             onRefresh = {
                 requestPending = true
-                if (enabled && active && !gestureCancelled) onRefresh()
+                if (enabled && active && releaseConfirmed) onRefresh()
             },
         )) {
             Box(Modifier.fillMaxSize().graphicsLayer {
@@ -129,8 +131,12 @@ internal class OfficialPullRefreshState : PullToRefreshState {
     private suspend fun settle(target: Float) {
         // Material awaits this before every child fling, even when no header was pulled.
         if (position.value == target && !position.isRunning) return
-        position.animateTo(target, tween(if (animateTransitions) 250 else 0,
-            easing = LinearOutSlowInEasing))
+        if (animateTransitions) {
+            position.animateTo(target, tween(250, easing = LinearOutSlowInEasing))
+        } else {
+            // Even tween(0) waits for a frame before returning control to the list.
+            position.snapTo(target)
+        }
     }
 }
 

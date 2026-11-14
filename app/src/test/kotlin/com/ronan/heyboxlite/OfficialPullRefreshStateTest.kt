@@ -25,4 +25,22 @@ class OfficialPullRefreshStateTest {
         assertEquals(1f, state.distanceFraction, 0f)
         assertFalse(state.isAnimating)
     }
+
+    @Test fun motionOffReleaseHidesAPartialPullWithoutWaitingForAFrame() = runBlocking {
+        val state = OfficialPullRefreshState().apply { animateTransitions = false }
+        state.snapTo(0.4f)
+        // Material awaits animateToHidden before letting the child fling.
+        // A zero-duration tween still needs a frame clock, unlike a snap.
+        state.animateToHidden()
+        assertEquals(0f, state.distanceFraction, 0f)
+        assertFalse(state.isAnimating)
+    }
+
+    @Test fun motionOffRefreshThresholdDoesNotWaitForAFrame() = runBlocking {
+        val state = OfficialPullRefreshState().apply { animateTransitions = false }
+        state.snapTo(1.2f)
+        state.animateToThreshold()
+        assertEquals(1f, state.distanceFraction, 0f)
+        assertFalse(state.isAnimating)
+    }
 }

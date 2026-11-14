@@ -32,6 +32,7 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
                 this,
                 message -> activity.toast(message));
         activity.composeAppHost.bindInteractions(activity.postActions.interactions());
+        activity.composeAppHost.bindCacheMaintenance(activity.cacheMaintenance);
         activity.bottomNavigation = new BottomNavigationController(activity, activity.session,
                 activity.themeTokens, activity.usesRoundLayout(), body);
         activity.bottomNavigation.addItem(activity.getString(R.string.title_feed), "feed",
@@ -259,8 +260,8 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         } else if ("cache_prune".equals(key)) {
             activity.cacheMaintenance.pruneOffline(() -> activity.toast("已清理过期离线内容"));
         } else if ("cache_clear".equals(key)) {
-            activity.cacheMaintenance.clearTemporaryCache(
-                    bytes -> activity.toast("已清除缓存 " + Format.cacheMb(bytes)));
+            activity.cacheMaintenance.clearDisposableStorage(
+                    result -> activity.toast(StorageCleanupText.format(result)));
         } else if ("diagnostics_export".equals(key)) {
             activity.exportDiagnostics();
         } else if ("diagnostics_upload".equals(key)) {

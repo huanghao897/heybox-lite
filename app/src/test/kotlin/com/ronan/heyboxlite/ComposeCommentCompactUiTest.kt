@@ -87,8 +87,9 @@ class ComposeCommentCompactUiTest {
         val reply = JSONObject().put("commentid", "reply").put("text", "ok")
             .put("replyid", "root").put("user", user("Bo", 56))
         val group = JSONObject().put("comment", JSONArray().put(root).put(reply))
+        val theme = composePreviewTheme(round)
         compose.setContent {
-            HeyboxComposeTheme(composePreviewTheme(round)) {
+            HeyboxComposeTheme(theme) {
                 Column(Modifier.width(width.dp)) {
                     ComposeDetailThread(group, FeedItem.from(JSONObject().put("linkid", "post")),
                         round, ComposeMediaSettings(enabled = false), {})
@@ -104,8 +105,9 @@ class ComposeCommentCompactUiTest {
         assertEquals("The reply frame must align with the primary body, not its avatar",
             rootBody.left, replyFrame.left, 0.5f)
         assertEquals(rootBody.right, replyFrame.right, 0.5f)
-        assertTrue("Only the reply frame's compact padding should reduce body width",
-            rootBody.width - replyBounds.width <= 11f)
+        assertEquals("Reply text must align with the primary text without another horizontal inset",
+            rootBody.left, replyBounds.left, 0.5f)
+        assertEquals(rootBody.right, replyBounds.right, 0.5f)
         if (round) assertTrue("Round replies must not waste the watch width",
             replyBounds.width >= section.width * 0.83f)
         val text = compose.onNodeWithText("Bo：ok").fetchSemanticsNode().boundsInRoot
@@ -118,7 +120,19 @@ class ComposeCommentCompactUiTest {
             FontWeight.Normal, secondary.layoutInput.text.spanStyles.first().item.fontWeight)
         assertTrue("A short reply must not reserve a separate author row", text.height <= 19f)
         assertTrue("An empty image wrapper must not add reply height", replyBounds.height <= 20f)
-        compose.runOnIdle { captureMembershipUi(compose.activity, "compact-replies-${if (round) "round" else "square"}") }
+        compose.runOnIdle {
+            val view = compose.activity.window.decorView
+            val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            try {
+                view.draw(Canvas(bitmap))
+                val x = replyFrame.center.x.toInt()
+                assertEquals("Replies must not add a top separator", theme.panel.toArgb(),
+                    bitmap.getPixel(x, replyFrame.top.toInt()))
+                assertEquals("Replies must not add a bottom separator", theme.panel.toArgb(),
+                    bitmap.getPixel(x, replyFrame.bottom.toInt() - 1))
+                captureMembershipUi(compose.activity, "compact-replies-${if (round) "round" else "square"}")
+            } finally { bitmap.recycle() }
+        }
     }
 
     @Test fun pinnedCornerOverlaysTheThreadWithoutBecomingAFullWidthBadge() {

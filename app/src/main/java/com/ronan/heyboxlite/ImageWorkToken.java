@@ -1,10 +1,16 @@
 package com.ronan.heyboxlite;
 
+import java.util.concurrent.Executor;
+
 /** Cooperative cancellation at disk, network and decoder boundaries (also on API 21). */
 final class ImageWorkToken {
     private static final ThreadLocal<ImageWorkToken> CURRENT = new ThreadLocal<>();
     private volatile boolean cancelled;
     private Runnable abort;
+    private final Executor abortExecutor;
+
+    ImageWorkToken() { this(ImageNetworkAbort.EXECUTOR); }
+    ImageWorkToken(Executor abortExecutor) { this.abortExecutor = abortExecutor; }
 
     static void enter(ImageWorkToken token) { CURRENT.set(token); }
     static void leave() { CURRENT.remove(); }
@@ -18,14 +24,21 @@ final class ImageWorkToken {
         if (token != null) token.setAbort(action);
     }
 
-    private synchronized void setAbort(Runnable action) {
-        abort = action;
-        if (cancelled && action != null) action.run();
+    private void setAbort(Runnable action) {
+        synchronized (this) {
+            if (!cancelled) { abort = action; return; }
+        }
+        if (action != null) abortExecutor.execute(action);
     }
 
-    synchronized void cancel() {
-        cancelled = true;
-        if (abort != null) abort.run();
-        abort = null;
+    void cancel() {
+        Runnable action;
+        synchronized (this) {
+            if (cancelled) return;
+            cancelled = true;
+            action = abort;
+            abort = null;
+        }
+        if (action != null) abortExecutor.execute(action);
     }
 }

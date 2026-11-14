@@ -2,7 +2,6 @@ package com.ronan.heyboxlite
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -11,18 +10,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
 @Composable
 internal fun ComposeContentCacheScreen(
@@ -33,6 +26,7 @@ internal fun ComposeContentCacheScreen(
 ) {
     val session = services.session
     var noImage by remember { mutableStateOf(session.noImage()) }
+    var dataSaver by remember { mutableStateOf(session.isDataSaverEnabled()) }
     var gameCardNoImage by remember { mutableStateOf(session.gameCardNoImage()) }
     var originalImages by remember { mutableStateOf(session.originalImages()) }
     var crownEnabled by remember { mutableStateOf(session.crownScrollEnabled()) }
@@ -44,24 +38,18 @@ internal fun ComposeContentCacheScreen(
     var doubleTapReply by remember { mutableStateOf(session.doubleTapCommentReply()) }
     var playGif by remember { mutableStateOf(session.playGif()) }
     var filter by remember { mutableStateOf(session.blockKeywords()) }
-    var detailCount by remember { mutableStateOf(0) }
-    var offlineBytes by remember { mutableStateOf(0L) }
-    var cacheStatsVersion by remember { mutableStateOf(0) }
-
-    LaunchedEffect(services.cache, cacheStatsVersion) {
-        if (cacheStatsVersion > 0) delay(300)
-        val snapshot = withContext(Dispatchers.IO) {
-            sessionDetailCount(services) to sessionOfflineBytes(services)
-        }
-        detailCount = snapshot.first
-        offlineBytes = snapshot.second
-    }
+    val storage = rememberStorageSnapshot(services)
 
     fun changed() = onSettingsChanged()
 
     WatchPage("内容与缓存", onBack) {
         WatchSectionTitle("浏览与交互")
         WatchCard {
+            WatchSwitchRow("省流模式", dataSaver, R.drawable.il_image) { value ->
+                dataSaver = value
+                session.setDataSaverEnabled(value)
+                changed()
+            }
             WatchSwitchRow("无图模式", noImage, R.drawable.il_image) { value ->
                 noImage = value
                 session.setNoImage(value)
@@ -136,7 +124,6 @@ internal fun ComposeContentCacheScreen(
                 changed()
                 if (enabled) {
                     onNavigate("cache_prune")
-                    cacheStatsVersion++
                 }
             }
             WatchSwitchRow("双击评论回复", doubleTapReply, R.drawable.il_reply) { value ->
@@ -197,11 +184,10 @@ internal fun ComposeContentCacheScreen(
         WatchCard {
             WatchRow(
                 title = "清理过期离线内容",
-                value = "$detailCount 篇",
+                value = storage?.let { it.detailCount.toString() + " 篇" } ?: "计算中",
                 icon = R.drawable.il_cleanup,
                 onClick = {
                     onNavigate("cache_prune")
-                    cacheStatsVersion++
                 },
             )
             WatchRow(
@@ -221,13 +207,13 @@ internal fun ComposeContentCacheScreen(
             )
             WatchRow(
                 title = "清除缓存",
-                value = Format.cacheMb(offlineBytes),
+                value = storage?.let { StorageCleanupText.size(it.disposableBytes) } ?: "计算中",
                 icon = R.drawable.il_cleanup,
                 onClick = {
                     onNavigate("cache_clear")
-                    cacheStatsVersion++
                 },
             )
+            ComposeStorageReadout(storage)
             WatchRow(
                 title = if (session.isLoggedIn()) "退出登录" else "二维码登录",
                 value = if (session.isLoggedIn()) "当前账号 ID ${session.userId()}" else "扫码登录小黑盒账号",
@@ -239,7 +225,3 @@ internal fun ComposeContentCacheScreen(
         }
     }
 }
-
-private fun sessionDetailCount(services: ComposeServices): Int = services.cache.detailCount()
-
-private fun sessionOfflineBytes(services: ComposeServices): Long = services.cache.offlineBytes()

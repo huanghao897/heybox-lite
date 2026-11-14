@@ -29,8 +29,15 @@
 - `CheckinFlowLifecycle`：按当前子路由及 Activity 前台状态启动或暂停配对轮询、邮件/SMS 倒计时；暂停不等于取消登录尝试。`CheckinRequestScope` 只保存原重试策略已经批准的有限重试，不在恢复前台时重发成功的写操作。
 - `CheckinMobileLoginFlow` / `CheckinServiceAccountFlow`：每次重新开始拥有独立尝试代次，迟到结果不能覆盖新会话。`NativeCheckinCaptcha` 与 Compose 验证码桥都捕获原流程代次，并用独立 Activity requestCode 区分旧结果；任务设置忙态由 `CheckinTaskSettingsFlow` 发布，页面不可见时也必须落地完成。
 - `QrLoginController`：同一个二维码只允许一个轮询在途，保留下一次允许轮询的时间；Compose 页面绑定 Activity 暂停/恢复，并在凭据持久化确认后才报告登录成功。
-- `ImageViewBinding` / `ImageLoadRequest` / `ImageWorkToken`：视图拥有可取消请求；回收时移除排队任务、放弃迟到交付并协作中断 I/O。`ImageTaskExecutor` 使用有界、近期优先队列，溢出时完成失败回调，不能让离线任务或大小探测永久停在忙态。
-- `ImageViewerLongPage` / `LongImageTileView`：只解码视口及相邻瓦片，离屏回收；`ImageTileBudget` 的共享额度同时覆盖解码中、待交付和已显示位图。`LongImageSource` 管理区域解码器及私有临时文件，暂停释放瓦片、关闭释放源；失败保留可用预览。
+- `ImageViewBinding` / `ImageLoadRequest` / `ImageWorkToken`：视图拥有可取消请求；回收时移除排队任务、放弃迟到交付并协作中断 I/O。可能阻塞的连接断开放入有界的 `ImageNetworkAbort` 队列，不在滚动线程执行；队列满时仍由 I/O 超时和 finally 释放连接。`ImageTaskExecutor` 使用有界、近期优先队列，溢出时完成失败回调，不能让离线任务或大小探测永久停在忙态。
+- `ComposeContentImageGate` / `SessionMediaSettings`：省流权限绑定具体图片源并保存，未点击时不查询缓存、不解码、不发起图片或 GIF 请求；点击仅授权该图片。头像、官方表情不受省流限制，无图设置仍独立生效。
+- `ImageViewerActivity` / `ComposeImageViewerHost`：前者只保留启动协议和 Activity 生命周期，后者装配 Compose 页面、系统返回和图片保存；不要向 Activity 重新加入媒体状态。
+- `ComposeViewerPageState`：单页位图、GIF、区域源及其请求的唯一所有者，暂停取消在途请求，代次校验拒绝迟到交付；清晰度替换保留旧区域源，直到新瓦片就绪后才关闭。`ComposeViewerGestures` / `ComposeViewerTransform` 管理手势和变换，`ComposeLongImageViewport` 管理固定视口中的长图位置。
+- `ComposeViewerLongImage` / `LongImageTileView`：Compose 拥有布局、滚动与手势，原生叶节点只解码视口及相邻瓦片，离屏回收；`ImageTileBudget` 的共享额度同时覆盖解码中、待交付和已显示位图。`LongImageSource` 管理区域解码器及文件租约，暂停释放瓦片、关闭释放源；View 释放不能关闭页面仍持有的源。屏幕形状不能自行触发原图请求。
+- `CrownHapticProvider` / cnwearoverlay runtime：前者保留 Lite 触感开关与节流，后者按系统能力代理小米、现代和旧款 OPPO 触感；runtime 固定上游 1.2.0，普通 `VIBRATE` 权限随应用声明。不启用 Xposed、ASM 或第二次输入转换，滚动速度和事件消费仍由 Lite 原有输入所有者管理。
+- `DisposableStorage` / `SavedOfflineStorage` / `StorageFileLeases`：前者异步扫描已知缓存并统计实际删除字节；后两者分别保护已保存离线内容、正在读写及解码的文件。扫描不持全局锁，删除前逐文件复核元数据、离线清单版本及租约。不清理凭据、待上传崩溃记录、未知文件或安装/运行代码。`CacheMaintenance` 拥有后台执行与结果发布，`ComposeStorageMaintenance` 仅订阅和显示。
+- `EmojiStore` / `EmojiRenderer`：目录就绪通知与单次网络完成分离，渲染绑定可撤销；旧文字或旧主题的回调不得更新新绑定。`ComposeInlineText` 使用同一目录和透明图资源，通过 `ComposeInlineLinks` 将有效网页链接连接到系统浏览器，不执行正文提供的任意协议。
+- `RichContent`：只保留稳定入口和块模型；`RichContentBodyParser` 选择正文及合并结果，`RichContentJsonParser` 遍历结构化节点，`RichContentHtmlParser` 拆分 HTML 块，`RichInlineMarkup` 处理行内表情与链接。解析器不拥有页面、网络客户端或可变阅读状态。
 - `MetadataResponse`：更新、公告和配置统一限制实际解压后字节数与读取期限；网络客户端拒绝自动重定向，不把自定义设备认证头带到其他来源。
 
 这批修复的逐项证据及真机验收边界见 `docs/code-review-fixes-2026-11-13.md`。

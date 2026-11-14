@@ -10,8 +10,10 @@ final class ImageDecodePolicy {
 
     static int sample(int width, int sourceTileHeight, int targetWidth, long perTileBytes) {
         int sample = 1;
-        while (sample < (1 << 30) && (ceil(width, sample) > Math.max(1, targetWidth)
-                || bytes(width, sourceTileHeight, sample) > perTileBytes)) sample *= 2;
+        while (sample < (1 << 29)
+                && ceil(width, sample * 2) >= Math.max(1, targetWidth)) sample *= 2;
+        while (sample < (1 << 30)
+                && bytes(width, sourceTileHeight, sample) > perTileBytes) sample *= 2;
         return sample;
     }
 

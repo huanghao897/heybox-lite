@@ -23,7 +23,7 @@
 
 ## 关键模块
 
-Compose 页面位于 `app/src/main/kotlin/com/ronan/heyboxlite/`，控制器负责异步数据加载和生命周期取消；Java 页面与服务位于 `app/src/main/java/com/ronan/heyboxlite/`，其中媒体查看器、播放器和验证码仍属于兼容层。
+Compose 页面位于 `app/src/main/kotlin/com/ronan/heyboxlite/`，控制器负责异步数据加载和生命周期取消；Java 页面与服务位于 `app/src/main/java/com/ronan/heyboxlite/`。图片查看器使用 Compose，区域解码、播放器和验证码等保留必要的原生兼容叶节点。
 
 | 类 | 职责 |
 |----|------|

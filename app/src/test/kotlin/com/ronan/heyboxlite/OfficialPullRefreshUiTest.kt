@@ -166,6 +166,49 @@ class OfficialPullRefreshUiTest {
         assertEquals(initial, top(), 0.5f)
     }
 
+    @Test fun cancellingAHeldPullCannotReuseAPreviousSuccessfulRelease() {
+        showRefresh(onRequest = {})
+        val initial = top()
+        compose.onNodeWithTag("pull-surface").performTouchInput { swipeDown() }
+        compose.runOnIdle { assertEquals(1, requests) }
+        assertEquals(initial, top(), 0.5f)
+        repeat(3) {
+            compose.onNodeWithTag("pull-surface").performTouchInput {
+                down(Offset(width / 2f, 25f))
+                moveBy(Offset(0f, 190f))
+            }
+            assertTrue("The held pull must be beyond the refresh threshold", top() > initial + 70f)
+            compose.runOnIdle { assertEquals(1, requests) }
+            compose.onNodeWithTag("pull-surface").performTouchInput { cancel() }
+            compose.runOnIdle { assertEquals("Cancellation must not reuse the earlier release", 1, requests) }
+            compose.onNodeWithContentDescription("下拉刷新").assertDoesNotExist()
+            assertEquals(initial, top(), 0.5f)
+        }
+        compose.onNodeWithTag("pull-surface").performTouchInput { swipeDown() }
+        compose.runOnIdle { assertEquals(2, requests) }
+        compose.onNodeWithContentDescription("下拉刷新").assertDoesNotExist()
+        assertEquals(initial, top(), 0.5f)
+    }
+
+    @Test fun cancellingAPullWithAnimationsEnabledDoesNotRefresh() {
+        showRefresh(motionLevel = MotionLevel.REDUCED)
+        val initial = top()
+        compose.onNodeWithTag("pull-surface").performTouchInput {
+            down(Offset(width / 2f, 25f))
+            moveBy(Offset(0f, 190f))
+            cancel()
+        }
+        compose.runOnIdle { assertEquals(0, requests) }
+        compose.onNodeWithContentDescription("下拉刷新").assertDoesNotExist()
+        assertEquals(initial, top(), 0.5f)
+        compose.onNodeWithTag("pull-surface").performTouchInput { swipeDown() }
+        compose.runOnIdle {
+            assertEquals(1, requests)
+            refreshing.value = false
+        }
+        assertEquals(initial, top(), 0.5f)
+    }
+
     @Test fun scrollingAwayFromTheTopAndInactivePreviewsCannotRefresh() {
         val enabled = mutableStateOf(true)
         showRefresh(enabled)

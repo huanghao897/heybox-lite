@@ -40,6 +40,12 @@ final class LongImageTileView extends View {
     private int failures;
     private boolean closed;
     private boolean active = true;
+    private int viewportTop;
+    private int viewportHeight;
+    private boolean windowed;
+    private int windowWidth;
+    private float windowLeft;
+    private float windowTop;
 
     LongImageTileView(Context context, LongImageSource source, int targetWidth, Runnable ready,
                       Runnable failed) {
@@ -57,21 +63,29 @@ final class LongImageTileView extends View {
     }
 
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
+        if (windowed) {
+            setMeasuredDimension(MeasureSpec.getSize(widthSpec), MeasureSpec.getSize(heightSpec));
+            return;
+        }
         int width = MeasureSpec.getSize(widthSpec);
         long height = Math.round((double) width * source.height / source.width);
         setMeasuredDimension(width, (int) Math.max(1, Math.min(0x00ffffff, height)));
     }
 
     void viewport(int top, int height) {
-        if (closed || !active || getWidth() <= 0 || height <= 0) return;
-        int rows = ImageDecodePolicy.sourceTileHeight(source.width, source.height, getWidth(), height);
+        viewportTop = top;
+        viewportHeight = height;
+        int width = windowed ? windowWidth : getWidth();
+        if (closed || !active || width <= 0 || getWidth() <= 0 || height <= 0) return;
+        int rows = ImageDecodePolicy.sourceTileHeight(source.width, source.height, width, height);
         if (tileHeight != rows) {
             cancelPending();
             clearTiles();
             tileHeight = rows;
-            sample = ImageDecodePolicy.sample(source.width, rows, targetWidth, budget.limit / 8);
+            sample = ImageDecodePolicy.sample(source.width, rows,
+                    windowed ? width : targetWidth, budget.limit / 8);
         }
-        double ratio = source.width / (double) getWidth();
+        double ratio = source.width / (double) width;
         int sourceTop = (int) Math.min(source.height - 1L, Math.max(0L, (long) (top * ratio)));
         int sourceBottom = (int) Math.min(source.height, Math.max(sourceTop + 1L,
                 (long) Math.ceil(((long) top + height) * ratio)));
@@ -90,6 +104,22 @@ final class LongImageTileView extends View {
         }
         invalidate();
         pump();
+    }
+
+    void setWindowed() { windowed = true; }
+
+    void windowViewport(int width, float left, float top, int height) {
+        if (windowWidth != width) tileHeight = 0;
+        windowWidth = width;
+        windowLeft = left;
+        windowTop = top;
+        viewport(Math.max(0, Math.round(top)), height);
+        invalidate();
+    }
+
+    @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        viewport(viewportTop, viewportHeight);
     }
 
     private void pump() {
@@ -161,7 +191,7 @@ final class LongImageTileView extends View {
         if (tile == null) {
             if (++failures >= 3) {
                 Runnable callback = failed;
-                close();
+                dispose(!windowed);
                 if (callback != null) callback.run();
                 return;
             }
@@ -193,12 +223,16 @@ final class LongImageTileView extends View {
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        float scale = getWidth() / (float) source.width;
+        int width = windowed ? windowWidth : getWidth();
+        float scale = width / (float) source.width;
+        int saved = canvas.save();
+        if (windowed) canvas.translate(-windowLeft, -windowTop);
         for (Map.Entry<Integer, Tile> entry : tiles.entrySet()) {
             Rect rect = region(entry.getKey());
-            destination.set(0, rect.top * scale, getWidth(), rect.bottom * scale);
+            destination.set(0, rect.top * scale, width, rect.bottom * scale);
             canvas.drawBitmap(entry.getValue().bitmap, null, destination, paint);
         }
+        canvas.restoreToCount(saved);
     }
 
     void setActive(boolean active) {
@@ -213,13 +247,21 @@ final class LongImageTileView extends View {
     }
 
     void close() {
+        dispose(true);
+    }
+
+    void release() {
+        dispose(false);
+    }
+
+    private void dispose(boolean closeSource) {
         if (closed) return;
         closed = true;
         ready = null;
         failed = null;
         cancelPending();
         clearTiles();
-        source.close();
+        if (closeSource) source.close();
     }
 
     private void cancelPending() {

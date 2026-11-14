@@ -17,7 +17,9 @@ final class EmojiStore {
     private static boolean loading;
     private static boolean catalogLoaded;
     private static long lastFailureAt;
+    private static int revision;
     private static final List<Runnable> READY = new ArrayList<>();
+    private static final List<Runnable> LOAD_READY = new ArrayList<>();
 
     private EmojiStore() {}
 
@@ -48,17 +50,24 @@ final class EmojiStore {
         if (code == null || code.isEmpty()) return;
         String light = normalizeUrl(lightUrl);
         String dark = normalizeUrl(darkUrl);
-        putVariants(code, light, dark);
+        if (putVariants(code, light, dark)) revision++;
     }
 
     static boolean isLoaded() {
         return catalogLoaded;
     }
 
+    static int revision() {
+        return revision;
+    }
+
     static void whenReady(Runnable ready) {
         if (catalogLoaded) ready.run();
-        else if (!loading) ready.run();
         else READY.add(ready);
+    }
+
+    static void cancelWhenReady(Runnable ready) {
+        READY.remove(ready);
     }
 
     static void load(ApiClient api, Runnable ready) {
@@ -70,15 +79,14 @@ final class EmojiStore {
             ready.run();
             return;
         }
-        READY.add(ready);
+        LOAD_READY.add(ready);
         if (loading) return;
         loading = true;
         api.get(EndpointProvider.emojis(), Collections.emptyMap(), new ApiClient.Callback() {
             @Override public void onSuccess(JSONObject body) {
                 loading = false;
                 JSONObject result = body.optJSONObject("result");
-                parse(result == null ? body : result);
-                catalogLoaded = !URLS.isEmpty() || !DARK_URLS.isEmpty();
+                catalogLoaded = parse(result == null ? body : result);
                 if (catalogLoaded) lastFailureAt = 0L;
                 else lastFailureAt = System.currentTimeMillis();
                 notifyReady();
@@ -93,16 +101,22 @@ final class EmojiStore {
     }
 
     private static void notifyReady() {
-        List<Runnable> callbacks = new ArrayList<>(READY);
-        READY.clear();
+        List<Runnable> callbacks = new ArrayList<>(LOAD_READY);
+        LOAD_READY.clear();
+        if (catalogLoaded) {
+            callbacks.addAll(READY);
+            READY.clear();
+        }
         for (Runnable callback : callbacks) callback.run();
     }
 
-    private static void parse(JSONObject root) {
-        if (root == null) return;
+    private static boolean parse(JSONObject root) {
+        if (root == null) return false;
         Map<String, String> found = new HashMap<>();
         scan(root, "", found, 0);
         URLS.putAll(found);
+        if (!found.isEmpty()) revision++;
+        return !found.isEmpty();
     }
 
     private static void parse(JSONArray groups, Map<String, String> found) {
@@ -210,12 +224,14 @@ final class EmojiStore {
         return null;
     }
 
-    private static void putVariants(String code, String lightUrl, String darkUrl) {
+    private static boolean putVariants(String code, String lightUrl, String darkUrl) {
         String clean = normalizeCode(code);
+        boolean changed = false;
         for (String variant : variants(clean)) {
-            if (!lightUrl.isEmpty()) URLS.put(variant, lightUrl);
-            if (!darkUrl.isEmpty()) DARK_URLS.put(variant, darkUrl);
+            if (!lightUrl.isEmpty()) changed |= !lightUrl.equals(URLS.put(variant, lightUrl));
+            if (!darkUrl.isEmpty()) changed |= !darkUrl.equals(DARK_URLS.put(variant, darkUrl));
         }
+        return changed;
     }
 
     private static void putVariants(Map<String, String> found, String code,

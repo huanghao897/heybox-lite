@@ -47,7 +47,8 @@ internal fun ComposeDetailGameCard(
         if (media.enabled && !media.gameCardNoImage && !data?.coverUrl.isNullOrBlank()) {
             val coverSize = watchDp(if (theme.roundScreen) 44 else 52)
             ComposeRemoteImage(data?.coverUrl.orEmpty(), theme, false, coverSize,
-                RoundedCornerShape(watchDp(6)), "游戏封面", Modifier.size(coverSize))
+                RoundedCornerShape(watchDp(6)), "游戏封面", Modifier.size(coverSize),
+                dataSaver = media.dataSaver || LocalComposeDataSaver.current)
         } else {
             Icon(painterResource(R.drawable.ic_game_link), null,
                 tint = theme.accent, modifier = Modifier.size(watchDp(25)))

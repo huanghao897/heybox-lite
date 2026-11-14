@@ -2,6 +2,7 @@ package com.ronan.heyboxlite
 
 import android.graphics.Bitmap
 import android.text.TextUtils
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -21,13 +22,14 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,22 +60,35 @@ internal fun ComposeInlineText(
     prefix: AnnotatedString = AnnotatedString(""),
     suffix: AnnotatedString = AnnotatedString(""),
     letterSpacing: TextUnit = 0.sp,
+    onOpenLink: ((String) -> Unit)? = null,
 ) {
     var catalogRevision by remember(source, darkMode, emojiCatalog) { mutableIntStateOf(0) }
     val model = remember(source, darkMode, linkColor, cy, emojiCatalog, catalogRevision) {
         buildComposeInlineTextModel(source, darkMode, linkColor, cy, emojiCatalog)
     }
-    val displayText = remember(model.text, prefix, suffix) {
-        buildAnnotatedString {
-            append(prefix)
-            append(model.text)
-            append(suffix)
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val openLink = remember(onOpenLink, uriHandler, context) {
+        onOpenLink ?: { url: String ->
+            try {
+                uriHandler.openUri(url)
+            } catch (_: IllegalArgumentException) {
+                Toast.makeText(context, "\u65e0\u6cd5\u6253\u5f00\u94fe\u63a5", Toast.LENGTH_SHORT).show()
+            } catch (_: SecurityException) {
+                Toast.makeText(context, "\u65e0\u6cd5\u6253\u5f00\u94fe\u63a5", Toast.LENGTH_SHORT).show()
+            }
         }
+    }
+    val displayText = remember(model, prefix, suffix, openLink) {
+        composeInlineLinkText(model, prefix, suffix, openLink)
     }
     DisposableEffect(source, darkMode, emojiCatalog, model.hasEmojiTokens) {
         val ready = ComposeInlineTextReadyCallback { catalogRevision++ }
         if (model.hasEmojiTokens && !emojiCatalog.isLoaded()) emojiCatalog.whenReady(ready)
-        onDispose { ready.cancel() }
+        onDispose {
+            ready.cancel()
+            emojiCatalog.cancelWhenReady(ready)
+        }
     }
 
     val density = LocalDensity.current
@@ -100,14 +115,21 @@ internal fun ComposeInlineText(
                         }
                     }
                 }
-                ComposeInlineTextKind.GAME -> {
-                    val painter = painterResource(R.drawable.ic_game_link)
+                ComposeInlineTextKind.GAME, ComposeInlineTextKind.LINK -> {
+                    val bitmap = if (attachment.url.isNotBlank()) {
+                        rememberComposeInlineTextBitmap(attachment.url, gameHeightPx, imageLoader)
+                    } else null
+                    val image = bitmap?.let { remember(it) { it.asImageBitmap() } }
+                    val painter = painterResource(if (attachment.kind == ComposeInlineTextKind.GAME)
+                        R.drawable.ic_game_link else R.drawable.il_reading)
                     inlineContent[attachment.id] = InlineTextContent(
                         Placeholder(with(density) { (gameHeightPx + gameGapPx).toSp() },
                             with(density) { gameHeightPx.toSp() }, PlaceholderVerticalAlign.TextCenter),
                     ) {
-                        Image(painter, contentDescription = null,
-                            modifier = Modifier.fillMaxSize().padding(end = 3.dp),
+                        val iconModifier = Modifier.fillMaxSize().padding(end = 3.dp)
+                        if (image != null) Image(image, contentDescription = null, modifier = iconModifier,
+                            contentScale = ContentScale.Fit)
+                        else Image(painter, contentDescription = null, modifier = iconModifier,
                             contentScale = ContentScale.Fit, colorFilter = ColorFilter.tint(linkColor))
                     }
                 }

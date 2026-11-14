@@ -24,6 +24,16 @@ public class RichLinkClassifierTest {
     }
 
     @Test
+    public void recognizesWebAnchorsWithoutInventingALotteryType() {
+        assertTrue(RichLinkClassifier.isTextLink(
+                "href='https://example.invalid/lottery?id=1' icon-url='ticket.png'"));
+        assertTrue(RichLinkClassifier.isTextLink("data-href='//example.invalid/activity'"));
+        assertFalse(RichLinkClassifier.isTextLink("href='javascript:alert(1)'"));
+        assertFalse(RichLinkClassifier.isTextLink(
+                "data-link-type='game' data-game-id='42' href='https://example.invalid/game'"));
+    }
+
+    @Test
     public void recognizesOfficialGameDetailDeepLinks() {
         String href = "heybox://%7B%22protocol_type%22%3A%22openGameDetail%22%2C"
                 + "%22app_id%22%3A607080%2C%22game_type%22%3A%22pc%22%7D";

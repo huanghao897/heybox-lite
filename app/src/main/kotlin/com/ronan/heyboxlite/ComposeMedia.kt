@@ -43,6 +43,7 @@ internal data class ComposeMediaSettings(
     val playGif: Boolean = true,
     val imageTargetPx: Int = 720,
     val gameCardNoImage: Boolean = false,
+    val dataSaver: Boolean = false,
 )
 
 @Composable
@@ -63,19 +64,25 @@ internal fun ComposeMediaImage(
     onImageSize: (Int, Int) -> Unit = { _, _ -> },
     onClick: (() -> Unit)? = null,
     onPreviewClick: ((AndroidImageView) -> Unit)? = null,
+    automatic: Boolean = false,
+    gate: ComposeContentImageGate? = null,
 ) {
     val theme = LocalHeyboxTheme.current
     val surface = theme.panelElevated
-    val source = remember { ComposeMediaPreviewSource() }
-    val clickModifier = if (onClick == null && onPreviewClick == null) {
+    val imageGate = gate ?: rememberComposeContentImageGate(url, settings.enabled,
+        !automatic && (settings.dataSaver || LocalComposeDataSaver.current), animatedUrl)
+    val source = remember(url, animatedUrl) { ComposeMediaPreviewSource() }
+    val clickModifier = if (!imageGate.waiting && onClick == null && onPreviewClick == null) {
         Modifier
     } else {
         Modifier.clickable(
             interactionSource = remember { MutableInteractionSource() },
             indication = null,
         ) {
-            val view = source.view
-            if (view != null && onPreviewClick != null) onPreviewClick(view) else onClick?.invoke()
+            imageGate.tap {
+                val view = source.view
+                if (view != null && onPreviewClick != null) onPreviewClick(view) else onClick?.invoke()
+            }
         }
     }
     val targetModifier = if (ensureTouchTarget) {
@@ -91,8 +98,10 @@ internal fun ComposeMediaImage(
             .then(clickModifier),
         contentAlignment = Alignment.Center,
     ) {
-        if (url.isBlank() || !settings.enabled) {
-            if (placeholderLabel.isNotBlank()) {
+        if (!imageGate.canLoad) {
+            if (imageGate.waiting) {
+                ComposeContentImageLoadIcon(theme)
+            } else if (placeholderLabel.isNotBlank()) {
                 Text(
                     text = placeholderLabel,
                     color = theme.muted,
@@ -155,8 +164,11 @@ internal fun ComposeVideoCard(
     modifier: Modifier = Modifier,
     onVideoSettings: (() -> Unit)? = null,
     onOpenVideo: (VideoData) -> Unit,
+    requests: ComposeMediaImageRequests = ExistingComposeMediaImageRequests,
 ) {
     val shape = RoundedCornerShape(8.dp)
+    val gate = rememberComposeContentImageGate(video.cover, settings.enabled,
+        settings.dataSaver || LocalComposeDataSaver.current)
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -173,13 +185,15 @@ internal fun ComposeVideoCard(
             placeholderLabel = "视频",
             ensureTouchTarget = false,
             onClick = { onOpenVideo(video) },
+            requests = requests,
+            gate = gate,
         )
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.26f))
                 .combinedClickable(onLongClickLabel = "视频播放设置",
-                    onLongClick = onVideoSettings, onClick = { onOpenVideo(video) }),
+                    onLongClick = onVideoSettings, onClick = { gate.tap { onOpenVideo(video) } }),
             contentAlignment = Alignment.Center,
         ) {
             Box(
@@ -190,8 +204,8 @@ internal fun ComposeVideoCard(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_play),
-                    contentDescription = "播放视频",
+                    painter = painterResource(if (gate.waiting) R.drawable.ic_download else R.drawable.ic_play),
+                    contentDescription = if (gate.waiting) "加载视频封面" else "播放视频",
                     tint = Color.White,
                     modifier = Modifier.size(25.dp),
                 )

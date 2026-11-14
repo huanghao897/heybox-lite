@@ -97,7 +97,7 @@ internal fun ComposeDetailThread(
                     modifier = Modifier.fillMaxWidth().padding(start = layout.bodyInset)
                         .testTag("comment-replies-$rootId")
                         .clip(RoundedCornerShape(6.dp)).background(theme.panel)
-                        .padding(horizontal = 5.dp * theme.uiScale, vertical = 3.dp * theme.uiScale),
+                        .padding(vertical = 3.dp * theme.uiScale),
                     verticalArrangement = Arrangement.spacedBy(4.dp * theme.uiScale),
                 ) {
                     replies.take(shown).forEachIndexed { index, reply ->

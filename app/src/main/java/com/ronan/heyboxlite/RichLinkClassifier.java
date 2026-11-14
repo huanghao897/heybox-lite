@@ -51,7 +51,25 @@ final class RichLinkClassifier {
     }
 
     static boolean isTextLink(String attributes) {
-        return "text".equals(attribute(attributes, "data-link-type"));
+        if (isGameLink(attributes)) return false;
+        return "text".equals(attribute(attributes, "data-link-type"))
+                || isWebHref(href(attributes));
+    }
+
+    static String href(String attributes) {
+        return firstAttribute(attributes, "href", "data-href");
+    }
+
+    static String iconUrl(String attributes, boolean darkMode) {
+        String light = firstAttribute(attributes, "icon-url");
+        String dark = firstAttribute(attributes, "icon-dark-url");
+        return darkMode && !dark.isEmpty() ? dark : light;
+    }
+
+    private static boolean isWebHref(String href) {
+        String value = href.toLowerCase(Locale.ROOT);
+        return value.startsWith("https://") || value.startsWith("http://")
+                || value.startsWith("//");
     }
 
     static boolean isGameHref(String href) {

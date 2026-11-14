@@ -49,7 +49,12 @@ public class RichGameLinkMarkupTest {
         String source = "<a data-link-type=\"text\" href=\"/topic\" "
                 + "icon-url=\"icon.png\">活动说明</a>";
 
-        assertEquals("活动说明", RichGameLinkMarkup.normalizeAnchors(source));
+        String normalized = RichGameLinkMarkup.normalizeAnchors(source);
+        assertEquals("活动说明", RichGameLinkMarkup.plainText(normalized));
+        RichGameLinkMarkup.Link link = RichGameLinkMarkup.parse(normalized).links.get(0);
+        assertTrue(link.textLink);
+        assertEquals("/topic", link.href);
+        assertEquals("icon.png", link.lightIcon);
     }
 
     @Test

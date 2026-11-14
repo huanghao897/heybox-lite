@@ -10,7 +10,6 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -442,15 +441,7 @@ final class LocalCache {
     }
 
     private static void writeStatic(File file, String value) {
-        try {
-            byte[] bytes = (value == null ? "" : value).getBytes(UTF_8);
-            File parent = file.getParentFile();
-            if (parent != null) parent.mkdirs();
-            try (FileOutputStream output = new FileOutputStream(file, false)) {
-                output.write(bytes);
-            }
-        } catch (IOException | SecurityException ignored) {
-        }
+        LocalStorageWrites.write(file, value);
     }
 
     private String read(File file) {

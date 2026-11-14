@@ -37,7 +37,9 @@ final class CrownHapticProvider {
                 ? this.activity.getWindow().getDecorView() : contentRoot;
 
         if (CnWearOverlay.isActive()) {
-            if (target.performHapticFeedback(CnWearOverlay.getScrollTick())) {
+            boolean played = CnWearOverlay.performHapticFeedback(target, CnWearOverlay.getScrollTick());
+            // Legacy OPPO must not fall back to the generic waveform when its motor path fails.
+            if (played || CnWearOverlay.isOppoLegacy()) {
                 return;
             }
             // Xiaomi maps CLOCK_TICK to a texture effect; use the overlay's corrected mapping.
