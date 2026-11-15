@@ -7,9 +7,13 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.os.Looper
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.doubleClick
@@ -30,6 +34,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
@@ -109,6 +114,47 @@ class ComposeViewerLongImageUiTest {
         val region = source!!.decode(android.graphics.Rect(0, 0, 16, 100), 1)
         assertNotNull(region)
         region.recycle()
+    }
+
+    @Test fun zoomKeepsDecodedPixelsOnSquareViewportWhileDecoderIsBusy() {
+        zoomKeepsDecodedPixels(false)
+    }
+
+    @Test
+    @Config(qualifiers = "w240dp-h240dp-round-mdpi")
+    fun zoomKeepsDecodedPixelsOnRoundViewportWhileDecoderIsBusy() {
+        transform.layout(Size(240f, 240f), Size(240f, 240f), true)
+        zoomKeepsDecodedPixels(true)
+    }
+
+    private fun zoomKeepsDecodedPixels(round: Boolean) {
+        var ready = false
+        compose.setContent {
+            Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Magenta)) {
+                ComposeViewerLongImage(source!!, true, round, transform,
+                    { ready = true }, { fail("Valid fixture must decode") }, {})
+            }
+        }
+        await { ready }
+        val decoder = field(LongImageTileView::class.java, "DECODER").get(null) as ImageTaskExecutor
+        val blocked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        decoder.execute { blocked.countDown(); release.await(30, TimeUnit.SECONDS) }
+        try {
+            assertTrue(blocked.await(5, TimeUnit.SECONDS))
+            repeat(8) {
+                compose.runOnIdle {
+                    transform.pinch(1.1f, Offset(120f, if (round) 120f else 160f), Offset.Zero)
+                }
+                compose.waitForIdle()
+                compose.runOnIdle {
+                    assertNotEquals("Zoom must keep drawing tiles before new decodes finish",
+                        Color.MAGENTA, renderedCenter())
+                }
+            }
+        } finally {
+            release.countDown()
+        }
     }
 
     private fun await(condition: () -> Boolean) {

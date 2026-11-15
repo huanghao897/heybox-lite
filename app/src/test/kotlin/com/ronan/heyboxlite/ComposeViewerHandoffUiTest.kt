@@ -54,7 +54,8 @@ class ComposeViewerHandoffUiTest {
             requests.images.single().complete(viewerBitmap(64, 800))
             requests.regions.single().complete(preview)
         }
-        await { tileViews().singleOrNull()?.residentCount()?.let { it > 0 } == true }
+        await { tileViews().singleOrNull()?.let { it.residentCount() > 0 && !it.pendingTile() } == true }
+        compose.runOnIdle { assertEquals(Color.GREEN, renderedCenter()) }
         lateinit var existing: LongImageTileView
         compose.runOnIdle { existing = tileViews().single() }
         val decoder = LongImageTileView::class.java.getDeclaredField("DECODER").apply { isAccessible = true }

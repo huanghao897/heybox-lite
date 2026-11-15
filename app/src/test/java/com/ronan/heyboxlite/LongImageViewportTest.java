@@ -178,6 +178,110 @@ public class LongImageViewportTest {
         assertEquals(1, failed.get());
     }
 
+    @Test public void zoomFramesKeepVisiblePixelsUntilSharperTilesAreDelivered() throws Exception {
+        ImageTileBudget budget = new ImageTileBudget(12 * 1024 * 1024);
+        AtomicInteger ready = new AtomicInteger();
+        LongImageTileView view = windowedView(budget, ready, () -> fail("Valid fixture must decode"));
+        view.windowViewport(240, 0, 0, 320);
+        settle(view);
+        Bitmap original = bitmaps(view).get(0);
+        assertEquals(320, original.getWidth());
+        for (int width : new int[] {250, 280, 320, 360, 420, 480, 600}) {
+            view.windowViewport(width, 0, 0, 320);
+            assertEquals("Zoom must not expose a blank frame at width " + width,
+                    Color.GREEN, centerPixel(view));
+            assertFalse("Visible pixels must survive pending decodes", original.isRecycled());
+        }
+        settle(view);
+        assertEquals(640, bitmaps(view).get(0).getWidth());
+        assertTrue(original.isRecycled());
+        assertEquals(1, ready.get());
+        assertTrue(budget.peak() <= budget.limit);
+        view.close();
+        assertEquals(0, budget.used());
+    }
+
+    @Test public void zoomingOutReusesSharperPixelsWithoutDowngradingThem() throws Exception {
+        ImageTileBudget budget = new ImageTileBudget(12 * 1024 * 1024);
+        LongImageTileView view = windowedView(budget, new AtomicInteger(),
+                () -> fail("Valid fixture must decode"));
+        view.windowViewport(600, 0, 0, 320);
+        settle(view);
+        Bitmap sharper = bitmaps(view).get(0);
+        view.windowViewport(240, 0, 0, 320);
+        assertEquals(Color.GREEN, centerPixel(view));
+        assertFalse(sharper.isRecycled());
+        settle(view);
+        assertSame(sharper, bitmaps(view).get(0));
+        view.windowViewport(600, 0, 0, 320);
+        assertFalse(view.pendingTile());
+        assertTrue(budget.peak() <= budget.limit);
+    }
+
+    @Test public void failedQualityUpgradePreservesTheVisibleImage() throws Exception {
+        ImageTileBudget budget = new ImageTileBudget(12 * 1024 * 1024);
+        AtomicInteger failed = new AtomicInteger();
+        LongImageTileView view = windowedView(budget, new AtomicInteger(), failed::incrementAndGet);
+        view.windowViewport(240, 0, 0, 320);
+        settle(view);
+        Bitmap original = bitmaps(view).get(0);
+        ((LongImageSource) field(LongImageTileView.class, "source").get(view)).close();
+        view.windowViewport(600, 0, 0, 320);
+        settle(view);
+        assertEquals(Color.GREEN, centerPixel(view));
+        assertSame(original, bitmaps(view).get(0));
+        assertFalse(original.isRecycled());
+        assertEquals(0, failed.get());
+        view.windowViewport(600, 0, 0, 320);
+        assertFalse("Failed upgrades must not loop", view.pendingTile());
+    }
+
+    @Test public void tightSharedBudgetKeepsExistingPixelsAndBoundsQualityRetries() throws Exception {
+        ImageTileBudget budget = new ImageTileBudget(12 * 1024 * 1024);
+        LongImageTileView view = windowedView(budget, new AtomicInteger(),
+                () -> fail("Valid fixture must decode"));
+        view.windowViewport(240, 0, 0, 320);
+        settle(view);
+        Bitmap original = bitmaps(view).get(0);
+        ImageTileBudget.Lease occupied = budget.reserve(budget.limit - budget.used() - 1024);
+        assertNotNull(occupied);
+        try {
+            view.windowViewport(600, 0, 0, 320);
+            settle(view);
+            assertEquals(Color.GREEN, centerPixel(view));
+            assertSame(original, bitmaps(view).get(0));
+            view.windowViewport(600, 0, 0, 320);
+            assertFalse(view.pendingTile());
+        } finally {
+            occupied.close();
+        }
+        view.windowViewport(240, 0, 0, 320);
+        settle(view);
+        view.windowViewport(600, 0, 0, 320);
+        settle(view);
+        assertEquals(640, bitmaps(view).get(0).getWidth());
+        assertTrue(budget.peak() <= budget.limit);
+        view.close();
+        assertEquals(0, budget.used());
+    }
+
+    private LongImageTileView windowedView(ImageTileBudget budget, AtomicInteger ready, Runnable failed) {
+        LongImageTileView view = view(budget, ready, failed);
+        view.setWindowed();
+        view.measure(View.MeasureSpec.makeMeasureSpec(240, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY));
+        view.layout(0, 0, 240, 320);
+        return view;
+    }
+
+    private static int centerPixel(LongImageTileView view) {
+        Bitmap frame = Bitmap.createBitmap(240, 320, Bitmap.Config.ARGB_8888);
+        view.draw(new Canvas(frame));
+        int pixel = frame.getPixel(120, 160);
+        frame.recycle();
+        return pixel;
+    }
+
     private LongImageTileView view(ImageTileBudget budget, AtomicInteger ready) {
         return view(budget, ready, () -> fail("Valid fixture must decode"));
     }

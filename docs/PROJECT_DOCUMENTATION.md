@@ -1,6 +1,6 @@
 # heybox Lite 工程文档
 
-面向后续维护、构建、发布与排查的工程说明。目标是让接手者能快速理解项目结构、核心流程与风险点，少踩坑。所有内容以仓库当前代码为准（版本 `2.19` / versionCode `222`）。
+面向后续维护、构建、发布与排查的工程说明。目标是让接手者能快速理解项目结构、核心流程与风险点，少踩坑。所有内容以仓库当前代码为准（版本 `2.20` / versionCode `223`）。
 
 > 本文尽量只描述**项目本身**，不写入任何本机绝对路径、keystore 密码或服务器内部路径。这类信息属于各自环境的私有配置，请勿写进公开仓库。
 
@@ -21,11 +21,11 @@ heybox Lite 是面向 **Android 手表和小屏设备**的小黑盒（HeyBox）�
 | 语言 / UI | Kotlin + Jetpack Compose 主界面；Java 业务与兼容层 |
 | `applicationId` | `com.ronan.heyboxlite.preview` |
 | `namespace` / 包名 | `com.ronan.heyboxlite` |
-| `versionName` / `versionCode` | `2.19` / `222` |
+| `versionName` / `versionCode` | `2.20` / `223` |
 | `minSdk` / `targetSdk` / `compileSdk` | `21` / `35` / `36` |
 | JDK | 17 |
 | 第三方依赖 | `cnwearoverlay-runtime`、`com.google.zxing:core:3.3.3`、Jetpack Compose（BOM 管理） |
-| APK 体积 | 约 3.0 MB（Release，R8 混淆 + 资源压缩；随构建内容变化） |
+| APK 体积 | 约 3.7 MiB（Release，R8 混淆 + 资源压缩；随构建内容变化） |
 
 `BuildConfig` 注入的服务地址（来自 `app/build.gradle`）：
 
@@ -150,7 +150,7 @@ HeyBoxCommunity/
 
 - **`ImageLoader`** — 图片加载、缓存、解码与**离线缓存**。内存 LruCache + 磁盘离线缓存（`offline-cache/images`，URL 哈希命名，上限约 96 MB，按时间 `pruneOffline`）。缩略图与原图策略分离，限制最大 Bitmap 尺寸/像素防 OOM；列表图失败不清空旧内容，正文图支持渐进 reveal，Activity 销毁时取消请求。关键入口：`into*`（缩略图/稳定/渐进）、`intoOriginal*`、`loadOriginal`、`prefetchOffline`（预取信息流/详情图）、`intoGif`（见下）、`offlineBytes`（统计用量）。
 - **`GifSupport`** — 详情页 GIF 动图播放。`ImageLoader.intoGif` 拉原始 `.gif` 字节（上限 8 MB）后台解码：API 28+ 用系统 `AnimatedImageDrawable`（硬件解码），低版本用 `Movie` 软件渲染；超过 1280 px 或体积超限则放弃、保留静态缩略图，防低配手表 OOM。静态缩略图先显示，动图解好后原地替换。受设置「帖子内播放动图」开关控制。
-- **`ImageViewerActivity` / `ZoomImageView`** — 大图查看器：半透明背景、缓存预览秒开、加载原图、点击空白退出；`ZoomImageView` 支持双指缩放、拖动、双击分级放大（长截图首次双击按屏宽铺满）与单击复位。
+- **`ImageViewerActivity` / `ComposeImageViewerHost` / `ComposeViewer*`** — Activity 仅保留启动和生命周期，Compose 管理分页、双指/双击缩放、上下拖动退出、原图操作和控件；页面状态拥有图片与请求，加载时也允许关闭。长图使用 `LongImageTileView` 在固定视口内分块解码，缩放保留旧图块，清晰度升级就绪后替换，不因圆屏强制加载原图；`ImageTileBudget` 同时约束已显示和在途像素。
 - **`LoadingSpinnerView`** — 自绘的轻量转圈 View（`Canvas` 画弧 + 定时重绘），可见时才动画，不可见/detach 时停止。
 
 ### 6.4 列表与模型

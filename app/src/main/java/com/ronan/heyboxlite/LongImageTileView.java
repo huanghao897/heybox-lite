@@ -77,13 +77,19 @@ final class LongImageTileView extends View {
         viewportHeight = height;
         int width = windowed ? windowWidth : getWidth();
         if (closed || !active || width <= 0 || getWidth() <= 0 || height <= 0) return;
-        int rows = ImageDecodePolicy.sourceTileHeight(source.width, source.height, width, height);
+        // Keep source regions stable while the displayed image width animates.
+        int rows = ImageDecodePolicy.sourceTileHeight(source.width, source.height, getWidth(), height);
         if (tileHeight != rows) {
             cancelPending();
             clearTiles();
             tileHeight = rows;
-            sample = ImageDecodePolicy.sample(source.width, rows,
-                    windowed ? width : targetWidth, budget.limit / 8);
+        }
+        int requestedSample = ImageDecodePolicy.sample(source.width, rows,
+                windowed ? width : targetWidth, budget.limit / 8);
+        if (sample != requestedSample) {
+            cancelPending();
+            sample = requestedSample;
+            for (Tile tile : tiles.values()) tile.attemptedSample = tile.sample;
         }
         double ratio = source.width / (double) width;
         int sourceTop = (int) Math.min(source.height - 1L, Math.max(0L, (long) (top * ratio)));
@@ -109,7 +115,6 @@ final class LongImageTileView extends View {
     void setWindowed() { windowed = true; }
 
     void windowViewport(int width, float left, float top, int height) {
-        if (windowWidth != width) tileHeight = 0;
         windowWidth = width;
         windowLeft = left;
         windowTop = top;
@@ -124,35 +129,51 @@ final class LongImageTileView extends View {
 
     private void pump() {
         if (closed || !active || pending != null || last < first) return;
-        int index = missing(visibleFirst, visibleLast);
-        if (index < 0) index = missing(first, last);
-        if (index < 0) return;
-        Rect region = region(index);
-        int decodeSample = sample;
-        ImageTileBudget.Lease lease = null;
-        while (decodeSample <= (1 << 29)) {
-            lease = budget.reserve(ImageDecodePolicy.bytes(source.width, region.height(), decodeSample));
-            if (lease != null) break;
-            decodeSample *= 2;
-        }
-        if (lease == null) {
-            MAIN.removeCallbacks(retry);
-            MAIN.postDelayed(retry, 32L);
+        while (true) {
+            int index = nextTile();
+            if (index < 0) return;
+            Rect region = region(index);
+            Tile resident = tiles.get(index);
+            int decodeSample = sample;
+            ImageTileBudget.Lease lease = null;
+            while (decodeSample <= (1 << 29) && (resident == null || decodeSample < resident.sample)) {
+                lease = budget.reserve(ImageDecodePolicy.bytes(source.width, region.height(), decodeSample));
+                if (lease != null) break;
+                decodeSample *= 2;
+            }
+            if (lease == null) {
+                if (resident != null) {
+                    resident.attemptedSample = sample;
+                    continue;
+                }
+                MAIN.removeCallbacks(retry);
+                MAIN.postDelayed(retry, 32L);
+                return;
+            }
+            schedule(index, region, decodeSample, lease);
             return;
         }
-        final int tileIndex = index;
+    }
+
+    private int nextTile() {
+        int index = missing(visibleFirst, visibleLast);
+        if (index < 0) index = outdated(visibleFirst, visibleLast);
+        if (index < 0) index = missing(first, last);
+        return index < 0 ? outdated(first, last) : index;
+    }
+
+    private void schedule(int index, Rect region, int decodeSample, ImageTileBudget.Lease lease) {
         final int serial = generation;
-        final int selectedSample = decodeSample;
-        final ImageTileBudget.Lease reservation = lease;
+        final int requestedSample = sample;
         final LongImageSource input = source;
         WeakReference<LongImageTileView> owner = new WeakReference<>(this);
         pendingIndex = index;
         pending = ImageLoadRequest.work(DECODER, MAIN,
-                () -> decode(input, region, selectedSample, reservation), tile -> {
+                () -> decode(input, region, decodeSample, lease), tile -> {
                     LongImageTileView view = owner.get();
                     if (view == null) { if (tile != null) tile.close(); return; }
-                    view.delivered(serial, tileIndex, tile);
-                }, tile -> { if (tile != null) tile.close(); }, reservation::close);
+                    view.delivered(serial, index, requestedSample, tile);
+                }, tile -> { if (tile != null) tile.close(); }, lease::close);
     }
 
     private final Runnable retry = this::pump;
@@ -169,7 +190,7 @@ final class LongImageTileView extends View {
                         bitmap.recycle();
                         break;
                     }
-                    return new Tile(bitmap, lease);
+                    return new Tile(bitmap, sample, lease);
                 } catch (OutOfMemoryError error) {
                     sample = sample >= (1 << 29) ? 1 << 30 : sample * 2;
                 }
@@ -181,14 +202,20 @@ final class LongImageTileView extends View {
         return null;
     }
 
-    private void delivered(int serial, int index, Tile tile) {
+    private void delivered(int serial, int index, int requestedSample, Tile tile) {
         if (closed || serial != generation || index < first || index > last || !active) {
             if (tile != null) tile.close();
             return;
         }
         pending = null;
         pendingIndex = -1;
+        Tile resident = tiles.get(index);
         if (tile == null) {
+            if (resident != null) {
+                resident.attemptedSample = requestedSample;
+                pump();
+                return;
+            }
             if (++failures >= 3) {
                 Runnable callback = failed;
                 dispose(!windowed);
@@ -200,7 +227,14 @@ final class LongImageTileView extends View {
             MAIN.postDelayed(retry, 80L);
             return;
         }
-        tiles.put(index, tile);
+        if (resident != null && resident.sample <= tile.sample) {
+            resident.attemptedSample = requestedSample;
+            tile.close();
+        } else {
+            tile.attemptedSample = requestedSample;
+            tiles.put(index, tile);
+            if (resident != null) resident.close();
+        }
         failures = 0;
         invalidate();
         if (missing(visibleFirst, visibleLast) < 0 && ready != null) {
@@ -213,6 +247,14 @@ final class LongImageTileView extends View {
 
     private int missing(int start, int end) {
         for (int index = start; index <= end; index++) if (!tiles.containsKey(index)) return index;
+        return -1;
+    }
+
+    private int outdated(int start, int end) {
+        for (int index = start; index <= end; index++) {
+            Tile tile = tiles.get(index);
+            if (tile != null && tile.attemptedSample > sample) return index;
+        }
         return -1;
     }
 
@@ -283,8 +325,15 @@ final class LongImageTileView extends View {
 
     private static final class Tile {
         final Bitmap bitmap;
+        final int sample;
         final ImageTileBudget.Lease lease;
-        Tile(Bitmap bitmap, ImageTileBudget.Lease lease) { this.bitmap = bitmap; this.lease = lease; }
+        int attemptedSample;
+        Tile(Bitmap bitmap, int sample, ImageTileBudget.Lease lease) {
+            this.bitmap = bitmap;
+            this.sample = sample;
+            this.attemptedSample = sample;
+            this.lease = lease;
+        }
         void close() { if (!bitmap.isRecycled()) bitmap.recycle(); lease.close(); }
     }
 }

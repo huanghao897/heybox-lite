@@ -37,7 +37,7 @@
 - `ComposeContentImageGate` / `SessionMediaSettings`：省流权限绑定具体图片源并保存，未点击时不查询缓存、不解码、不发起图片或 GIF 请求；点击仅授权该图片。头像、官方表情不受省流限制，无图设置仍独立生效。
 - `ImageViewerActivity` / `ComposeImageViewerHost`：前者只保留启动协议和 Activity 生命周期，后者装配 Compose 页面、系统返回和图片保存；不要向 Activity 重新加入媒体状态。
 - `ComposeViewerPageState`：单页位图、GIF、区域源及其请求的唯一所有者，暂停取消在途请求，代次校验拒绝迟到交付；清晰度替换保留旧区域源，直到新瓦片就绪后才关闭。`ComposeViewerGestures` / `ComposeViewerTransform` 管理手势和变换，`ComposeLongImageViewport` 管理固定视口中的长图位置。
-- `ComposeViewerLongImage` / `LongImageTileView`：Compose 拥有布局、滚动与手势，原生叶节点只解码视口及相邻瓦片，离屏回收；`ImageTileBudget` 的共享额度同时覆盖解码中、待交付和已显示位图。`LongImageSource` 管理区域解码器及文件租约，暂停释放瓦片、关闭释放源；View 释放不能关闭页面仍持有的源。屏幕形状不能自行触发原图请求。
+- `ComposeViewerLongImage` / `LongImageTileView`：Compose 拥有布局、滚动与手势，原生叶节点只解码视口及相邻瓦片，离屏回收。源坐标网格以视口大小划分，不能因缩放动画的图片宽度变化清空；清晰度升级在新瓦片就绪后替换，预算不足或升级失败继续显示旧瓦片。`ImageTileBudget` 的共享额度同时覆盖解码中、待交付和已显示位图。`LongImageSource` 管理区域解码器及文件租约，暂停释放瓦片、关闭释放源；View 释放不能关闭页面仍持有的源。屏幕形状不能自行触发原图请求。
 - `CrownHapticProvider` / cnwearoverlay runtime：前者保留 Lite 触感开关与节流，后者按系统能力代理小米、现代和旧款 OPPO 触感；runtime 固定上游 1.2.0，普通 `VIBRATE` 权限随应用声明。不启用 Xposed、ASM 或第二次输入转换，滚动速度和事件消费仍由 Lite 原有输入所有者管理。
 - `DisposableStorage` / `SavedOfflineStorage` / `StorageFileLeases`：前者异步扫描已知缓存并统计实际删除字节；后两者分别保护已保存离线内容、正在读写及解码的文件。扫描不持全局锁，删除前逐文件复核元数据、离线清单版本及租约。不清理凭据、待上传崩溃记录、未知文件或安装/运行代码。`CacheMaintenance` 拥有后台执行与结果发布，`ComposeStorageMaintenance` 仅订阅和显示。
 - `EmojiStore` / `EmojiRenderer`：目录就绪通知与单次网络完成分离，渲染绑定可撤销；旧文字或旧主题的回调不得更新新绑定。`ComposeInlineText` 使用同一目录和透明图资源；`OfficialContentLink` 只解析受支持的官方帖子、用户路径及 `openLink` / `openUser` 协议，`ComposeContentLinkNavigation` 复用宿主的详情与用户主页返回栈。其他有效网页链接仍交给系统浏览器，不执行任意应用协议。
