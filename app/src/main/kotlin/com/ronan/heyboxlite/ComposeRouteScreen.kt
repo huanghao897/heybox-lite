@@ -18,7 +18,9 @@ internal fun ComposeRouteScreen(
     previewListState: LazyListState? = null,
 ) {
     val openLink = remember(host) { { link: OfficialContentLink -> host.openContentLink(link) } }
-    CompositionLocalProvider(LocalComposeContentLinkNavigation provides openLink) {
+    CompositionLocalProvider(LocalComposeContentLinkNavigation provides openLink,
+        LocalTutorialActive provides active) {
+        ComposeTutorialTrigger(TutorialCatalog.routeTopic(route), active)
         ComposeRouteContent(host, route, services, active, previewListState)
     }
 }
@@ -42,6 +44,7 @@ private fun ComposeRouteContent(
             val loading by host.feed.loading
             val refreshing by host.feed.refreshing
             val noMore by host.feed.noMore
+            ObserveFeedNavigation(host.feedNavigation, listState, active, loading, host.feed::refreshFromNavigation)
             ComposeFeedScreen(
                 items, loading, refreshing, noMore, services,
                 onOpen = host::openDetail,
@@ -236,6 +239,7 @@ private fun ComposeRouteContent(
             services = services,
             onBack = { host.handleBack() },
         )
+        "tutorials" -> ComposeTutorialLibrary(host.tutorials) { host.handleBack() }
         else -> ComposeFallbackScreen(route, services, { host.handleBack() })
     }
 }

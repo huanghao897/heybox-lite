@@ -7,6 +7,7 @@ import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +46,8 @@ internal class ComposeAppHost(
         ),
     )
     internal val feed = ComposeFeedController(session, api, cache, toast::show)
+    internal val feedNavigation = ComposeFeedNavigation()
+    internal val tutorials = TutorialState(TutorialStore(activity))
 
     fun bindCacheMaintenance(maintenance: CacheMaintenance) {
         servicesState.value = servicesState.value.copy(maintenance = maintenance)
@@ -271,6 +274,7 @@ internal class ComposeAppHost(
 
     fun scrollRotary(distance: Int): Boolean {
         if (!mounted || distance == 0) return false
+        if (tutorials.topic != null) return tutorials.scrollRotary(distance)
         if (navigation.route.value in setOf("feed", "detail")) {
             if (surfaceActive.value) {
                 (if (navigation.route.value == "feed") feedRotaryInput else detailRotaryInput).offer(distance)
@@ -373,6 +377,7 @@ internal class ComposeAppHost(
     }
 
     fun handleBack(): Boolean {
+        if (tutorials.dismiss()) return true
         if (detailComments.editor.value != null) { detailComments.dismiss(); return true }
         val current = navigation.route.value
         if (current == "checkin_center" && checkinPageOwner?.uiState?.route != ComposeCheckinRoute.CENTER
@@ -431,6 +436,13 @@ internal class ComposeAppHost(
         callbacks.openDetail(item)
     }
 
+    fun reselectFeed() {
+        if (mounted && surfaceActive.value && isRoute("feed")) {
+            clearRotaryInput()
+            feedNavigation.reselect()
+        }
+    }
+
     fun likeDetailComment(comment: org.json.JSONObject) { detailComments.like(comment) }
     fun editDetailComment(comment: org.json.JSONObject?, rootId: String) { detailComments.edit(comment, rootId) }
     fun loadDetailReplies(comment: org.json.JSONObject) { detailComments.replies(comment) }
@@ -462,16 +474,19 @@ internal class ComposeAppHost(
             if (route == "feed") host.startFeedIfNeeded()
         }
         HeyboxComposeTheme(services.theme) {
-            ComposeSwipeContainer(host, swipeRoute, services) { page, active ->
-                val pageActive = active && host.surfaceActive.value
-                val pageServices = if (pageActive) services else services.copy(
-                    theme = services.theme.copy(rotaryRequest = null),
-                )
-                screenStates.SaveableStateProvider(page) {
-                    ProvideComposeDataSaver(pageServices.session) {
-                        ComposeRouteScreen(host, page, pageServices, pageActive)
+            CompositionLocalProvider(LocalTutorialState provides host.tutorials) {
+                ComposeSwipeContainer(host, swipeRoute, services) { page, active ->
+                    val pageActive = active && host.surfaceActive.value
+                    val pageServices = if (pageActive) services else services.copy(
+                        theme = services.theme.copy(rotaryRequest = null),
+                    )
+                    screenStates.SaveableStateProvider(page) {
+                        ProvideComposeDataSaver(pageServices.session) {
+                            ComposeRouteScreen(host, page, pageServices, pageActive)
+                        }
                     }
                 }
+                if (host.surfaceActive.value) ComposeTutorialOverlay(host.tutorials, services.session.doubleTapCommentReply())
             }
         }
     }

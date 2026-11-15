@@ -42,13 +42,13 @@ internal class ComposeRoundLayoutFormsUiTest : ComposeRoundLayoutHarness() {
         showLayout(services) { ComposeCheckinPairingScreen(state, owner) { backs++ } }
         assertNoTopToolbar()
         listOf("\u7b7e\u5230\u670d\u52a1\u8d26\u53f7", "\u6ce8\u518c\u90ae\u7bb1",
-            state.serviceEmailButton, "\u6ce8\u518c\u5e76\u8fde\u63a5").forEach { label ->
+            state.serviceEmailButton, "注册签到服务账号").forEach { label ->
             val target = circleReach(label)
             assertTouchable(target, label)
             assertPaintedLabelInsideDisplay(label)
         }
         // Inspect authentication actions without invoking a live flow or sending credentials.
-        circleReach("\u6ce8\u518c\u5e76\u8fde\u63a5").assertIsEnabled()
+        circleReach("注册签到服务账号").assertIsEnabled()
         touchReachable("\u53d6\u6d88\u8fde\u63a5")
         compose.runOnIdle { assertEquals(1, backs) }
     }
@@ -73,11 +73,11 @@ internal class ComposeRoundLayoutFormsUiTest : ComposeRoundLayoutHarness() {
         assertNoTopToolbar()
         val labels = if (password) listOf("+86 \u624b\u673a\u53f7", "\u5c0f\u9ed1\u76d2\u767b\u5f55\u5bc6\u7801")
             else listOf("+86 \u624b\u673a\u53f7", state.mobileSmsButton)
-        (labels + "\u767b\u5f55\u5e76\u8fde\u63a5").forEach { label ->
+        (labels + "登录小黑盒并连接").forEach { label ->
             assertTouchable(circleReach(label), label)
             assertPaintedLabelInsideDisplay(label)
         }
-        circleReach("\u767b\u5f55\u5e76\u8fde\u63a5").assertIsEnabled()
+        circleReach("登录小黑盒并连接").assertIsEnabled()
         touchReachable("\u8fd4\u56de\u7b7e\u5230\u4e2d\u5fc3")
         compose.runOnIdle { assertEquals(1, backs) }
     }

@@ -81,6 +81,11 @@ private fun ComposeSettingsHomeScreen(
                 onClick = { onNavigate("video_settings") },
             )
             WatchRow(
+                title = "使用教程",
+                icon = R.drawable.il_info,
+                onClick = { onNavigate("tutorials") },
+            )
+            WatchRow(
                 title = "关于",
                 value = BuildConfig.VERSION_NAME,
                 icon = R.drawable.il_info,

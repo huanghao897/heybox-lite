@@ -14,6 +14,8 @@
 - `*Ui` / `*Renderer` / `*Forms`：只创建或绑定视图，不发起业务网络请求。
 - `SessionStore` / `LocalCache`：分别负责设置与会话、内容缓存，不承接页面导航逻辑。
 - `ComposeAppHost`：生命周期、路由及共享控制器装配；`ComposeRouteScreen` 只选择页面，不执行请求。
+- `TutorialCatalog` / `TutorialStore` / `TutorialState`：分别拥有教程内容、独立完成版本和当前宿主的展示状态；`ComposeTutorial` 只负责活动页面触发、步骤及重看目录。滑动预览不触发教程，教程不能执行网络请求或账户操作；签到表单的 `ComposeCheckinAccountGuide` 持续说明两类账号的区别。
+- `ComposeFeedNavigation`：拥有首页胶囊重选意图，由活动 Compose 列表回顶后单次消费；忙时合并等待，刷新仍交给 `ComposeFeedController` 的原串行路径，不调用隐藏的旧 View 列表。
 - `ComposeWatchTokens`：统一手表字号、圆角、图标和物理触控下限；阅读正文仍由阅读排版参数控制。`ComposeWatchStatus` 只呈现加载、空白与错误状态，不自行重试或拥有请求。
 - `ComposeFeedCardActions`：测量信息流卡片底部的分区与操作宽度，空间不足时分行；操作仍交给宿主，不承担互动状态或接口调用。
 - `ComposeSavedController`：协调收藏、收藏夹和历史的独立状态，不混入页面 UI。`ComposeSavedPostsController` 负责账号隔离、缓存和请求失效；`ComposeWatchLaterController` 负责本地读取、图片大小统计和删除；`ComposeReadingCenterController` 负责异步摘要。

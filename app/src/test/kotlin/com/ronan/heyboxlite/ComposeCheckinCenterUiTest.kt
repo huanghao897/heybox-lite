@@ -104,11 +104,11 @@ internal class ComposeCheckinCenterUiTest : ComposeMembershipUiRegressionHarness
     @Test fun loggedOutAccountOffersLoginInsteadOfTaskControlsOrHistory() {
         show(MembershipUiFixtures.center(account = CheckinCenterClient.Account("logged_out", "Fixture account", "")))
         text("\u7b49\u5f85\u624b\u673a\u53f7\u767b\u5f55").assertExists()
-        text("\u624b\u673a\u53f7\u767b\u5f55").assertIsEnabled()
+        text("手机号登录小黑盒").assertIsEnabled()
         text("\u7acb\u5373\u7b7e\u5230").assertDoesNotExist()
         text("\u7b7e\u5230\u8bbe\u7f6e").assertDoesNotExist()
         text("\u7b7e\u5230\u8bb0\u5f55").assertDoesNotExist()
-        tapReachable("\u624b\u673a\u53f7\u767b\u5f55")
+        tapReachable("手机号登录小黑盒")
         compose.runOnIdle {
             assertEquals(listOf("login"), actions)
             assertEquals("logged_out", state.value.status?.account?.state)

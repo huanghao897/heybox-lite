@@ -188,6 +188,9 @@ internal fun ComposeCheckinPairingScreen(
     onBack: () -> Unit,
 ) {
     val pairing = state.pairing
+    val tutorialTopic = if (state.serviceMode == CheckinServiceAccountFlow.Mode.REGISTER)
+        TutorialTopic.SERVICE_REGISTER else TutorialTopic.SERVICE_LOGIN
+    ComposeTutorialTrigger(tutorialTopic, pairing != null)
     val passwordRequester = remember { FocusRequester() }
     val emailCodeRequester = remember { FocusRequester() }
     LaunchedEffect(state.focusTarget) {
@@ -199,6 +202,7 @@ internal fun ComposeCheckinPairingScreen(
     }
 
     WatchPage("连接签到服务", onBack) {
+        ComposeCheckinAccountGuide(tutorialTopic)
         if (pairing == null) {
             WatchCard(highlighted = true) {
                 Text("正在创建连接", color = LocalHeyboxTheme.current.text,
@@ -236,8 +240,8 @@ internal fun ComposeCheckinPairingScreen(
             WatchCard {
                 if (pairing.registrationOpen) {
                     ComposeCheckinModeSelector(
-                        first = "已有账号",
-                        second = "注册账号",
+                        first = "登录服务",
+                        second = "注册服务",
                         firstSelected = state.serviceMode == CheckinServiceAccountFlow.Mode.LOGIN,
                         enabled = state.serviceControlsEnabled,
                         onFirst = { controller.switchServiceMode(CheckinServiceAccountFlow.Mode.LOGIN) },
@@ -309,9 +313,9 @@ internal fun ComposeCheckinPairingScreen(
                 Spacer(modifier = Modifier.height(watchDp(10)))
                 ComposeCheckinPrimaryButton(
                     text = if (state.serviceMode == CheckinServiceAccountFlow.Mode.LOGIN) {
-                        "验证并连接"
+                        "登录签到服务"
                     } else {
-                        "注册并连接"
+                        "注册签到服务账号"
                     },
                     enabled = state.serviceControlsEnabled,
                     onClick = controller::submitServiceAccount,
@@ -329,6 +333,7 @@ internal fun ComposeCheckinMobileLoginScreen(
     controller: ComposeCheckinController,
     onBack: () -> Unit,
 ) {
+    ComposeTutorialTrigger(TutorialTopic.HEYBOX_LOGIN)
     val codeRequester = remember { FocusRequester() }
     val passwordRequester = remember { FocusRequester() }
     LaunchedEffect(state.focusTarget) {
@@ -338,7 +343,8 @@ internal fun ComposeCheckinMobileLoginScreen(
         }
         if (state.focusTarget.isNotEmpty()) controller.consumeFocusTarget()
     }
-    WatchPage("手机号登录", onBack) {
+    WatchPage("手机号登录小黑盒", onBack) {
+        ComposeCheckinAccountGuide(TutorialTopic.HEYBOX_LOGIN)
         WatchCard {
             Text("登录小黑盒", color = LocalHeyboxTheme.current.text,
                 fontSize = watchSp(WatchType.SUBTITLE), fontWeight = FontWeight.SemiBold)
@@ -385,7 +391,7 @@ internal fun ComposeCheckinMobileLoginScreen(
                 )
                 Spacer(modifier = Modifier.height(watchDp(9)))
                 ComposeCheckinPrimaryButton(
-                    "登录并连接",
+                    "登录小黑盒并连接",
                     enabled = state.mobileControlsEnabled && state.mobileHasSession,
                     onClick = controller::submitSmsCode,
                 )
@@ -408,7 +414,7 @@ internal fun ComposeCheckinMobileLoginScreen(
                 )
                 Spacer(modifier = Modifier.height(watchDp(9)))
                 ComposeCheckinPrimaryButton(
-                    "登录并连接",
+                    "登录小黑盒并连接",
                     enabled = state.mobileControlsEnabled,
                     onClick = controller::submitPasswordLogin,
                 )

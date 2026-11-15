@@ -77,6 +77,10 @@ internal class ComposeFeedController(
         load(reset = true)
     }
 
+    fun refreshFromNavigation() {
+        load(reset = true, refreshType = "icon")
+    }
+
     fun loadInitial() {
         load(reset = true, showRefreshFeedback = false)
     }
@@ -123,7 +127,8 @@ internal class ComposeFeedController(
         io.shutdownNow()
     }
 
-    private fun load(reset: Boolean, showRefreshFeedback: Boolean = true, emptyPagesRemaining: Int = 2) {
+    private fun load(reset: Boolean, showRefreshFeedback: Boolean = true, emptyPagesRemaining: Int = 2,
+                     refreshType: String? = null) {
         if (closed || loading.value || loadingMore.value) return
         if (reset) {
             refreshing.value = showRefreshFeedback
@@ -142,6 +147,8 @@ internal class ComposeFeedController(
             if (reset) null else lastPull,
             if (reset) "" else cursor,
             if (reset) true else firstRequest,
+            null,
+            refreshType,
         )
         request(EndpointProvider.feeds(), params, object : ApiClient.Callback {
             override fun onSuccess(body: JSONObject) {

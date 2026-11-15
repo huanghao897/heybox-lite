@@ -16,6 +16,8 @@ public class ComposeNavigationStateTest {
         assertEquals("reading_center", state.backTarget());
         state.setRoute("display_settings");
         assertEquals("settings_home", state.backTarget());
+        state.setRoute("tutorials");
+        assertEquals("settings_home", state.backTarget());
         state.setRoute("settings_home");
         assertEquals("profile", state.backTarget());
     }

@@ -21,6 +21,7 @@ public class ScreenRoutesTest {
         assertParent("app_settings", "settings_home");
         assertParent("video_settings", "settings_home");
         assertParent("about", "settings_home");
+        assertParent("tutorials", "settings_home");
         assertParent("settings_home", "profile");
     }
 

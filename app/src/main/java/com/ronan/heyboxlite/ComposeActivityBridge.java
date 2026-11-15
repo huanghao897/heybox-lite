@@ -36,9 +36,16 @@ final class ComposeActivityBridge implements ComposeAppCallbacks {
         activity.bottomNavigation = new BottomNavigationController(activity, activity.session,
                 activity.themeTokens, activity.usesRoundLayout(), body);
         activity.bottomNavigation.addItem(activity.getString(R.string.title_feed), "feed",
-                R.drawable.ic_nav_home, activity::onFeedNavClick);
+                R.drawable.ic_nav_home, this::onFeedNavClick);
         activity.bottomNavigation.addItem(activity.getString(R.string.title_profile), "profile",
                 R.drawable.ic_nav_profile, () -> activity.showTopLevel(1));
+    }
+
+    private void onFeedNavClick() {
+        if (isComposeSurfaceVisible() && activity.composeAppHost != null
+                && activity.composeAppHost.isMounted() && activity.composeAppHost.isRoute("feed")) {
+            activity.composeAppHost.reselectFeed();
+        } else activity.onFeedNavClick();
     }
 
     boolean showRouteIfMounted(String route) {

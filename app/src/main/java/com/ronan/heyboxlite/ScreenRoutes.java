@@ -26,6 +26,7 @@ final class ScreenRoutes {
         parents.put("app_settings", "settings_home");
         parents.put("video_settings", "settings_home");
         parents.put("about", "settings_home");
+        parents.put("tutorials", "settings_home");
         parents.put("settings_home", "profile");
         STATIC_PARENTS = Collections.unmodifiableMap(parents);
     }

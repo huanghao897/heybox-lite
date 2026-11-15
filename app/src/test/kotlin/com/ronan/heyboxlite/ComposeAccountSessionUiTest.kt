@@ -172,6 +172,8 @@ class ComposeAccountSessionUiTest {
 
     private fun showHost(route: String) {
         compose.runOnUiThread {
+            // These regressions exercise an existing user's account and reading state.
+            TutorialTopic.entries.forEach(TutorialStore(compose.activity)::complete)
             session = SessionStore(compose.activity).apply {
                 setNoImage(true)
                 setMotionLevel(MotionLevel.OFF)

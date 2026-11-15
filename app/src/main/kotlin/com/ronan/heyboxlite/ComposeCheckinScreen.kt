@@ -95,7 +95,7 @@ internal fun ComposeCheckinCenterContent(
                 if (state.stage == ComposeCheckinStage.RUNNING) "正在签到" else "立即签到", onRunNow,
                 enabled = state.stage != ComposeCheckinStage.RUNNING && status.task.active() &&
                     (!status.membership.required || status.membership.entitled), icon = R.drawable.ic_play)
-            else CheckinActionButton("手机号登录", onLogin, icon = R.drawable.il_person)
+            else CheckinActionButton("手机号登录小黑盒", onLogin, icon = R.drawable.il_person)
         }
         if (state.paired) {
             val connected = status?.account?.state.equals("connected", true)

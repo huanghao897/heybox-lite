@@ -5,6 +5,7 @@ import android.graphics.RectF
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
@@ -23,6 +24,7 @@ internal class ComposeImageViewerHost(
     private val claimed = ImagePreviewStore.claim(intent.getLongExtra(ImageViewerActivity.EXTRA_PREVIEW_ID, 0))
     private val preview = claimed?.takeIf { it.url == urls[initial] }?.bitmap?.get()
     private val selection = ComposeViewerSelection()
+    private val tutorials = TutorialState(TutorialStore(activity))
     private var foreground by mutableStateOf(true)
     private var sourceVisibility: Int? = null
     private val view = ComposeView(activity)
@@ -42,19 +44,23 @@ internal class ComposeImageViewerHost(
         view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         view.setContent {
             HeyboxComposeTheme(theme) {
-                ComposeImageViewer(urls, initial, preview, theme.roundScreen, session.originalImages(),
-                    intent.getBooleanExtra(ImageViewerActivity.EXTRA_LOAD_ORIGINAL_IMMEDIATELY, false),
-                    foreground, session.motionLevel(), selection,
-                    onSave = { ImageViewerDownload.save(activity, it) },
-                    onFinish = { activity.finish(); activity.overridePendingTransition(0, 0) },
-                    onSourceVisibility = ::sourceVisible, origin = origin, playGif = session.playGif())
+                CompositionLocalProvider(LocalTutorialState provides tutorials) {
+                    ComposeTutorialTrigger(TutorialTopic.IMAGES, foreground)
+                    ComposeImageViewer(urls, initial, preview, theme.roundScreen, session.originalImages(),
+                        intent.getBooleanExtra(ImageViewerActivity.EXTRA_LOAD_ORIGINAL_IMMEDIATELY, false),
+                        foreground && tutorials.topic == null, session.motionLevel(), selection,
+                        onSave = { ImageViewerDownload.save(activity, it) },
+                        onFinish = { activity.finish(); activity.overridePendingTransition(0, 0) },
+                        onSourceVisibility = ::sourceVisible, origin = origin, playGif = session.playGif())
+                    if (foreground) ComposeTutorialOverlay(tutorials)
+                }
             }
         }
         activity.setContentView(view)
     }
 
     fun setActive(value: Boolean) { foreground = value }
-    fun back() { selection.back() }
+    fun back() { if (!tutorials.dismiss()) selection.back() }
     fun currentUrl(): String = urls[selection.index.coerceIn(urls.indices)]
     fun close() { sourceVisible(true); view.disposeComposition() }
 

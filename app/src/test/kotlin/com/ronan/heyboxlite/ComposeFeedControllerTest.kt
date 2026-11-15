@@ -8,6 +8,20 @@ import java.util.concurrent.AbstractExecutorService
 import java.util.concurrent.TimeUnit
 
 class ComposeFeedControllerTest {
+    @Test fun navigationRefreshUsesIconSourceAndStillAllowsOnlyOneInFlightRequest() {
+        val fixture = Fixture()
+        fixture.controller.refreshFromNavigation()
+        repeat(5) { fixture.controller.refreshFromNavigation() }
+        assertEquals(1, fixture.requests.size)
+        assertEquals("icon", fixture.requests.single().params["refresh_type"])
+        assertTrue(fixture.controller.refreshing.value)
+        fixture.finish(response("first", "new-post"))
+        assertEquals(listOf("new-post"), fixture.ids())
+        assertFalse(fixture.controller.refreshing.value)
+        fixture.controller.refresh()
+        assertFalse(fixture.requests.last().params.containsKey("refresh_type"))
+    }
+
     @Test fun initialLoadKeepsRefreshFeedbackHiddenAndUsesOriginalParameters() {
         val fixture = Fixture()
         fixture.controller.loadInitial()

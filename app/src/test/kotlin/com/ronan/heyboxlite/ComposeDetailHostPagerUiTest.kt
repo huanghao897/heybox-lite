@@ -39,6 +39,10 @@ class ComposeDetailHostPagerUiTest {
     private var api: ApiClient? = null
     private val backs = mutableListOf<String>()
 
+    @org.junit.Before fun completeFirstUseTutorials() {
+        TutorialTopic.entries.forEach(TutorialStore(compose.activity)::complete)
+    }
+
     @After fun close() {
         if (::host.isInitialized) compose.runOnUiThread { host.close() }
         api?.close()

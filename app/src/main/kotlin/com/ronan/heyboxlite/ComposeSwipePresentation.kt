@@ -5,7 +5,7 @@ internal object ComposeSwipePresentation {
     private val liveRoutes = setOf(
         "feed", "profile", "search", "favorites", "favorite_folder", "watch_later", "reading_history",
         "reading_center", "reading_stats", "settings_home", "display_settings",
-        "startup_settings", "app_settings", "video_settings", "about", "detail", "user_space",
+        "startup_settings", "app_settings", "video_settings", "about", "detail", "user_space", "tutorials",
     )
 
     @JvmStatic
