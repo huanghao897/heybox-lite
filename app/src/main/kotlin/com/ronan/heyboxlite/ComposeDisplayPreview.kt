@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,7 +33,7 @@ internal fun DisplayPreviewScreen(state: ComposeThemeState) {
     val scale = state.uiScale
     val textScale = state.textScale
     val horizontal = if (state.roundScreen) 16.dp else 12.dp
-    val cardShape = RoundedCornerShape((12 * scale).dp)
+    val cardShape = RoundedCornerShape((WatchRadius.LARGE * scale).dp)
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -50,14 +49,14 @@ internal fun DisplayPreviewScreen(state: ComposeThemeState) {
             Text(
                 text = "Compose 界面预览",
                 color = state.text,
-                fontSize = (16 * textScale).sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = (WatchType.TITLE * textScale).sp,
+                fontWeight = FontWeight.SemiBold,
             )
             Text(
                 text = "当前页面已经使用 Compose 渲染，主题和屏幕适配沿用 heybox Lite 设置。",
                 color = state.muted,
-                fontSize = (11 * textScale).sp,
-                lineHeight = (15 * textScale).sp,
+                fontSize = (WatchType.SECONDARY * textScale).sp,
+                lineHeight = (16 * textScale).sp,
             )
             PreviewCard(
                 state = state,
@@ -104,28 +103,28 @@ private fun PreviewCard(
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .clip(RoundedCornerShape(3.dp))
+                        .clip(RoundedCornerShape(watchDp(WatchRadius.SMALL)))
                         .background(state.accent),
                 )
                 Text(
                     text = badge,
                     color = state.accent,
-                    fontSize = 10.sp,
+                    fontSize = (WatchType.CAPTION * state.textScale).sp,
                     modifier = Modifier.padding(start = 6.dp),
                 )
             }
             Text(
                 text = title,
                 color = state.text,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = (WatchType.SUBTITLE * state.textScale).sp,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 6.dp),
             )
             Text(
                 text = body,
                 color = state.muted,
-                fontSize = 11.sp,
-                lineHeight = 15.sp,
+                fontSize = (WatchType.SECONDARY * state.textScale).sp,
+                lineHeight = (16 * state.textScale).sp,
                 modifier = Modifier.padding(top = 5.dp),
             )
         }
@@ -141,12 +140,13 @@ private fun PreviewMetric(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape((WatchRadius.MEDIUM * state.uiScale).dp),
         colors = CardDefaults.cardColors(containerColor = state.panelElevated),
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
-            Text(label, color = state.subtle, fontSize = 9.sp)
-            Text(value, color = state.text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(label, color = state.subtle, fontSize = (WatchType.CAPTION * state.textScale).sp)
+            Text(value, color = state.text, fontSize = (WatchType.SUBTITLE * state.textScale).sp,
+                fontWeight = FontWeight.SemiBold)
         }
     }
 }

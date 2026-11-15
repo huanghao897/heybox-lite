@@ -136,5 +136,7 @@ fun SettingsScreen(
 
 ## Open Questions
 
+截至 2026-11-14，图片查看器的页面与手势已迁移到 Compose，长图瓦片解码与 GIF 保留原生叶节点；上方 2026-10-16 的“待完成 UI”为当时记录。当前边界和未完成的真机验收以 `tasks/compose-migration-status.md` 顶部为准。
+
 - 是否接受引入 Kotlin 和 Compose 后 APK 体积、构建时间及低端手表内存占用增加？当前分支按接受处理。
 - 全量迁移按阶段提交；每阶段仍必须可构建、可回退，不能为了赶进度删除原生实现。

@@ -60,12 +60,12 @@ private fun ReadingStatsContent(state: ComposeReadingStatsState, onBack: () -> U
     WatchPage("阅读时长", onBack) {
         WatchCard {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontalPadding, watchDp(7))) {
-                Text("今天", color = theme.muted, fontSize = watchSp(11f), letterSpacing = 0.sp)
+                Text("今天", color = theme.muted, fontSize = watchSp(WatchType.CAPTION), letterSpacing = 0.sp)
                 Text(Format.readingDuration(state.todayMs), color = theme.text,
-                    fontSize = watchSp(25f), fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp,
+                    fontSize = watchSp(WatchType.DISPLAY), fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp,
                     modifier = Modifier.padding(top = watchDp(3)))
                 Text("${state.todayDateLabel} · 看过 ${state.todayCount} 篇", color = theme.muted,
-                    fontSize = watchSp(10.5f), lineHeight = watchSp(14f), letterSpacing = 0.sp,
+                    fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp,
                     modifier = Modifier.padding(top = watchDp(4)))
             }
         }
@@ -85,17 +85,18 @@ private fun ReadingStatsContent(state: ComposeReadingStatsState, onBack: () -> U
                                 Box(Modifier.width(watchDp(10))
                                     .height((watchDp(52) * day.fraction).coerceAtLeast(watchDp(3)))
                                     .background(if (day.isToday) theme.accent else theme.hairline,
-                                        RoundedCornerShape(watchDp(3))))
+                                        RoundedCornerShape(watchDp(WatchRadius.SMALL))))
                             }
-                            Text(day.label, color = if (day.isToday) theme.accent else theme.subtle,
-                                fontSize = watchSp(8.5f), lineHeight = watchSp(11f), letterSpacing = 0.sp,
+                            Text(if (day.isToday) "今" else day.label,
+                                color = if (day.isToday) theme.accent else theme.subtle,
+                                fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth().padding(top = watchDp(4)))
                         }
                     }
                 }
                 Text("本周 ${Format.readingDuration(state.weekTotalMs)} · 日均 ${Format.readingDuration(state.weekAverageMs)}",
-                    color = theme.muted, fontSize = watchSp(10.5f), lineHeight = watchSp(14f), letterSpacing = 0.sp,
+                    color = theme.muted, fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp,
                     modifier = Modifier.padding(top = watchDp(9)))
             }
         }
@@ -103,19 +104,19 @@ private fun ReadingStatsContent(state: ComposeReadingStatsState, onBack: () -> U
         WatchCard {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontalPadding, watchDp(7))) {
                 Text(Format.readingDuration(state.totalMs), color = theme.text,
-                    fontSize = watchSp(20f), fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
+                    fontSize = watchSp(WatchType.TITLE), fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
                 Text("累计 · 看过 ${state.totalCount} 篇", color = theme.muted,
-                    fontSize = watchSp(10.5f), lineHeight = watchSp(14f), letterSpacing = 0.sp,
+                    fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp,
                     modifier = Modifier.padding(top = watchDp(2)))
                 Row(modifier = Modifier.padding(top = watchDp(10)).fillMaxWidth().height(watchDp(6))
-                    .clip(RoundedCornerShape(watchDp(3))).background(theme.panelElevated)) {
+                    .clip(RoundedCornerShape(watchDp(WatchRadius.SMALL))).background(theme.panelElevated)) {
                     if (state.article.fraction > 0f) {
                         Box(Modifier.weight(state.article.fraction).fillMaxHeight()
-                            .background(theme.accent, RoundedCornerShape(watchDp(3))))
+                            .background(theme.accent, RoundedCornerShape(watchDp(WatchRadius.SMALL))))
                     }
                     if (state.post.fraction > 0f) {
                         Box(Modifier.weight(state.post.fraction).fillMaxHeight()
-                            .background(postColor, RoundedCornerShape(watchDp(3))))
+                            .background(postColor, RoundedCornerShape(watchDp(WatchRadius.SMALL))))
                     }
                 }
                 ReadingStatsMetricRow("文章",
@@ -131,7 +132,7 @@ private fun ReadingStatsContent(state: ComposeReadingStatsState, onBack: () -> U
             Column(modifier = Modifier.fillMaxWidth().padding(horizontalPadding, watchDp(7))) {
                 if (state.topics.isEmpty()) {
                     Text("多看几篇帖子，这里会按社区统计你的阅读分布", color = theme.muted,
-                        fontSize = watchSp(10.5f), lineHeight = watchSp(14f), letterSpacing = 0.sp,
+                        fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp,
                         modifier = Modifier.padding(vertical = watchDp(6)))
                 } else {
                     state.topics.forEachIndexed { index, topic ->
@@ -139,10 +140,10 @@ private fun ReadingStatsContent(state: ComposeReadingStatsState, onBack: () -> U
                             ReadingStatsMetricRow(topic.name, Format.readingDuration(topic.milliseconds),
                                 ellipsizeLabel = true)
                             Box(Modifier.padding(top = watchDp(6)).fillMaxWidth().height(watchDp(3))
-                                .clip(RoundedCornerShape(watchDp(2))).background(theme.panelElevated)) {
+                                .clip(RoundedCornerShape(watchDp(WatchRadius.SMALL))).background(theme.panelElevated)) {
                                 if (topic.fraction > 0f) {
                                     Box(Modifier.fillMaxWidth(topic.fraction).fillMaxHeight()
-                                        .background(theme.accent, RoundedCornerShape(watchDp(2))))
+                                        .background(theme.accent, RoundedCornerShape(watchDp(WatchRadius.SMALL))))
                                 }
                             }
                         }
@@ -164,9 +165,9 @@ private fun ReadingStatsMetricRow(
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = LocalTextStyle.current.copy(
-        fontSize = watchSp(11.5f), lineHeight = watchSp(15f), letterSpacing = 0.sp)
+        fontSize = watchSp(WatchType.SECONDARY), lineHeight = watchLineHeight(WatchType.SECONDARY), letterSpacing = 0.sp)
     val valueStyle = LocalTextStyle.current.copy(
-        fontSize = watchSp(10.5f), lineHeight = watchSp(14f), letterSpacing = 0.sp)
+        fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp)
     val markerWidth = if (marker != null) watchDp(15) else 0.dp
     val gap = watchDp(6)
     val compactLabelWidth = watchDp(48)

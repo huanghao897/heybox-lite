@@ -65,8 +65,8 @@ internal fun ComposeSectionChip(
         Text(
             text = name,
             color = theme.muted,
-            fontSize = 10.5.sp * theme.textScale,
-            lineHeight = 14.sp * theme.textScale,
+            fontSize = WatchType.CAPTION.sp * theme.textScale,
+            lineHeight = 15.sp * theme.textScale,
             letterSpacing = 0.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,

@@ -200,16 +200,18 @@ class ComposeSearchControllerTest {
         val f = fixture()
         f.session.setBlockKeywords("blocked")
         f.search("watch", "blocked-0")
+        for (page in 1..4) {
+            f.advance(0)
+            // Skipped pages keep the loading state, so the page never flashes "no results".
+            assertTrue(f.controller.loading.value)
+            f.finish("blocked-$page")
+        }
         f.advance(0)
-        f.finish("blocked-1")
-        f.advance(0)
-        f.finish("blocked-2")
-        f.advance(0)
-        assertEquals(3, f.requests.size)
+        assertEquals(5, f.requests.size)
         assertFalse(f.controller.noMore.value)
         assertFalse(f.controller.loading.value)
         f.controller.loadMore()
-        assertEquals(OfficialRequestParams.search("watch", 3, 20), f.requests.last().params)
+        assertEquals(OfficialRequestParams.search("watch", 5, 20), f.requests.last().params)
         f.finish("visible")
         assertEquals(listOf("visible"), f.ids())
     }
@@ -241,6 +243,53 @@ class ComposeSearchControllerTest {
         f.advance(0)
         assertTrue(f.controller.noMore.value)
         assertEquals(1, f.requests.size)
+    }
+
+    @Test fun firstPageFailureIsExplicitAndOnlyAManualRetrySendsAnotherRequest() {
+        val f = fixture()
+        f.search("old", "old-result")
+        f.controller.setQuery("new")
+        assertTrue(f.controller.pending.value)
+        f.advance(420)
+        assertFalse(f.controller.pending.value)
+        assertTrue(f.ids().isEmpty())
+        f.requests.last().callback.onError("Offline")
+        assertEquals("Offline", f.controller.error.value)
+        assertFalse(f.controller.loading.value)
+        repeat(3) { f.controller.loadMore() }
+        assertEquals(2, f.requests.size)
+        f.controller.retry()
+        assertEquals(OfficialRequestParams.search("new", 0, 20), f.requests.last().params)
+        assertEquals("", f.controller.error.value)
+        f.finish("new-result")
+        assertEquals(listOf("new-result"), f.ids())
+    }
+
+    @Test fun appendFailureKeepsResultsAndRetriesTheSameRawOffset() {
+        val f = fixture()
+        f.search("watch", "one", "two")
+        f.controller.loadMore()
+        f.requests.last().callback.onError("Offline")
+        assertEquals(listOf("one", "two"), f.ids())
+        f.controller.retry()
+        assertEquals(OfficialRequestParams.search("watch", 2, 20), f.requests.last().params)
+        f.finish("three")
+        assertEquals(listOf("one", "two", "three"), f.ids())
+        assertEquals("", f.controller.error.value)
+    }
+
+    @Test fun oldFailureCannotReplaceANewQueryOrItsPendingState() {
+        val f = fixture()
+        f.controller.setQuery("old")
+        f.advance(420)
+        val old = f.requests.last().callback
+        f.controller.setQuery("new")
+        old.onError("stale failure")
+        assertEquals("", f.controller.error.value)
+        assertTrue(f.controller.pending.value)
+        f.controller.close()
+        assertFalse(f.controller.pending.value)
+        assertEquals("", f.controller.error.value)
     }
 
     private fun fixture() = Fixture().also(fixtures::add)

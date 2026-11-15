@@ -1,13 +1,10 @@
 package com.ronan.heyboxlite
 
 import android.net.Uri
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -19,11 +16,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 
 internal data class ComposeUserSpaceRoute(
     val userId: String,
@@ -64,16 +58,16 @@ internal fun ComposeUserSpaceScreen(
 
     WatchPage(state.name, onBack) {
         WatchCard {
-            ComposeAccountIdentity(state.name, "ID ${route.userId}", state.signature, nameSize = 15f) {
+            ComposeAccountIdentity(state.name, "ID ${route.userId}", state.signature) {
                 ComposeRemoteImage(
                     state.avatar, theme, services.session.noImage(), watchDp(48), CircleShape,
                     "用户头像", Modifier.size(watchDp(48)),
                 )
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = watchDp(11), vertical = watchDp(5))) {
-                UserStat("关注", state.follows, theme, Modifier.weight(1f))
-                UserStat("粉丝", state.fans, theme, Modifier.weight(1f))
-                UserStat("获赞", state.likes, theme, Modifier.weight(1f))
+                WatchStat("关注", state.follows, Modifier.weight(1f))
+                WatchStat("粉丝", state.fans, Modifier.weight(1f))
+                WatchStat("获赞", state.likes, Modifier.weight(1f))
             }
         }
         WatchCard {
@@ -101,27 +95,15 @@ internal fun ComposeUserSpaceScreen(
                             item = item,
                             theme = theme,
                             noImage = services.session.noImage(),
-                            currentUserId = services.session.userId(),
                             onOpen = onOpen,
                             onAction = null,
                             showActions = false,
-                            showFollow = false,
                             gameCardNoImage = services.session.gameCardNoImage(),
                         )
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun UserStat(label: String, value: Int, theme: ComposeThemeState, modifier: Modifier) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(Format.commentLikeCount(value), color = theme.text, fontSize = watchSp(13f),
-            fontWeight = FontWeight.SemiBold)
-        Text(label, color = theme.muted, fontSize = watchSp(9f),
-            modifier = Modifier.padding(top = watchDp(2)))
     }
 }
 
@@ -135,6 +117,6 @@ private fun UserSpaceTab(
 ) {
     TextButton(onClick = onClick, modifier = modifier) {
         Text(text, color = if (selected) theme.text else theme.muted,
-            fontSize = watchSp(12f), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+            fontSize = watchSp(WatchType.SECONDARY), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }

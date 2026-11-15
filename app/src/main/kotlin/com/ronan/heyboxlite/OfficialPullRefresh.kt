@@ -174,7 +174,7 @@ private fun OfficialRefreshHeader(
     }, contentAlignment = Alignment.Center) {
         if (result.isFailure) {
             Icon(painterResource(R.drawable.il_refresh), null,
-                modifier = Modifier.size(watchDp(24)), tint = theme.muted)
+                modifier = Modifier.size(watchDp(WatchIcon.XLARGE)), tint = theme.muted)
         } else {
             LottieAnimation(
                 composition = result.value,

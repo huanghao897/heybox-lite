@@ -68,7 +68,7 @@ internal fun ComposeFavoritesScreen(
                     Row(Modifier.fillMaxWidth().padding(top = top)
                         .padding(horizontal = watchLeadingHeadingHorizontal(maxWidth, theme))
                         .testTag("favorites-tabs")
-                        .clip(RoundedCornerShape(watchDp(10)))
+                        .clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
                         .background(theme.panel)
                         .padding(watchDp(3))) {
                         FavoriteTab("帖子", selectedTab == ComposeFavoriteTab.POSTS, Modifier.weight(1f)) {
@@ -91,25 +91,25 @@ internal fun ComposeFavoritesScreen(
                 Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.55f), Alignment.Center) {
                     if (loading) FeedLoading(theme)
                     else Text(if (error.isNotBlank()) "加载失败" else if (posts) "暂无内容" else "暂无收藏夹",
-                        color = theme.muted, fontSize = watchSp(12f))
+                        color = theme.muted, fontSize = watchSp(WatchType.SECONDARY))
                 }
             } else if (posts) items(state.items, key = { "post:${it.id}" }, contentType = { "post" }) { item ->
-                ComposeFeedCard(item, theme, services.session.noImage(), services.session.userId(),
+                ComposeFeedCard(item, theme, services.session.noImage(),
                     onOpen, onAction, favorite = item.favorited,
                     gameCardNoImage = services.session.gameCardNoImage(), actionRevision = actionRevision)
             } else items(folders, key = { "folder:${it.id.ifEmpty { it.name }}" }, contentType = { "folder" }) { folder ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(watchDp(10)))
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
                     .background(theme.panel).clickable { onOpenFolder(folder) }
                     .padding(horizontal = watchDp(12), vertical = watchDp(11)),
                     verticalAlignment = Alignment.CenterVertically) {
                     Icon(androidx.compose.ui.res.painterResource(R.drawable.il_bookmark),
                         null, tint = theme.muted, modifier = Modifier.size(watchDp(18)))
                     Text(folder.name.ifBlank { "默认收藏夹" }, color = theme.text,
-                        fontSize = watchSp(13f), fontWeight = FontWeight.SemiBold,
+                        fontSize = watchSp(WatchType.BODY), fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f).padding(start = watchDp(9)),
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (folder.count > 0) Text(folder.count.toString(),
-                        color = theme.muted, fontSize = watchSp(11f))
+                        color = theme.muted, fontSize = watchSp(WatchType.CAPTION))
                 }
             }
         }
@@ -141,11 +141,11 @@ private fun FavoriteTab(label: String, selected: Boolean, modifier: Modifier, on
         tween(if (Motions.off()) 0 else 160), label = "favorite-tab")
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
         TextButton(onClick, modifier.semantics { this.selected = selected }
-            .heightIn(min = watchDp(34).coerceAtLeast(28.dp)).clip(RoundedCornerShape(watchDp(8)))
+            .heightIn(min = watchTouchDp(34)).clip(RoundedCornerShape(watchDp(WatchRadius.SMALL)))
             .background(androidx.compose.ui.graphics.lerp(theme.panel, theme.panelElevated, fraction)),
             contentPadding = PaddingValues(0.dp)) {
             Text(label, color = if (selected) theme.text else theme.muted,
-                fontSize = watchSp(12f), fontWeight = FontWeight.SemiBold)
+                fontSize = watchSp(WatchType.SECONDARY), fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -169,7 +169,7 @@ private fun ColumnScope.SavedFavoritePosts(
             verticalArrangement = Arrangement.spacedBy(watchDp(7))) {
             items(state.items, key = { it.id }) { item ->
                 ComposeFeedCard(item, services.theme, services.session.noImage(),
-                    services.session.userId(), onOpen, onAction, favorite = item.favorited,
+                    onOpen, onAction, favorite = item.favorited,
                     gameCardNoImage = services.session.gameCardNoImage(), actionRevision = actionRevision)
             }
         }

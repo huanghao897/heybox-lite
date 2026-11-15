@@ -52,19 +52,19 @@ internal fun ComposeAboutScreen(
             Text(
                 text = "heybox Lite",
                 color = LocalHeyboxTheme.current.text,
-                fontSize = watchSp(18f),
+                fontSize = watchSp(WatchType.TITLE),
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 text = "${BuildConfig.VERSION_NAME} · ${BuildConfig.VERSION_CODE}",
                 color = LocalHeyboxTheme.current.muted,
-                fontSize = watchSp(11f),
+                fontSize = watchSp(WatchType.CAPTION),
                 modifier = Modifier.padding(top = watchDp(3)),
             )
             Text(
                 text = "开发者：Ronan",
                 color = LocalHeyboxTheme.current.text,
-                fontSize = watchSp(13f),
+                fontSize = watchSp(WatchType.BODY),
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.padding(top = watchDp(5)),
             )
@@ -131,14 +131,14 @@ internal fun ComposeAboutScreen(
                 Text(
                     text = "支持 Android 7.0 及以上系统",
                     color = LocalHeyboxTheme.current.text,
-                    fontSize = watchSp(12f),
-                    lineHeight = watchSp(16f),
+                    fontSize = watchSp(WatchType.SECONDARY),
+                    lineHeight = watchLineHeight(WatchType.SECONDARY),
                 )
                 Text(
                     text = "基于 HeyWear 进行二次开发与方屏适配，非官方应用。",
                     color = LocalHeyboxTheme.current.muted,
-                    fontSize = watchSp(12f),
-                    lineHeight = watchSp(16f),
+                    fontSize = watchSp(WatchType.SECONDARY),
+                    lineHeight = watchLineHeight(WatchType.SECONDARY),
                     modifier = Modifier.padding(top = watchDp(7)),
                 )
             }
@@ -184,8 +184,8 @@ private fun ComposeUpdateDialog(
                     (if (result.title.isNotBlank()) "\n发布标题：${result.title.trim()}" else "") +
                     "\n\n更新内容：\n" + result.notes.ifBlank { "暂无更新内容说明" }.take(1800),
             color = LocalHeyboxTheme.current.muted,
-            fontSize = watchSp(12f),
-            lineHeight = watchSp(16f),
+            fontSize = watchSp(WatchType.SECONDARY),
+            lineHeight = watchLineHeight(WatchType.SECONDARY),
         )
     }
 }
@@ -239,8 +239,8 @@ internal fun ComposeAnnouncementBoardScreen(services: ComposeServices, onBack: (
                 Text(
                     text = item.content.take(200),
                     color = LocalHeyboxTheme.current.muted,
-                    fontSize = watchSp(11f),
-                    lineHeight = watchSp(15f),
+                    fontSize = watchSp(WatchType.CAPTION),
+                    lineHeight = watchLineHeight(WatchType.CAPTION),
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = watchDp(11), vertical = watchDp(5)),
@@ -278,7 +278,7 @@ internal fun ComposeAnnouncementDialog(
         WatchActionButton("知道了", onAcknowledge, Modifier.weight(1f))
     }) {
         Text(item.content, color = LocalHeyboxTheme.current.muted,
-            fontSize = watchSp(12f), lineHeight = watchSp(16f))
+            fontSize = watchSp(WatchType.SECONDARY), lineHeight = watchLineHeight(WatchType.SECONDARY))
     }
 }
 

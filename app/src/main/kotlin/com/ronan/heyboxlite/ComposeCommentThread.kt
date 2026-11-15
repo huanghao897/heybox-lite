@@ -3,6 +3,7 @@ package com.ronan.heyboxlite
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -96,7 +97,7 @@ internal fun ComposeDetailThread(
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(start = layout.bodyInset)
                         .testTag("comment-replies-$rootId")
-                        .clip(RoundedCornerShape(6.dp)).background(theme.panel)
+                        .clip(RoundedCornerShape(watchDp(WatchRadius.SMALL))).background(theme.panel)
                         .padding(vertical = 3.dp * theme.uiScale),
                     verticalArrangement = Arrangement.spacedBy(4.dp * theme.uiScale),
                 ) {
@@ -107,11 +108,11 @@ internal fun ComposeDetailThread(
                         }
                     }
                     when {
-                        loading -> Text("加载回复中…", fontSize = 11.sp * theme.textScale,
+                        loading -> Text("加载回复中…", fontSize = WatchType.CAPTION.sp * theme.textScale,
                             color = theme.muted, letterSpacing = 0.sp, modifier = Modifier.padding(vertical = 7.dp)
                                 .semantics { liveRegion = LiveRegionMode.Polite })
                         error.isNotBlank() -> {
-                            Text(error, fontSize = 9.sp * theme.textScale, color = theme.muted,
+                            Text(error, fontSize = WatchType.CAPTION.sp * theme.textScale, color = theme.muted,
                                 maxLines = 2, overflow = TextOverflow.Ellipsis, letterSpacing = 0.sp,
                                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                             ComposeCommentReplyControl("回复加载失败，重试", R.drawable.ic_expand) {
@@ -215,7 +216,8 @@ private fun ComposeCommentHeader(
     onLike: () -> Unit,
 ) {
     val theme = LocalHeyboxTheme.current
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp * theme.uiScale)) {
+    Column(modifier = Modifier.padding(end = if (theme.roundScreen) 2.dp else 0.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp * theme.uiScale)) {
         Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
             ComposeUserAvatar(identity.avatar, identity.author, media, layout.avatarSize, onOpenUser)
             Spacer(Modifier.width(layout.avatarGap))
@@ -239,8 +241,8 @@ private fun ComposeCommentHeader(
 @Composable
 private fun ComposeCommentMetadata(text: String, modifier: Modifier = Modifier) {
     val theme = LocalHeyboxTheme.current
-    Text(text, modifier, color = theme.muted, fontSize = 9.sp * theme.textScale,
-        lineHeight = 12.sp * theme.textScale, letterSpacing = 0.sp)
+    Text(text, modifier, color = theme.muted, fontSize = WatchType.CAPTION.sp * theme.textScale,
+        lineHeight = 15.sp * theme.textScale, letterSpacing = 0.sp)
 }
 
 @Composable
@@ -249,21 +251,22 @@ private fun ComposeCommentLike(comment: JSONObject, onClick: () -> Unit) {
     val liked = CommentData.commentLiked(comment)
     val color = if (liked) theme.text else theme.muted
     Row(
-        modifier = Modifier.widthIn(max = 56.dp * theme.uiScale)
-            .heightIn(min = 26.dp * theme.uiScale).clip(RoundedCornerShape(5.dp))
+        modifier = Modifier.widthIn(min = WatchTouchTarget, max = maxOf(56.dp * theme.uiScale, 56.dp))
+            .heightIn(min = WatchTouchTarget).clip(RoundedCornerShape(50))
             .semantics(mergeDescendants = true) {
                 contentDescription = "点赞评论"
                 stateDescription = if (liked) "已点赞" else "未点赞"
             }.clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 2.dp * theme.uiScale),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(painterResource(if (liked) R.drawable.official_comment_like_filled
             else R.drawable.official_comment_like_line), null,
-            tint = color, modifier = Modifier.size(15.dp * theme.uiScale))
+            tint = color, modifier = Modifier.size(WatchIcon.MEDIUM.dp * theme.uiScale))
         Spacer(Modifier.width(2.dp * theme.uiScale))
         Text(Format.commentLikeCount(CommentData.commentLikes(comment).coerceAtLeast(0)),
-            fontSize = 10.sp * theme.textScale, color = color, maxLines = 1,
+            fontSize = WatchType.CAPTION.sp * theme.textScale, color = color, maxLines = 1,
             overflow = TextOverflow.Ellipsis, letterSpacing = 0.sp)
     }
 }
@@ -271,14 +274,19 @@ private fun ComposeCommentLike(comment: JSONObject, onClick: () -> Unit) {
 @Composable
 private fun ComposeCommentReplyControl(label: String, icon: Int, onClick: () -> Unit) {
     val theme = LocalHeyboxTheme.current
-    Row(Modifier.heightIn(min = 26.dp * theme.uiScale).clip(RoundedCornerShape(50))
-        .background(theme.panelElevated).testTag("comment-reply-capsule-$label")
-        .clickable(role = Role.Button, onClick = onClick)
-        .padding(horizontal = 8.dp * theme.uiScale, vertical = 3.dp * theme.uiScale),
-        verticalAlignment = Alignment.CenterVertically) {
-        Icon(painterResource(icon), null, tint = theme.muted, modifier = Modifier.size(12.dp))
-        Spacer(Modifier.width(3.dp))
-        Text(label, color = theme.text, fontSize = 11.sp * theme.textScale,
-            lineHeight = 15.sp * theme.textScale, letterSpacing = 0.sp)
+    Box(Modifier.heightIn(min = WatchTouchTarget).clip(RoundedCornerShape(50))
+        .testTag("comment-reply-capsule-$label")
+        .clickable(role = Role.Button, onClick = onClick), contentAlignment = Alignment.CenterStart) {
+        Row(Modifier.heightIn(min = 26.dp * theme.uiScale)
+            .clip(RoundedCornerShape(50)).background(theme.panelElevated)
+            .testTag("comment-reply-visual-$label")
+            .padding(horizontal = 8.dp * theme.uiScale, vertical = 3.dp * theme.uiScale),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(painterResource(icon), null, tint = theme.muted,
+                modifier = Modifier.size(12.dp * theme.uiScale))
+            Spacer(Modifier.width(3.dp * theme.uiScale))
+            Text(label, color = theme.text, fontSize = 11.sp * theme.textScale,
+                lineHeight = 15.sp * theme.textScale, letterSpacing = 0.sp)
+        }
     }
 }

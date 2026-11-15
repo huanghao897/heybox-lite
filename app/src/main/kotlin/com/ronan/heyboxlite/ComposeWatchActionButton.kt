@@ -18,18 +18,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * The one button style. [primary] marks the single filled action of a view; every
+ * other button is tonal. Both are pills and never shorter than [WatchTouchTarget].
+ */
 @Composable
 internal fun WatchActionButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    fontSize: Float = 11f,
+    fontSize: Float = WatchType.SECONDARY,
     @DrawableRes icon: Int? = null,
     theme: ComposeThemeState = LocalHeyboxTheme.current,
     primary: Boolean = false,
@@ -40,9 +45,9 @@ internal fun WatchActionButton(
             onClick = onClick,
             enabled = enabled,
             modifier = modifier
-                .widthIn(min = (48 * scale).dp.coerceAtLeast(28.dp))
-                .heightIn(min = ((if (primary) 40 else 36) * scale).dp.coerceAtLeast(28.dp)),
-            shape = RoundedCornerShape(((if (primary) 8 else 7) * scale).dp.coerceAtMost(8.dp)),
+                .widthIn(min = maxOf((48 * scale).dp, WatchTouchTarget))
+                .heightIn(min = maxOf(((if (primary) 40 else 36) * scale).dp, WatchTouchTarget)),
+            shape = RoundedCornerShape(50),
             border = if (primary) null else BorderStroke(1.dp,
                 if (enabled) theme.hairline else theme.hairline.copy(alpha = 0.6f)),
             colors = ButtonDefaults.buttonColors(
@@ -52,16 +57,17 @@ internal fun WatchActionButton(
                 disabledContentColor = theme.subtle,
             ),
             elevation = null,
-            contentPadding = PaddingValues(horizontal = (10 * scale).dp,
+            contentPadding = PaddingValues(horizontal = (12 * scale).dp,
                 vertical = (7 * scale).dp),
         ) {
             if (icon != null) {
                 Icon(painterResource(icon), contentDescription = null,
-                    modifier = Modifier.size((15 * scale).dp))
+                    modifier = Modifier.size((WatchIcon.MEDIUM * scale).dp))
                 Spacer(Modifier.width((6 * scale).dp))
             }
             Text(text, fontSize = (fontSize * theme.textScale).sp,
-                letterSpacing = 0.sp, textAlign = TextAlign.Center)
+                lineHeight = (WatchType.lineHeight(fontSize) * theme.textScale).sp,
+                fontWeight = FontWeight.Medium, letterSpacing = 0.sp, textAlign = TextAlign.Center)
         }
     }
 }

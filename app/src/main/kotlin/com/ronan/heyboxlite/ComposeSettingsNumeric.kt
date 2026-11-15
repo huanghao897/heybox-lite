@@ -93,31 +93,22 @@ internal sealed class NumericValueParseResult {
     data class Invalid(val message: String) : NumericValueParseResult()
 }
 
+/** Same palette as WatchSwitch: the accent marks the chosen part of the track. */
 @Composable
-private fun composeSettingSliderColors() = SliderDefaults.colors(
-    thumbColor = if (LocalHeyboxTheme.current.dark) {
-        androidx.compose.ui.graphics.Color(0xFFF5F5F7)
-    } else {
-        androidx.compose.ui.graphics.Color.White
-    },
-    activeTrackColor = if (LocalHeyboxTheme.current.dark) {
-        androidx.compose.ui.graphics.Color(0xFF77777D)
-    } else {
-        androidx.compose.ui.graphics.Color(0xFF636368)
-    },
-    activeTickColor = androidx.compose.ui.graphics.Color.Transparent,
-    inactiveTrackColor = if (LocalHeyboxTheme.current.dark) {
-        androidx.compose.ui.graphics.Color(0xFF3A3A3E)
-    } else {
-        androidx.compose.ui.graphics.Color(0xFFD1D1D6)
-    },
-    inactiveTickColor = androidx.compose.ui.graphics.Color.Transparent,
-    disabledThumbColor = LocalHeyboxTheme.current.subtle,
-    disabledActiveTrackColor = LocalHeyboxTheme.current.subtle.copy(alpha = 0.45f),
-    disabledActiveTickColor = androidx.compose.ui.graphics.Color.Transparent,
-    disabledInactiveTrackColor = LocalHeyboxTheme.current.subtle.copy(alpha = 0.28f),
-    disabledInactiveTickColor = androidx.compose.ui.graphics.Color.Transparent,
-)
+private fun composeSettingSliderColors() = LocalHeyboxTheme.current.let { theme ->
+    SliderDefaults.colors(
+        thumbColor = theme.switchThumb,
+        activeTrackColor = theme.accent,
+        activeTickColor = androidx.compose.ui.graphics.Color.Transparent,
+        inactiveTrackColor = theme.switchTrack,
+        inactiveTickColor = androidx.compose.ui.graphics.Color.Transparent,
+        disabledThumbColor = theme.subtle,
+        disabledActiveTrackColor = theme.subtle.copy(alpha = 0.45f),
+        disabledActiveTickColor = androidx.compose.ui.graphics.Color.Transparent,
+        disabledInactiveTrackColor = theme.subtle.copy(alpha = 0.28f),
+        disabledInactiveTickColor = androidx.compose.ui.graphics.Color.Transparent,
+    )
+}
 
 @Composable
 internal fun ComposeSettingRange(
@@ -221,7 +212,7 @@ private fun ComposeNumericSettingDialog(
                 "拖动调整，或点击数值直接输入"
             },
             color = state.muted,
-            fontSize = watchSp(11f),
+            fontSize = watchSp(WatchType.CAPTION),
         )
         BasicTextField(
             value = input,
@@ -230,17 +221,17 @@ private fun ComposeNumericSettingDialog(
                 error = null
             },
             modifier = Modifier.fillMaxWidth().heightIn(min = watchDp(44))
-                .background(state.panelElevated, RoundedCornerShape(watchDp(10)))
+                .background(state.panelElevated, RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
                 .padding(horizontal = watchDp(10), vertical = watchDp(9))
                 .semantics { contentDescription = title },
-            textStyle = TextStyle(color = state.text, fontSize = watchSp(18f),
+            textStyle = TextStyle(color = state.text, fontSize = watchSp(WatchType.TITLE),
                 fontWeight = FontWeight.Bold),
             cursorBrush = SolidColor(state.text),
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         )
         if (error != null) {
-            Text(error.orEmpty(), color = state.accent, fontSize = watchSp(10f))
+            Text(error.orEmpty(), color = state.accent, fontSize = watchSp(WatchType.CAPTION))
         }
         CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
             Slider(
@@ -260,11 +251,11 @@ private fun ComposeNumericSettingDialog(
         }
         Row(Modifier.fillMaxWidth()) {
             Text(setting.display(setting.lowerBound, unit),
-                color = state.muted, fontSize = watchSp(10f))
+                color = state.muted, fontSize = watchSp(WatchType.CAPTION))
             Spacer(Modifier.weight(1f))
             Text(setting.display(setting.upperBound, unit) +
                 if (setting.allowAboveSliderMaximum) "+" else "",
-                color = state.muted, fontSize = watchSp(10f))
+                color = state.muted, fontSize = watchSp(WatchType.CAPTION))
         }
     }
 }

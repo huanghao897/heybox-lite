@@ -111,7 +111,7 @@ public class GestureOwnershipWiringTest {
         String profile = source("kotlin/com/ronan/heyboxlite/ComposeProfileScreen.kt");
         String switches = source("kotlin/com/ronan/heyboxlite/ComposeWatchComponents.kt");
         assertTrue(profile.contains("if (loggedIn && userId.isNotBlank()) \"ID $userId\""));
-        assertTrue(switches.contains("Modifier.size(width = watchDp(36), height = watchDp(22))"));
+        assertTrue(switches.contains("modifier.size(width = watchDp(36), height = watchDp(22))"));
         assertTrue(switches.contains("role = Role.Switch"));
     }
 

@@ -115,7 +115,7 @@ class ComposeWatchUiTest {
         }
         compose.onNodeWithContentDescription("搜索历史").performTextInput("missing")
         compose.onNodeWithText("没有找到相关历史记录").assertIsDisplayed()
-        compose.onNodeWithText("×").performClick()
+        compose.onNodeWithContentDescription("清除").performClick()
         compose.onNodeWithContentDescription("搜索历史").performTextInput("Alpha")
         compose.onNodeWithText("没有找到相关历史记录").assertDoesNotExist()
         restoration.emulateSavedInstanceStateRestore()

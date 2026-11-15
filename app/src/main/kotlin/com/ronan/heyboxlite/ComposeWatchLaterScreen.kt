@@ -38,14 +38,13 @@ internal fun ComposeWatchLaterScreen(
                 items(state.entries, key = { it.item.id }) { entry ->
                     Column(Modifier.fillMaxWidth()) {
                         ComposeFeedCard(entry.item, theme, services.session.noImage(),
-                            services.session.userId(), onOpen, null,
-                            showActions = false, showFollow = false,
+                            onOpen, null, showActions = false,
                             gameCardNoImage = services.session.gameCardNoImage())
                         Row(Modifier.fillMaxWidth().padding(horizontal = watchDp(8)),
                             verticalAlignment = Alignment.CenterVertically) {
                             val size = if (entry.bytes > 0) Format.offlineSize(entry.bytes) else "缓存已过期"
                             Text("$size · 更新于 ${Format.offlineTime(entry.updatedAt)}",
-                                color = theme.muted, fontSize = watchSp(10f), maxLines = 2,
+                                color = theme.muted, fontSize = watchSp(WatchType.CAPTION), maxLines = 2,
                                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                             WatchActionButton("移除", { onRemove(entry) }, enabled = !state.loading)
                         }

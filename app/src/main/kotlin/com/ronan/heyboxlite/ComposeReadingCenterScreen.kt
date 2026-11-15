@@ -29,20 +29,21 @@ internal fun ComposeReadingCenterScreen(
                 WatchCard(Modifier.clickable { onOpen(recent) }) {
                     Row(Modifier.fillMaxWidth().padding(watchDp(10))) {
                         Column(Modifier.weight(1f)) {
-                            Text("继续阅读", color = theme.text, fontSize = watchSp(14f),
+                            Text("继续阅读", color = theme.text, fontSize = watchSp(WatchType.BODY),
                                 fontWeight = FontWeight.SemiBold)
                             ComposeRichText(
                                 source = RichContent.commentText(recent.title).ifBlank { "无标题内容" },
                                 darkMode = theme.dark, textColor = theme.muted, linkColor = theme.link,
-                                fontSize = watchSp(11f), lineHeight = watchSp(16f),
+                                fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION),
                                 maxLines = 2, ellipsize = TextUtils.TruncateAt.END,
                                 modifier = Modifier.padding(top = watchDp(4)),
                             )
                         }
-                        ComposePill(if (recent.video) "视频" else if (recent.article) "文章" else "帖子", theme)
+                        composeContentTypeLabel(recent.video, recent.article, pinned = false)
+                            .takeIf { it.isNotEmpty() }?.let { ComposePill(it, theme) }
                     }
                     if (state.hasSavedPosition) {
-                        Text("已记录上次阅读位置", color = theme.subtle, fontSize = watchSp(10f),
+                        Text("已记录上次阅读位置", color = theme.subtle, fontSize = watchSp(WatchType.CAPTION),
                             modifier = Modifier.padding(start = watchDp(10), bottom = watchDp(6)))
                     }
                 }

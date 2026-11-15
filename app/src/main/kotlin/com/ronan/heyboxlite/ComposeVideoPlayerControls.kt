@@ -51,20 +51,20 @@ import androidx.compose.ui.unit.sp
 internal fun ComposeVideoPlayerHeader(state: ComposeVideoPlayerUiState, onBack: () -> Unit,
     inlineBuffering: Boolean, enabled: Boolean, modifier: Modifier) {
     val theme = LocalHeyboxTheme.current
-    Row(modifier.clip(RoundedCornerShape(8.dp)).background(theme.panel.copy(alpha = 0.90f))
+    Row(modifier.clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM))).background(theme.panel.copy(alpha = 0.90f))
         .padding(horizontal = watchDp(2)).testTag("video-header"),
         horizontalArrangement = Arrangement.spacedBy(watchDp(5)),
         verticalAlignment = Alignment.CenterVertically) {
         VideoPlayerIcon(R.drawable.ic_arrow_back, "返回播放器", onBack,
             Modifier.testTag("video-back"), enabled)
         if (state.fastForwarding) {
-            Text("2×", color = theme.text, fontSize = watchSp(16f),
+            Text("2×", color = theme.text, fontSize = watchSp(WatchType.SUBTITLE),
                 modifier = Modifier.weight(1f).testTag("video-fast-forward")
                     .semantics { contentDescription = "2倍速播放" })
         } else {
             ComposeRichText(state.title, theme.dark, theme.text, theme.text,
-                modifier = Modifier.weight(1f).testTag("video-title"), fontSize = watchSp(13f),
-                lineHeight = watchSp(18f), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(1f).testTag("video-title"), fontSize = watchSp(WatchType.BODY),
+                lineHeight = watchLineHeight(WatchType.BODY), fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 maxLines = 1, ellipsize = TextUtils.TruncateAt.END)
         }
         if (inlineBuffering && state.buffering && !state.fastForwarding && state.error.isEmpty())
@@ -79,8 +79,8 @@ internal fun ComposeVideoPlayerTimeline(state: ComposeVideoPlayerUiState, compac
     onToggle: () -> Unit, onPreview: (Float) -> Unit, onCommit: () -> Unit,
     enabled: Boolean, modifier: Modifier) {
     val theme = LocalHeyboxTheme.current
-    val timeStyle = LocalTextStyle.current.merge(TextStyle(fontSize = watchSp(9.5f),
-        lineHeight = watchSp(12f), letterSpacing = 0.sp))
+    val timeStyle = LocalTextStyle.current.merge(TextStyle(fontSize = watchSp(WatchType.CAPTION),
+        lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp))
     val current = videoPlayerTime(state.displayedPosition)
     val total = videoPlayerTime(state.durationMs)
     val measurer = rememberTextMeasurer()
@@ -89,7 +89,7 @@ internal fun ComposeVideoPlayerTimeline(state: ComposeVideoPlayerUiState, compac
         maxOf(measurer.measure(AnnotatedString(current), style = timeStyle).size.width,
             measurer.measure(AnnotatedString(total), style = timeStyle).size.width).toDp()
     }
-    BoxWithConstraints(modifier.clip(RoundedCornerShape(8.dp)).background(theme.panel.copy(alpha = 0.90f))
+    BoxWithConstraints(modifier.clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM))).background(theme.panel.copy(alpha = 0.90f))
         .padding(horizontal = watchDp(6), vertical = watchDp(4)).testTag("video-timeline")) {
         val stackedTimes = maxWidth < watchDp(36) + widestTime * 2 + watchDp(12)
         val separatePlay = compact && maxWidth < watchDp(40) + widestTime
@@ -175,11 +175,11 @@ private fun VideoPlayerSeek(state: ComposeVideoPlayerUiState, onPreview: (Float)
 internal fun ComposeVideoPlayerError(message: String, external: Boolean, onRetry: () -> Unit,
     onExternal: () -> Unit, modifier: Modifier) {
     val theme = LocalHeyboxTheme.current
-    Column(modifier.clip(RoundedCornerShape(8.dp)).background(theme.panel.copy(alpha = 0.95f))
+    Column(modifier.clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM))).background(theme.panel.copy(alpha = 0.95f))
         .verticalScroll(rememberScrollState()).padding(watchDp(6)).testTag("video-error"),
         verticalArrangement = Arrangement.spacedBy(watchDp(6)),
         horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(message, color = theme.text, fontSize = watchSp(12f), lineHeight = watchSp(17f),
+        Text(message, color = theme.text, fontSize = watchSp(WatchType.SECONDARY), lineHeight = watchLineHeight(WatchType.SECONDARY),
             modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         VideoPlayerCommand("重试", R.drawable.il_refresh, onRetry, "video-retry")
         if (external) VideoPlayerCommand("凉腕播放器", R.drawable.ic_play, onExternal, "video-external")
@@ -189,13 +189,13 @@ internal fun ComposeVideoPlayerError(message: String, external: Boolean, onRetry
 @Composable
 private fun VideoPlayerCommand(label: String, icon: Int, onClick: () -> Unit, tag: String) {
     val theme = LocalHeyboxTheme.current
-    Row(Modifier.fillMaxWidth().heightIn(min = watchDp(36)).clip(RoundedCornerShape(8.dp))
+    Row(Modifier.fillMaxWidth().heightIn(min = watchDp(36)).clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
         .background(theme.panelElevated).clickable(role = Role.Button, onClick = onClick)
         .testTag(tag).padding(horizontal = watchDp(6), vertical = watchDp(5)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(watchDp(5))) {
         Icon(painterResource(icon), null, tint = theme.text, modifier = Modifier.size(watchDp(16)))
-        Text(label, color = theme.text, fontSize = watchSp(11f), lineHeight = watchSp(16f),
+        Text(label, color = theme.text, fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION),
             modifier = Modifier.weight(1f))
     }
 }

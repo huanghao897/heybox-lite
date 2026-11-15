@@ -68,7 +68,7 @@ class ComposeDataSaverFeedUiTest {
         compose.setContent {
             CompositionLocalProvider(LocalComposeDataSaver provides true) {
                 HeyboxComposeTheme(theme.value) {
-                    ComposeFeedCard(post(), theme.value, false, "", { opened++ }, null,
+                    ComposeFeedCard(post(), theme.value, false, { opened++ }, null,
                         imageLoader = loader, showActions = false)
                 }
             }
@@ -127,7 +127,7 @@ class ComposeDataSaverFeedUiTest {
     @Test fun existingNoImageAndGameCardNoImageKeepTheirOwnBehavior() {
         compose.setContent {
             HeyboxComposeTheme(composePreviewTheme(false)) {
-                ComposeFeedCard(post(), composePreviewTheme(false), false, "", {}, null,
+                ComposeFeedCard(post(), composePreviewTheme(false), false, {}, null,
                     gameCardNoImage = true, dataSaver = true, imageLoader = loader, showActions = false)
             }
         }
@@ -142,7 +142,7 @@ class ComposeDataSaverFeedUiTest {
     @Test fun noImageStillSuppressesFeedAvatarsAndContentEvenWithSaverEnabled() {
         compose.setContent {
             HeyboxComposeTheme(composePreviewTheme(false)) {
-                ComposeFeedCard(post(), composePreviewTheme(false), true, "", {}, null,
+                ComposeFeedCard(post(), composePreviewTheme(false), true, {}, null,
                     dataSaver = true, imageLoader = loader, showActions = false)
             }
         }

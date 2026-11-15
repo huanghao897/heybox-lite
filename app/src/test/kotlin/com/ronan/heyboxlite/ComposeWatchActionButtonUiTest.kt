@@ -128,10 +128,10 @@ internal class ComposeWatchActionButtonUiTest : ComposeWatchActionButtonTestHarn
     fun existingLightRoundCommandsPaintSurfacesAndDelegateOnce() = verifyCommands(false)
 
     @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
-    fun darkReducedScaleCommandsKeep28dpTargetsInsideSmallRound() = verifyCommands(true, 0.5f)
+    fun darkReducedScaleCommandsKeep36dpTargetsInsideSmallRound() = verifyCommands(true, 0.5f)
 
     @Test @Config(qualifiers = "w192dp-h192dp-round-mdpi")
-    fun lightReducedScaleCommandsKeep28dpTargetsInsideSmallRound() = verifyCommands(false, 0.5f)
+    fun lightReducedScaleCommandsKeep36dpTargetsInsideSmallRound() = verifyCommands(false, 0.5f)
 
     private fun verifyCommands(dark: Boolean, uiScale: Float? = null) {
         val palette = theme(dark, uiScale = uiScale)
@@ -164,11 +164,14 @@ internal class ComposeWatchActionButtonUiTest : ComposeWatchActionButtonTestHarn
             val button = text(label)
             assertSurface(button, palette, true, "command-$index-enabled", primary = index == 6)
             if (uiScale == 0.5f) {
-                assertTrue("Reduced UI scale must not retain a 36dp/48dp button floor",
-                    bounds(button).height < 35.5f)
+                assertEquals(36.dp, WatchTouchTarget)
+                val minimumTarget = WatchTouchTarget.value * compose.activity.resources.displayMetrics.density
+                assertTrue("Reduced UI scale must retain a physical 36dp touch target",
+                    bounds(button).width >= minimumTarget - 0.5f &&
+                        bounds(button).height >= minimumTarget - 0.5f)
                 if (index == 0 || index == 6) {
-                    assertEquals("Compact and primary commands retain the modest minimum",
-                        28f, bounds(button).height, 0.5f)
+                    assertEquals("Compact and primary commands retain the physical minimum",
+                        minimumTarget, bounds(button).height, 0.5f)
                 }
             }
             if (index == 0) assertTrue("Compact command must not be forced full-width", bounds(button).width < 132)

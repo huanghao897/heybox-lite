@@ -5,7 +5,6 @@ package com.ronan.heyboxlite
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -38,7 +37,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.geometry.Offset
@@ -123,7 +121,7 @@ internal fun WatchCard(
     val state = LocalHeyboxTheme.current
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(watchDp(16)),
+        shape = RoundedCornerShape(watchDp(WatchRadius.LARGE)),
         colors = CardDefaults.cardColors(
             containerColor = if (highlighted) state.panelElevated else state.panel,
         ),
@@ -144,46 +142,61 @@ internal fun WatchSectionTitle(text: String) {
     Text(
         text = text,
         color = LocalHeyboxTheme.current.muted,
-        fontSize = watchSp(11.5f),
-        fontWeight = FontWeight.SemiBold,
+        fontSize = watchSp(WatchType.CAPTION),
+        fontWeight = FontWeight.Medium,
         modifier = Modifier.padding(start = watchDp(3), top = watchDp(2)),
     )
 }
 
+/**
+ * The only list row: settings, profile and the check-in pages share it, so heights,
+ * insets and type match everywhere. [danger] tints a destructive entry.
+ */
 @Composable
 internal fun WatchRow(
     title: String,
     value: String = "",
     @DrawableRes icon: Int? = null,
     enabled: Boolean = true,
+    subtitle: String = "",
+    danger: Boolean = false,
+    chevron: Boolean = false,
+    modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
 ) {
     val state = LocalHeyboxTheme.current
+    val tone = if (!enabled) state.subtle else if (danger) state.danger else state.text
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(watchDp(10)))
-            .then(if (onClick != null && enabled) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = watchDp(11), vertical = watchDp(10)),
+            .clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
+            .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier)
+            .heightIn(min = watchTouchDp(40))
+            .padding(horizontal = watchDp(11), vertical = watchDp(7)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
             Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
-                tint = state.muted,
-                modifier = Modifier.size(watchDp(18)),
+                tint = if (danger && enabled) state.danger else state.muted,
+                modifier = Modifier.size(watchDp(WatchIcon.LARGE)),
             )
             Spacer(modifier = Modifier.width(watchDp(8)))
         }
-        Text(
-            title,
-            modifier = Modifier.weight(1f),
-            color = if (enabled) state.text else state.subtle,
-            fontSize = watchSp(13.5f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                color = tone,
+                fontSize = watchSp(WatchType.BODY),
+                lineHeight = watchLineHeight(WatchType.BODY),
+            )
+            if (subtitle.isNotEmpty()) {
+                Text(subtitle, color = state.muted, fontSize = watchSp(WatchType.CAPTION),
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = watchDp(2)))
+            }
+        }
         if (value.isNotEmpty()) {
             Text(
                 value,
@@ -191,11 +204,16 @@ internal fun WatchRow(
                     .widthIn(max = watchDp(92))
                     .padding(start = watchDp(6)),
                 color = state.muted,
-                fontSize = watchSp(11.5f),
+                fontSize = watchSp(WatchType.SECONDARY),
                 maxLines = 2,
                 textAlign = TextAlign.End,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        if (chevron) {
+            Spacer(Modifier.width(watchDp(5)))
+            Icon(painterResource(R.drawable.il_chevron), null, tint = state.subtle,
+                modifier = Modifier.size(watchDp(WatchIcon.SMALL)))
         }
     }
 }
@@ -212,10 +230,10 @@ internal fun WatchSwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(watchDp(10)))
+            .clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
             .toggleable(value = checked, enabled = enabled, role = Role.Switch,
                 onValueChange = onCheckedChange)
-            .heightIn(min = watchDp(40))
+            .heightIn(min = watchTouchDp(40))
             .padding(horizontal = watchDp(11), vertical = watchDp(7)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -224,7 +242,7 @@ internal fun WatchSwitchRow(
                 painter = painterResource(icon),
                 contentDescription = null,
                 tint = state.muted,
-                modifier = Modifier.size(watchDp(18)),
+                modifier = Modifier.size(watchDp(WatchIcon.LARGE)),
             )
             Spacer(modifier = Modifier.width(watchDp(8)))
         }
@@ -232,31 +250,33 @@ internal fun WatchSwitchRow(
             title,
             modifier = Modifier.weight(1f),
             color = if (enabled) state.text else state.subtle,
-            fontSize = watchSp(13.5f),
+            fontSize = watchSp(WatchType.BODY),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        val checkedTrack = state.accent
-        val uncheckedTrack = if (state.dark) Color(0xFF3A3A3E) else Color(0xFFD1D1D6)
-        val thumb = if (state.dark) Color(0xFFF5F5F7) else Color.White
-        val thumbPosition by animateFloatAsState(
-            targetValue = if (checked) 1f else 0f,
-            animationSpec = tween(if (Motions.off()) 0 else 160),
-            label = "setting-switch",
+        WatchSwitch(checked, enabled)
+    }
+}
+
+/** The only switch drawing. Rows own the toggle semantics and the touch target. */
+@Composable
+internal fun WatchSwitch(checked: Boolean, enabled: Boolean, modifier: Modifier = Modifier) {
+    val state = LocalHeyboxTheme.current
+    val thumbPosition by animateFloatAsState(
+        targetValue = if (checked) 1f else 0f,
+        animationSpec = tween(if (Motions.off()) 0 else 160),
+        label = "setting-switch",
+    )
+    val track = if (checked) state.accent else state.switchTrack
+    Canvas(modifier = modifier.size(width = watchDp(36), height = watchDp(22))
+        .clip(RoundedCornerShape(50))
+        .background(if (enabled) track else track.copy(alpha = 0.45f))) {
+        val inset = size.height / 2f
+        drawCircle(
+            color = if (enabled) state.switchThumb else state.subtle,
+            radius = size.height * 9f / 22f,
+            center = Offset(inset + (size.width - 2f * inset) * thumbPosition, inset),
         )
-        val track = if (checked) checkedTrack else uncheckedTrack
-        Canvas(modifier = Modifier.size(width = watchDp(36), height = watchDp(22))
-            .clip(RoundedCornerShape(50))
-            .background(if (enabled) track else track.copy(alpha = 0.45f))) {
-            val radius = size.height * 9f / 22f
-            val inset = size.height / 2f
-            drawCircle(
-                color = if (enabled) thumb else state.subtle,
-                radius = radius,
-                center = Offset(inset + (size.width - 2f * inset) * thumbPosition,
-                    size.height / 2f),
-            )
-        }
     }
 }
 
@@ -270,22 +290,29 @@ internal fun WatchValueCard(
     val state = LocalHeyboxTheme.current
     Card(
         modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(watchDp(12)),
+        shape = RoundedCornerShape(watchDp(WatchRadius.MEDIUM)),
         colors = CardDefaults.cardColors(containerColor = state.panelElevated),
     ) {
         Column(modifier = Modifier.padding(watchDp(11))) {
-            Text(label, color = state.muted, fontSize = watchSp(10.5f), maxLines = 1)
+            Text(label, color = state.muted, fontSize = watchSp(WatchType.CAPTION), maxLines = 1)
             Spacer(modifier = Modifier.height(watchDp(3)))
-            Text(value, color = state.text, fontSize = watchSp(15f), fontWeight = FontWeight.SemiBold,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(value, color = state.text, fontSize = watchSp(WatchType.SUBTITLE),
+                fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
+/** A labelled count such as followers, laid out in rows of three on account cards. */
 @Composable
-internal fun WatchEmptyState(text: String, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.fillMaxWidth().padding(vertical = watchDp(28)), contentAlignment = Alignment.Center) {
-        Text(text, color = LocalHeyboxTheme.current.muted, fontSize = watchSp(12f))
+internal fun WatchStat(label: String, value: Int, modifier: Modifier = Modifier) {
+    val state = LocalHeyboxTheme.current
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(Format.commentLikeCount(value.coerceAtLeast(0)), color = state.text,
+            fontSize = watchSp(WatchType.SUBTITLE), lineHeight = watchLineHeight(WatchType.SUBTITLE),
+            fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Text(label, color = state.muted, fontSize = watchSp(WatchType.CAPTION),
+            lineHeight = watchLineHeight(WatchType.CAPTION), textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = watchDp(1)))
     }
 }
 

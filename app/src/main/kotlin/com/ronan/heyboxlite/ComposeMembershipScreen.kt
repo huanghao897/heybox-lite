@@ -76,7 +76,7 @@ internal fun ComposeMembershipScreen(
                 MembershipBodyText(
                     membershipMoney(catalog.plan.minimumAmountCents, catalog.plan.currency) + " - " +
                         membershipMoney(catalog.plan.maximumAmountCents, catalog.plan.currency),
-                    muted = true, fontSize = 10f,
+                    muted = true, fontSize = WatchType.CAPTION,
                 )
             } else if (catalog.usesLegacySponsorship()) {
                 MembershipBodyText(catalog.plan.name, weight = FontWeight.Medium)
@@ -122,9 +122,9 @@ internal fun MembershipOverview(catalog: CheckinBilling.Membership) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(watchDp(8))) {
                 Icon(painterResource(R.drawable.il_crown), "\u4f1a\u5458\u6743\u76ca",
-                    tint = LocalHeyboxTheme.current.text, modifier = Modifier.size(watchDp(23)))
+                    tint = LocalHeyboxTheme.current.text, modifier = Modifier.size(watchDp(WatchIcon.XLARGE)))
                 MembershipBodyText(membershipTitle(catalog), Modifier.weight(1f),
-                    fontSize = 14f, weight = FontWeight.SemiBold)
+                    fontSize = WatchType.BODY, weight = FontWeight.SemiBold)
             }
             MembershipBodyText(
                 when {
@@ -137,11 +137,11 @@ internal fun MembershipOverview(catalog: CheckinBilling.Membership) {
                     catalog.entitled -> "\u6743\u76ca\u6709\u6548"
                     else -> "\u6743\u76ca\u5c1a\u672a\u5f00\u901a"
                 },
-                muted = true, fontSize = 11f,
+                muted = true, fontSize = WatchType.CAPTION,
             )
             if (catalog.usesVariableSponsorship()) {
                 MembershipBodyText("\u81ea\u613f\u8d5e\u52a9\uff0c\u4e0d\u5f71\u54cd\u7b7e\u5230\u6743\u76ca",
-                    muted = true, fontSize = 10f)
+                    muted = true, fontSize = WatchType.CAPTION)
             }
         }
     }
@@ -157,7 +157,7 @@ private fun MembershipProducts(
     val theme = LocalHeyboxTheme.current
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
-    val priceStyle = TextStyle(fontSize = watchSp(16f), fontWeight = FontWeight.SemiBold,
+    val priceStyle = TextStyle(fontSize = watchSp(WatchType.SUBTITLE), fontWeight = FontWeight.SemiBold,
         letterSpacing = 0.sp)
     val priceWidth = products.maxOf { product ->
         with(density) {
@@ -194,7 +194,7 @@ private fun MembershipProduct(
     modifier: Modifier,
 ) {
     val theme = LocalHeyboxTheme.current
-    val shape = RoundedCornerShape(watchDp(8))
+    val shape = RoundedCornerShape(watchDp(WatchRadius.MEDIUM))
     Column(modifier.testTag("membership-product-" + product.sku)
         .clip(shape).background(if (selected) theme.panelElevated else theme.panel)
         .border(BorderStroke(if (selected) 1.dp else 0.5.dp,
@@ -205,16 +205,16 @@ private fun MembershipProduct(
         verticalArrangement = Arrangement.spacedBy(watchDp(5))) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             MembershipBodyText(if (product.durationDays > 0) product.durationDays.toString() + " \u5929"
-                else product.name, Modifier.weight(1f), muted = true, fontSize = 11f)
+                else product.name, Modifier.weight(1f), muted = true, fontSize = WatchType.CAPTION)
             if (selected) {
                 Icon(painterResource(R.drawable.ic_check), "\u5df2\u9009\u62e9",
                     tint = theme.accent, modifier = Modifier.size(watchDp(16)))
             } else Spacer(Modifier.size(watchDp(16)))
         }
         MembershipBodyText(membershipMoney(product.amountCents, product.currency),
-            fontSize = 16f, weight = FontWeight.SemiBold)
-        MembershipBodyText(product.name, fontSize = 11f)
-        if (!product.active) MembershipBodyText("\u6682\u4e0d\u53ef\u552e", muted = true, fontSize = 10f)
+            fontSize = WatchType.SUBTITLE, weight = FontWeight.SemiBold)
+        MembershipBodyText(product.name, fontSize = WatchType.CAPTION)
+        if (!product.active) MembershipBodyText("\u6682\u4e0d\u53ef\u552e", muted = true, fontSize = WatchType.CAPTION)
     }
 }
 
@@ -223,7 +223,7 @@ internal fun MembershipBodyText(
     text: String,
     modifier: Modifier = Modifier,
     muted: Boolean = false,
-    fontSize: Float = 12f,
+    fontSize: Float = WatchType.SECONDARY,
     weight: FontWeight = FontWeight.Normal,
     textAlign: TextAlign? = null,
 ) {
@@ -236,11 +236,11 @@ internal fun MembershipBodyText(
 internal fun MembershipNotice(message: String) {
     if (message.isNotBlank()) MembershipBodyText(message,
         Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
-        muted = true, fontSize = 11f)
+        muted = true, fontSize = WatchType.CAPTION)
 }
 
 @Composable
 internal fun MembershipRetry(onRetry: () -> Unit, enabled: Boolean) {
     WatchActionButton("\u91cd\u8bd5", onRetry, Modifier.fillMaxWidth(),
-        enabled = enabled, fontSize = 12f, icon = R.drawable.il_refresh)
+        enabled = enabled, fontSize = WatchType.SECONDARY, icon = R.drawable.il_refresh)
 }

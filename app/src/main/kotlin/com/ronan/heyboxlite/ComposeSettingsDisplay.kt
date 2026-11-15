@@ -8,11 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -240,37 +241,37 @@ internal fun ComposeDisplayPreviewRoute(services: ComposeServices, onBack: () ->
         Text(
             text = "预览使用当前已保存的显示参数",
             color = state.muted,
-            fontSize = watchSp(10f),
+            fontSize = watchSp(WatchType.CAPTION),
             modifier = Modifier.fillMaxWidth(),
         )
         WatchCard {
             Text(
                 text = "文章",
                 color = state.onAccent,
-                fontSize = watchSp(9f),
+                fontSize = watchSp(WatchType.CAPTION),
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
-                    .background(state.accent, androidx.compose.foundation.shape.RoundedCornerShape(watchDp(4)))
+                    .background(state.accent, androidx.compose.foundation.shape.RoundedCornerShape(watchDp(WatchRadius.SMALL)))
                     .padding(horizontal = watchDp(8), vertical = watchDp(3)),
             )
             Text(
                 text = "方屏上的社区，也可以清晰又从容",
                 color = state.text,
-                fontSize = watchSp(15f),
+                fontSize = watchSp(WatchType.SUBTITLE),
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(top = watchDp(6)),
             )
             Text(
                 text = "这是一条帖子列表摘要，用来观察整体字号、卡片间距和主题颜色",
                 color = state.muted,
-                fontSize = watchSp(11f),
-                lineHeight = watchSp(15f),
+                fontSize = watchSp(WatchType.CAPTION),
+                lineHeight = watchLineHeight(WatchType.CAPTION),
                 modifier = Modifier.padding(top = watchDp(5)),
             )
             Text(
                 text = "Ronan   👍 128   评论 36",
                 color = state.accent,
-                fontSize = watchSp(10f),
+                fontSize = watchSp(WatchType.CAPTION),
                 modifier = Modifier.padding(top = watchDp(7)),
             )
         }
@@ -278,7 +279,7 @@ internal fun ComposeDisplayPreviewRoute(services: ComposeServices, onBack: () ->
             Text(
                 text = "帖子正文预览",
                 color = state.text,
-                fontSize = watchSp(16f),
+                fontSize = watchSp(WatchType.SUBTITLE),
                 fontWeight = FontWeight.Bold,
             )
             Text(
@@ -292,7 +293,7 @@ internal fun ComposeDisplayPreviewRoute(services: ComposeServices, onBack: () ->
             Text(
                 text = "评论层级预览",
                 color = state.text,
-                fontSize = watchSp(14f),
+                fontSize = watchSp(WatchType.BODY),
                 fontWeight = FontWeight.Bold,
             )
             Text(
@@ -301,19 +302,14 @@ internal fun ComposeDisplayPreviewRoute(services: ComposeServices, onBack: () ->
                 style = composePrimaryCommentTypography(state.roundScreen),
                 modifier = Modifier.padding(top = watchDp(7)),
             )
-            Row(modifier = Modifier.padding(top = watchDp(7))) {
-                Spacer(
-                    modifier = Modifier
-                        .width(watchDp(2))
-                        .padding(vertical = watchDp(1))
-                        .background(state.accent),
-                )
+            Column(modifier = Modifier.padding(top = watchDp(7))
+                .clip(RoundedCornerShape(watchDp(WatchRadius.SMALL)))
+                .background(state.panelElevated).padding(vertical = watchDp(3))) {
                 Text(
-                    text = "二级评论使用稍轻的字重，并通过主题色竖线建立层级",
+                    text = "Ronan 回复你：这个观点很有意思。",
                     color = state.muted,
-                    fontSize = watchSp(12f),
-                    lineHeight = watchSp(15f),
-                    modifier = Modifier.padding(start = watchDp(8)),
+                    fontSize = watchSp(WatchType.SECONDARY),
+                    lineHeight = watchLineHeight(WatchType.SECONDARY),
                 )
             }
         }
@@ -383,7 +379,7 @@ internal fun ComposeThemeDialog(
                                 }
                                 Text(ThemePalette.name(index),
                                     color = LocalHeyboxTheme.current.muted,
-                                    fontSize = watchSp(9f), textAlign = TextAlign.Center)
+                                    fontSize = watchSp(WatchType.CAPTION), textAlign = TextAlign.Center)
                             }
                         }
                     }

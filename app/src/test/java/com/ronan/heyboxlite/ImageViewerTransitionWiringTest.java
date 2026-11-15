@@ -13,7 +13,7 @@ public class ImageViewerTransitionWiringTest {
     @Test
     public void viewerWaitsForTheFirstBitmapBeforePaintingTheBackdrop() throws Exception {
         String source = readCompose("ComposeImageViewer.kt");
-        assertTrue(source.contains("if (ready)"));
+        assertTrue(source.contains("if (ready && !selection.closing)"));
         assertTrue(source.contains("enter.animateTo(1f"));
         assertTrue(source.contains("alpha = enter.value * exit.value"));
     }

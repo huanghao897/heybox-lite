@@ -131,8 +131,8 @@ internal fun ComposeCommentName(
             verticalArrangement = Arrangement.spacedBy(2.dp * theme.uiScale),
             modifier = Modifier.fillMaxWidth()) {
             Text(author.ifBlank { "匿名用户" }, modifier = Modifier.widthIn(max = availableWidth),
-                color = theme.text, fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp * theme.textScale, lineHeight = 16.sp * theme.textScale,
+                color = theme.text, fontWeight = FontWeight.Medium,
+                fontSize = WatchType.SECONDARY.sp * theme.textScale, lineHeight = 16.sp * theme.textScale,
                 letterSpacing = 0.sp)
             if (postAuthor) ComposeCommentAuthorBadge()
             if (level > 0) ComposeCommentLevelBadge(level)
@@ -143,11 +143,11 @@ internal fun ComposeCommentName(
 @Composable
 internal fun ComposeCommentAuthorBadge() {
     val theme = LocalHeyboxTheme.current
-    Box(Modifier.clip(RoundedCornerShape(3.dp))
+    Box(Modifier.clip(RoundedCornerShape(WatchRadius.SMALL.dp * theme.uiScale))
         .background(theme.panelElevated)
         .padding(horizontal = 4.dp * theme.uiScale), contentAlignment = Alignment.Center) {
-        Text("作者", color = theme.text, fontSize = 8.sp * theme.textScale,
-            lineHeight = 12.sp * theme.textScale, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        Text("作者", color = theme.text, fontSize = WatchType.CAPTION.sp * theme.textScale,
+            lineHeight = 15.sp * theme.textScale, maxLines = 1, overflow = TextOverflow.Ellipsis,
             letterSpacing = 0.sp)
     }
 }
@@ -157,11 +157,11 @@ internal fun ComposeCommentLevelBadge(level: Int) {
     if (level <= 0) return
     val theme = LocalHeyboxTheme.current
     val color = CommentData.levelBadgeColor(level).asComposeColor()
-    Box(Modifier.clip(RoundedCornerShape(4.dp))
+    Box(Modifier.clip(RoundedCornerShape(WatchRadius.SMALL.dp * theme.uiScale))
         .background(color.copy(alpha = if (theme.dark) 0.28f else 0.14f))
         .padding(horizontal = 4.dp * theme.uiScale), contentAlignment = Alignment.Center) {
-        Text("Lv.$level", color = color, fontSize = 8.sp * theme.textScale,
-            lineHeight = 12.sp * theme.textScale, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        Text("Lv.$level", color = color, fontSize = WatchType.CAPTION.sp * theme.textScale,
+            lineHeight = 15.sp * theme.textScale, maxLines = 1, overflow = TextOverflow.Ellipsis,
             letterSpacing = 0.sp)
     }
 }
@@ -183,7 +183,7 @@ internal fun ComposeCommentReplyText(
                 append(author.ifBlank { "匿名用户" })
             }
             if (postAuthor) withStyle(SpanStyle(color = theme.text, background = theme.panelElevated,
-                fontSize = 8.sp * theme.textScale)) { append(" 作者") }
+                fontSize = WatchType.CAPTION.sp * theme.textScale)) { append(" 作者") }
             withStyle(SpanStyle(color = theme.muted)) {
                 if (target.isNotBlank()) append(" 回复 $target")
                 append("：")
@@ -193,11 +193,11 @@ internal fun ComposeCommentReplyText(
     val suffix = remember(meta, theme) {
         buildAnnotatedString {
             if (meta.isNotBlank()) withStyle(SpanStyle(color = theme.muted,
-                fontSize = 9.sp * theme.textScale)) { append("  $meta") }
+                fontSize = WatchType.CAPTION.sp * theme.textScale)) { append("  $meta") }
         }
     }
     ComposeInlineText(text, theme.dark, theme.text, theme.link,
-        modifier = modifier.fillMaxWidth(), fontSize = 11.5.sp * theme.textScale,
+        modifier = modifier.fillMaxWidth(), fontSize = WatchType.SECONDARY.sp * theme.textScale,
         lineHeight = 16.sp * theme.textScale, fontWeight = FontWeight.Light,
         cy = cy, prefix = prefix, suffix = suffix)
 }
@@ -245,10 +245,12 @@ private fun ComposeCommentThumbnail(
     val originalUrl = image.originalUrl.ifBlank { previewUrl }
     var failed by remember(previewUrl, originalUrl) { mutableStateOf(false) }
     var retry by remember(previewUrl, originalUrl) { mutableStateOf(0) }
-    Box(Modifier.size(size).clip(RoundedCornerShape(6.dp)).background(theme.panelElevated),
+    Box(Modifier.size(size).clip(RoundedCornerShape(WatchRadius.SMALL.dp * theme.uiScale))
+        .background(theme.panelElevated),
         contentAlignment = Alignment.Center) {
         if (previewUrl.isBlank()) {
-            Text("图片", color = theme.muted, fontSize = 9.sp, letterSpacing = 0.sp)
+            Text("图片", color = theme.muted, fontSize = WatchType.CAPTION.sp * theme.textScale,
+                letterSpacing = 0.sp)
         } else {
             ComposeMediaImage(
                 url = previewUrl,
@@ -266,10 +268,12 @@ private fun ComposeCommentThumbnail(
             )
             if (failed) Box(Modifier.fillMaxSize().clickable { failed = false; retry++ },
                 contentAlignment = Alignment.Center) {
-                Text("重试", color = theme.accent, fontSize = 9.sp, letterSpacing = 0.sp)
+                Text("重试", color = theme.accent, fontSize = WatchType.CAPTION.sp * theme.textScale,
+                    letterSpacing = 0.sp)
             }
             if (image.animated) Text("GIF", color = theme.text,
-                fontSize = 7.sp, lineHeight = 9.sp, letterSpacing = 0.sp,
+                fontSize = WatchType.CAPTION.sp * theme.textScale,
+                lineHeight = 13.sp * theme.textScale, letterSpacing = 0.sp,
                 modifier = Modifier.align(Alignment.BottomEnd).background(theme.panel)
                     .padding(horizontal = 3.dp, vertical = 1.dp))
         }

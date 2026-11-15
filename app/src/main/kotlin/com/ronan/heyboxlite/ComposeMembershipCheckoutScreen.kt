@@ -56,7 +56,7 @@ internal fun ComposeMembershipCheckoutScreen(
                         else CheckinResultKind.UNKNOWN)
                     MembershipBodyText(if (order.status == "paid") "\u670d\u52a1\u5668\u652f\u4ed8\u5df2\u786e\u8ba4"
                         else membershipOrderLabel(order.status), Modifier.weight(1f),
-                        fontSize = 13f, weight = FontWeight.SemiBold)
+                        fontSize = WatchType.BODY, weight = FontWeight.SemiBold)
                 }
                 MembershipInfoRow("\u5e94\u4ed8\u91d1\u989d",
                     membershipMoney(order.payableAmountCents, order.currency),
@@ -80,7 +80,7 @@ internal fun ComposeMembershipCheckoutScreen(
             MembershipPaymentQr(state, provider)
             MembershipBodyText(if (provider == "\u652f\u4ed8\u6e20\u9053\u5f85\u786e\u8ba4")
                 "\u626b\u7801\u652f\u4ed8" else "\u901a\u8fc7$provider\u652f\u4ed8",
-                muted = true, fontSize = 11f)
+                muted = true, fontSize = WatchType.CAPTION)
         }
         val legacy = order.manualReview && order.checkoutUrl.isBlank()
         val review = state.review ?: order.review
@@ -120,7 +120,7 @@ private fun MembershipPaymentQr(state: ComposeMembershipUiState, provider: Strin
                     Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 else -> androidx.compose.material3.Text(
                     if (state.qrLoading) "\u6b63\u5728\u52a0\u8f7d\u4ed8\u6b3e\u7801" else "\u4ed8\u6b3e\u7801\u6682\u4e0d\u53ef\u7528",
-                    color = Color.DarkGray, fontSize = watchSp(11f), letterSpacing = 0.sp,
+                    color = Color.DarkGray, fontSize = watchSp(WatchType.CAPTION), letterSpacing = 0.sp,
                     modifier = Modifier.padding(watchDp(8)),
                 )
             }
@@ -162,13 +162,13 @@ internal fun MembershipInfoRow(label: String, value: String, modifier: Modifier 
         if (maxWidth >= minimum) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(watchDp(7))) {
-                MembershipBodyText(label, Modifier.weight(0.38f), muted = true, fontSize = 11f)
-                MembershipBodyText(value, Modifier.weight(0.62f), fontSize = 12f)
+                MembershipBodyText(label, Modifier.weight(0.38f), muted = true, fontSize = WatchType.CAPTION)
+                MembershipBodyText(value, Modifier.weight(0.62f), fontSize = WatchType.SECONDARY)
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(watchDp(2))) {
-                MembershipBodyText(label, muted = true, fontSize = 10f)
-                MembershipBodyText(value, fontSize = 12f)
+                MembershipBodyText(label, muted = true, fontSize = WatchType.CAPTION)
+                MembershipBodyText(value, fontSize = WatchType.SECONDARY)
             }
         }
     }

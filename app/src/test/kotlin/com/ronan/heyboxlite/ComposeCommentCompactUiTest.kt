@@ -60,8 +60,12 @@ class ComposeCommentCompactUiTest {
             }
         }
         val capsule = compose.onNodeWithTag("comment-reply-capsule-展开 5 条回复")
-        val bounds = capsule.fetchSemanticsNode().boundsInRoot
-        assertTrue(bounds.width < 145f && bounds.height <= 30f)
+        val touchBounds = capsule.fetchSemanticsNode().boundsInRoot
+        val bounds = compose.onNodeWithTag("comment-reply-visual-展开 5 条回复", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("The painted capsule stays compact", bounds.width < 145f && bounds.height <= 30f)
+        assertTrue("A compact capsule still needs a finger-sized target", touchBounds.height >= 36f)
+        assertTrue(bounds.top >= touchBounds.top && bounds.bottom <= touchBounds.bottom)
         compose.runOnIdle {
             val rootView = compose.activity.window.decorView
             val bitmap = Bitmap.createBitmap(rootView.width, rootView.height, Bitmap.Config.ARGB_8888)
@@ -202,8 +206,12 @@ class ComposeCommentCompactUiTest {
         hot.assertIsSelected()
         val hotBounds = hot.fetchSemanticsNode().boundsInRoot
         val newBounds = new.fetchSemanticsNode().boundsInRoot
-        assertTrue(hotBounds.height <= 26f && newBounds.height <= 26f)
-        assertTrue(newBounds.right - hotBounds.left <= 70f)
+        assertEquals(36.dp, WatchTouchTarget)
+        assertEquals(WatchTouchTarget.value, hotBounds.height, 0.5f)
+        assertEquals(WatchTouchTarget.value, newBounds.height, 0.5f)
+        assertTrue(hotBounds.width >= WatchTouchTarget.value && newBounds.width >= WatchTouchTarget.value)
+        assertTrue(hotBounds.right <= newBounds.left)
+        assertTrue(newBounds.right - hotBounds.left <= 2 * WatchTouchTarget.value + 0.5f)
         new.performClick().assertIsSelected()
         compose.runOnIdle { captureMembershipUi(compose.activity, "comment-compact-sort") }
     }
@@ -232,10 +240,13 @@ class ComposeCommentCompactUiTest {
         compose.runOnIdle { captureMembershipUi(compose.activity,
             "comment-flat-follow-${if (round) "round" else if (large) "large" else "square"}") }
         assertTrue("Follow must be a compact text button, not a circular plus", size.width > size.height)
+        assertEquals(36.dp, WatchTouchTarget)
+        assertTrue("Follow must retain a physical touch target around its compact painted pill",
+            size.width >= WatchTouchTarget.value && size.height >= WatchTouchTarget.value)
         if (!large) {
             assertTrue("The follow button must be flatter, without shrinking its width", size.width >= if (round) 44 else 48)
-            assertTrue("The painted follow button must lose its tall vertical padding: $size",
-                size.height <= 20)
+            assertEquals("The surrounding touch target must not inflate beyond its physical minimum",
+                WatchTouchTarget.value, size.height.toFloat(), 0.5f)
         }
         assertFollowLabelFits("关注")
         button.performClick()

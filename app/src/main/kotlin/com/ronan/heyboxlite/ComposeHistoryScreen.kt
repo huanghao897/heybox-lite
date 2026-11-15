@@ -56,8 +56,7 @@ internal fun ComposeHistoryScreen(
                 verticalArrangement = Arrangement.spacedBy(watchDp(7))) {
                 items(filtered, key = { it.id }) { item ->
                     ComposeFeedCard(item, services.theme, services.session.noImage(),
-                        services.session.userId(), onOpen, onAction,
-                        favorite = item.favorited, showFollow = false,
+                        onOpen, onAction, favorite = item.favorited,
                         gameCardNoImage = services.session.gameCardNoImage(), actionRevision = actionRevision)
                 }
             }

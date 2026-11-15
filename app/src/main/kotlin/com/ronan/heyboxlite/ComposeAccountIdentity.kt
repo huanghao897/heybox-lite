@@ -21,7 +21,7 @@ internal fun ComposeAccountIdentity(
     name: String,
     id: String,
     signature: String = "",
-    nameSize: Float = 16f,
+    nameSize: Float = WatchType.SUBTITLE,
     avatar: @Composable () -> Unit,
 ) {
     val theme = LocalHeyboxTheme.current
@@ -53,9 +53,9 @@ private fun AccountIdentityText(name: String, id: String, signature: String, nam
         letterSpacing = 0.sp,
         fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
         textAlign = alignment, modifier = Modifier.fillMaxWidth())
-    Text(id, color = theme.muted, fontSize = watchSp(11f), textAlign = alignment, letterSpacing = 0.sp,
+    Text(id, color = theme.muted, fontSize = watchSp(WatchType.CAPTION), textAlign = alignment, letterSpacing = 0.sp,
         modifier = Modifier.fillMaxWidth().padding(top = watchDp(2)))
-    if (signature.isNotBlank()) Text(signature, color = theme.muted, fontSize = watchSp(10f),
+    if (signature.isNotBlank()) Text(signature, color = theme.muted, fontSize = watchSp(WatchType.CAPTION),
         letterSpacing = 0.sp,
         maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = alignment,
         modifier = Modifier.fillMaxWidth().padding(top = watchDp(3)))

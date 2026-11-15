@@ -67,12 +67,12 @@ internal fun ComposeMembershipPurchasesScreen(
                         state.catalog?.products?.firstOrNull { it.sku == record.productSku }?.name
                             ?: record.productSku.ifBlank { "\u5957\u9910\u4fe1\u606f\u5f85\u786e\u8ba4" }
                     }
-                    MembershipBodyText(name, fontSize = 13f, weight = FontWeight.Medium)
+                    MembershipBodyText(name, fontSize = WatchType.BODY, weight = FontWeight.Medium)
                     MembershipInfoRow("\u91d1\u989d",
                         membershipMoney(record.payableAmountCents, record.currency))
                     MembershipInfoRow("\u8d2d\u4e70\u65f6\u95f4", membershipDate(record.createdAt))
                     if (record.durationDays > 0) {
-                        MembershipBodyText(record.durationDays.toString() + " \u5929", muted = true, fontSize = 10f)
+                        MembershipBodyText(record.durationDays.toString() + " \u5929", muted = true, fontSize = WatchType.CAPTION)
                     }
                     CheckinBadge(membershipOrderLabel(record.status))
                 }
@@ -97,16 +97,16 @@ internal fun MembershipInput(
         onValueChange = onValueChange,
         enabled = enabled,
         singleLine = true,
-        textStyle = TextStyle(color = theme.text, fontSize = watchSp(13f), letterSpacing = 0.sp),
+        textStyle = TextStyle(color = theme.text, fontSize = watchSp(WatchType.BODY), letterSpacing = 0.sp),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType, autoCorrectEnabled = false),
         cursorBrush = SolidColor(theme.text),
         modifier = Modifier.fillMaxWidth().heightIn(min = watchDp(40))
-            .background(theme.panelElevated, RoundedCornerShape(watchDp(8)))
+            .background(theme.panelElevated, RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
             .padding(horizontal = watchDp(10), vertical = watchDp(10))
             .semantics { contentDescription = label },
         decorationBox = { field ->
             if (value.isEmpty()) Text(placeholder, color = theme.subtle,
-                fontSize = watchSp(13f), letterSpacing = 0.sp)
+                fontSize = watchSp(WatchType.BODY), letterSpacing = 0.sp)
             field()
         },
     )

@@ -1,28 +1,26 @@
 package com.ronan.heyboxlite
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @Composable
@@ -56,6 +54,12 @@ internal fun ComposeDetailBody(
     val ordered = remember(comments, latest) { composeOrderedComments(comments, latest) }
     val commentKeys = remember(ordered) { composeCommentKeys(ordered) }
     val bodyRows = remember(content, useImagePager) { composeDetailBodyRows(content, useImagePager) }
+    // The watch-later list lives in a file; read it off the main thread after every action.
+    var cached by remember(item.id) { mutableStateOf(false) }
+    LaunchedEffect(item.id, actionRevision, services?.cache) {
+        val cache = services?.cache ?: return@LaunchedEffect
+        cached = withContext(Dispatchers.IO) { cache.isWatchLater(item.id) }
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("compose-detail-list"),
         userScrollEnabled = active,
@@ -70,12 +74,10 @@ internal fun ComposeDetailBody(
                 actionRevision = actionRevision)
         }
         if (notice.isNotBlank()) item(key = "detail-notice") {
-            Text(notice, color = theme.muted, fontSize = watchSp(11f), lineHeight = watchSp(16f))
+            Text(notice, color = theme.muted, fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION))
         }
         if (loading) item(key = "loading") {
-            Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), Alignment.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-            }
+            WatchLoading(label = "")
         }
         itemsIndexed(bodyRows, key = { _, row -> "body-${row.index}" },
             contentType = { _, row -> row.blocks.first().kind }) { _, row ->
@@ -99,13 +101,10 @@ internal fun ComposeDetailBody(
         }
         if (!loading && content.isEmpty() && videos.isEmpty()
             && item.description.isBlank() && item.images.isEmpty()) item(key = "empty-body") {
-            Text("正文为空", color = theme.muted, fontSize = watchSp(12f))
+            WatchEmptyState("正文为空")
         }
         if (error.isNotBlank()) item(key = "detail-error") {
-            Column(verticalArrangement = Arrangement.spacedBy(watchDp(6))) {
-                Text(error, color = theme.muted, fontSize = watchSp(11f))
-                ComposeDetailButton("重试", onRetry, icon = R.drawable.il_refresh)
-            }
+            WatchErrorState(error, onRetry)
         }
         item(key = "post-actions", contentType = "actions") {
             ComposeDetailDock(item, item.liked, item.likes, 0.dp,
@@ -113,7 +112,7 @@ internal fun ComposeDetailBody(
                 onComment = { onCommentAction(ComposeDetailAction.WriteComment(item)) },
                 onFavorite = { onCommentAction(ComposeDetailAction.FavoritePost(item)) },
                 onCache = { onCommentAction(ComposeDetailAction.CachePost(item)) },
-                actionRevision = actionRevision)
+                actionRevision = actionRevision, cached = cached)
         }
         composeDetailCommentItems(item, ordered, commentKeys, latest, { latest = it }, loading,
             theme, media, services, replyStates, onCommentAction, onOpenUser, showDivider = true)

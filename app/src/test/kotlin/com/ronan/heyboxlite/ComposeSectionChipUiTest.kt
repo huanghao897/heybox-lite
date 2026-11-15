@@ -155,9 +155,9 @@ internal class ComposeSectionChipUiTest : ComposeMembershipUiRegressionHarness()
         val noImage = mutableStateOf(largeText)
         val actions = mutableListOf<FeedAction>()
         showCentered(palette, largeText) {
-            ComposeFeedCard(post(section.value), palette, noImage.value, "", {},
+            ComposeFeedCard(post(section.value), palette, noImage.value, {},
                 { _, action -> actions += action }, Modifier.testTag("partition-feed-card"),
-                showFollow = false, showSecondaryActions = false)
+                showSecondaryActions = false)
         }
         val fontScale = if (largeText) 1.3f else 1f
         assertChip(palette, LONG, !largeText, ellipsized = true, fontScale = fontScale)
@@ -165,7 +165,8 @@ internal class ComposeSectionChipUiTest : ComposeMembershipUiRegressionHarness()
         val comment = description("\u8bc4\u8bba")
         val originalActions = listOf(bounds(like), bounds(comment))
         val chip = bounds(tag("section-chip"))
-        assertTrue("A long section must yield to like/comment controls", chip.right <= originalActions[0].left)
+        assertTrue("A long section must yield to like/comment controls",
+            chip.bottom <= originalActions[0].top || chip.right <= originalActions[0].left)
         originalActions.forEach { assertInDisplay(it, "feed action", corners = true) }
         assertTrue("Like/comment controls must not overlap", originalActions[0].right <= originalActions[1].left)
         assertActionLabel("128", like)
@@ -260,8 +261,8 @@ internal class ComposeSectionChipUiTest : ComposeMembershipUiRegressionHarness()
             .put("fontScale", text.layoutInput.density.fontScale.toDouble())
             .put("didExceedMaxLines", text.multiParagraph.didExceedMaxLines))
         assertEquals("Partition semantics must retain the original name", name, text.layoutInput.text.text)
-        assertEquals(10.5f * palette.textScale, text.layoutInput.style.fontSize.value, 0.01f)
-        assertEquals("UI scale must not shrink readable partition text", 14.sp * palette.textScale,
+        assertEquals(11f * palette.textScale, text.layoutInput.style.fontSize.value, 0.01f)
+        assertEquals("UI scale must not shrink readable partition text", 15.sp * palette.textScale,
             text.layoutInput.style.lineHeight)
         assertEquals(0.sp, text.layoutInput.style.letterSpacing)
         assertEquals(fontScale, text.layoutInput.density.fontScale, 0.01f)

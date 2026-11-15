@@ -69,9 +69,9 @@ internal fun ComposeCheckinCenterContent(
             CheckinPanel {
                 Column(Modifier.padding(watchDp(13)), verticalArrangement = Arrangement.spacedBy(watchDp(5))) {
                     Text("未连接签到服务", color = LocalHeyboxTheme.current.text,
-                        fontSize = watchSp(14f), fontWeight = FontWeight.SemiBold)
+                        fontSize = watchSp(WatchType.BODY), fontWeight = FontWeight.SemiBold)
                     Text("连接签到服务后，使用手机号登录需要签到的小黑盒账号。",
-                        color = LocalHeyboxTheme.current.muted, fontSize = watchSp(11f))
+                        color = LocalHeyboxTheme.current.muted, fontSize = watchSp(WatchType.CAPTION))
                 }
             }
             CheckinActionButton("连接签到服务", onConnect, enabled = state.supported,
@@ -80,9 +80,9 @@ internal fun ComposeCheckinCenterContent(
             CheckinPanel {
                 Column(Modifier.padding(watchDp(13))) {
                     Text(if (state.stage == ComposeCheckinStage.ERROR) "暂时无法连接" else "正在读取账号",
-                        color = LocalHeyboxTheme.current.text, fontSize = watchSp(14f), fontWeight = FontWeight.SemiBold)
+                        color = LocalHeyboxTheme.current.text, fontSize = watchSp(WatchType.BODY), fontWeight = FontWeight.SemiBold)
                     Text(state.errorMessage.ifEmpty { "读取签到计划与服务状态" },
-                        color = LocalHeyboxTheme.current.muted, fontSize = watchSp(11f),
+                        color = LocalHeyboxTheme.current.muted, fontSize = watchSp(WatchType.CAPTION),
                         modifier = Modifier.padding(top = watchDp(5)))
                 }
             }

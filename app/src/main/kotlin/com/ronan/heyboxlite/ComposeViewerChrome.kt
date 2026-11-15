@@ -35,6 +35,7 @@ internal fun ComposeViewerChrome(
     onOriginal: () -> Unit,
     onSave: () -> Unit,
     onClose: () -> Unit,
+    imageAvailable: Boolean = true,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize().testTag("viewer-chrome")) {
         val shortSide = minOf(maxWidth, maxHeight)
@@ -43,7 +44,7 @@ internal fun ComposeViewerChrome(
         val top = if (round) shortSide * .24f else 12.dp
         ViewerIcon(R.drawable.ic_close, "关闭图片", button, onClose,
             Modifier.align(Alignment.TopStart).offset(x = side, y = top))
-        ViewerIcon(R.drawable.ic_download, "下载图片", button, onSave,
+        if (imageAvailable) ViewerIcon(R.drawable.ic_download, "下载图片", button, onSave,
             Modifier.align(Alignment.BottomStart).offset(x = side, y = -top))
         if (count > 1) {
             Text("${current + 1}/$count", color = Color.White, fontSize = 12.sp,
@@ -52,7 +53,7 @@ internal fun ComposeViewerChrome(
                     .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(50))
                     .padding(horizontal = 10.dp, vertical = 4.dp).testTag("viewer-counter"))
         }
-        if (originalEnabled && !originalLoaded) {
+        if (imageAvailable && originalEnabled && !originalLoaded) {
             Text(if (loading) "加载中" else "查看原图", color = Color.White, fontSize = 12.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.align(if (round) Alignment.CenterEnd else Alignment.BottomCenter)

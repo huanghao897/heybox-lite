@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -73,6 +74,21 @@ internal fun ComposeDetailImagePager(
     onOpenPreview: ((String, android.widget.ImageView) -> Unit)? = null,
 ) {
     if (!media.enabled || urls.isEmpty()) return
+    // The page count, keys and callbacks must belong to the same immutable gallery.
+    val pages = urls.toList()
+    key(pages) {
+        ComposeDetailImagePagerContent(pages, media, onOpenImage, requests, onOpenPreview)
+    }
+}
+
+@Composable
+private fun ComposeDetailImagePagerContent(
+    urls: List<String>,
+    media: ComposeMediaSettings,
+    onOpenImage: (String) -> Unit,
+    requests: ComposeMediaImageRequests,
+    onOpenPreview: ((String, android.widget.ImageView) -> Unit)?,
+) {
     val theme = LocalHeyboxTheme.current
     val pager = rememberPagerState { urls.size }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -81,15 +97,16 @@ internal fun ComposeDetailImagePager(
         Box(Modifier.fillMaxWidth().height(height)) {
             HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1,
                 key = { page -> "${urls[page]}:$page" }) { page ->
-                ComposeMediaImage(urls[page], media, Modifier.fillMaxSize(),
+                val url = urls[page]
+                ComposeMediaImage(url, media, Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit, contentDescription = "打开正文图片",
-                    animated = page == pager.settledPage && GifSupport.isGifUrl(urls[page]),
-                    requests = requests, onClick = { onOpenImage(urls[page]) },
-                    onPreviewClick = onOpenPreview?.let { open -> { view -> open(urls[page], view) } })
+                    animated = page == pager.settledPage && GifSupport.isGifUrl(url),
+                    requests = requests, onClick = { onOpenImage(url) },
+                    onPreviewClick = onOpenPreview?.let { open -> { view -> open(url, view) } })
             }
             Text("${pager.currentPage + 1}/${urls.size}", color = Color.White,
-                fontSize = watchSp(10f), modifier = Modifier.align(Alignment.TopEnd)
-                    .padding(watchDp(6)).background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                fontSize = watchSp(WatchType.CAPTION), modifier = Modifier.align(Alignment.TopEnd)
+                    .padding(watchDp(6)).background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(watchDp(WatchRadius.SMALL)))
                     .padding(horizontal = watchDp(6), vertical = watchDp(2)))
         }
     }

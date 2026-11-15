@@ -14,6 +14,8 @@
 - `*Ui` / `*Renderer` / `*Forms`：只创建或绑定视图，不发起业务网络请求。
 - `SessionStore` / `LocalCache`：分别负责设置与会话、内容缓存，不承接页面导航逻辑。
 - `ComposeAppHost`：生命周期、路由及共享控制器装配；`ComposeRouteScreen` 只选择页面，不执行请求。
+- `ComposeWatchTokens`：统一手表字号、圆角、图标和物理触控下限；阅读正文仍由阅读排版参数控制。`ComposeWatchStatus` 只呈现加载、空白与错误状态，不自行重试或拥有请求。
+- `ComposeFeedCardActions`：测量信息流卡片底部的分区与操作宽度，空间不足时分行；操作仍交给宿主，不承担互动状态或接口调用。
 - `ComposeSavedController`：协调收藏、收藏夹和历史的独立状态，不混入页面 UI。`ComposeSavedPostsController` 负责账号隔离、缓存和请求失效；`ComposeWatchLaterController` 负责本地读取、图片大小统计和删除；`ComposeReadingCenterController` 负责异步摘要。
 - `ComposeFavoritesScreen` / `ComposeHistoryScreen` / `ComposeWatchLaterScreen` / `ComposeReadingCenterScreen`：各自的阅读库页面，共享 `ComposePageHeader` 和 `ComposeSearchInput`。
 - `ComposeReadingStatsMapper`：纯阅读统计展示映射；日期、时区、比例和格式结果可独立测试，不增加计时业务。
@@ -36,7 +38,7 @@
 - `ComposeViewerLongImage` / `LongImageTileView`：Compose 拥有布局、滚动与手势，原生叶节点只解码视口及相邻瓦片，离屏回收；`ImageTileBudget` 的共享额度同时覆盖解码中、待交付和已显示位图。`LongImageSource` 管理区域解码器及文件租约，暂停释放瓦片、关闭释放源；View 释放不能关闭页面仍持有的源。屏幕形状不能自行触发原图请求。
 - `CrownHapticProvider` / cnwearoverlay runtime：前者保留 Lite 触感开关与节流，后者按系统能力代理小米、现代和旧款 OPPO 触感；runtime 固定上游 1.2.0，普通 `VIBRATE` 权限随应用声明。不启用 Xposed、ASM 或第二次输入转换，滚动速度和事件消费仍由 Lite 原有输入所有者管理。
 - `DisposableStorage` / `SavedOfflineStorage` / `StorageFileLeases`：前者异步扫描已知缓存并统计实际删除字节；后两者分别保护已保存离线内容、正在读写及解码的文件。扫描不持全局锁，删除前逐文件复核元数据、离线清单版本及租约。不清理凭据、待上传崩溃记录、未知文件或安装/运行代码。`CacheMaintenance` 拥有后台执行与结果发布，`ComposeStorageMaintenance` 仅订阅和显示。
-- `EmojiStore` / `EmojiRenderer`：目录就绪通知与单次网络完成分离，渲染绑定可撤销；旧文字或旧主题的回调不得更新新绑定。`ComposeInlineText` 使用同一目录和透明图资源，通过 `ComposeInlineLinks` 将有效网页链接连接到系统浏览器，不执行正文提供的任意协议。
+- `EmojiStore` / `EmojiRenderer`：目录就绪通知与单次网络完成分离，渲染绑定可撤销；旧文字或旧主题的回调不得更新新绑定。`ComposeInlineText` 使用同一目录和透明图资源；`OfficialContentLink` 只解析受支持的官方帖子、用户路径及 `openLink` / `openUser` 协议，`ComposeContentLinkNavigation` 复用宿主的详情与用户主页返回栈。其他有效网页链接仍交给系统浏览器，不执行任意应用协议。
 - `RichContent`：只保留稳定入口和块模型；`RichContentBodyParser` 选择正文及合并结果，`RichContentJsonParser` 遍历结构化节点，`RichContentHtmlParser` 拆分 HTML 块，`RichInlineMarkup` 处理行内表情与链接。解析器不拥有页面、网络客户端或可变阅读状态。
 - `MetadataResponse`：更新、公告和配置统一限制实际解压后字节数与读取期限；网络客户端拒绝自动重定向，不把自定义设备认证头带到其他来源。
 

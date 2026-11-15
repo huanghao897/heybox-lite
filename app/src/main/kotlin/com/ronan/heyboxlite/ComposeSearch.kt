@@ -14,15 +14,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun ComposeSearchScreen(
@@ -39,6 +36,8 @@ internal fun ComposeSearchScreen(
     observeLoadMore: Boolean = true,
     history: List<String> = emptyList(),
     onClearHistory: () -> Unit = {},
+    error: String = "",
+    onRetry: () -> Unit = onLoadMore,
 ) {
     HeyboxComposeTheme(services.theme) {
         val rotary = services.theme.rotaryRequest
@@ -50,7 +49,7 @@ internal fun ComposeSearchScreen(
         ) {
             val horizontal = feedHorizontalPadding(maxWidth, services.theme)
             if (observeLoadMore) {
-                ObserveFeedLoadMore(listState, items.size, loading, noMore, onLoadMore)
+                ObserveFeedLoadMore(listState, items.size, loading, noMore || error.isNotBlank(), onLoadMore)
             }
             Column(modifier = Modifier.fillMaxSize().testTag("search-page-content")) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = horizontal)) {
@@ -63,12 +62,27 @@ internal fun ComposeSearchScreen(
                         ComposeSearchHistory(history, onQueryChange, onClearHistory, listState)
                     }
                     loading && items.isEmpty() -> FeedLoading(services.theme)
-                    items.isEmpty() && query.isNotBlank() && !noMore -> FeedEmpty(
-                        "本页没有可显示的帖子", "继续加载", services.theme, onLoadMore,
+                    error.isNotBlank() && items.isEmpty() -> LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = horizontal),
+                        verticalArrangement = Arrangement.Center,
+                        contentPadding = PaddingValues(
+                            top = (8 * services.theme.uiScale).dp,
+                            bottom = watchListEndPadding(),
+                        ),
+                    ) {
+                        item {
+                            WatchErrorState(error, onRetry,
+                                theme = services.theme)
+                        }
+                    }
+                    items.isEmpty() && query.isNotBlank() && !noMore -> WatchEmptyState(
+                        "暂时没找到相关帖子", action = "继续查找", onAction = onLoadMore,
+                        fill = true, theme = services.theme,
                     )
-                    items.isEmpty() -> SearchEmpty(
-                        message = if (query.isBlank()) "输入关键词开始搜索" else "没有找到相关帖子",
-                        theme = services.theme,
+                    items.isEmpty() -> WatchEmptyState(
+                        if (query.isBlank()) "输入关键词开始搜索" else "没有找到相关帖子",
+                        fill = true, theme = services.theme,
                     )
                     else -> LazyColumn(
                         state = listState,
@@ -89,29 +103,20 @@ internal fun ComposeSearchScreen(
                                 item = item,
                                 theme = services.theme,
                                 noImage = services.session.noImage(),
-                                currentUserId = services.session.userId(),
                                 onOpen = onOpen,
                                 onAction = null,
                                 showActions = false,
-                                showFollow = false,
                                 gameCardNoImage = services.session.gameCardNoImage(),
                             )
                         }
-                        item { FeedFooter(loading, noMore, services.theme, onLoadMore) }
+                        item {
+                            if (error.isNotBlank()) WatchErrorState(error, onRetry, theme = services.theme)
+                            else FeedFooter(loading, noMore, services.theme, onLoadMore)
+                        }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun SearchEmpty(message: String, theme: ComposeThemeState) {
-    Box(
-        modifier = Modifier.fillMaxSize().padding(horizontal = (12 * theme.uiScale).dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text = message, color = theme.muted, fontSize = (13 * theme.textScale).sp)
     }
 }
 

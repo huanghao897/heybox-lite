@@ -1,14 +1,10 @@
 package com.ronan.heyboxlite
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,15 +15,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,7 +32,7 @@ internal fun CheckinPanel(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val theme = LocalHeyboxTheme.current
-    val shape = RoundedCornerShape(watchDp(15))
+    val shape = RoundedCornerShape(watchDp(WatchRadius.LARGE))
     Column(modifier.fillMaxWidth().clip(shape).background(theme.panel), content = content)
 }
 
@@ -49,6 +42,7 @@ internal fun CheckinDivider() {
         .height(0.5.dp).background(LocalHeyboxTheme.current.hairline))
 }
 
+/** A WatchRow with a trailing chevron, so check-in menus match the settings pages. */
 @Composable
 internal fun CheckinMenuRow(
     title: String,
@@ -59,22 +53,8 @@ internal fun CheckinMenuRow(
     enabled: Boolean = true,
     danger: Boolean = false,
 ) {
-    val theme = LocalHeyboxTheme.current
-    val color = if (!enabled) theme.subtle else if (danger) Color(0xFFDD7777) else theme.text
-    Row(modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
-        .heightIn(min = watchDp(38)).padding(horizontal = watchDp(12), vertical = watchDp(8)),
-        verticalAlignment = Alignment.CenterVertically) {
-        Icon(painterResource(icon), null, tint = color, modifier = Modifier.size(watchDp(18)))
-        Spacer(Modifier.width(watchDp(9)))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = color, fontSize = watchSp(12f), fontWeight = FontWeight.Medium)
-            if (subtitle.isNotEmpty()) Text(subtitle, color = theme.muted, fontSize = watchSp(10f),
-                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = watchDp(2)))
-        }
-        Spacer(Modifier.width(watchDp(5)))
-        Icon(painterResource(R.drawable.il_chevron), null, tint = theme.subtle,
-            modifier = Modifier.size(watchDp(14)))
-    }
+    WatchRow(title, icon = icon, enabled = enabled, subtitle = subtitle, danger = danger,
+        chevron = true, modifier = modifier, onClick = onClick)
 }
 
 @Composable
@@ -85,22 +65,22 @@ internal fun CheckinDangerRow(
     enabled: Boolean = true,
 ) {
     val theme = LocalHeyboxTheme.current
-    val danger = Color(0xFFDD7777)
-    val shape = RoundedCornerShape(watchDp(10))
+    val danger = theme.danger
+    val shape = RoundedCornerShape(watchDp(WatchRadius.MEDIUM))
     val foreground = if (enabled) danger else theme.subtle
     val background = if (enabled) danger.copy(alpha = if (theme.dark) 0.14f else 0.10f)
         else theme.panelElevated
     Row(
         modifier.fillMaxWidth().clip(shape).background(background)
             .clickable(enabled = enabled, onClick = onClick)
-            .heightIn(min = watchDp(36))
-            .padding(horizontal = watchDp(12), vertical = watchDp(7)),
+            .heightIn(min = watchTouchDp(40))
+            .padding(horizontal = watchDp(11), vertical = watchDp(7)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(painterResource(R.drawable.ic_logout), null, tint = foreground,
             modifier = Modifier.size(watchDp(18)))
         Spacer(Modifier.width(watchDp(9)))
-        Text(title, color = foreground, fontSize = watchSp(12f),
+        Text(title, color = foreground, fontSize = watchSp(WatchType.BODY),
             fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Clip,
             modifier = Modifier.weight(1f))
     }
@@ -114,34 +94,24 @@ internal fun CheckinActionButton(
     enabled: Boolean = true,
     icon: Int? = null,
 ) {
-    val theme = LocalHeyboxTheme.current
-    Button(onClick, enabled = enabled,
-        modifier = modifier.fillMaxWidth().heightIn(min = watchDp(42)), shape = CircleShape,
-        colors = ButtonDefaults.buttonColors(containerColor = theme.accent, contentColor = theme.onAccent,
-            disabledContainerColor = theme.panelElevated, disabledContentColor = theme.subtle),
-        contentPadding = PaddingValues(horizontal = watchDp(12), vertical = watchDp(7))) {
-        if (icon != null) {
-            Icon(painterResource(icon), null, modifier = Modifier.size(watchDp(15)))
-            Spacer(Modifier.width(watchDp(7)))
-        }
-        Text(text, fontSize = watchSp(13f), fontWeight = FontWeight.SemiBold)
-    }
+    WatchActionButton(text, onClick, modifier.fillMaxWidth(), enabled = enabled, icon = icon,
+        primary = true)
 }
 
 @Composable
 internal fun CheckinResultIcon(kind: CheckinResultKind, modifier: Modifier = Modifier) {
     val theme = LocalHeyboxTheme.current
-    val fill = when (kind) {
-        CheckinResultKind.SUCCESS -> theme.accent
-        CheckinResultKind.FAILURE -> Color(0xFFCA6565)
-        CheckinResultKind.UNKNOWN -> theme.panelElevated
+    val (fill, tint) = when (kind) {
+        CheckinResultKind.SUCCESS -> theme.success to theme.onSuccess
+        CheckinResultKind.FAILURE -> theme.danger to theme.onDanger
+        CheckinResultKind.UNKNOWN -> theme.panelElevated to theme.muted
     }
     Box(modifier.size(watchDp(27)).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
         Icon(painterResource(when (kind) {
             CheckinResultKind.SUCCESS -> R.drawable.ic_check
             CheckinResultKind.FAILURE -> R.drawable.ic_close
             CheckinResultKind.UNKNOWN -> R.drawable.il_history
-        }), null, tint = if (kind == CheckinResultKind.SUCCESS) theme.onAccent else Color.White,
+        }), null, tint = tint,
             modifier = Modifier.size(watchDp(17)))
     }
 }
@@ -149,8 +119,8 @@ internal fun CheckinResultIcon(kind: CheckinResultKind, modifier: Modifier = Mod
 @Composable
 internal fun CheckinBadge(text: String) {
     val theme = LocalHeyboxTheme.current
-    Text(text, color = theme.text, fontSize = watchSp(9f), fontWeight = FontWeight.Medium,
-        modifier = Modifier.clip(RoundedCornerShape(watchDp(6)))
+    Text(text, color = theme.text, fontSize = watchSp(WatchType.CAPTION), fontWeight = FontWeight.Medium,
+        modifier = Modifier.clip(RoundedCornerShape(watchDp(WatchRadius.SMALL)))
             .background(theme.panelElevated).padding(horizontal = watchDp(7), vertical = watchDp(4)),
         maxLines = 2, overflow = TextOverflow.Ellipsis)
 }

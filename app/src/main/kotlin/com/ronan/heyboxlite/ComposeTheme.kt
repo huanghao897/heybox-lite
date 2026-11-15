@@ -34,7 +34,15 @@ internal data class ComposeThemeState(
     val rotaryRequest: ComposeRotaryRequest? = null,
     val motionLevel: Int = MotionLevel.REDUCED,
     val reading: ComposeReadingSettings = ComposeReadingSettings(),
-)
+) {
+    // Derived colours must follow dark even when a preview or host copies the state.
+    val danger: Color get() = if (dark) Color(0xFFDD7777) else Color(0xFFC0392B)
+    val onDanger: Color get() = if (dark) Color.Black else Color.White
+    val success: Color get() = if (dark) Color(0xFF58C482) else Color(0xFF1A7F37)
+    val onSuccess: Color get() = if (dark) Color.Black else Color.White
+    val switchTrack: Color get() = if (dark) Color(0xFF3A3A3E) else Color(0xFFD1D1D6)
+    val switchThumb: Color get() = if (dark) Color(0xFFF5F5F7) else Color.White
+}
 
 internal val LocalHeyboxTheme = staticCompositionLocalOf<ComposeThemeState> {
     error("Heybox Compose theme is not installed")
@@ -113,9 +121,9 @@ internal fun HeyboxComposeTheme(
             colorScheme = colors,
             typography = typography,
             shapes = MaterialTheme.shapes.copy(
-                small = RoundedCornerShape(8.dp),
-                medium = RoundedCornerShape(12.dp),
-                large = RoundedCornerShape(16.dp),
+                small = RoundedCornerShape(WatchRadius.SMALL.dp),
+                medium = RoundedCornerShape(WatchRadius.MEDIUM.dp),
+                large = RoundedCornerShape(WatchRadius.LARGE.dp),
             ),
             content = content,
         )

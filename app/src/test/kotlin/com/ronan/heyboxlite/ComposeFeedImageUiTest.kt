@@ -155,7 +155,7 @@ class ComposeFeedImageUiTest {
             HeyboxComposeTheme(theme.value) {
                 LazyColumn(Modifier.fillMaxWidth().height(300.dp)) {
                     item(key = "same-post") {
-                        ComposeFeedCard(current.value, theme.value, false, "", {}, null,
+                        ComposeFeedCard(current.value, theme.value, false, {}, null,
                             imageLoader = loader)
                     }
                 }

@@ -134,12 +134,12 @@ internal fun ComposeLoginContent(bitmap: Bitmap?, status: String, onBack: () -> 
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(watchDp(7)),
             ) {
-                Text("heybox Lite", color = theme.text, fontSize = watchSp(18f),
+                Text("heybox Lite", color = theme.text, fontSize = watchSp(WatchType.TITLE),
                     fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
                 Text(status, color = if (status.contains("失败") || status.contains("过期"))
-                    theme.accent else theme.muted, fontSize = watchSp(11f), letterSpacing = 0.sp)
+                    theme.accent else theme.muted, fontSize = watchSp(WatchType.CAPTION), letterSpacing = 0.sp)
                 ComposeLoginQr(bitmap)
-                Text("请使用小黑盒 App 扫码登录", color = theme.muted, fontSize = watchSp(11f), letterSpacing = 0.sp)
+                Text("请使用小黑盒 App 扫码登录", color = theme.muted, fontSize = watchSp(WatchType.CAPTION), letterSpacing = 0.sp)
                 WatchActionText("重新获取", onRetry)
                 WatchActionText("游客浏览", onGuest)
             }
@@ -155,14 +155,14 @@ internal fun ComposeLoginQr(bitmap: Bitmap?) {
         val diameter = minOf(config.screenWidthDp, config.screenHeightDp).dp
         val side = minOf(maxWidth, watchDp(150), if (theme.roundScreen) diameter * 0.55f else maxWidth)
         Box(Modifier.size(side).testTag("login-qr-frame")
-            .background(Color.White, RoundedCornerShape(watchDp(7)))
-            .border(watchDp(1), theme.hairline, RoundedCornerShape(watchDp(7)))
+            .background(Color.White, RoundedCornerShape(watchDp(WatchRadius.SMALL)))
+            .border(watchDp(1), theme.hairline, RoundedCornerShape(watchDp(WatchRadius.SMALL)))
             .padding(watchDp(7)), contentAlignment = Alignment.Center) {
             if (bitmap != null && !bitmap.isRecycled) {
                 Image(bitmap.asImageBitmap(), "登录二维码", Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit)
             } else {
-                Text("二维码", color = Color.DarkGray, fontSize = watchSp(12f))
+                Text("二维码", color = Color.DarkGray, fontSize = watchSp(WatchType.SECONDARY))
             }
         }
     }

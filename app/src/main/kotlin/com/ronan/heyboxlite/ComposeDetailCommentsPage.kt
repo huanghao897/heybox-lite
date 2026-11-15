@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,10 +62,7 @@ internal fun ComposeDetailCommentsPage(
         composeDetailCommentItems(item, ordered, commentKeys, latest, { latest = it }, loading,
             theme, media, services, replyStates, onCommentAction, onOpenUser, showDivider = false)
         if (error.isNotBlank()) item(key = "comments-error") {
-            Column(verticalArrangement = Arrangement.spacedBy(watchDp(6))) {
-                Text(error, color = theme.muted, fontSize = watchSp(11f))
-                ComposeDetailButton("重试", onRetry, icon = R.drawable.il_refresh)
-            }
+            WatchErrorState(error, onRetry)
         }
         item(key = "write-comment", contentType = "actions") {
             ComposeDetailButton("写评论", { onCommentAction(ComposeDetailAction.WriteComment(item)) },
@@ -97,8 +93,8 @@ internal fun LazyListScope.composeDetailCommentItems(
             Column(Modifier.padding(horizontal = inset), verticalArrangement = Arrangement.spacedBy(watchDp(8))) {
                 if (showDivider) HorizontalDivider(color = theme.hairline)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("评论 ${maxOf(item.comments, ordered.size)}", Modifier.weight(1f), fontSize = watchSp(13f),
-                        color = theme.text, fontWeight = FontWeight.Bold)
+                    Text("评论 ${maxOf(item.comments, ordered.size)}", Modifier.weight(1f), fontSize = watchSp(WatchType.BODY),
+                        color = theme.text, fontWeight = FontWeight.SemiBold)
                     Row(Modifier.testTag("comment-sort-tabs"), verticalAlignment = Alignment.CenterVertically) {
                         ComposeDetailSortTab("热门", !latest) { onLatest(false) }
                         Box(Modifier.width(0.5.dp).height(watchDp(9)).background(theme.hairline))
@@ -109,9 +105,7 @@ internal fun LazyListScope.composeDetailCommentItems(
         }
     }
     if (loading && ordered.isEmpty()) item(key = "comments-loading") {
-        Box(Modifier.fillMaxWidth().padding(vertical = watchDp(12)), Alignment.Center) {
-            CircularProgressIndicator(Modifier.size(watchDp(22)), strokeWidth = 2.dp)
-        }
+        WatchLoading(label = "")
     }
     itemsIndexed(ordered, key = { index, _ -> commentKeys[index] },
         contentType = { _, _ -> "comment-thread" }) { _, group ->
@@ -120,7 +114,6 @@ internal fun LazyListScope.composeDetailCommentItems(
             doubleTapReplyEnabled = services?.session?.doubleTapCommentReply() ?: true)
     }
     if (!loading && ordered.isEmpty()) item(key = "empty-comments") {
-        Text("暂无评论", color = theme.muted, fontSize = watchSp(12f),
-            modifier = Modifier.padding(vertical = watchDp(8)))
+        WatchEmptyState("暂无评论")
     }
 }

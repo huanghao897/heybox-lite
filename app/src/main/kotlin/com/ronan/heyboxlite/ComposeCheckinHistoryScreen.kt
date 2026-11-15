@@ -64,10 +64,10 @@ internal fun ComposeCheckinHistoryDetailScreen(entry: CheckinHistory.Entry?, onB
                             modifier = Modifier.size(watchDp(18)))
                         Spacer(Modifier.width(watchDp(9)))
                         Column(Modifier.weight(1f)) {
-                            Text(task.title, color = LocalHeyboxTheme.current.text, fontSize = watchSp(12f),
+                            Text(task.title, color = LocalHeyboxTheme.current.text, fontSize = watchSp(WatchType.SECONDARY),
                                 fontWeight = FontWeight.Medium)
                             if (task.kind == CheckinResultKind.UNKNOWN) Text(task.value,
-                                color = LocalHeyboxTheme.current.subtle, fontSize = watchSp(10f))
+                                color = LocalHeyboxTheme.current.subtle, fontSize = watchSp(WatchType.CAPTION))
                         }
                         CheckinResultIcon(task.kind, Modifier.size(watchDp(18)))
                     }
@@ -75,7 +75,7 @@ internal fun ComposeCheckinHistoryDetailScreen(entry: CheckinHistory.Entry?, onB
             }
             if (entry.summary.isNotBlank()) {
                 WatchSectionTitle("执行摘要")
-                Text(entry.summary, color = LocalHeyboxTheme.current.muted, fontSize = watchSp(11f),
+                Text(entry.summary, color = LocalHeyboxTheme.current.muted, fontSize = watchSp(WatchType.CAPTION),
                     modifier = Modifier.padding(horizontal = watchDp(5)))
             }
             val otherDetails = remember(entry) { entry.details.filterNot { field ->
@@ -88,7 +88,7 @@ internal fun ComposeCheckinHistoryDetailScreen(entry: CheckinHistory.Entry?, onB
                     Column(Modifier.padding(watchDp(12)),
                         verticalArrangement = Arrangement.spacedBy(watchDp(5))) {
                         otherDetails.forEach { Text(it, color = LocalHeyboxTheme.current.muted,
-                            fontSize = watchSp(10f)) }
+                            fontSize = watchSp(WatchType.CAPTION)) }
                     }
                 }
             }
@@ -108,7 +108,7 @@ private fun CheckinRecordSummary(entry: CheckinHistory.Entry, showChevron: Boole
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     CheckinResultIcon(checkinResultKind(entry))
                     Spacer(Modifier.width(watchDp(8)))
-                    Text(checkinResultTitle(entry), color = theme.text, fontSize = watchSp(12f),
+                    Text(checkinResultTitle(entry), color = theme.text, fontSize = watchSp(WatchType.SECONDARY),
                         fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     if (showChevron) CheckinRecordChevron()
                 }
@@ -119,7 +119,7 @@ private fun CheckinRecordSummary(entry: CheckinHistory.Entry, showChevron: Boole
                 CheckinResultIcon(checkinResultKind(entry))
                 Spacer(Modifier.width(watchDp(8)))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(watchDp(3))) {
-                    Text(checkinResultTitle(entry), color = theme.text, fontSize = watchSp(12f),
+                    Text(checkinResultTitle(entry), color = theme.text, fontSize = watchSp(WatchType.SECONDARY),
                         fontWeight = FontWeight.SemiBold)
                     CheckinRecordDetails(entry, completed)
                 }
@@ -132,14 +132,14 @@ private fun CheckinRecordSummary(entry: CheckinHistory.Entry, showChevron: Boole
 @Composable
 private fun CheckinRecordDetails(entry: CheckinHistory.Entry, completed: Int) {
     val theme = LocalHeyboxTheme.current
-    Text(entry.displayTime(), color = theme.muted, fontSize = watchSp(10f))
+    Text(entry.displayTime(), color = theme.muted, fontSize = watchSp(WatchType.CAPTION))
     val reward = entry.rewardLabel()
-    if (reward.isNotEmpty()) Text(reward, color = theme.link, fontSize = watchSp(10f))
-    if (completed > 0) Text("完成 $completed 项任务", color = theme.subtle, fontSize = watchSp(9f))
+    if (reward.isNotEmpty()) Text(reward, color = theme.link, fontSize = watchSp(WatchType.CAPTION))
+    if (completed > 0) Text("完成 $completed 项任务", color = theme.subtle, fontSize = watchSp(WatchType.CAPTION))
 }
 
 @Composable
 private fun CheckinRecordChevron() {
     Icon(painterResource(R.drawable.il_chevron), null, tint = LocalHeyboxTheme.current.subtle,
-        modifier = Modifier.size(watchDp(13)))
+        modifier = Modifier.size(watchDp(WatchIcon.SMALL)))
 }

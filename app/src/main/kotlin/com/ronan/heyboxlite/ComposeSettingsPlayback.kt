@@ -150,18 +150,18 @@ internal fun ComposeSplashPreviewScreen(services: ComposeServices, onBack: () ->
                 Text(
                     text = "heybox Lite",
                     color = LocalHeyboxTheme.current.text,
-                    fontSize = watchSp(18f),
+                    fontSize = watchSp(WatchType.TITLE),
                 )
                 Text(
                     text = session.splashText(),
                     color = LocalHeyboxTheme.current.muted,
-                    fontSize = watchSp(12f),
+                    fontSize = watchSp(WatchType.SECONDARY),
                     modifier = Modifier.padding(top = watchDp(8)),
                 )
                 Text(
                     text = "${session.splashDuration()} ms",
                     color = LocalHeyboxTheme.current.subtle,
-                    fontSize = watchSp(10f),
+                    fontSize = watchSp(WatchType.CAPTION),
                     modifier = Modifier.padding(top = watchDp(5)),
                 )
             }

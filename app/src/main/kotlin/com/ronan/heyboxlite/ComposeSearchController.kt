@@ -18,6 +18,9 @@ internal class ComposeSearchController(
     val loading: MutableState<Boolean> = mutableStateOf(false)
     val noMore: MutableState<Boolean> = mutableStateOf(false)
     val history: MutableState<List<String>> = mutableStateOf(session.searchHistory())
+    /** A debounced request is due but not sent yet; the page should not claim "no results". */
+    val pending: MutableState<Boolean> = mutableStateOf(false)
+    val error: MutableState<String> = mutableStateOf("")
 
     private var offset = 0
     private var requestSerial = 0
@@ -41,6 +44,8 @@ internal class ComposeSearchController(
         val keyword = value.trim()
         requestSerial++
         loading.value = false
+        pending.value = false
+        error.value = ""
         if (keyword.isEmpty()) {
             lastKeyword = ""
             items.value = emptyList()
@@ -51,15 +56,24 @@ internal class ComposeSearchController(
             // A delayed callback can race with the text field clearing or
             // changing again. Never let that stale keyword start a request.
             delayed = null
+            pending.value = false
             if (query.value.trim() == keyword) search(keyword)
         }
         delayed = task
+        pending.value = true
         handler.postDelayed(task, 420L)
     }
 
     fun loadMore() {
-        if (delayed != null || continuation != null || loading.value || noMore.value || lastKeyword.isEmpty()) return
+        if (delayed != null || continuation != null || loading.value || noMore.value ||
+            error.value.isNotBlank() || lastKeyword.isEmpty()) return
         search(lastKeyword, true)
+    }
+
+    fun retry() {
+        val keyword = query.value.trim()
+        if (keyword.isEmpty() || pending.value || loading.value) return
+        search(keyword, append = keyword == lastKeyword && offset > 0)
     }
 
     fun clearHistory() {
@@ -83,13 +97,17 @@ internal class ComposeSearchController(
         continuation = null
         requestSerial++
         loading.value = false
+        pending.value = false
         noMore.value = false
+        error.value = ""
     }
 
-    private fun search(keyword: String, append: Boolean = false, emptyPagesRemaining: Int = 2) {
+    private fun search(keyword: String, append: Boolean = false, emptyPagesRemaining: Int = 4) {
         if (loading.value) return
         loading.value = true
+        error.value = ""
         if (!append) {
+            items.value = emptyList()
             offset = 0
             lastKeyword = keyword
             noMore.value = false
@@ -120,20 +138,26 @@ internal class ComposeSearchController(
                         (append && pageIds.isNotEmpty() && pageIds == previousPageIds)
                     previousPageIds = pageIds
                     offset += returned
-                    loading.value = false
                     if (added == 0 && !noMore.value && emptyPagesRemaining > 0) {
+                        // Pages that only held filtered posts are skipped while still loading,
+                        // so the page never flashes an empty result between requests.
                         val next = Runnable {
                             continuation = null
-                            if (serial == requestSerial) search(keyword, true, emptyPagesRemaining - 1)
+                            if (serial != requestSerial) return@Runnable
+                            loading.value = false
+                            search(keyword, true, emptyPagesRemaining - 1)
                         }
                         continuation = next
                         handler.post(next)
+                    } else {
+                        loading.value = false
                     }
                 }
 
                 override fun onError(message: String) {
                     if (serial != requestSerial) return
                     cache.log("compose search failed: $message")
+                    error.value = message.ifBlank { "搜索失败，请重试" }
                     loading.value = false
                 }
             },

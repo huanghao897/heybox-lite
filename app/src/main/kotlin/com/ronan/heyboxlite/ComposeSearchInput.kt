@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,27 +46,28 @@ internal fun ComposeLeadingSearchInput(query: String, placeholder: String, onQue
 @Composable
 internal fun ComposeSearchInput(query: String, placeholder: String, onQueryChange: (String) -> Unit) {
     val theme = LocalHeyboxTheme.current
-    val shape = RoundedCornerShape(watchDp(10))
-    Row(Modifier.fillMaxWidth().height(watchDp(36)).clip(shape)
+    val shape = RoundedCornerShape(watchDp(WatchRadius.MEDIUM))
+    Row(Modifier.fillMaxWidth().heightIn(min = watchTouchDp(36)).clip(shape)
         .background(theme.panel.copy(alpha = if (theme.dark) 0.86f else 0.72f))
         .border(watchDp(1), theme.hairline, shape).padding(horizontal = watchDp(8)),
         verticalAlignment = Alignment.CenterVertically) {
         Icon(androidx.compose.ui.res.painterResource(R.drawable.il_search),
-            null, tint = theme.muted, modifier = Modifier.size(watchDp(16)))
+            null, tint = theme.muted, modifier = Modifier.size(watchDp(WatchIcon.MEDIUM)))
         Spacer(Modifier.width(watchDp(6)))
         BasicTextField(value = query, onValueChange = onQueryChange, singleLine = true,
-            textStyle = TextStyle(color = theme.text, fontSize = watchSp(12f)),
+            textStyle = TextStyle(color = theme.text, fontSize = watchSp(WatchType.SECONDARY)),
             modifier = Modifier.weight(1f).semantics { contentDescription = placeholder },
             decorationBox = { field ->
                 Box(contentAlignment = Alignment.CenterStart) {
                     if (query.isEmpty()) Text(placeholder, color = theme.muted,
-                        fontSize = watchSp(12f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        fontSize = watchSp(WatchType.SECONDARY), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     field()
                 }
             })
         if (query.isNotEmpty()) IconButton(onClick = { onQueryChange("") },
-            modifier = Modifier.size(watchDp(28))) {
-            Text("×", color = theme.muted, fontSize = watchSp(17f))
+            modifier = Modifier.size(WatchTouchTarget)) {
+            Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_close), "清除",
+                tint = theme.muted, modifier = Modifier.size(watchDp(WatchIcon.SMALL)))
         }
     }
 }

@@ -189,7 +189,8 @@ class ComposeFeedScrollUiTest {
             }
         }
         compose.onNodeWithContentDescription("点赞").assertExists()
-        compose.onNodeWithContentDescription("关注").assertExists()
+        compose.onNodeWithContentDescription("关注").assertDoesNotExist()
+        compose.onNodeWithContentDescription("取消关注").assertDoesNotExist()
         compose.runOnIdle {
             post.likes = 42
             post.liked = true
@@ -198,7 +199,8 @@ class ComposeFeedScrollUiTest {
         }
         compose.waitForIdle()
         compose.onNodeWithContentDescription("取消点赞").assertExists()
-        compose.onNodeWithContentDescription("取消关注").assertExists()
+        compose.onNodeWithContentDescription("取消关注").assertDoesNotExist()
+        compose.onNodeWithContentDescription("关注").assertDoesNotExist()
         compose.onNodeWithText("42").assertExists()
         compose.runOnIdle {
             post.likes = 41
@@ -208,7 +210,8 @@ class ComposeFeedScrollUiTest {
         }
         compose.waitForIdle()
         compose.onNodeWithContentDescription("点赞").assertExists()
-        compose.onNodeWithContentDescription("关注").assertExists()
+        compose.onNodeWithContentDescription("关注").assertDoesNotExist()
+        compose.onNodeWithContentDescription("取消关注").assertDoesNotExist()
         compose.onNodeWithText("41").assertExists()
         compose.onNodeWithText("42").assertDoesNotExist()
     }

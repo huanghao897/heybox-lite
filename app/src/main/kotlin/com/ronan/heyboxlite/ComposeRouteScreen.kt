@@ -3,7 +3,9 @@ package com.ronan.heyboxlite
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
 /** Route rendering is separate from lifecycle, requests and navigation ownership. */
@@ -14,6 +16,20 @@ internal fun ComposeRouteScreen(
     services: ComposeServices,
     active: Boolean,
     previewListState: LazyListState? = null,
+) {
+    val openLink = remember(host) { { link: OfficialContentLink -> host.openContentLink(link) } }
+    CompositionLocalProvider(LocalComposeContentLinkNavigation provides openLink) {
+        ComposeRouteContent(host, route, services, active, previewListState)
+    }
+}
+
+@Composable
+private fun ComposeRouteContent(
+    host: ComposeAppHost,
+    route: String,
+    services: ComposeServices,
+    active: Boolean,
+    previewListState: LazyListState?,
 ) {
     val detailState by host.navigation.detail
     val listState = previewListState ?: host.listState(route)
@@ -67,11 +83,13 @@ internal fun ComposeRouteScreen(
         "search" -> {
             val items by host.search.items
             val loading by host.search.loading
+            val pending by host.search.pending
+            val error by host.search.error
             val noMore by host.search.noMore
             val query by host.search.query
             val history by host.search.history
             ComposeSearchScreen(
-                query, items, loading, noMore, services,
+                query, items, loading || pending, noMore, services,
                 onQueryChange = host.search::setQuery,
                 onOpen = host::openDetail,
                 onBack = { host.handleBack() },
@@ -80,6 +98,8 @@ internal fun ComposeRouteScreen(
                 observeLoadMore = active,
                 history = history,
                 onClearHistory = host.search::clearHistory,
+                error = error,
+                onRetry = host.search::retry,
             )
         }
         "detail" -> {

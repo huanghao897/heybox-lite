@@ -64,16 +64,16 @@ internal fun ComposeCrashRecoveryScreen(
                     .testTag("crash-report"),
                 verticalArrangement = Arrangement.spacedBy(watchDp(5)),
             ) {
-                Text("\u5e94\u7528\u51fa\u73b0\u5f02\u5e38", color = theme.text, fontSize = watchSp(17f),
+                Text("\u5e94\u7528\u51fa\u73b0\u5f02\u5e38", color = theme.text, fontSize = watchSp(WatchType.TITLE),
                     fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth(), letterSpacing = 0.sp)
-                Text(state.summary, color = theme.muted, fontSize = watchSp(11f),
+                Text(state.summary, color = theme.muted, fontSize = watchSp(WatchType.CAPTION),
                     textAlign = TextAlign.Center, letterSpacing = 0.sp,
                     maxLines = 3, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth().testTag("crash-summary"))
                 if (state.stack.isNotEmpty()) {
-                    Text(state.stack, color = theme.muted, fontSize = watchSp(10f),
+                    Text(state.stack, color = theme.muted, fontSize = watchSp(WatchType.CAPTION),
                         fontFamily = FontFamily.Monospace, letterSpacing = 0.sp,
                         modifier = Modifier.fillMaxWidth().testTag("crash-stack"))
                 }
@@ -85,7 +85,7 @@ internal fun ComposeCrashRecoveryScreen(
                     .testTag("crash-actions"),
                 verticalArrangement = Arrangement.spacedBy(watchDp(5)),
             ) {
-                Text(state.status, color = theme.muted, fontSize = watchSp(10f),
+                Text(state.status, color = theme.muted, fontSize = watchSp(WatchType.CAPTION),
                     textAlign = TextAlign.Center, letterSpacing = 0.sp,
                     modifier = Modifier.fillMaxWidth().testTag("crash-status")
                         .semantics { liveRegion = LiveRegionMode.Polite })
@@ -98,13 +98,13 @@ internal fun ComposeCrashRecoveryScreen(
                             onClick = onSave,
                             enabled = !state.saving,
                             modifier = Modifier.size(watchDp(38).coerceAtLeast(32.dp))
-                                .clip(RoundedCornerShape(8.dp)).background(theme.panel)
+                                .clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM))).background(theme.panel)
                                 .testTag("crash-save").semantics { stateDescription = state.status },
                         ) {
                             Icon(painterResource(R.drawable.il_scroll),
                                 contentDescription = "\u4fdd\u5b58\u5b8c\u6574\u65e5\u5fd7",
                                 tint = if (state.saving) theme.subtle else theme.text,
-                                modifier = Modifier.size(watchDp(20)))
+                                modifier = Modifier.size(watchDp(WatchIcon.LARGE)))
                         }
                     }
                 }
@@ -125,14 +125,14 @@ private fun CrashRecoveryButton(
     Button(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().heightIn(min = watchDp(38).coerceAtLeast(32.dp)).testTag(tag),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(watchDp(WatchRadius.MEDIUM)),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (primary) theme.accent else theme.panel,
             contentColor = if (primary) theme.onAccent else theme.text,
         ),
         contentPadding = PaddingValues(horizontal = watchDp(6), vertical = watchDp(5)),
     ) {
-        Text(label, fontSize = watchSp(13f), textAlign = TextAlign.Center,
+        Text(label, fontSize = watchSp(WatchType.BODY), textAlign = TextAlign.Center,
             letterSpacing = 0.sp, modifier = Modifier.fillMaxWidth())
     }
 }

@@ -50,7 +50,7 @@ internal fun WatchDialog(
             val width = if (theme.roundScreen) diameter * 0.68f
                 else minOf(maxWidth - 16.dp, 320.dp)
             val height = if (theme.roundScreen) diameter * 0.68f else maxHeight - 16.dp
-            val shape = RoundedCornerShape(watchDp(8))
+            val shape = RoundedCornerShape(watchDp(WatchRadius.LARGE))
             Column(Modifier.width(width.coerceAtLeast(1.dp))
                 .heightIn(max = height.coerceAtLeast(1.dp))
                 .testTag("watch-dialog-frame").clip(shape).background(theme.panel)
@@ -61,7 +61,7 @@ internal fun WatchDialog(
                     .testTag("watch-dialog-content").verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(watchDp(6))) {
                     if (!title.isNullOrBlank()) {
-                        Text(title, color = theme.text, fontSize = watchSp(15f),
+                        Text(title, color = theme.text, fontSize = watchSp(WatchType.SUBTITLE),
                             fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth())
                     }
                     content()

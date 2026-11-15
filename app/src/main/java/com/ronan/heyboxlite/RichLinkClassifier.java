@@ -53,7 +53,8 @@ final class RichLinkClassifier {
     static boolean isTextLink(String attributes) {
         if (isGameLink(attributes)) return false;
         return "text".equals(attribute(attributes, "data-link-type"))
-                || isWebHref(href(attributes));
+                || isWebHref(href(attributes))
+                || OfficialContentLink.parse(href(attributes)) != null;
     }
 
     static String href(String attributes) {

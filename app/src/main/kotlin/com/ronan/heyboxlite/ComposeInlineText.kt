@@ -68,10 +68,15 @@ internal fun ComposeInlineText(
     }
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
-    val openLink = remember(onOpenLink, uriHandler, context) {
+    val contentNavigation = LocalComposeContentLinkNavigation.current
+    val openLink = remember(onOpenLink, contentNavigation, uriHandler, context) {
         onOpenLink ?: { url: String ->
-            try {
-                uriHandler.openUri(url)
+            val target = OfficialContentLink.parse(url)
+            if (target != null && contentNavigation != null) contentNavigation(target)
+            else try {
+                if (url.startsWith("heybox://") || url.startsWith("xhh://")) {
+                    Toast.makeText(context, "\u65e0\u6cd5\u6253\u5f00\u94fe\u63a5", Toast.LENGTH_SHORT).show()
+                } else uriHandler.openUri(url)
             } catch (_: IllegalArgumentException) {
                 Toast.makeText(context, "\u65e0\u6cd5\u6253\u5f00\u94fe\u63a5", Toast.LENGTH_SHORT).show()
             } catch (_: SecurityException) {

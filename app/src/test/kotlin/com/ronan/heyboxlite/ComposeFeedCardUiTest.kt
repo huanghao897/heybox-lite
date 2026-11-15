@@ -11,7 +11,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -46,7 +45,7 @@ class ComposeFeedCardUiTest {
         var opened: FeedItem? = null
         compose.setContent {
             HeyboxComposeTheme(theme.value) {
-                ComposeFeedCard(item, theme.value, true, "current-user", { opened = it },
+                ComposeFeedCard(item, theme.value, true, { opened = it },
                     { post, action -> actions += post to action }, Modifier.testTag("card"),
                     favorite = favorite.value, cached = cached.value)
             }
@@ -58,6 +57,8 @@ class ComposeFeedCardUiTest {
         val descriptionView = compose.runOnIdle { richView("Summary [inline-test]") }
         val renderedTitle = compose.runOnIdle { titleView.text }
         val renderedDescription = compose.runOnIdle { descriptionView.text }
+        compose.onNodeWithContentDescription("\u5173\u6ce8").assertDoesNotExist()
+        compose.onNodeWithContentDescription("\u53d6\u6d88\u5173\u6ce8").assertDoesNotExist()
         repeat(5) { index ->
             compose.runOnIdle {
                 item.likes = 37 + index
@@ -71,9 +72,10 @@ class ComposeFeedCardUiTest {
             }
             compose.onNodeWithText(Format.commentLikeCount(37 + index)).assertIsDisplayed()
             compose.onNodeWithContentDescription("\u53d6\u6d88\u70b9\u8d5e").assertIsDisplayed()
-            compose.onNodeWithContentDescription("\u53d6\u6d88\u5173\u6ce8").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("\u5173\u6ce8").assertDoesNotExist()
+            compose.onNodeWithContentDescription("\u53d6\u6d88\u5173\u6ce8").assertDoesNotExist()
             compose.onNodeWithContentDescription("\u53d6\u6d88\u6536\u85cf").assertIsDisplayed()
-            compose.onNodeWithContentDescription("\u79fb\u9664\u7f13\u5b58").assertIsDisplayed()
+            compose.onNodeWithContentDescription("\u53d6\u6d88\u7a0d\u540e\u770b").assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals("Recomposition must not scan the same preload again", initialReads, preload.reads)
                 assertSame(renderedTitle, titleView.text)
@@ -85,10 +87,12 @@ class ComposeFeedCardUiTest {
             theme.value = theme.value.copy(panelElevated = Color.Black)
         }
         compose.onNodeWithContentDescription("\u53d6\u6d88\u70b9\u8d5e").performClick()
-        compose.onNodeWithContentDescription("\u53d6\u6d88\u5173\u6ce8").performClick()
+        compose.onNodeWithContentDescription("\u53d6\u6d88\u5173\u6ce8").assertDoesNotExist()
+        compose.onNodeWithContentDescription("\u53d6\u6d88\u6536\u85cf").performClick()
+        compose.onNodeWithContentDescription("\u53d6\u6d88\u7a0d\u540e\u770b").performClick()
         compose.onNodeWithTag("card").performClick()
         compose.runOnIdle {
-            assertEquals(listOf(FeedAction.LIKE, FeedAction.FOLLOW), actions.map { it.second })
+            assertEquals(listOf(FeedAction.LIKE, FeedAction.FAVORITE, FeedAction.CACHE), actions.map { it.second })
             assertTrue(actions.all { it.first === item })
             assertSame(item, opened)
             assertEquals(initialReads, preload.reads)
@@ -102,7 +106,7 @@ class ComposeFeedCardUiTest {
         val theme = composePreviewTheme(false)
         compose.setContent {
             HeyboxComposeTheme(theme) {
-                ComposeFeedCard(current.value, theme, true, "", {}, null)
+                ComposeFeedCard(current.value, theme, true, {}, null)
             }
         }
         compose.onNodeWithText("Game One").assertIsDisplayed()
@@ -124,7 +128,7 @@ class ComposeFeedCardUiTest {
         val theme = composePreviewTheme(false)
         compose.setContent {
             HeyboxComposeTheme(theme) {
-                ComposeFeedCard(current.value, theme, true, "", {}, null)
+                ComposeFeedCard(current.value, theme, true, {}, null)
             }
         }
         compose.onNodeWithText("Plain title").assertIsDisplayed()
@@ -149,7 +153,7 @@ class ComposeFeedCardUiTest {
         val theme = mutableStateOf(composePreviewTheme(false))
         compose.setContent {
             HeyboxComposeTheme(theme.value) {
-                ComposeFeedCard(item, theme.value, true, "", {}, null)
+                ComposeFeedCard(item, theme.value, true, {}, null)
             }
         }
         compose.waitForIdle()

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -49,7 +48,7 @@ internal fun ComposeCheckinPrimaryButton(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
-        fontSize = 12f,
+        fontSize = WatchType.SECONDARY,
         primary = true,
     )
 }
@@ -80,7 +79,7 @@ internal fun ComposeCheckinTextField(
     focusRequester: FocusRequester? = null,
 ) {
     val theme = LocalHeyboxTheme.current
-    val fieldStyle = TextStyle(color = theme.text, fontSize = watchSp(12f), letterSpacing = 0.sp)
+    val fieldStyle = TextStyle(color = theme.text, fontSize = watchSp(WatchType.SECONDARY), letterSpacing = 0.sp)
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
@@ -91,7 +90,7 @@ internal fun ComposeCheckinTextField(
             .heightIn(min = watchDp(40))
             .testTag("checkin-field-$placeholder")
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .background(theme.panelElevated, RoundedCornerShape(watchDp(9)))
+            .background(theme.panelElevated, RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
             .padding(horizontal = watchDp(10), vertical = watchDp(9)),
         textStyle = fieldStyle,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
@@ -143,8 +142,8 @@ internal fun ComposeCheckinModeSelector(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(watchDp(1), theme.hairline, RoundedCornerShape(watchDp(9)))
-            .background(theme.panelElevated, RoundedCornerShape(watchDp(9)))
+            .border(watchDp(1), theme.hairline, RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
+            .background(theme.panelElevated, RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
             .padding(watchDp(3)),
         horizontalArrangement = Arrangement.spacedBy(watchDp(3)),
     ) {
@@ -167,7 +166,7 @@ private fun RowScope.ComposeCheckinModeItem(
             .height(watchDp(34))
             .background(
                 if (selected) theme.panel else Color.Transparent,
-                RoundedCornerShape(watchDp(7)),
+                RoundedCornerShape(watchDp(WatchRadius.SMALL)),
             )
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -175,7 +174,7 @@ private fun RowScope.ComposeCheckinModeItem(
         Text(
             text,
             color = if (enabled) theme.text else theme.subtle,
-            fontSize = watchSp(11f),
+            fontSize = watchSp(WatchType.CAPTION),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -203,19 +202,19 @@ internal fun ComposeCheckinPairingScreen(
         if (pairing == null) {
             WatchCard(highlighted = true) {
                 Text("正在创建连接", color = LocalHeyboxTheme.current.text,
-                    fontSize = watchSp(15f), fontWeight = FontWeight.SemiBold)
+                    fontSize = watchSp(WatchType.SUBTITLE), fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(watchDp(5)))
                 Text("正在等待签到服务返回配对码", color = LocalHeyboxTheme.current.muted,
-                    fontSize = watchSp(12f))
+                    fontSize = watchSp(WatchType.SECONDARY))
             }
         } else {
             WatchCard(highlighted = true) {
-                Text("配对码", color = LocalHeyboxTheme.current.muted, fontSize = watchSp(11f))
+                Text("配对码", color = LocalHeyboxTheme.current.muted, fontSize = watchSp(WatchType.CAPTION))
                 Spacer(modifier = Modifier.height(watchDp(2)))
                 Text(
                     pairing.userCode,
                     color = LocalHeyboxTheme.current.text,
-                    fontSize = watchSp(23f),
+                    fontSize = watchSp(WatchType.DISPLAY),
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                 )
@@ -224,13 +223,13 @@ internal fun ComposeCheckinPairingScreen(
                 Text(
                     "有效时间 ${remaining / 60}:${(remaining % 60).toString().padStart(2, '0')}",
                     color = LocalHeyboxTheme.current.muted,
-                    fontSize = watchSp(11f),
+                    fontSize = watchSp(WatchType.CAPTION),
                 )
                 Spacer(modifier = Modifier.height(watchDp(5)))
                 Text(
                     "使用签到服务账号完成连接，手机凭据只用于登录小黑盒。",
                     color = LocalHeyboxTheme.current.muted,
-                    fontSize = watchSp(11f),
+                    fontSize = watchSp(WatchType.CAPTION),
                 )
             }
 
@@ -274,7 +273,7 @@ internal fun ComposeCheckinPairingScreen(
                     Text(
                         "密码至少 12 位，并包含三类字符。",
                         color = LocalHeyboxTheme.current.subtle,
-                        fontSize = watchSp(10f),
+                        fontSize = watchSp(WatchType.CAPTION),
                     )
                     if (pairing.registrationEmailRequired) {
                         Spacer(modifier = Modifier.height(watchDp(7)))
@@ -302,7 +301,7 @@ internal fun ComposeCheckinPairingScreen(
                                 onClick = controller::sendRegistrationEmail,
                                 enabled = state.serviceEmailButtonEnabled,
                                 modifier = modifier.heightIn(min = watchDp(40)),
-                                fontSize = 10f,
+                                fontSize = WatchType.CAPTION,
                             )
                         })
                     }
@@ -342,10 +341,10 @@ internal fun ComposeCheckinMobileLoginScreen(
     WatchPage("手机号登录", onBack) {
         WatchCard {
             Text("登录小黑盒", color = LocalHeyboxTheme.current.text,
-                fontSize = watchSp(15f), fontWeight = FontWeight.SemiBold)
+                fontSize = watchSp(WatchType.SUBTITLE), fontWeight = FontWeight.SemiBold)
             Spacer(modifier = Modifier.height(watchDp(4)))
             Text("仅用于服务器自动签到", color = LocalHeyboxTheme.current.muted,
-                fontSize = watchSp(12f))
+                fontSize = watchSp(WatchType.SECONDARY))
             Spacer(modifier = Modifier.height(watchDp(9)))
             ComposeCheckinModeSelector(
                 first = "短信验证码",
@@ -372,7 +371,7 @@ internal fun ComposeCheckinMobileLoginScreen(
                         onClick = controller::sendSmsCode,
                         enabled = state.mobileSmsButtonEnabled,
                         modifier = modifier.heightIn(min = watchDp(40)),
-                        fontSize = 10f,
+                        fontSize = WatchType.CAPTION,
                     )
                 })
                 Spacer(modifier = Modifier.height(watchDp(7)))
@@ -434,7 +433,7 @@ internal fun ComposeCheckinStatusText(message: String, kind: ComposeCheckinStatu
             ComposeCheckinStatusKind.ACCENT -> theme.accent
             else -> theme.muted
         },
-        fontSize = watchSp(11f),
+        fontSize = watchSp(WatchType.CAPTION),
         modifier = Modifier.padding(top = watchDp(7)),
         maxLines = 3,
         overflow = TextOverflow.Ellipsis,

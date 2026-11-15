@@ -19,27 +19,27 @@ internal fun ComposeCommentEditor(state: ComposeCommentEditorState, actions: Com
     val theme = LocalHeyboxTheme.current
     WatchDialog(if (state.replyId.isBlank()) "发表评论" else "回复评论", actions::dismiss,
         actions = {
-            WatchActionButton("取消", actions::dismiss, Modifier.weight(1f), fontSize = 12f)
+            WatchActionButton("取消", actions::dismiss, Modifier.weight(1f))
             WatchActionButton(if (state.sending) "发送中" else "发送", actions::send,
                 Modifier.weight(1f), enabled = !state.sending && state.text.isNotBlank(),
-                primary = true, fontSize = 12f)
+                primary = true)
         }) {
         if (state.recipient.isNotBlank()) Text("回复 ${state.recipient}", color = theme.muted,
-            fontSize = watchSp(11f))
+            fontSize = watchSp(WatchType.CAPTION))
         BasicTextField(value = state.text, onValueChange = actions::changeText,
             enabled = !state.sending, textStyle = TextStyle(color = theme.text,
-                fontSize = watchSp(13f), lineHeight = watchSp(19f)),
+                fontSize = watchSp(WatchType.BODY), lineHeight = watchLineHeight(WatchType.BODY)),
             modifier = Modifier.fillMaxWidth().heightIn(min = watchDp(80))
                 .testTag("comment-editor-text")
-                .clip(RoundedCornerShape(watchDp(8))).background(theme.panel)
+                .clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM))).background(theme.panel)
                 .padding(watchDp(10)),
             decorationBox = { input ->
                 Column {
                     if (state.text.isEmpty()) Text("友好交流，理性讨论", color = theme.subtle,
-                        fontSize = watchSp(12f))
+                        fontSize = watchSp(WatchType.SECONDARY))
                     input()
                 }
             })
-        if (state.error.isNotBlank()) Text(state.error, color = theme.muted, fontSize = watchSp(11f))
+        if (state.error.isNotBlank()) Text(state.error, color = theme.muted, fontSize = watchSp(WatchType.CAPTION))
     }
 }

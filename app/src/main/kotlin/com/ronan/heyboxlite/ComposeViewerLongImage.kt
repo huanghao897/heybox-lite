@@ -32,6 +32,7 @@ internal fun ComposeViewerLongImage(
     onDismiss: () -> Unit,
     viewport: ComposeLongImageViewport = remember { ComposeLongImageViewport() },
     interactive: Boolean = true,
+    motion: Int = MotionLevel.FULL,
 ) {
     var size by remember { mutableStateOf(Size.Zero) }
     var ready by remember(source) { mutableStateOf(false) }
@@ -42,7 +43,7 @@ internal fun ComposeViewerLongImage(
     Box(Modifier.fillMaxSize().onSizeChanged { size = Size(it.width.toFloat(), it.height.toFloat()) }
         .alpha(if (ready) 1f else 0f)
         .then(if (active && interactive) Modifier.viewerGestures(transform, true, onDismiss, {},
-            canPull = viewport::canPull, onLongPan = { viewport.pan(it) }) else Modifier)
+            canPull = viewport::canPull, onLongPan = { viewport.pan(it) }, motion = motion) else Modifier)
         .scrollable(scroll, Orientation.Vertical, enabled = active && interactive && !transform.zoomed)
         .testTag("viewer-long-image")) {
         key(source) { AndroidView(

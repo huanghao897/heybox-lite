@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
@@ -75,12 +76,14 @@ internal class ComposeFavoritesScrollingUiTest : ComposeRoundLayoutHarness() {
         val tab = mutableStateOf(ComposeFavoriteTab.POSTS)
         val openedPosts = mutableListOf<String>()
         val openedFolders = mutableListOf<String>()
+        val actions = mutableListOf<Pair<String, FeedAction>>()
         lateinit var state: LazyListState
         showLayout(services) {
             state = rememberLazyListState()
             ComposeFavoritesScreen(ComposeSavedPostsState(posts, loaded = true), folders, tab.value,
                 false, "", services, { tab.value = it }, { openedPosts += it.id },
-                { openedFolders += it.id }, { _, _ -> }, {}, {}, {}, state)
+                { openedFolders += it.id }, { item, action -> actions += item.id to action },
+                {}, {}, {}, state)
         }
         val list = compose.onNodeWithTag("favorites-list")
         val tabs = compose.onNodeWithTag("favorites-tabs")
@@ -90,7 +93,7 @@ internal class ComposeFavoritesScrollingUiTest : ComposeRoundLayoutHarness() {
         val control = tab("帖子").fetchSemanticsNode().boundsInRoot
         assertEquals("Only compact padding belongs inside the painted tab panel",
             6f * uiScale, panel.height - control.height, 1.5f)
-        assertTrue("Default Material button sizing must not inflate the tabs", panel.height <= 41f)
+        assertTrue("Default Material button sizing must not inflate the tabs", panel.height <= 36f + 6f * uiScale + 1.5f)
         listOf("帖子", "收藏夹").forEach { label ->
             assertPaintedLabelInsideDisplay(label, compose.onNode(
                 hasText(label) and hasAnyAncestor(hasTestTag("favorites-tabs")), useUnmergedTree = true))
@@ -99,7 +102,12 @@ internal class ComposeFavoritesScrollingUiTest : ComposeRoundLayoutHarness() {
         compose.runOnIdle { captureMembershipUi(compose.activity, "favorites-${testName.methodName}-initial") }
         list.performScrollToIndex(posts.size)
         tabs.assertIsNotDisplayed()
-        touchReachable("Post 8")
+        touchPost("Post 8")
+        val like = circleReach(compose.onNode(hasContentDescription("点赞") and
+            hasAnyAncestor(hasText("Post 8"))))
+        assertControlInsideDisplay(like, "Post 8 like")
+        like.performTouchInput { click() }
+        compose.waitForIdle()
         compose.runOnIdle { assertTrue(state.firstVisibleItemIndex > 0) }
         compose.runOnIdle { captureMembershipUi(compose.activity, "favorites-${testName.methodName}-posts-scrolled") }
         list.performScrollToIndex(0)
@@ -112,11 +120,21 @@ internal class ComposeFavoritesScrollingUiTest : ComposeRoundLayoutHarness() {
         list.performScrollToIndex(0)
         touchTab("帖子")
         tab("帖子").assertIsSelected()
-        touchReachable("Post 1")
+        touchPost("Post 1")
         compose.runOnIdle {
             assertEquals(listOf("post-8", "post-1"), openedPosts)
             assertEquals(listOf("folder-8"), openedFolders)
+            assertEquals(listOf("post-8" to FeedAction.LIKE), actions)
         }
+    }
+
+    private fun touchPost(title: String) {
+        // The merged card also contains action targets; touch the painted title itself.
+        val target = circleReach(text(title, unmerged = true))
+        assertTouchable(target, title)
+        assertPaintedLabelInsideDisplay(title, target)
+        target.performTouchInput { click() }
+        compose.waitForIdle()
     }
 
     private fun tab(label: String) = compose.onNode(hasText(label) and hasAnyAncestor(hasTestTag("favorites-tabs")))

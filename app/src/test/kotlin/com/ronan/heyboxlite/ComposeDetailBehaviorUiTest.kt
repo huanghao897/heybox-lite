@@ -55,8 +55,10 @@ class ComposeDetailBehaviorUiTest {
         }
         compose.onNodeWithText("Feed author").assertDoesNotExist()
         compose.onNodeWithText("Lv.24", useUnmergedTree = true).assertExists()
-        compose.onNodeWithText(Format.relativeTime(1_600_000_000L) + " · Detail signature",
+        compose.onNodeWithText(Format.relativeTime(1_600_000_000L),
             useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Detail signature", substring = true,
+            useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithText("Detail author").performTouchInput { click() }
         assertTrue(opened.isEmpty())
         compose.onNodeWithContentDescription("Detail author的头像").performClick()

@@ -181,16 +181,16 @@ private fun ComposeTextDialog(
             value = text,
             onValueChange = { text = it },
             modifier = Modifier.fillMaxWidth().heightIn(min = watchDp(44))
-                .background(style.panelElevated, RoundedCornerShape(watchDp(9)))
+                .background(style.panelElevated, RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
                 .padding(horizontal = watchDp(10), vertical = watchDp(9))
                 .semantics { contentDescription = title },
-            textStyle = TextStyle(color = style.text, fontSize = watchSp(13f)),
+            textStyle = TextStyle(color = style.text, fontSize = watchSp(WatchType.BODY)),
             cursorBrush = SolidColor(style.text),
             singleLine = true,
             decorationBox = { field ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
                     if (text.isEmpty()) {
-                        Text(hint, color = style.subtle, fontSize = watchSp(12f))
+                        Text(hint, color = style.subtle, fontSize = watchSp(WatchType.SECONDARY))
                     }
                     field()
                 }
@@ -214,7 +214,7 @@ internal fun ComposeConfirmDialog(
         }, Modifier.weight(1f))
     }) {
         Text(message, color = LocalHeyboxTheme.current.muted,
-            fontSize = watchSp(12f), lineHeight = watchSp(16f))
+            fontSize = watchSp(WatchType.SECONDARY), lineHeight = watchLineHeight(WatchType.SECONDARY))
     }
 }
 

@@ -1,6 +1,7 @@
 package com.ronan.heyboxlite
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -11,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,9 +40,8 @@ internal fun ComposeProfileScreen(
                 "&avatar=${android.net.Uri.encode(profileState.avatar)}"
         } else "login"
         WatchCard(modifier = Modifier
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(watchDp(14)))
-            .clickable { onNavigate(accountRoute) }
-            .padding(watchDp(2))) {
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(watchDp(WatchRadius.LARGE)))
+            .clickable { onNavigate(accountRoute) }) {
             ComposeAccountIdentity(displayName,
                 if (loggedIn && userId.isNotBlank()) "ID $userId" else "登录小黑盒") {
                 ComposeMediaImage(
@@ -54,14 +55,13 @@ internal fun ComposeProfileScreen(
                 )
             }
             if (loggedIn && profileState.hasProfile) {
-                Text(
-                    "关注 ${profileState.follows}  粉丝 ${profileState.fans}  获赞 ${profileState.likes}",
-                    modifier = Modifier.fillMaxWidth().padding(
-                        start = watchDp(11), end = watchDp(11), bottom = watchDp(6),
-                    ),
-                    color = LocalHeyboxTheme.current.accent,
-                    fontSize = watchSp(11.5f),
-                )
+                Row(Modifier.fillMaxWidth().testTag("profile-stats").padding(
+                    start = watchDp(11), end = watchDp(11), bottom = watchDp(8),
+                )) {
+                    WatchStat("关注", profileState.follows, Modifier.weight(1f))
+                    WatchStat("粉丝", profileState.fans, Modifier.weight(1f))
+                    WatchStat("获赞", profileState.likes, Modifier.weight(1f))
+                }
                 if (profileState.signature.isNotBlank()) {
                     Text(
                         profileState.signature,
@@ -69,7 +69,7 @@ internal fun ComposeProfileScreen(
                             start = watchDp(11), end = watchDp(11), bottom = watchDp(9),
                         ),
                         color = LocalHeyboxTheme.current.text,
-                        fontSize = watchSp(13f),
+                        fontSize = watchSp(WatchType.BODY),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )

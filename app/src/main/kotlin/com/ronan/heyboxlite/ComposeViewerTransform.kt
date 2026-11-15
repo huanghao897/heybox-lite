@@ -1,5 +1,7 @@
 package com.ronan.heyboxlite
 
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -8,6 +10,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
 import kotlin.math.max
 import kotlin.math.min
 
@@ -29,6 +34,7 @@ internal class ComposeViewerTransform {
     var zoomFocus by mutableStateOf(Offset.Zero)
         private set
     private var round = false
+    private var zoomAnimation: Job? = null
     val zoomed: Boolean get() = zoom > 1.01f
 
     fun layout(viewport: Size, image: Size, round: Boolean) {
@@ -46,6 +52,7 @@ internal class ComposeViewerTransform {
     private var imageSize = Size.Zero
 
     fun pinch(factor: Float, centroid: Offset, movement: Offset) {
+        cancelZoomAnimation()
         zoomFocus = centroid
         val next = (zoom * ImageZoomPolicy.pinchFactor(factor, round))
             .coerceIn(1f, ImageZoomPolicy.MAX_ZOOM)
@@ -58,23 +65,59 @@ internal class ComposeViewerTransform {
         pan = bounded(pan)
     }
 
-    fun move(delta: Offset) { pan = bounded(pan + delta) }
-    fun pull(delta: Offset) { dismiss += delta }
+    fun move(delta: Offset) {
+        cancelZoomAnimation()
+        pan = bounded(pan + delta)
+    }
+
+    fun pull(delta: Offset) {
+        cancelZoomAnimation()
+        dismiss += delta
+    }
     fun resetPull() { dismiss = Offset.Zero }
 
     fun doubleTap(position: Offset) {
+        cancelZoomAnimation()
+        applyZoom(nextTapZoom(position), zoom, pan, position)
+    }
+
+    suspend fun animateDoubleTap(position: Offset, durationMillis: Int) {
+        cancelZoomAnimation()
+        val job = currentCoroutineContext().job
+        zoomAnimation = job
+        val initialZoom = zoom
+        val initialPan = pan
+        val target = nextTapZoom(position)
+        try {
+            animate(initialZoom, target, animationSpec = tween(durationMillis)) { value, _ ->
+                applyZoom(value, initialZoom, initialPan, position)
+            }
+        } finally {
+            if (zoomAnimation === job) zoomAnimation = null
+        }
+    }
+
+    fun cancelZoomAnimation() {
+        zoomAnimation?.cancel()
+        zoomAnimation = null
+    }
+
+    private fun nextTapZoom(position: Offset): Float {
         zoomFocus = position
         tapLevel = ImageZoomPolicy.nextLevel(tapLevel)
         val widthZoom = (viewport.width / max(1f, fitted.width))
-        val next = ImageZoomPolicy.targetScale(tapLevel, widthZoom)
-        val relative = position - Offset(viewport.width / 2, viewport.height / 2)
-        pan = if (next == 1f) Offset.Zero else (pan - relative) * (next / zoom) + relative
-        zoom = next
-        pan = bounded(pan)
         dismiss = Offset.Zero
+        return ImageZoomPolicy.targetScale(tapLevel, widthZoom)
+    }
+
+    private fun applyZoom(next: Float, initialZoom: Float, initialPan: Offset, position: Offset) {
+        val relative = position - Offset(viewport.width / 2, viewport.height / 2)
+        zoom = next
+        pan = if (next == 1f) Offset.Zero else bounded((initialPan - relative) * (next / initialZoom) + relative)
     }
 
     fun reset() {
+        cancelZoomAnimation()
         zoom = 1f
         pan = Offset.Zero
         dismiss = Offset.Zero

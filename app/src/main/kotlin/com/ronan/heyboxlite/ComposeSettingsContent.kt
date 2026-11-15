@@ -143,7 +143,7 @@ internal fun ComposeContentCacheScreen(
                 Text(
                     text = "屏蔽关键词，用逗号分隔",
                     color = LocalHeyboxTheme.current.muted,
-                    fontSize = watchSp(11f),
+                    fontSize = watchSp(WatchType.CAPTION),
                 )
                 Spacer(modifier = Modifier.height(watchDp(6)))
                 BasicTextField(
@@ -154,19 +154,19 @@ internal fun ComposeContentCacheScreen(
                         .height(watchDp(62))
                         .background(
                             LocalHeyboxTheme.current.background,
-                            RoundedCornerShape(watchDp(9)),
+                            RoundedCornerShape(watchDp(WatchRadius.MEDIUM)),
                         )
                         .padding(horizontal = watchDp(10), vertical = watchDp(8)),
                     textStyle = TextStyle(
                         color = LocalHeyboxTheme.current.text,
-                        fontSize = watchSp(12f),
+                        fontSize = watchSp(WatchType.SECONDARY),
                     ),
                     decorationBox = { field ->
                         if (filter.isEmpty()) {
                             Text(
                                 text = "例如：抽奖，广告",
                                 color = LocalHeyboxTheme.current.subtle,
-                                fontSize = watchSp(12f),
+                                fontSize = watchSp(WatchType.SECONDARY),
                             )
                         }
                         field()

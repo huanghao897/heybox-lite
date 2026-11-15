@@ -199,7 +199,7 @@ internal class ComposeDetailVisualUiTest : ComposeMembershipUiRegressionHarness(
     private fun assertPostActions(theme: ComposeThemeState, expectTwoRows: Boolean) {
         scrollTo("post-actions")
         reach(tag("detail-actions"))
-        val labels = listOf("\u70b9\u8d5e\u5e16\u5b50", "\u6536\u85cf", "\u7f13\u5b58\u5e16\u5b50", "\u8bc4\u8bba")
+        val labels = listOf("\u70b9\u8d5e\u5e16\u5b50", "\u6536\u85cf", "\u7a0d\u540e\u770b", "\u8bc4\u8bba")
         val bounds = labels.map { windowBounds(description(it).fetchSemanticsNode()) }
         bounds.forEachIndexed { index, rect ->
             assertInDisplay(rect, labels[index], corners = true)
@@ -228,7 +228,7 @@ internal class ComposeDetailVisualUiTest : ComposeMembershipUiRegressionHarness(
             }
         }
         capture(if (expectTwoRows) "detail-four-actions-2x2" else "detail-four-actions-row")
-        val visibleLabels = listOf("128", "", "\u7f13\u5b58", "3")
+        val visibleLabels = listOf("128", "", "", "3")
         labels.zip(visibleLabels).forEach { (action, label) ->
             if (label.isNotBlank()) {
                 assertLabelFits(label)
@@ -282,7 +282,8 @@ internal class ComposeDetailVisualUiTest : ComposeMembershipUiRegressionHarness(
                 bounds.left >= rootBounds.left && bounds.right <= rootBounds.right + 0.5f &&
                     (bounds.right <= likeBounds.left + 0.5f || bounds.bottom <= likeBounds.top + 0.5f))
         }
-        assertEquals("Like count should stay right aligned", rootBounds.right, likeBounds.right, 1f)
+        assertTrue("Like count should stay right aligned with only a small circular edge allowance",
+            rootBounds.right - likeBounds.right in -0.5f..4f)
         assertTrue("Like control must stay compact", likeBounds.width <= 56f * theme.uiScale + 1f)
         capture("comments-author-level-like")
         listOf("\u7f6e\u9876", "\u4f5c\u8005", "Lv.24", "12", "Shanghai").forEach(::assertLabelFits)

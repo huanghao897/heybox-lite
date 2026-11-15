@@ -43,8 +43,9 @@ internal fun ComposeCheckinAccountCard(
 
     CheckinPanel(Modifier.testTag("checkin-account-card")) {
         BoxWithConstraints(Modifier.fillMaxWidth().clickable(onClick = onLogin)) {
-            val compact = maxWidth < watchDp(230) * theme.textScale * LocalDensity.current.fontScale
-            val narrow = maxWidth < watchDp(180) * theme.textScale * LocalDensity.current.fontScale
+            val fontScale = theme.textScale * LocalDensity.current.fontScale
+            val compact = maxWidth < 230.dp * fontScale
+            val narrow = maxWidth < 180.dp * fontScale
             val accountName = account.displayName.ifEmpty { "小黑盒账号" }
             val externalId = account.externalIdMasked.ifEmpty { "尚未连接" }
             if (narrow) {
@@ -55,12 +56,12 @@ internal fun ComposeCheckinAccountCard(
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         CheckinAccountAvatar()
                         Spacer(Modifier.width(watchDp(9)))
-                        Text(accountName, color = theme.text, fontSize = watchSp(13f),
+                        Text(accountName, color = theme.text, fontSize = watchSp(WatchType.BODY),
                             fontWeight = FontWeight.SemiBold, maxLines = 2,
                             overflow = TextOverflow.Ellipsis, letterSpacing = 0.sp,
                             modifier = Modifier.weight(1f))
                     }
-                    Text(externalId, color = theme.muted, fontSize = watchSp(10f),
+                    Text(externalId, color = theme.muted, fontSize = watchSp(WatchType.CAPTION),
                         maxLines = 2, overflow = TextOverflow.Ellipsis, letterSpacing = 0.sp)
                     CheckinAccountStatusBadge(statusText, statusColor)
                 }
@@ -75,11 +76,11 @@ internal fun ComposeCheckinAccountCard(
                         Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(watchDp(2)),
                     ) {
-                        Text(accountName, color = theme.text, fontSize = watchSp(13f),
+                        Text(accountName, color = theme.text, fontSize = watchSp(WatchType.BODY),
                             fontWeight = FontWeight.SemiBold, maxLines = 1,
                             overflow = TextOverflow.Ellipsis)
-                        Text(externalId, color = theme.muted, fontSize = watchSp(10f),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(externalId, color = theme.muted, fontSize = watchSp(WatchType.CAPTION),
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
                         CheckinAccountStatusBadge(statusText, statusColor,
                             Modifier.padding(top = watchDp(2)))
                     }
@@ -92,10 +93,10 @@ internal fun ComposeCheckinAccountCard(
                     CheckinAccountAvatar()
                     Spacer(Modifier.width(watchDp(9)))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(watchDp(2))) {
-                        Text(accountName, color = theme.text, fontSize = watchSp(13f),
+                        Text(accountName, color = theme.text, fontSize = watchSp(WatchType.BODY),
                             fontWeight = FontWeight.SemiBold, maxLines = 1,
                             overflow = TextOverflow.Ellipsis)
-                        Text(externalId, color = theme.muted, fontSize = watchSp(10f),
+                        Text(externalId, color = theme.muted, fontSize = watchSp(WatchType.CAPTION),
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     Spacer(Modifier.width(watchDp(7)))
@@ -154,7 +155,7 @@ private fun CheckinAccountAvatar() {
     Image(
         painterResource(R.mipmap.heywear),
         contentDescription = "小黑盒账号头像",
-        modifier = Modifier.size(watchDp(34)).clip(RoundedCornerShape(watchDp(8))),
+        modifier = Modifier.size(watchDp(34)).clip(RoundedCornerShape(watchDp(WatchRadius.SMALL))),
     )
 }
 
@@ -163,13 +164,13 @@ private fun CheckinAccountStatusBadge(text: String, color: Color, modifier: Modi
     Text(
         text,
         color = color,
-        fontSize = watchSp(9f),
+        fontSize = watchSp(WatchType.CAPTION),
         fontWeight = FontWeight.Medium,
         letterSpacing = 0.sp,
         maxLines = 2,
         softWrap = true,
         overflow = TextOverflow.Clip,
-        modifier = modifier.clip(RoundedCornerShape(watchDp(6)))
+        modifier = modifier.clip(RoundedCornerShape(watchDp(WatchRadius.SMALL)))
             .background(LocalHeyboxTheme.current.panelElevated)
             .padding(horizontal = watchDp(7), vertical = watchDp(4)),
     )
@@ -184,12 +185,12 @@ private fun CheckinScheduleField(
 ) {
     val theme = LocalHeyboxTheme.current
     Column(modifier) {
-        Text(label, color = theme.muted, fontSize = watchSp(10f),
+        Text(label, color = theme.muted, fontSize = watchSp(WatchType.CAPTION),
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
             value,
             color = theme.text,
-            fontSize = watchSp(if (prominent) 18f else 13f),
+            fontSize = watchSp(if (prominent) WatchType.TITLE else WatchType.BODY),
             fontWeight = if (prominent) FontWeight.SemiBold else FontWeight.Medium,
             modifier = Modifier.padding(top = watchDp(3)),
             maxLines = 2,

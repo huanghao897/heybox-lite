@@ -114,7 +114,7 @@ private fun TaskSettingsInputDialog(
 ) {
     val theme = LocalHeyboxTheme.current
     TaskSettingsDialogSurface(onDismiss) {
-        Text(title, color = theme.text, fontSize = watchSp(13f),
+        Text(title, color = theme.text, fontSize = watchSp(WatchType.BODY),
             fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center)
         BasicTextField(
@@ -123,12 +123,12 @@ private fun TaskSettingsInputDialog(
             enabled = enabled,
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-            textStyle = TextStyle(color = theme.text, fontSize = watchSp(17f),
+            textStyle = TextStyle(color = theme.text, fontSize = watchSp(WatchType.TITLE),
                 textAlign = TextAlign.Center),
             cursorBrush = SolidColor(theme.text),
             modifier = Modifier.fillMaxWidth()
                 .heightIn(min = watchDp(36))
-                .background(theme.panelElevated, RoundedCornerShape(watchDp(6)))
+                .background(theme.panelElevated, RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
                 .padding(horizontal = watchDp(8), vertical = watchDp(6))
                 .semantics {
                     contentDescription = label
@@ -136,20 +136,20 @@ private fun TaskSettingsInputDialog(
                 },
             decorationBox = { field ->
                 if (draft.isEmpty()) {
-                    Text(hint, color = theme.subtle, fontSize = watchSp(17f),
+                    Text(hint, color = theme.subtle, fontSize = watchSp(WatchType.TITLE),
                         modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
                 }
                 field()
             },
         )
         if (errorMessage.isNotBlank()) {
-            Text(errorMessage, color = theme.muted, fontSize = watchSp(10f),
+            Text(errorMessage, color = theme.muted, fontSize = watchSp(WatchType.CAPTION),
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(watchDp(4))) {
-            WatchActionButton("\u53d6\u6d88", onDismiss, Modifier.weight(1f), fontSize = 12f)
+            WatchActionButton("\u53d6\u6d88", onDismiss, Modifier.weight(1f), fontSize = WatchType.SECONDARY)
             WatchActionButton("\u786e\u8ba4", onConfirm, Modifier.weight(1f),
-                enabled = enabled && valid, fontSize = 12f)
+                enabled = enabled && valid, fontSize = WatchType.SECONDARY)
         }
     }
 }
@@ -172,7 +172,7 @@ private fun TaskSettingsDialogSurface(
             Column(
                 modifier = Modifier.width(width.coerceAtLeast(1.dp))
                     .heightIn(max = height.coerceAtLeast(1.dp))
-                    .clip(RoundedCornerShape(watchDp(8)))
+                    .clip(RoundedCornerShape(watchDp(WatchRadius.LARGE)))
                     .background(theme.panel)
                     .verticalScroll(rememberScrollState())
                     .padding(watchDp(10)),

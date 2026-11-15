@@ -64,15 +64,14 @@ internal fun ComposeDetailHeader(
     val avatar = Json.first(user?.optString("avatar"), user?.optString("avartar"), item.authorAvatar)
     val createdAt = if (link == null) item.createdAt else link.optLong("create_at",
         link.optLong("create_time", link.optLong("createtime", item.createdAt)))
-    val published = if (createdAt > 0L) Format.relativeTime(createdAt) else ""
-    val signature = Json.first(user?.optString("signature"), user?.optString("desc"))
-    val meta = listOf(published, signature).filter { it.isNotBlank() }.joinToString(" · ")
+    // Only the post's own time sits under the name; the author's signature belongs to their page.
+    val meta = if (createdAt > 0L) Format.relativeTime(createdAt) else ""
     Column(verticalArrangement = Arrangement.spacedBy(8.dp * theme.uiScale)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             ComposeInlineText(content.title, theme.dark, theme.text, theme.link,
                 modifier = Modifier.padding(horizontal = watchLeadingHeadingHorizontal(maxWidth, theme)),
-                fontSize = 18.sp * theme.textScale, lineHeight = 24.sp * theme.textScale,
-                fontWeight = FontWeight.Bold)
+                fontSize = WatchType.TITLE.sp * theme.textScale, lineHeight = 23.sp * theme.textScale,
+                fontWeight = FontWeight.SemiBold)
         }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val followVisible = showFollow && authorId.isNotBlank()
@@ -86,7 +85,7 @@ internal fun ComposeDetailHeader(
                     Column(Modifier.weight(1f)) {
                         ComposeCommentName(author, postAuthor = false, level = content.level)
                         if (meta.isNotBlank()) Text(meta,
-                            fontSize = 10.sp * theme.textScale, color = theme.muted)
+                            fontSize = WatchType.CAPTION.sp * theme.textScale, color = theme.muted)
                     }
                     if (followVisible && !wrapFollow) {
                         Spacer(Modifier.width(6.dp * theme.uiScale))
@@ -107,7 +106,7 @@ internal fun ComposeDetailHeader(
                 }
                 if (content.tags.isNotEmpty()) Text(content.tags.joinToString("  ") {
                     if (it.startsWith("#")) it else "#$it"
-                }, Modifier.weight(1f).testTag("detail-tags"), fontSize = 10.5.sp * theme.textScale,
+                }, Modifier.weight(1f).testTag("detail-tags"), fontSize = WatchType.CAPTION.sp * theme.textScale,
                     lineHeight = 15.sp * theme.textScale, color = theme.muted)
             }
         }

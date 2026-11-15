@@ -2,7 +2,6 @@ package com.ronan.heyboxlite
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -73,9 +72,7 @@ internal fun SavedPage(title: String, theme: ComposeThemeState, onBack: () -> Un
 
 @Composable
 internal fun ColumnScope.SavedEmpty(message: String, theme: ComposeThemeState) {
-    Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-        Text(message, color = theme.muted, fontSize = watchSp(12f))
-    }
+    WatchEmptyState(message, Modifier.weight(1f), fill = true, theme = theme)
 }
 
 @Composable
@@ -83,7 +80,7 @@ internal fun SavedLoadError(message: String, cached: Boolean, onRetry: () -> Uni
     val theme = LocalHeyboxTheme.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(if (cached) "离线缓存" else message, modifier = Modifier.weight(1f),
-            color = theme.muted, fontSize = watchSp(11f), maxLines = 2,
+            color = theme.muted, fontSize = watchSp(WatchType.CAPTION), maxLines = 2,
             overflow = TextOverflow.Ellipsis)
         WatchActionButton("重试", onRetry)
     }

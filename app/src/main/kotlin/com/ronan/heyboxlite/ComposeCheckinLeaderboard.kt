@@ -3,9 +3,7 @@ package com.ronan.heyboxlite
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -127,16 +125,16 @@ internal fun ComposeCheckinLeaderboardContent(
         when {
             state.loading -> WatchCard(highlighted = true) {
                 Text("正在加载", color = LocalHeyboxTheme.current.text,
-                    fontSize = watchSp(15f), fontWeight = FontWeight.SemiBold)
+                    fontSize = watchSp(WatchType.SUBTITLE), fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(watchDp(4)))
-                Text("正在读取排行榜", color = LocalHeyboxTheme.current.muted, fontSize = watchSp(12f))
+                Text("正在读取排行榜", color = LocalHeyboxTheme.current.muted, fontSize = watchSp(WatchType.SECONDARY))
             }
             state.errorMessage.isNotEmpty() -> WatchCard(highlighted = true) {
                 Text("暂时无法加载", color = LocalHeyboxTheme.current.text,
-                    fontSize = watchSp(15f), fontWeight = FontWeight.SemiBold)
+                    fontSize = watchSp(WatchType.SUBTITLE), fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(watchDp(4)))
                 Text(state.errorMessage, color = LocalHeyboxTheme.current.muted,
-                    fontSize = watchSp(12f), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    fontSize = watchSp(WatchType.SECONDARY), maxLines = 3, overflow = TextOverflow.Ellipsis)
                 Spacer(modifier = Modifier.height(watchDp(7)))
                 ComposeCheckinQuietButton("重新加载", onClick = onRetry)
             }
@@ -154,13 +152,13 @@ private fun ComposeCheckinBoardCard(state: ComposeCheckinLeaderboardState) {
     val entries = data.checkin
     WatchCard {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("连续签到", color = LocalHeyboxTheme.current.text, fontSize = watchSp(14.5f),
+            Text("连续签到", color = LocalHeyboxTheme.current.text, fontSize = watchSp(WatchType.SUBTITLE),
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             Text("${entries.size} 人", color = LocalHeyboxTheme.current.muted,
-                fontSize = watchSp(11f))
+                fontSize = watchSp(WatchType.CAPTION))
         }
         Text("按连续签到天数排序", color = LocalHeyboxTheme.current.muted,
-            fontSize = watchSp(11f), modifier = Modifier.padding(top = watchDp(2)))
+            fontSize = watchSp(WatchType.CAPTION), modifier = Modifier.padding(top = watchDp(2)))
         if (entries.isEmpty()) {
             WatchEmptyState("暂无数据")
         } else {
@@ -189,7 +187,7 @@ private fun ComposeCheckinLeaderboardRow(
         Text(
             entry.rank.toString(),
             color = if (entry.rank <= 3) theme.accent else theme.muted,
-            fontSize = watchSp(11.5f),
+            fontSize = watchSp(WatchType.SECONDARY),
             fontWeight = FontWeight.Bold,
             modifier = Modifier.width(watchDp(23)),
         )
@@ -208,7 +206,7 @@ private fun ComposeCheckinLeaderboardRow(
                     modifier = Modifier.size(watchDp(28)).clip(CircleShape),
                 )
             } else {
-                Text(entry.initial, color = theme.text, fontSize = watchSp(11f),
+                Text(entry.initial, color = theme.text, fontSize = watchSp(WatchType.CAPTION),
                     fontWeight = FontWeight.Bold, maxLines = 1)
             }
         }
@@ -216,7 +214,7 @@ private fun ComposeCheckinLeaderboardRow(
         Text(
             entry.displayName,
             color = theme.text,
-            fontSize = watchSp(12f),
+            fontSize = watchSp(WatchType.SECONDARY),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -225,7 +223,7 @@ private fun ComposeCheckinLeaderboardRow(
         Text(
             entry.valueLabel,
             color = theme.text,
-            fontSize = watchSp(11f),
+            fontSize = watchSp(WatchType.CAPTION),
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

@@ -41,36 +41,36 @@ internal fun ComposeDetailGameCard(
     val data = state.data
     val theme = LocalHeyboxTheme.current
     Row(Modifier.fillMaxWidth().testTag("detail-game-card-${block.value}")
-        .clip(RoundedCornerShape(watchDp(8)))
+        .clip(RoundedCornerShape(watchDp(WatchRadius.MEDIUM)))
         .background(theme.panelElevated).padding(watchDp(8)),
         verticalAlignment = Alignment.CenterVertically) {
         if (media.enabled && !media.gameCardNoImage && !data?.coverUrl.isNullOrBlank()) {
             val coverSize = watchDp(if (theme.roundScreen) 44 else 52)
             ComposeRemoteImage(data?.coverUrl.orEmpty(), theme, false, coverSize,
-                RoundedCornerShape(watchDp(6)), "游戏封面", Modifier.size(coverSize),
+                RoundedCornerShape(watchDp(WatchRadius.SMALL)), "游戏封面", Modifier.size(coverSize),
                 dataSaver = media.dataSaver || LocalComposeDataSaver.current)
         } else {
             Icon(painterResource(R.drawable.ic_game_link), null,
-                tint = theme.accent, modifier = Modifier.size(watchDp(25)))
+                tint = theme.accent, modifier = Modifier.size(watchDp(WatchIcon.XLARGE)))
         }
         Spacer(Modifier.width(watchDp(8)))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(watchDp(3))) {
-            Text(data?.name?.ifBlank { "游戏" } ?: "游戏", fontSize = watchSp(12.5f),
-                lineHeight = watchSp(17f), letterSpacing = 0.sp, color = theme.text,
+            Text(data?.name?.ifBlank { "游戏" } ?: "游戏", fontSize = watchSp(WatchType.BODY),
+                lineHeight = watchLineHeight(WatchType.BODY), letterSpacing = 0.sp, color = theme.text,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
             val metadata = listOfNotNull(data?.platforms?.takeIf { it.isNotBlank() },
                 data?.score?.takeIf { it.isNotBlank() }?.let { "评分 $it" },
                 data?.followers?.takeIf { it.isNotBlank() }?.let { "关注 $it" }).joinToString(" · ")
-            if (metadata.isNotBlank()) Text(metadata, fontSize = watchSp(9.5f),
-                lineHeight = watchSp(13f), letterSpacing = 0.sp, color = theme.muted)
+            if (metadata.isNotBlank()) Text(metadata, fontSize = watchSp(WatchType.CAPTION),
+                lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp, color = theme.muted)
             if (data != null) DetailGameCardPrices(data)
             val status = when {
                 state.loading -> "正在获取游戏信息"
                 data?.hasVisibleDetails() != true -> "游戏信息暂不可用"
                 else -> ""
             }
-            if (status.isNotBlank()) Text(status, fontSize = watchSp(10f),
-                lineHeight = watchSp(14f), letterSpacing = 0.sp, color = theme.muted,
+            if (status.isNotBlank()) Text(status, fontSize = watchSp(WatchType.CAPTION),
+                lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp, color = theme.muted,
                 modifier = Modifier.testTag("detail-game-state-${block.value}"))
         }
     }
@@ -90,14 +90,14 @@ private fun DetailGameCardPrices(data: GameCardData) {
         horizontalArrangement = Arrangement.spacedBy(watchDp(5)),
         verticalArrangement = Arrangement.spacedBy(watchDp(2))) {
         if (current.isNotBlank()) Text(current, color = theme.text,
-            fontSize = watchSp(11.5f), lineHeight = watchSp(16f), letterSpacing = 0.sp,
-            fontWeight = FontWeight.Bold, modifier = Modifier.testTag("detail-game-current-${data.appId}"))
+            fontSize = watchSp(WatchType.SECONDARY), lineHeight = watchLineHeight(WatchType.SECONDARY), letterSpacing = 0.sp,
+            fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("detail-game-current-${data.appId}"))
         if (original.isNotBlank()) Text(original, color = theme.muted,
-            fontSize = watchSp(9.5f), lineHeight = watchSp(16f), letterSpacing = 0.sp,
+            fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp,
             textDecoration = TextDecoration.LineThrough,
             modifier = Modifier.testTag("detail-game-original-${data.appId}"))
         if (discount.isNotBlank()) Text(discount, color = theme.accent,
-            fontSize = watchSp(9.5f), lineHeight = watchSp(16f), letterSpacing = 0.sp,
+            fontSize = watchSp(WatchType.CAPTION), lineHeight = watchLineHeight(WatchType.CAPTION), letterSpacing = 0.sp,
             modifier = Modifier.testTag("detail-game-discount-${data.appId}"))
     }
 }

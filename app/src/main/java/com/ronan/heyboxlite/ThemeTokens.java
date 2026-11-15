@@ -38,7 +38,7 @@ final class ThemeTokens {
             panelElevated = Color.rgb(234, 235, 239);
             text = Color.rgb(25, 25, 27);
             muted = Color.rgb(92, 92, 98);
-            subtle = Color.rgb(126, 126, 132);
+            subtle = Color.rgb(110, 110, 116);
             hairline = Color.rgb(226, 226, 230);
         }
         // The untouched default palette used to fall back to grey, which left every

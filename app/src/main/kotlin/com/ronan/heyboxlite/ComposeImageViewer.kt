@@ -74,8 +74,8 @@ internal fun ComposeImageViewer(
     var ready by remember { mutableStateOf(preview != null) }
     var width by remember { mutableStateOf(0) }
     val duration = if (motion == MotionLevel.OFF) 0 else 200
-    LaunchedEffect(ready) {
-        if (ready) {
+    LaunchedEffect(ready, selection.closing) {
+        if (ready && !selection.closing) {
             withFrameNanos { }
             onSourceVisibility(false)
             enter.animateTo(1f, tween(duration))
@@ -124,26 +124,28 @@ internal fun ComposeImageViewer(
             LaunchedEffect(state, active, selected, selection.closing) {
                 state.setActive(active && selected && !selection.closing)
             }
-            LaunchedEffect(state, enter.value == 1f, selected, active) {
-                if (selected && enter.value == 1f) state.enterCompleted(immediateOriginal, playGif)
+            LaunchedEffect(state, enter.value == 1f, selected, active, selection.closing) {
+                if (selected && active && !selection.closing && enter.value == 1f)
+                    state.enterCompleted(immediateOriginal, playGif)
             }
             LaunchedEffect(state.bitmap, state.failed, selected) {
                 if (selected && (state.bitmap != null || state.failed)) ready = true
             }
-            ComposeViewerImagePage(state, transform, round, active && selected,
-                enter.value == 1f, onDismiss = { selection.closing = true },
-                transitionOrigin = if (index == initialIndex && !transform.zoomed && state.longSource == null)
+            ComposeViewerImagePage(state, transform, round, active && selected && !selection.closing,
+                enter.value == 1f, motion, onDismiss = { selection.closing = true },
+                transitionOrigin = if (index == initialIndex && state.bitmap != null &&
+                    !transform.zoomed && state.longSource == null)
                     origin else null,
                 transitionProgress = {
-                    (if (index == initialIndex) enter.value else 1f) * exit.value
+                    (if (index == initialIndex && state.bitmap != null) enter.value else 1f) * exit.value
                 })
         }
-        if (ready && !selection.closing) {
+        if (!selection.closing) {
             ComposeViewerChrome(round, pager.currentPage, urls.size, originalEnabled,
                 selection.page?.original == true, selection.page?.loading == true,
                 onOriginal = { selection.page?.loadOriginal() },
                 onSave = { onSave(urls[pager.currentPage]) },
-                onClose = { selection.closing = true })
+                onClose = { selection.closing = true }, imageAvailable = selection.page?.bitmap != null)
         }
     }
 }
@@ -155,6 +157,7 @@ private fun ComposeViewerImagePage(
     round: Boolean,
     active: Boolean,
     entered: Boolean,
+    motion: Int,
     onDismiss: () -> Unit,
     transitionOrigin: RectF?,
     transitionProgress: () -> Float,
@@ -174,8 +177,9 @@ private fun ComposeViewerImagePage(
     Box(Modifier.fillMaxSize().testTag("viewer-image-page")
         .onSizeChanged { viewport = Size(it.width.toFloat(), it.height.toFloat()) }
         .viewerTransition(transform, transitionOrigin, transitionProgress)
-        .then(if (active && entered && !showingLong)
-            Modifier.viewerGestures(transform, false, onDismiss, {})
+        .then(if (active && !showingLong && (entered || bitmap == null))
+            Modifier.viewerGestures(transform, false, onDismiss, {}, motion = motion,
+                zoomEnabled = entered && bitmap != null)
             else Modifier)
         .graphicsLayer {
             val progress = ImageDismissPolicy.progress(transform.dismiss.y, size.height.toInt())
@@ -206,7 +210,7 @@ private fun ComposeViewerImagePage(
                     },
                     onFailed = { state.regionFailed(source) },
                     onDismiss = onDismiss, viewport = longViewport,
-                    interactive = source === longSource)
+                    interactive = source === longSource, motion = motion)
             }
         }
         if (bitmap == null && state.loading) {

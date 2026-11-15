@@ -63,8 +63,8 @@ class ComposeCommentInlineMetaUiTest {
         val text = layout.layoutInput.text
         assertEquals("${heading}ok  $meta", text.text)
         assertEquals(1, layout.lineCount)
-        assertEquals(11.5.sp, layout.layoutInput.style.fontSize)
-        val suffix = text.spanStyles.single { it.item.fontSize == 9.sp }
+        assertEquals(12.sp, layout.layoutInput.style.fontSize)
+        val suffix = text.spanStyles.single { it.item.fontSize == 11.sp }
         assertEquals(theme.muted, suffix.item.color)
         assertEquals("${heading}ok".length, suffix.start)
         assertEquals(text.length, suffix.end)
@@ -85,7 +85,7 @@ class ComposeCommentInlineMetaUiTest {
             val text = layout().layoutInput.text
             assertEquals("${heading}ok" + if (value.isBlank()) "" else "  $value", text.text)
             assertEquals(if (value.isBlank()) 0 else 1,
-                text.spanStyles.count { it.item.fontSize == 9.sp })
+                text.spanStyles.count { it.item.fontSize == 11.sp })
             assertEquals(1, layout().lineCount)
         }
     }

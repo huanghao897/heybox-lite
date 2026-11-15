@@ -34,7 +34,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 
 /** Media knobs are derived from SessionStore by the Compose host. */
@@ -51,7 +50,7 @@ internal fun ComposeMediaImage(
     url: String,
     settings: ComposeMediaSettings,
     modifier: Modifier = Modifier,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(8.dp),
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(watchDp(WatchRadius.MEDIUM)),
     contentScale: ContentScale = ContentScale.Crop,
     contentDescription: String = "图片",
     animated: Boolean = false,
@@ -105,7 +104,7 @@ internal fun ComposeMediaImage(
                 Text(
                     text = placeholderLabel,
                     color = theme.muted,
-                    fontSize = 10.sp,
+                    fontSize = watchSp(WatchType.CAPTION),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -166,7 +165,7 @@ internal fun ComposeVideoCard(
     onOpenVideo: (VideoData) -> Unit,
     requests: ComposeMediaImageRequests = ExistingComposeMediaImageRequests,
 ) {
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(watchDp(WatchRadius.MEDIUM))
     val gate = rememberComposeContentImageGate(video.cover, settings.enabled,
         settings.dataSaver || LocalComposeDataSaver.current)
     Box(
@@ -215,7 +214,7 @@ internal fun ComposeVideoCard(
             Text(
                 text = video.title,
                 color = Color.White,
-                fontSize = 11.sp,
+                fontSize = watchSp(WatchType.CAPTION),
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -235,7 +234,7 @@ internal fun ComposeMediaGrid(
     settings: ComposeMediaSettings,
     modifier: Modifier = Modifier,
     columns: Int = 3,
-    imageShape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(6.dp),
+    imageShape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(watchDp(WatchRadius.SMALL)),
     onOpenImage: (String) -> Unit,
 ) {
     if (urls.isEmpty() || !settings.enabled) return

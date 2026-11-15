@@ -71,7 +71,7 @@ internal fun ComposeVideoPlayerScreen(
         val height = maxHeight
         val inset = if (theme.roundScreen) minOf(width, height) * WATCH_TOP_RATIO else watchDp(8)
         val headerHeight = maxOf(watchDp(40), with(LocalDensity.current) {
-            watchSp(18f).toDp()
+            watchLineHeight(WatchType.BODY).toDp()
         } + watchDp(8))
         val compact = theme.roundScreen || width < watchDp(260) * theme.textScale *
             LocalDensity.current.fontScale

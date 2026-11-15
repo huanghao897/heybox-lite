@@ -6,10 +6,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import java.net.URI
 import java.net.URISyntaxException
 
-/** Content may supply labels for unsupported routes, but only web URLs become actions. */
+/** Unknown protocols keep their labels; only web and supported internal routes become actions. */
 internal fun composeInlineLinkTarget(value: String): String {
     val trimmed = value.trim()
     val target = if (trimmed.startsWith("//")) "https:$trimmed" else trimmed
+    if (OfficialContentLink.parse(target) != null) return target
     val uri = try { URI(target) } catch (_: URISyntaxException) { return "" }
     if (!(uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) ||
         uri.host.isNullOrBlank() || uri.rawUserInfo != null) return ""

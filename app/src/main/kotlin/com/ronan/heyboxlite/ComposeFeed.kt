@@ -88,7 +88,6 @@ internal fun ComposeFeedScreen(
     HeyboxComposeTheme(services.theme) {
         val theme = LocalHeyboxTheme.current
         val noImage = services.session.noImage()
-        val currentUserId = services.session.userId()
         val gameCardNoImage = services.session.gameCardNoImage()
         if (rotaryInput != null) {
             ObserveFeedRotaryInput(rotaryInput, listState)
@@ -151,7 +150,6 @@ internal fun ComposeFeedScreen(
                                 item = item,
                                 theme = theme,
                                 noImage = noImage,
-                                currentUserId = currentUserId,
                                 onOpen = onOpen,
                                 onAction = onAction,
                                 showSecondaryActions = false,
@@ -205,7 +203,7 @@ private fun previewFeedItem(): FeedItem = FeedItem.from(
 private fun ComposeFeedCardSquarePreview() {
     val theme = composePreviewTheme(roundScreen = false)
     HeyboxComposeTheme(theme) {
-        ComposeFeedCard(previewFeedItem(), theme, true, "", {}, { _, _ -> })
+        ComposeFeedCard(previewFeedItem(), theme, true, {}, { _, _ -> })
     }
 }
 
@@ -214,6 +212,6 @@ private fun ComposeFeedCardSquarePreview() {
 private fun ComposeFeedCardRoundPreview() {
     val theme = composePreviewTheme(roundScreen = true)
     HeyboxComposeTheme(theme) {
-        ComposeFeedCard(previewFeedItem(), theme, true, "", {}, { _, _ -> })
+        ComposeFeedCard(previewFeedItem(), theme, true, {}, { _, _ -> })
     }
 }

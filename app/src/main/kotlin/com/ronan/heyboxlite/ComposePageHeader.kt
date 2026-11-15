@@ -34,11 +34,11 @@ internal fun ComposePageHeader(title: String, onBack: (() -> Unit)?) {
             if (onBack != null) {
                 IconButton(onClick = onBack, modifier = Modifier.size(watchDp(28).coerceAtLeast(28.dp))) {
                     Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_arrow_back),
-                        "返回", tint = theme.text, modifier = Modifier.size(watchDp(19)))
+                        "返回", tint = theme.text, modifier = Modifier.size(watchDp(WatchIcon.LARGE)))
                 }
             } else Spacer(Modifier.size(watchDp(5)))
             Text(title, modifier = Modifier.weight(1f), color = theme.text,
-                fontSize = watchSp(17f), fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp,
+                fontSize = watchSp(WatchType.TITLE), fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp,
                 maxLines = if (theme.roundScreen) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis)
         }
     }
