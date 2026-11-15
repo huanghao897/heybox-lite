@@ -64,17 +64,27 @@ final class RichGameLinkMarkup {
         return source != null && source.indexOf(START) >= 0;
     }
 
+    /** Paragraph formatting must treat a link and its metadata as one indivisible token. */
+    static int endAt(String source, int start) {
+        if (source.charAt(start) != START) return start;
+        int end = source.indexOf(END, start + 1);
+        return end < 0 ? start : end + 1;
+    }
+
     static String normalizeAnchors(String source) {
         if (source == null || source.isEmpty()) return "";
         Matcher matcher = ANCHOR.matcher(source);
         StringBuffer output = new StringBuffer();
         while (matcher.find()) {
             String attributes = matcher.group(1);
-            String label = matcher.group(2);
-            if (RichLinkClassifier.isGameLink(attributes)) {
+            boolean gameLink = RichLinkClassifier.isGameLink(attributes);
+            if (!gameLink && !RichLinkClassifier.isTextLink(attributes)) continue;
+            String label = RichInlineMarkup.linkLabel(matcher.group(2));
+            if (label.isEmpty()) continue;
+            if (gameLink) {
                 matcher.appendReplacement(output, Matcher.quoteReplacement(
                         marker(label, RichLinkClassifier.gameLinkInfo(attributes))));
-            } else if (RichLinkClassifier.isTextLink(attributes)) {
+            } else {
                 matcher.appendReplacement(output, Matcher.quoteReplacement(textMarker(label, attributes)));
             }
         }
@@ -86,7 +96,8 @@ final class RichGameLinkMarkup {
         Matcher matcher = CONTENT_FRAGMENT.matcher(source);
         StringBuffer output = new StringBuffer();
         while (matcher.find()) {
-            String label = matcher.group(3);
+            String label = RichInlineMarkup.linkLabel(matcher.group(3));
+            if (label.isEmpty()) continue;
             String fragment = matcher.group(0);
             int tagEnd = fragment.indexOf('>');
             String attributes = tagEnd >= 0 ? fragment.substring(0, tagEnd) : fragment;
@@ -105,13 +116,17 @@ final class RichGameLinkMarkup {
         while (matcher.find()) {
             String attributes = "href=" + matcher.group(1) + matcher.group(2)
                     + matcher.group(1) + matcher.group(3);
-            if (RichLinkClassifier.isGameLink(attributes)) {
-                String replacement = marker(matcher.group(4),
+            boolean gameLink = RichLinkClassifier.isGameLink(attributes);
+            if (!gameLink && !RichLinkClassifier.isTextLink(attributes)) continue;
+            String label = RichInlineMarkup.linkLabel(matcher.group(4));
+            if (label.isEmpty()) continue;
+            if (gameLink) {
+                String replacement = marker(label,
                         RichLinkClassifier.gameLinkInfo(attributes));
                 matcher.appendReplacement(output, Matcher.quoteReplacement(replacement));
-            } else if (RichLinkClassifier.isTextLink(attributes)) {
+            } else {
                 matcher.appendReplacement(output, Matcher.quoteReplacement(
-                        textMarker(matcher.group(4), attributes)));
+                        textMarker(label, attributes)));
             }
         }
         matcher.appendTail(output);

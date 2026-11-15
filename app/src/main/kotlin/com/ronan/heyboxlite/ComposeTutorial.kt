@@ -7,12 +7,18 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -28,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -70,14 +77,20 @@ internal fun ComposeTutorialDialog(
     val step = steps[index]
     val theme = LocalHeyboxTheme.current
     Dialog(onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        BoxWithConstraints(Modifier.fillMaxSize().background(theme.background).testTag("tutorial-viewport")) {
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
+            .testTag("tutorial-viewport"), contentAlignment = Alignment.Center) {
+            val watchViewport = theme.roundScreen || (maxWidth <= 400.dp && maxHeight <= 400.dp)
+            val frame = if (watchViewport) Modifier.fillMaxSize().background(theme.background)
+                else Modifier.widthIn(max = minOf(420.dp, (maxWidth - 32.dp).coerceAtLeast(1.dp)))
+                    .fillMaxWidth().heightIn(max = (maxHeight - 32.dp).coerceAtLeast(1.dp))
+                    .clip(RoundedCornerShape(watchDp(WatchRadius.LARGE))).background(theme.panel)
             val side = if (theme.roundScreen) maxWidth * 0.13f else 16.dp
             val top = if (theme.roundScreen) minOf(maxWidth, maxHeight) * 0.12f else 12.dp
             val bottom = if (theme.roundScreen) minOf(maxWidth, maxHeight) * 0.14f else 12.dp
             val headerInset = if (theme.roundScreen) (watchHeaderHorizontal(maxWidth, theme) - side)
                 .coerceAtLeast(0.dp) else 0.dp
-            Column(Modifier.fillMaxSize().padding(start = side, end = side, top = top, bottom = bottom)
+            Column(frame.padding(start = side, end = side, top = top, bottom = bottom)
                 .testTag("tutorial-frame"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = headerInset), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center) {
@@ -96,7 +109,7 @@ internal fun ComposeTutorialDialog(
                             scroll.scrollBy(rotary.distance.toFloat())
                         }
                     }
-                    Column(Modifier.weight(1f).fillMaxWidth().testTag("tutorial-content")
+                    Column(Modifier.weight(1f, fill = watchViewport).fillMaxWidth().testTag("tutorial-content")
                         .verticalScroll(scroll), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(step.title, color = theme.text, fontSize = watchSp(WatchType.SUBTITLE),
                             fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,

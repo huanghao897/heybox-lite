@@ -26,6 +26,7 @@ final class OfficialContentLink {
             "/(?:app/)?user/profile/([0-9]+)/?");
     private static final Pattern COMMUNITY_POST_PATH = Pattern.compile(
             "/community/(?:[^/]+/list|post/(?:video|article|topimg))/([0-9A-Za-z]+)/?");
+    private static final Pattern SHARE_PATH = Pattern.compile("/(?:v3/)?bbs/app/api/web/share/?");
 
     final Kind kind;
     final String id;
@@ -64,7 +65,7 @@ final class OfficialContentLink {
         if (communityPost.matches()) return post(communityPost.group(1), query(uri, "h_src"));
         Matcher user = USER_PATH.matcher(path == null ? "" : path);
         if (user.matches()) return user(user.group(1));
-        if ("/bbs/app/api/web/share".equals(path) || "/bbs/app/api/web/share/".equals(path)) {
+        if (SHARE_PATH.matcher(path == null ? "" : path).matches()) {
             return post(query(uri, "link_id"), query(uri, "h_src"));
         }
         return null;

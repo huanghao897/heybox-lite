@@ -57,6 +57,14 @@ final class ArticleText {
         StringBuilder current = new StringBuilder();
         int visible = 0;
         for (int i = 0; i < value3.length(); i++) {
+            int linkEnd = RichGameLinkMarkup.endAt(value3, i);
+            if (linkEnd > i) {
+                String link = value3.substring(i, linkEnd);
+                current.append(link);
+                visible += RichGameLinkMarkup.plainText(link).replaceAll("\\s+", "").length();
+                i = linkEnd - 1;
+                continue;
+            }
             char ch = value3.charAt(i);
             current.append(ch);
             if (!Character.isWhitespace(ch)) {
@@ -88,6 +96,21 @@ final class ArticleText {
     }
 
     static String normalizeArticleBreaks(String value) {
+        if (!RichGameLinkMarkup.hasMarkup(value)) return normalizePlainBreaks(value);
+        StringBuilder output = new StringBuilder(value.length());
+        int cursor = 0;
+        for (int i = 0; i < value.length(); i++) {
+            int end = RichGameLinkMarkup.endAt(value, i);
+            if (end <= i) continue;
+            output.append(normalizePlainBreaks(value.substring(cursor, i)));
+            output.append(value, i, end);
+            cursor = end;
+            i = end - 1;
+        }
+        return output.append(normalizePlainBreaks(value.substring(cursor))).toString();
+    }
+
+    private static String normalizePlainBreaks(String value) {
         String output = value.replaceAll("([\\u3002\\uff01\\uff1f!?])\\s*(?=([\\uff08(][0-9\\u4e00-\\u9fff]{1,3}[\\uff09)]))", "$1\n");
         return output.replaceAll("\\s+(?=([\\uff08(][0-9\\u4e00-\\u9fff]{1,3}[\\uff09)]))", "\n").replaceAll("([^\\n])\\s+(?=([\\u4e00-\\u9fff]{1,4}\\u3001))", "$1\n").replaceAll("([^\\n])\\s+(?=([0-9]{1,2}[.\\uff0e][^0-9]))", "$1\n").replaceAll("([\\u4e00-\\u9fffA-Za-z])(?=([0-9]{1,2}[.\\uff0e][\\u4e00-\\u9fff]))", "$1\n").replaceAll("([\\u3002\\uff01\\uff1f!?])(?=([0-9]{1,2}[.\\uff0e][\\u4e00-\\u9fff]))", "$1\n");
     }

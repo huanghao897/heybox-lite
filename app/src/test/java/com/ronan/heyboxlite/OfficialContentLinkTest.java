@@ -36,6 +36,18 @@ public class OfficialContentLinkTest {
         assertEquals("comment", link.hsrc);
     }
 
+    @Test public void versionedOfficialShareLinksUseTheSameInternalPostRoute() {
+        for (String suffix : new String[] {"", "/"}) {
+            OfficialContentLink link = OfficialContentLink.parse(
+                    "https://api.xiaoheihe.cn/v3/bbs/app/api/web/share" + suffix
+                            + "?h_src=app_share&link_id=123456");
+            assertNotNull(link);
+            assertEquals(OfficialContentLink.Kind.POST, link.kind);
+            assertEquals("123456", link.id);
+            assertEquals("app_share", link.hsrc);
+        }
+    }
+
     @Test public void legacyAndCurrentCommunityPostRoutesKeepTheActualPostId() {
         for (String path : new String[] {"/community/1067/list/Ab123",
                 "/community/post/article/Ab123", "/community/post/video/Ab123",

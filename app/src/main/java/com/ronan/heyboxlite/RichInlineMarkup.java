@@ -71,6 +71,17 @@ final class RichInlineMarkup {
     }
     static String normalize(String html) {
         html = RichGameLinkMarkup.normalizeAnchors(decodeAttributeEntities(html));
+        return normalizeEmojis(html);
+    }
+
+    static String linkLabel(String html) {
+        String value = normalizeEmojis(html);
+        value = INLINE_IMAGE_EMOJI.matcher(value).replaceAll("");
+        return decodeHtml(value).replace('\u00a0', ' ')
+                .replaceAll("\\s+", " ").trim();
+    }
+
+    private static String normalizeEmojis(String html) {
         Matcher matcher = INLINE_EMOJI.matcher(html);
         StringBuffer output = new StringBuffer();
         while (matcher.find()) {
@@ -219,6 +230,7 @@ final class RichInlineMarkup {
 
     private static String decodeHtml(String value) {
         if (value == null || value.isEmpty()) return "";
+        if (value.indexOf('<') < 0 && value.indexOf('&') < 0) return value;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             return Html.fromHtml(value, Html.FROM_HTML_MODE_LEGACY).toString();
         }
